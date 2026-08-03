@@ -45,35 +45,43 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
 -- About: about UnifyAPI, the product.
 --
+-- MARKDOWN, NOT HTML, and that matters. features/about/index.tsx branches on
+-- isLikelyHtml() (lib/content-format.ts): any HTML tag routes the content to
+-- PublicLayout showMainContainer={false} + RichContent htmlVariant='isolated',
+-- which has no container padding (so it renders under the fixed header) and does
+-- not receive the prose typography. The markdown branch gets
+-- `mx-auto max-w-6xl px-4 py-8` and prose styling. Keep this tag-free.
+--
 -- On the licence: the prominent AGPLv3 s.7(b) attribution and the required link
 -- to the upstream project are carried by the always-mounted footer bar on every
 -- route (web/src/brand/upstream-attribution.tsx), which is what satisfies that
--- obligation. This page therefore does not need to repeat it at length, and the
--- long attribution block that used to live here has been cut down to the single
--- closing line below.
+-- obligation. This page therefore does not repeat it at length.
 --
--- That line stays. It carries the s.7(c) statement of changes and the s.13
--- source offer, and both are obligations of running this as a hosted service.
--- Do not remove it -- see BRANDING.md.
+-- The closing line stays. It is the AGPLv3 s.7(c) marking of changes, which is
+-- required of a modified version. The s.13 source offer is not duplicated here
+-- because the `Footer` option carries a "Source code" link on every page --
+-- if that Footer link is ever removed, this line must regain it. See BRANDING.md.
 INSERT INTO options (key, value) VALUES
-  ('About', '<h2>UnifyAPI</h2>'
-    || '<p>One API key for 300+ AI models across every major provider. One endpoint, one bill, and no per-provider contracts.</p>'
-    || '<h3>What you get</h3>'
-    || '<ul>'
-    || '<li><strong>One endpoint.</strong> UnifyAPI speaks the OpenAI API, so existing code works by changing the base URL and the key.</li>'
-    || '<li><strong>One bill.</strong> Pooled capacity across providers instead of separate contracts and idle commitments.</li>'
-    || '<li><strong>Automatic failover.</strong> A single model name keeps working through an upstream provider incident.</li>'
-    || '<li><strong>Smart routing.</strong> Requests go to the cheapest model that still clears your quality bar.</li>'
-    || '<li><strong>One dashboard.</strong> Keys, spend, latency and usage for your whole team in one place.</li>'
-    || '</ul>'
-    || '<h3>Get started</h3>'
-    || '<p>Read the <a href="https://www.unifyapi.ai/docs">documentation</a>, or create a key and make your first call in under a minute.</p>'
-    || '<p><a href="https://www.unifyapi.ai">unifyapi.ai</a></p>'
-    || '<hr />'
-    || '<p><small>Built on <a href="https://github.com/QuantumNous/new-api" target="_blank" rel="noopener noreferrer">New API</a> '
-    || '(<a href="https://github.com/QuantumNous/new-api/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">AGPL-3.0</a>), '
-    || 'modified by FelixSphere: branding, typography, light-only theme, and a multi-tenant account model. '
-    || 'Source: <a href="https://github.com/FelixSphere/unifyapi-console" target="_blank" rel="noopener noreferrer">unifyapi-console</a>.</small></p>')
+  ('About', '## UnifyAPI
+
+One API key for 300+ AI models across every major provider. One endpoint, one bill, and no per-provider contracts.
+
+### What you get
+
+- **One endpoint.** UnifyAPI speaks the OpenAI API, so existing code works by changing the base URL and the key.
+- **One bill.** Pooled capacity across providers instead of separate contracts and idle commitments.
+- **Automatic failover.** A single model name keeps working through an upstream provider incident.
+- **Smart routing.** Requests go to the cheapest model that still clears your quality bar.
+- **One dashboard.** Keys, spend, latency and usage for your whole team in one place.
+
+### Get started
+
+Read the [documentation](https://www.unifyapi.ai/docs), or create a key and make your first call in under a minute.
+
+---
+
+Built on [New API](https://github.com/QuantumNous/new-api) ([AGPL-3.0](https://github.com/QuantumNous/new-api/blob/main/LICENSE)), modified by FelixSphere: branding, typography, light-only theme, and a multi-tenant account model.
+')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
 -- Docs link. Upstream defaults this to https://docs.newapi.pro, which sends our
