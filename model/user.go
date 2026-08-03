@@ -110,6 +110,10 @@ type User struct {
 	LastLoginAt      int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
 	AuthVersion      int64                      `json:"-" gorm:"type:bigint;not null;default:1;column:auth_version"`
 	AdminPermissions map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
+	// UNIFYAPI-BRAND: billing boundary. 0 means "no tenant", in which case this
+	// user is its own billing entity and behaves exactly as upstream does.
+	// See model/tenant.go and BRANDING.md.
+	TenantId int `json:"tenant_id" gorm:"type:int;default:0;column:tenant_id;index"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -630,6 +634,13 @@ func (user *User) finishInsert(inviterId int) {
 		}
 	}
 
+	// UNIFYAPI-BRAND: provision a tenant so no account ever holds a balance
+	// without a billing entity. Both signup paths (password and OAuth) run
+	// their own post-insert hook, so this appears in each. See model/tenant.go.
+	if _, err := EnsureTenantForUser(user.Id); err != nil {
+		common.SysLog(fmt.Sprintf("failed to provision tenant for user %d: %s", user.Id, err.Error()))
+	}
+
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
 	}
@@ -685,6 +696,13 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 			createdUser.Update(false)
 			common.SysLog(fmt.Sprintf("为新用户 %s (角色: %d) 初始化边栏配置", createdUser.Username, createdUser.Role))
 		}
+	}
+
+	// UNIFYAPI-BRAND: provision a tenant so no account ever holds a balance
+	// without a billing entity. Both signup paths (password and OAuth) run
+	// their own post-insert hook, so this appears in each. See model/tenant.go.
+	if _, err := EnsureTenantForUser(user.Id); err != nil {
+		common.SysLog(fmt.Sprintf("failed to provision tenant for user %d: %s", user.Id, err.Error()))
 	}
 
 	if common.QuotaForNewUser > 0 {

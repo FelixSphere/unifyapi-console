@@ -77,7 +77,12 @@ func SetApiRouter(router *gin.Engine) {
 			//userRoute.POST("/tokenlog", middleware.CriticalRateLimit(), controller.TokenLog)
 			userRoute.POST("/epay/notify", anonymousRequestBodyLimit, controller.EpayNotify)
 			userRoute.GET("/epay/notify", controller.EpayNotify)
-			userRoute.GET("/groups", controller.GetUserGroups)
+			// UNIFYAPI-BRAND: was registered before selfRoute's UserAuth, so it
+			// answered anonymously -- GetUserGroups reads c.GetInt("id"), which
+			// is 0 without a session, and it then returned the full group map
+			// with pricing ratios to any caller. The frontend only ever calls
+			// the authenticated /self/groups below.
+			userRoute.GET("/groups", middleware.UserAuth(), controller.GetUserGroups)
 
 			selfRoute := userRoute.Group("/")
 			selfRoute.Use(middleware.UserAuth())
@@ -256,6 +261,16 @@ func SetApiRouter(router *gin.Engine) {
 			{
 				tokenUsageRoute.GET("/", controller.GetTokenUsage)
 			}
+		}
+
+		// UNIFYAPI-BRAND: operator-facing tenant reporting. AdminAuth is applied
+		// on the group, before any handler, because these responses expose every
+		// customer's balance and spend. See controller/tenant.go.
+		tenantRoute := apiRouter.Group("/tenant")
+		tenantRoute.Use(middleware.AdminAuth())
+		{
+			tenantRoute.GET("/", controller.GetTenantOverviews)
+			tenantRoute.GET("/:id/usage", controller.GetTenantUsage)
 		}
 
 		redemptionRoute := apiRouter.Group("/redemption")
