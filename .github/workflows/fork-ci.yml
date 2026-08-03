@@ -1,0 +1,86 @@
+# Fork-owned CI. Deliberately a separate file from upstream's ci.yml so their
+# edits to that file never conflict with ours.
+#
+# Gate design note: at upstream tag v1.0.0-rc.23, three of upstream's own
+# quality scripts already fail on a clean checkout:
+#   copyright:check  2 files (cosmetic blank line after the licence header)
+#   format:check     3 files
+#   bun test         9 fail / 6 errors (node:test vs `bun test` incompatibility)
+# Only typecheck and build are green. So those three run as advisory here --
+# blocking on them would mean a permanently red pipeline that everyone learns to
+# ignore, which is worse than no gate. Re-evaluate at each upstream bump; when a
+# tag lands with them green, promote them to hard gates.
+name: Fork CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'brand/**', 'feat/**', 'merge/**']
+
+jobs:
+  web:
+    # Never run in upstream, nor in a fork of this fork.
+    if: github.repository == 'FelixSphere/unifyapi-console'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+
+      - run: bun install --frozen-lockfile
+
+      # Hard gate. Protects the AGPLv3 s.7(b) attribution and the brand
+      # overrides that degrade silently rather than erroring. Runs before the
+      # slower steps so a licence regression fails fast.
+      - name: Check brand and attribution invariants
+        run: node scripts/check-brand-invariants.mjs
+
+      - run: bun run typecheck
+
+      - run: bun run build
+
+      - name: copyright:check (advisory - red upstream at rc.23)
+        continue-on-error: true
+        run: bun run copyright:check
+
+      - name: format:check (advisory - red upstream at rc.23)
+        continue-on-error: true
+        run: bun run format:check
+
+      - name: bun test (advisory - red upstream at rc.23)
+        continue-on-error: true
+        run: bun test
+
+  backend:
+    if: github.repository == 'FelixSphere/unifyapi-console'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache-dependency-path: go.sum
+
+      - run: go vet ./...
+        env:
+          GOWORK: off
+
+      # main.go embeds web/dist, so the Go build cannot run without a frontend
+      # bundle. A stub keeps this job independent of the web job.
+      - name: Stub embedded frontend
+        run: mkdir -p web/dist && echo '<!doctype html>' > web/dist/index.html
+
+      - run: go build -o /dev/null .
+        env:
+          GOWORK: off
+          CGO_ENABLED: 0
+
+      - run: go test ./...
+        env:
+          GOWORK: off

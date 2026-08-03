@@ -43,7 +43,9 @@ import './i18n/config'
 import { routeTree } from './routeTree.gen'
 
 // Styles
-import './styles/index.css'
+// UNIFYAPI-BRAND: unifyapi.css imports upstream's index.css first, then layers
+// our palette/fonts on top. Keeps index.css byte-untouched. See BRANDING.md.
+import './styles/unifyapi.css'
 
 // Ensure VChart theme is initialized before any chart mounts (prevents white default theme flash)
 // VChart theme is driven by our ThemeProvider (html.light/html.dark) via per-chart `theme` prop.
@@ -160,7 +162,9 @@ if (!rootElement.innerHTML) {
   root.render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
+        {/* UNIFYAPI-BRAND: light-only. CSS alone can't reach the JS consumers
+            of resolvedTheme (VChart, Sonner). See BRANDING.md. */}
+        <ThemeProvider defaultTheme='light'>
           <FontProvider>
             <DirectionProvider>
               <RouterProvider router={router} />

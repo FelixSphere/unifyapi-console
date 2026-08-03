@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { UpstreamAttribution } from '@/brand/upstream-attribution'
+
 import type { TopNavLink } from '../types'
 import { PublicHeader, type PublicHeaderProps } from './public-header'
 
@@ -35,10 +37,12 @@ type PublicLayoutProps = {
 export function PublicLayout(props: PublicLayoutProps) {
   return (
     <div className='bg-background text-foreground relative min-h-svh overflow-x-clip'>
+      {/* UNIFYAPI-BRAND: light-only, so showThemeSwitch defaults off below
+          (upstream's PublicHeader defaults it on). See BRANDING.md. */}
       <PublicHeader
         navContent={props.navContent}
         navLinks={props.navLinks}
-        showThemeSwitch={props.showThemeSwitch}
+        showThemeSwitch={props.showThemeSwitch ?? false}
         showAuthButtons={props.showAuthButtons}
         showNotifications={props.showNotifications}
         logo={props.logo}
@@ -53,6 +57,12 @@ export function PublicLayout(props: PublicLayoutProps) {
       ) : (
         props.children
       )}
+
+      {/* UNIFYAPI-BRAND: AGPLv3 s.7(b). Covers every early return in
+          features/home and features/about. Do not remove. See BRANDING.md. */}
+      <div className='sticky bottom-0'>
+        <UpstreamAttribution />
+      </div>
     </div>
   )
 }

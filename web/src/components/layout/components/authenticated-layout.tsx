@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { UpstreamAttribution } from '@/brand/upstream-attribution'
 import { AnimatedOutlet } from '@/components/page-transition'
 import { SkipToMain } from '@/components/skip-to-main'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
@@ -39,7 +40,9 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
       <SearchProvider>
         <SidebarProvider defaultOpen={defaultOpen} className='flex-col'>
           <SkipToMain />
-          <AppHeader />
+          {/* UNIFYAPI-BRAND: config drawer is the dark-mode switch and the
+              theme-preset picker; disabling it pins the brand. See BRANDING.md. */}
+          <AppHeader showConfigDrawer={false} />
           <div className='flex min-h-0 w-full flex-1'>
             <AppSidebar />
             <SidebarInset
@@ -51,6 +54,8 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
               )}
             >
               {props.children ?? <AnimatedOutlet />}
+              {/* UNIFYAPI-BRAND: AGPLv3 s.7(b). Do not remove. See BRANDING.md. */}
+              <UpstreamAttribution />
             </SidebarInset>
           </div>
         </SidebarProvider>
