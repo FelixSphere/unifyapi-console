@@ -194,24 +194,54 @@ pipelines inside our fork. Hence `tagOpt = --no-tags`; fetch a tag explicitly:
 git fetch upstream tag v1.0.0-rc.24 --no-tags
 ```
 
-### Upstream Actions are disabled at the repo level, not by editing files
+### Upstream Actions are neutralised via repo state, not by editing files
 
-Upstream's seven workflows are neutralised by **GitHub repo state**, not by
-editing the YAML — editing them would add seven files to our delta and conflict
-on every upstream CI change. `pr-check.yml` is the dangerous one: it runs
+Editing upstream's seven workflow files would add seven files to our delta and
+conflict on every upstream CI change, so we neutralise them through GitHub repo
+settings instead. `pr-check.yml` is the dangerous one: it runs
 `peakoss/anti-slop` on `pull_request_target` with `close-pr: true`, which
 auto-closes our own PRs.
 
-Verify the state periodically, and after any Actions settings change:
+**Current state: Actions are disabled repo-wide.**
 
 ```bash
+gh api repos/FelixSphere/unifyapi-console/actions/permissions   # {"enabled": false}
+```
+
+This is deliberate and is the safe state until the first push. GitHub registers
+workflow files lazily — they do not appear in the workflows API until something
+triggers them — so they cannot be disabled individually before that first push.
+A repo-wide disable is the only way to be safe in the window between forking and
+pushing.
+
+**Sequence to switch to selective enablement**, once you are ready for CI:
+
+```bash
+# 1. Push. Nothing runs, because Actions are still disabled repo-wide.
+git push -u origin brand/unifyapi-rebrand
+
+# 2. Workflows are now registered. Disable every upstream one by id.
+gh api repos/FelixSphere/unifyapi-console/actions/workflows \
+  --jq '.workflows[] | select(.path | test("fork-ci|dependabot") | not) | .id' \
+  | while read -r id; do
+      gh api -X PUT "repos/FelixSphere/unifyapi-console/actions/workflows/$id/disable"
+    done
+
+# 3. Re-enable Actions repo-wide. Only fork-ci.yml can now run.
+gh api -X PUT repos/FelixSphere/unifyapi-console/actions/permissions -F enabled=true
+
+# 4. Confirm. Everything except fork-ci.yml must read disabled_manually.
 gh api repos/FelixSphere/unifyapi-console/actions/workflows \
   --jq '.workflows[] | "\(.state)\t\(.path)"'
 ```
 
-Everything under `.github/workflows/` that is *not* `fork-ci.yml` (and optionally
-upstream's `ci.yml`, which works correctly in forks) should read
-`disabled_manually`.
+Upstream's `ci.yml` is safe to leave enabled if you want it — it checks out
+`github.event.pull_request.base.repo.full_name`, which resolves to this repo in a
+fork PR. The four tag-triggered release workflows and `pr-check.yml` are not.
+
+Re-verify after any change to Actions settings, since a repo-wide re-enable does
+**not** re-disable individual workflows but a newly-appearing upstream workflow
+file will arrive enabled.
 
 ### The merge itself
 
