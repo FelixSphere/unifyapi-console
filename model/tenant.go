@@ -142,9 +142,19 @@ func isDuplicateKeyError(err error) bool {
 	return strings.Contains(msg, "unique") || strings.Contains(msg, "duplicate")
 }
 
+// IsStaffRole reports whether a role belongs to our own operators rather than a
+// paying customer. Staff must not get tenants: an operator account is not a
+// billing entity, and provisioning one would put our own team in the customer
+// list that GetTenantOverviews reports on.
+func IsStaffRole(role int) bool {
+	return role >= common.RoleAdminUser
+}
+
 // EnsureTenantForUserTx gives a user a tenant if they do not already have one,
 // and is safe to call repeatedly -- registration, a backfill, and an admin
 // action can all invoke it without creating duplicates.
+//
+// Returns (nil, nil) for staff accounts, which are deliberately tenantless.
 //
 // The new tenant takes over the user's starting quota so the balance lives in
 // exactly one place. Leaving a non-zero users.quota behind would create two
@@ -157,6 +167,9 @@ func EnsureTenantForUserTx(tx *gorm.DB, userId int) (*Tenant, error) {
 	var user User
 	if err := tx.First(&user, "id = ?", userId).Error; err != nil {
 		return nil, err
+	}
+	if IsStaffRole(user.Role) {
+		return nil, nil
 	}
 	if user.TenantId != 0 {
 		tenant := &Tenant{}
@@ -193,7 +206,7 @@ func EnsureTenantForUserTx(tx *gorm.DB, userId int) (*Tenant, error) {
 }
 
 // EnsureTenantForUser is the non-transactional entry point used by the
-// registration hook.
+// registration hook. Returns a nil tenant for staff accounts.
 func EnsureTenantForUser(userId int) (*Tenant, error) {
 	var tenant *Tenant
 	err := DB.Transaction(func(tx *gorm.DB) error {
@@ -221,6 +234,12 @@ func AddUserToTenant(userId int, tenantId int) error {
 		var user User
 		if err := tx.First(&user, "id = ?", userId).Error; err != nil {
 			return err
+		}
+		// An operator joining a customer tenant would give them that customer's
+		// balance and hide them from the customer list. Refuse loudly rather
+		// than silently doing something surprising.
+		if IsStaffRole(user.Role) {
+			return errors.New("cannot add an operator account to a tenant")
 		}
 		if user.TenantId == tenantId {
 			return nil

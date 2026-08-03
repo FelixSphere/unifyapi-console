@@ -11,6 +11,8 @@ package model
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -212,6 +214,76 @@ func TestUntenantedUserKeepsItsOwnBalance(t *testing.T) {
 	total, err := CountTenants()
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), total)
+}
+
+// Operator accounts must never become tenants, or our own team shows up in the
+// customer list that the operations view reports on.
+func TestStaffAccountsGetNoTenant(t *testing.T) {
+	setupTenantTestDB(t)
+
+	for name, role := range map[string]int{
+		"an-admin": common.RoleAdminUser,
+		"the-root": common.RoleRootUser,
+	} {
+		user := createTestUser(t, name, 0)
+		require.NoError(t, DB.Model(&User{}).Where("id = ?", user.Id).Update("role", role).Error)
+
+		tenant, err := EnsureTenantForUser(user.Id)
+		require.NoError(t, err, "must not error, just decline")
+		assert.Nil(t, tenant, "role %d must not get a tenant", role)
+
+		var reloaded User
+		require.NoError(t, DB.First(&reloaded, user.Id).Error)
+		assert.Equal(t, 0, reloaded.TenantId)
+	}
+
+	total, err := CountTenants()
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), total)
+}
+
+func TestStaffAccountsAreExcludedFromTheCustomerList(t *testing.T) {
+	setupTenantTestDB(t)
+
+	customer := createTestUser(t, "paying-customer", 1000)
+	_, err := EnsureTenantForUser(customer.Id)
+	require.NoError(t, err)
+
+	ops := createTestUser(t, "ops-account", 0)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", ops.Id).Update("role", common.RoleRootUser).Error)
+	_, err = EnsureTenantForUser(ops.Id)
+	require.NoError(t, err)
+
+	overviews, err := GetTenantOverviews(0, 0, 100, 0)
+	require.NoError(t, err)
+	require.Len(t, overviews, 1, "only the paying customer is a tenant")
+	assert.Equal(t, "paying-customer", overviews[0].Slug)
+	assert.Equal(t, 1, overviews[0].MemberCount)
+}
+
+func TestAddUserToTenantRefusesStaff(t *testing.T) {
+	setupTenantTestDB(t)
+
+	customer := createTestUser(t, "cust", 500)
+	tenant, err := EnsureTenantForUser(customer.Id)
+	require.NoError(t, err)
+
+	ops := createTestUser(t, "ops", 0)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", ops.Id).Update("role", common.RoleAdminUser).Error)
+
+	err = AddUserToTenant(ops.Id, tenant.Id)
+	assert.Error(t, err, "an operator must not join a customer's billing entity")
+
+	quota, qErr := GetTenantQuota(tenant.Id)
+	require.NoError(t, qErr)
+	assert.Equal(t, 500, quota, "balance untouched by the refused join")
+}
+
+func TestIsStaffRole(t *testing.T) {
+	assert.False(t, IsStaffRole(common.RoleGuestUser))
+	assert.False(t, IsStaffRole(common.RoleCommonUser))
+	assert.True(t, IsStaffRole(common.RoleAdminUser))
+	assert.True(t, IsStaffRole(common.RoleRootUser))
 }
 
 func TestTenantQuotaMutators(t *testing.T) {

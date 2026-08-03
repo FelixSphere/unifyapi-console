@@ -634,9 +634,10 @@ func (user *User) finishInsert(inviterId int) {
 		}
 	}
 
-	// UNIFYAPI-BRAND: provision a tenant so no account ever holds a balance
-	// without a billing entity. Both signup paths (password and OAuth) run
-	// their own post-insert hook, so this appears in each. See model/tenant.go.
+	// UNIFYAPI-BRAND: provision a tenant so no customer account ever holds a
+	// balance without a billing entity. Returns nil for staff, who are
+	// deliberately tenantless. Both signup paths (password and OAuth) run their
+	// own post-insert hook, so this appears in each. See model/tenant.go.
 	if _, err := EnsureTenantForUser(user.Id); err != nil {
 		common.SysLog(fmt.Sprintf("failed to provision tenant for user %d: %s", user.Id, err.Error()))
 	}
@@ -698,9 +699,10 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 		}
 	}
 
-	// UNIFYAPI-BRAND: provision a tenant so no account ever holds a balance
-	// without a billing entity. Both signup paths (password and OAuth) run
-	// their own post-insert hook, so this appears in each. See model/tenant.go.
+	// UNIFYAPI-BRAND: provision a tenant so no customer account ever holds a
+	// balance without a billing entity. Returns nil for staff, who are
+	// deliberately tenantless. Both signup paths (password and OAuth) run their
+	// own post-insert hook, so this appears in each. See model/tenant.go.
 	if _, err := EnsureTenantForUser(user.Id); err != nil {
 		common.SysLog(fmt.Sprintf("failed to provision tenant for user %d: %s", user.Id, err.Error()))
 	}

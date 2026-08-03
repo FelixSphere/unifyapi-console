@@ -43,25 +43,44 @@ INSERT INTO options (key, value) VALUES
     || '</div>')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
--- About. Replaces upstream's EmptyAboutState, so it must preserve everything
--- that page carried: the upstream link, the AGPLv3 s.7(b) notice verbatim, the
--- licence link, the One API provenance chain, and our s.7(c) change statement.
+-- About: about UnifyAPI, the product.
+--
+-- On the licence: the prominent AGPLv3 s.7(b) attribution and the required link
+-- to the upstream project are carried by the always-mounted footer bar on every
+-- route (web/src/brand/upstream-attribution.tsx), which is what satisfies that
+-- obligation. This page therefore does not need to repeat it at length, and the
+-- long attribution block that used to live here has been cut down to the single
+-- closing line below.
+--
+-- That line stays. It carries the s.7(c) statement of changes and the s.13
+-- source offer, and both are obligations of running this as a hosted service.
+-- Do not remove it -- see BRANDING.md.
 INSERT INTO options (key, value) VALUES
-  ('About', '<h2>About UnifyAPI</h2>'
-    || '<p>UnifyAPI gives you one API key and one bill across 300+ AI models from every major provider, with automatic failover and smart routing.</p>'
-    || '<h3>Open source attribution</h3>'
-    || '<p>UnifyAPI Console is a <strong>modified version of New API</strong>, an open source AI model gateway: '
-    || '<a href="https://github.com/QuantumNous/new-api" target="_blank" rel="noopener noreferrer">https://github.com/QuantumNous/new-api</a></p>'
-    || '<p>Frontend design and development by New API contributors.</p>'
-    || '<p>New API is in turn based on One API, Copyright (c) 2023 JustSong.</p>'
-    || '<h3>Licence</h3>'
-    || '<p>This software is distributed under the GNU Affero General Public License v3.0: '
-    || '<a href="https://github.com/QuantumNous/new-api/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">AGPL-3.0</a>.</p>'
-    || '<p><strong>Statement of changes (AGPLv3 s.7(c)):</strong> modified by FelixSphere. '
-    || 'Changes cover visual rebranding (colour system, typography, logo, page titles), '
-    || 'light-only theme enforcement, always-mounted upstream attribution, and a multi-tenant account model.</p>'
-    || '<p>Complete corresponding source for this modified version: '
-    || '<a href="https://github.com/FelixSphere/unifyapi-console" target="_blank" rel="noopener noreferrer">https://github.com/FelixSphere/unifyapi-console</a></p>')
+  ('About', '<h2>UnifyAPI</h2>'
+    || '<p>One API key for 300+ AI models across every major provider. One endpoint, one bill, and no per-provider contracts.</p>'
+    || '<h3>What you get</h3>'
+    || '<ul>'
+    || '<li><strong>One endpoint.</strong> UnifyAPI speaks the OpenAI API, so existing code works by changing the base URL and the key.</li>'
+    || '<li><strong>One bill.</strong> Pooled capacity across providers instead of separate contracts and idle commitments.</li>'
+    || '<li><strong>Automatic failover.</strong> A single model name keeps working through an upstream provider incident.</li>'
+    || '<li><strong>Smart routing.</strong> Requests go to the cheapest model that still clears your quality bar.</li>'
+    || '<li><strong>One dashboard.</strong> Keys, spend, latency and usage for your whole team in one place.</li>'
+    || '</ul>'
+    || '<h3>Get started</h3>'
+    || '<p>Read the <a href="https://www.unifyapi.ai/docs">documentation</a>, or create a key and make your first call in under a minute.</p>'
+    || '<p><a href="https://www.unifyapi.ai">unifyapi.ai</a></p>'
+    || '<hr />'
+    || '<p><small>Built on <a href="https://github.com/QuantumNous/new-api" target="_blank" rel="noopener noreferrer">New API</a> '
+    || '(<a href="https://github.com/QuantumNous/new-api/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">AGPL-3.0</a>), '
+    || 'modified by FelixSphere: branding, typography, light-only theme, and a multi-tenant account model. '
+    || 'Source: <a href="https://github.com/FelixSphere/unifyapi-console" target="_blank" rel="noopener noreferrer">unifyapi-console</a>.</small></p>')
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+
+-- Docs link. Upstream defaults this to https://docs.newapi.pro, which sends our
+-- customers into another product's documentation. It drives the console's top-nav
+-- "Docs" entry (web/src/hooks/use-top-nav-links.ts) and the landing hero CTA.
+INSERT INTO options (key, value) VALUES
+  ('general_setting.docs_link', 'https://www.unifyapi.ai/docs')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
 -- HomePageContent replaces the whole landing page. Safe now that PublicLayout

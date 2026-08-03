@@ -22,7 +22,8 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-const FEEDBACK_URL = 'https://github.com/QuantumNous/new-api/issues'
+// UNIFYAPI-BRAND: our own issue tracker, not upstream's. See BRANDING.md.
+const FEEDBACK_URL = 'https://github.com/FelixSphere/unifyapi-console/issues'
 
 type GeneralErrorProps = React.HTMLAttributes<HTMLDivElement> & {
   minimal?: boolean
