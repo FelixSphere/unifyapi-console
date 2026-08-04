@@ -66,6 +66,32 @@ the other. Remove it when done: `git worktree remove ../../uc-<task>`.
 Two agents must not both run the console on port 3001 or the marketing site on
 3000. Pick a port per agent and say which one you used.
 
+## 2b. Turn off format-on-save (one-time, per machine)
+
+This repo formats with `oxfmt` (single quotes, no semicolons). VS Code has no
+oxfmt integration, so format-on-save falls back to its built-in TS formatter or
+Prettier and rewrites files to double quotes and semicolons.
+
+That is not cosmetic. Upstream ships ~4 commits a day, so a reformat turns a
+3-line diff into a 200-line conflict in a file upstream is actively editing. It
+has already silently damaged `footer.tsx` once and took the licence-required
+attribution key with it.
+
+`.vscode/` is gitignored by upstream, so this cannot be committed. Create
+`.vscode/settings.json` locally with:
+
+```json
+{
+  "editor.formatOnSave": false,
+  "files.readonlyInclude": { "web/src/i18n/locales/*.json": true }
+}
+```
+
+Format deliberately instead: `cd web && bun run format`. And if a diff you did
+not intend suddenly spans the whole file, run
+`git show HEAD:<file> | sed "s/'/\"/g; s/;$//" > /tmp/a` and diff the normalised
+versions to find your real change.
+
 ## 3. What is ours vs upstream's
 
 Our code lives in files upstream does not have. **Prefer adding a file over
