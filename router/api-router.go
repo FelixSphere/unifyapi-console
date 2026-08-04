@@ -77,7 +77,12 @@ func SetApiRouter(router *gin.Engine) {
 			//userRoute.POST("/tokenlog", middleware.CriticalRateLimit(), controller.TokenLog)
 			userRoute.POST("/epay/notify", anonymousRequestBodyLimit, controller.EpayNotify)
 			userRoute.GET("/epay/notify", controller.EpayNotify)
-			userRoute.GET("/groups", controller.GetUserGroups)
+			// UNIFYAPI-BRAND: was registered before selfRoute's UserAuth, so it
+			// answered anonymously -- GetUserGroups reads c.GetInt("id"), which
+			// is 0 without a session, and it then returned the full group map
+			// with pricing ratios to any caller. The frontend only ever calls
+			// the authenticated /self/groups below.
+			userRoute.GET("/groups", middleware.UserAuth(), controller.GetUserGroups)
 
 			selfRoute := userRoute.Group("/")
 			selfRoute.Use(middleware.UserAuth())
@@ -256,6 +261,27 @@ func SetApiRouter(router *gin.Engine) {
 			{
 				tokenUsageRoute.GET("/", controller.GetTokenUsage)
 			}
+		}
+
+		// UNIFYAPI-BRAND: operator-facing tenant reporting. AdminAuth is applied
+		// on the group, before any handler, because these responses expose every
+		// customer's balance and spend. See controller/tenant.go.
+		tenantRoute := apiRouter.Group("/tenant")
+		tenantRoute.Use(middleware.AdminAuth())
+		{
+			tenantRoute.GET("/", controller.GetTenantOverviews)
+			tenantRoute.GET("/:id/usage", controller.GetTenantUsage)
+			tenantRoute.GET("/:id/payments", controller.GetTenantPayments)
+			tenantRoute.GET("/:id/audits", controller.GetTenantAudits)
+
+			// Write actions cut off a paying customer or change their paid term,
+			// so they need root rather than admin. AdminAuth on the group already
+			// records them in the audit log (middleware/audit.go wraps write
+			// methods behind Admin/RootAuth), so these show up in the very trail
+			// GET /:id/audits reports.
+			tenantRoute.POST("/:id/suspend", middleware.RootAuth(), controller.SuspendTenant)
+			tenantRoute.POST("/:id/resume", middleware.RootAuth(), controller.ResumeTenant)
+			tenantRoute.POST("/:id/extend", middleware.RootAuth(), controller.ExtendTenantTerm)
 		}
 
 		redemptionRoute := apiRouter.Group("/redemption")

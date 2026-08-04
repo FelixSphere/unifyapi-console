@@ -123,7 +123,12 @@ function LegalLinks(props: { leadingSeparator?: boolean }) {
 
 // inline=true returns just the inner span for composition in a parent flex
 // row. inline=false wraps in a centered/right-aligned div (default).
-function ProjectAttribution(props: { currentYear: number; inline?: boolean }) {
+// UNIFYAPI-BRAND: exported so brand/upstream-attribution.tsx can reuse this
+// verbatim instead of re-implementing it. See BRANDING.md.
+export function ProjectAttribution(props: {
+  currentYear: number
+  inline?: boolean
+}) {
   const { t } = useTranslation()
   const content = (
     <span className='text-muted-foreground/45'>
