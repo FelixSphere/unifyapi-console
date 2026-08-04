@@ -11,6 +11,12 @@ on:
 jobs:
   prepare:
     name: Prepare Docker tags
+    # UNIFYAPI-BRAND: upstream-only. Publishes to calciumion/new-api, so in a
+    # fork it would push our build under upstream's name. Gating this job alone
+    # is sufficient: both later jobs declare `needs: [prepare]`, so they skip
+    # with it. The image name is left as upstream wrote it; our own image is
+    # published by fork-image.yml.
+    if: github.repository == 'QuantumNous/new-api'
     runs-on: ubuntu-latest
     outputs:
       branch: ${{ steps.version.outputs.branch }}

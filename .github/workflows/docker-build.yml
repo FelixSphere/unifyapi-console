@@ -15,6 +15,14 @@ on:
 jobs:
   build_single_arch:
     name: Build & push (${{ matrix.arch }})
+    # UNIFYAPI-BRAND: upstream-only. This publishes to calciumion/new-api on a
+    # plain `*` tag push. In a fork that means our build would be pushed under
+    # upstream's name, so gating protects their namespace rather than taking
+    # anything from it — the image name is left untouched. Our own image is
+    # published by fork-image.yml. Gated rather than deleted, because deleting
+    # turns every future upstream edit to this file into a modify/delete
+    # conflict.
+    if: github.repository == 'QuantumNous/new-api'
     strategy:
       fail-fast: false
       matrix:
@@ -107,7 +115,9 @@ jobs:
     name: Create multi-arch manifests
     needs: [build_single_arch]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    # UNIFYAPI-BRAND: upstream-only, same reason as build_single_arch above.
+    # Parenthesised so the repository guard is not defeated by the `||`.
+    if: github.repository == 'QuantumNous/new-api' && (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch')
 
     permissions:
       id-token: write
