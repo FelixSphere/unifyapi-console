@@ -12,7 +12,9 @@ import (
 
 var StartTime = time.Now().Unix() // unit: second
 var Version = "v0.0.0"            // this hard coding will be replaced automatically when building, no need to manually change
-var SystemName = "New API"
+// UNIFYAPI-BRAND: default when the SystemName option is unset. Was "New API",
+// which made a fresh database render as upstream until seeded. See BRANDING.md.
+var SystemName = "UnifyAPI"
 var Footer = ""
 var Logo = ""
 var TopUpLink = ""
