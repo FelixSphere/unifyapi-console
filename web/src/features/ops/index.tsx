@@ -6,9 +6,8 @@ GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
 Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
-import { Fragment, useMemo, useState } from 'react'
-
 import { useQuery } from '@tanstack/react-query'
+import { Fragment, useMemo, useState } from 'react'
 
 import { getTenantOverviews, getTenantUsage } from './api'
 
@@ -70,7 +69,9 @@ function TenantDetail(props: { tenantId: number; startAt: number }) {
   }
   if (error) {
     return (
-      <div className='text-destructive p-4 text-sm'>{String(error.message)}</div>
+      <div className='text-destructive p-4 text-sm'>
+        {String(error.message)}
+      </div>
     )
   }
   if (!data) return null
@@ -101,9 +102,7 @@ function TenantDetail(props: { tenantId: number; startAt: number }) {
                     <td className='py-1.5 font-mono text-[12px]'>
                       {m.model_name || '—'}
                     </td>
-                    <td className='py-1.5 text-right'>
-                      {compact(m.requests)}
-                    </td>
+                    <td className='py-1.5 text-right'>{compact(m.requests)}</td>
                     <td className='py-1.5 text-right'>{money(m.quota)}</td>
                   </tr>
                 ))}

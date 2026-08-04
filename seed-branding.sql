@@ -35,7 +35,7 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 -- the upstream attribution.
 INSERT INTO options (key, value) VALUES
   ('Footer', '<div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">'
-    || '<span>&copy; 2026 UnifyAPI</span>'
+    || '<span>&copy; 2026 UnifyAI</span>'
     || '<a href="https://www.unifyapi.ai/privacy" target="_blank" rel="noopener noreferrer">Privacy</a>'
     || '<a href="https://www.unifyapi.ai/terms" target="_blank" rel="noopener noreferrer">Terms</a>'
     || '</div>')
