@@ -36,10 +36,8 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 INSERT INTO options (key, value) VALUES
   ('Footer', '<div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">'
     || '<span>&copy; 2026 UnifyAPI</span>'
-    || '<a href="https://www.unifyapi.ai" target="_blank" rel="noopener noreferrer">unifyapi.ai</a>'
     || '<a href="https://www.unifyapi.ai/privacy" target="_blank" rel="noopener noreferrer">Privacy</a>'
     || '<a href="https://www.unifyapi.ai/terms" target="_blank" rel="noopener noreferrer">Terms</a>'
-    || '<a href="https://github.com/FelixSphere/unifyapi-console" target="_blank" rel="noopener noreferrer">Source code</a>'
     || '</div>')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
@@ -57,10 +55,11 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 -- route (web/src/brand/upstream-attribution.tsx), which is what satisfies that
 -- obligation. This page therefore does not repeat it at length.
 --
--- The closing line stays. It is the AGPLv3 s.7(c) marking of changes, which is
--- required of a modified version. The s.13 source offer is not duplicated here
--- because the `Footer` option carries a "Source code" link on every page --
--- if that Footer link is ever removed, this line must regain it. See BRANDING.md.
+-- The closing line stays. It carries BOTH the AGPLv3 s.7(c) marking of changes
+-- and the s.13 source offer, and it is now the ONLY place the source offer
+-- appears -- the Footer option deliberately no longer carries a "Source code"
+-- link. If you remove the [Source] link from this line, you must add one back to
+-- the Footer, or the s.13 obligation is unmet. See BRANDING.md.
 INSERT INTO options (key, value) VALUES
   ('About', '## UnifyAPI
 
@@ -80,7 +79,7 @@ Read the [documentation](https://www.unifyapi.ai/docs), or create a key and make
 
 ---
 
-Built on [New API](https://github.com/QuantumNous/new-api) ([AGPL-3.0](https://github.com/QuantumNous/new-api/blob/main/LICENSE)), modified by FelixSphere: branding, typography, light-only theme, and a multi-tenant account model.
+Built on [New API](https://github.com/QuantumNous/new-api) ([AGPL-3.0](https://github.com/QuantumNous/new-api/blob/main/LICENSE)), modified by FelixSphere: branding, typography, light-only theme, and a multi-tenant account model. [Source](https://github.com/FelixSphere/unifyapi-console).
 ')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
