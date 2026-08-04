@@ -21,7 +21,11 @@ For commercial licensing, please contact support@quantumnous.com
  */
 
 // System Configuration Defaults
-export const DEFAULT_SYSTEM_NAME = 'New API'
+// UNIFYAPI-BRAND: the pre-/api/status fallback. Was 'New API', on the reasoning
+// that the SystemName DB option would always cover it -- which meant every fresh
+// deployment rendered as New API until someone ran a SQL seed. The correct default
+// belongs here, not in a manual step. See BRANDING.md.
+export const DEFAULT_SYSTEM_NAME = 'UnifyAPI'
 export const DEFAULT_LOGO = '/logo.png'
 
 // LocalStorage Keys

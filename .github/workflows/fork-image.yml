@@ -65,7 +65,30 @@ jobs:
           # A Docker tag cannot contain '+', which our VERSION uses to record the
           # upstream tag (unifyapi-v0.1.0+upstream-v1.0.0-rc.23). Replace the
           # separator rather than truncating, so the provenance stays readable.
-          echo "value=$(printf '%s' "$raw" | tr '/+' '--')" >> "$GITHUB_OUTPUT"
+          value="$(printf '%s' "$raw" | tr '/+' '--')"
+          echo "value=$value" >> "$GITHUB_OUTPUT"
+
+          # Only a tag push moves `latest`. The console instance pulls with
+          # `--pull always` on every restart, so letting a manual build of an
+          # arbitrary branch claim that tag would put unreleased code into
+          # production at the next reboot, with nothing in Terraform changing to
+          # show it. A dispatch still publishes its own ref-named tag, which is
+          # what makes it useful for a trial build.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            release=true
+          else
+            release=false
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "tags<<TAGS"
+            echo "${IMAGE}:${value}-${{ matrix.arch }}"
+            if [ "$release" = true ]; then
+              echo "${IMAGE}:latest-${{ matrix.arch }}"
+            fi
+            echo "TAGS"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -85,9 +108,7 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           push: true
-          tags: |
-            ${{ env.IMAGE }}:${{ steps.tag.outputs.value }}-${{ matrix.arch }}
-            ${{ env.IMAGE }}:latest-${{ matrix.arch }}
+          tags: ${{ steps.tag.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
           # Attestations would add unknown/unknown entries to each per-arch tag,
@@ -95,8 +116,11 @@ jobs:
           # manifest. Off until the pipeline is proven, then reconsider.
           provenance: false
 
+    # Both matrix legs resolve the same values, so it does not matter which leg
+    # writes these — matrix job outputs otherwise overwrite each other.
     outputs:
       tag: ${{ steps.tag.outputs.value }}
+      release: ${{ steps.tag.outputs.release }}
 
   manifest:
     name: Create multi-arch manifest
@@ -115,9 +139,14 @@ jobs:
       - name: Merge per-arch tags into one manifest
         env:
           TAG: ${{ needs.build.outputs.tag }}
+          RELEASE: ${{ needs.build.outputs.release }}
         run: |
           set -euo pipefail
-          for t in "$TAG" latest; do
+          merge_tags=("$TAG")
+          if [ "$RELEASE" = true ]; then
+            merge_tags+=(latest)
+          fi
+          for t in "${merge_tags[@]}"; do
             docker buildx imagetools create -t "${IMAGE}:${t}" \
               "${IMAGE}:${t}-amd64" "${IMAGE}:${t}-arm64"
           done
@@ -126,12 +155,15 @@ jobs:
       - name: Summary
         env:
           TAG: ${{ needs.build.outputs.tag }}
+          RELEASE: ${{ needs.build.outputs.release }}
         run: |
           {
             echo "### Published"
             echo
             echo '```'
             echo "${IMAGE}:${TAG}"
-            echo "${IMAGE}:latest"
+            if [ "$RELEASE" = true ]; then
+              echo "${IMAGE}:latest"
+            fi
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
