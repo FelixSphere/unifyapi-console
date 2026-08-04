@@ -11,6 +11,11 @@ on:
 
 jobs:
   pr-quality:
+    # UNIFYAPI-BRAND: upstream-only. This runs peakoss/anti-slop on
+    # pull_request_target with close-pr: true, so in a fork it auto-closes our
+    # own PRs. Gated rather than deleted, because deleting turns every future
+    # upstream edit to this file into a modify/delete conflict.
+    if: github.repository == 'QuantumNous/new-api'
     runs-on: ubuntu-latest
     steps:
       - uses: peakoss/anti-slop@85daca1880e9e1af197fc06ea03349daf08f4202 # v0.2.1
