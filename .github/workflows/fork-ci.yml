@@ -67,14 +67,17 @@ jobs:
           go-version: '1.26'
           cache-dependency-path: go.sum
 
+      # main.go embeds web/dist, so this must come BEFORE go vet, not just
+      # before go build: //go:embed is resolved during type-checking, so vet
+      # fails with "pattern web/dist: no matching files found" without it.
+      # web/dist is gitignored, so it never exists on a fresh checkout.
+      # A stub keeps this job independent of the web job.
+      - name: Stub embedded frontend
+        run: mkdir -p web/dist && echo '<!doctype html>' > web/dist/index.html
+
       - run: go vet ./...
         env:
           GOWORK: off
-
-      # main.go embeds web/dist, so the Go build cannot run without a frontend
-      # bundle. A stub keeps this job independent of the web job.
-      - name: Stub embedded frontend
-        run: mkdir -p web/dist && echo '<!doctype html>' > web/dist/index.html
 
       - run: go build -o /dev/null .
         env:
