@@ -185,6 +185,26 @@ body[data-theme-font] {
   }
 }
 
+/* ── Upstream attribution: de-emphasised, NOT hidden ────────────────────────
+ * The AGPLv3 s.7(b) notice required by the upstream NOTICE file. s.7 lets us
+ * present it quietly; it does not let us remove it, rename it, or reduce it to
+ * something a reader cannot actually read.
+ *
+ * So this rule ONLY reduces size and tightens tracking. It deliberately does
+ * NOT touch color, opacity, visibility, or display -- the text keeps whatever
+ * contrast the theme gives it and stays selectable and legible. If you are
+ * tempted to add `display: none`, `opacity: 0`, `font-size: 0`, or a color
+ * matching the background, that is the line, and
+ * web/scripts/check-brand-invariants.mjs fails the build on it.
+ *
+ * Targeted with :has() on the required upstream link rather than a class, so it
+ * catches every instance -- upstream's own <Footer /> and our always-mounted
+ * bar -- without editing footer.tsx. Zero upstream diff. */
+:is(span, div):has(> a[href='https://github.com/QuantumNous/new-api']) {
+  font-size: 10px;
+  letter-spacing: 0.01em;
+}
+
 /* ── Light-only enforcement (CSS half; the JS half is defaultTheme='light') ───
  * Re-point the `dark` variant at a selector that never matches, so the ~81
  * source files carrying `dark:` utilities emit inert rules. Overrides

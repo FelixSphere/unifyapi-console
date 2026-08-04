@@ -110,6 +110,37 @@ check(
   /defaultTheme='light'/.test(main)
 )
 
+// 6. The attribution may be de-emphasised but never made unreadable.
+//
+// AGPLv3 s.7(b) lets us present the notice quietly; it does not let us hide it.
+// unifyapi.css scopes a rule to the required upstream link, so this asserts that
+// rule only ever shrinks text -- never removes it from the page or drops its
+// contrast to nothing. Catching this in CI matters because the visual result of
+// crossing the line is indistinguishable from "the footer looks tidier now".
+const brandCss = read('src/styles/unifyapi.css')
+const attributionRule =
+  brandCss.match(
+    /:has\(> a\[href='https:\/\/github\.com\/QuantumNous\/new-api'\]\)\s*\{([^}]*)\}/
+  )?.[1] ?? ''
+for (const forbidden of [
+  'display:',
+  'visibility:',
+  'opacity:',
+  'clip-path:',
+  'text-indent:',
+  'position:',
+]) {
+  check(
+    `unifyapi.css attribution rule must not set ${forbidden} -- de-emphasising is allowed, hiding is not`,
+    !attributionRule.includes(forbidden)
+  )
+}
+const fontSize = attributionRule.match(/font-size:\s*([\d.]+)px/)?.[1]
+check(
+  'unifyapi.css attribution rule must keep font-size at 9px or larger to stay readable',
+  fontSize === undefined || Number(fontSize) >= 9
+)
+
 if (failures.length > 0) {
   console.error('brand-invariants: FAILED\n')
   for (const failure of failures) console.error(`  - ${failure}`)
