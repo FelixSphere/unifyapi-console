@@ -32,18 +32,36 @@ diff /tmp/baseline.txt /tmp/after.txt      # this diff is your blast radius
 A gate that is already red cannot tell you anything. That is why `fork-ci.yml`
 runs `copyright:check` as a warning, not a blocker.
 
+## 1b. Where this repo lives
+
+This repo is `console/` inside the `unifyai/` workspace:
+
+```
+unifyai/
+├── web/       marketing site   — proprietary — FelixSphere/unifyapi
+└── console/   this repo        — AGPL-3.0      — FelixSphere/unifyapi-console
+```
+
+Two git repos on purpose, not an oversight: this one is a public AGPL fork whose
+source must stay available, `web/` is proprietary, and keeping them separate is
+what makes taking an upstream release a plain `git merge <tag>` instead of a
+subtree merge. See `../README.md`.
+
+Workspace-level helpers: `../scripts/dev.sh`, `../scripts/verify.sh`,
+`../scripts/status.sh`.
+
 ## 2. Isolation: one agent, one worktree
 
 Never let two agents edit the same checkout. Use a worktree per task:
 
 ```bash
-git worktree add ../uc-<task> -b feat/<task>
-cd ../uc-<task>
+git worktree add ../../uc-<task> -b feat/<task>   # outside the workspace
+cd ../../uc-<task>
 ```
 
 Worktrees share the object store but have separate working trees and separate
 `web/node_modules` state, so a half-finished `bun install` in one cannot break
-the other. Remove it when done: `git worktree remove ../uc-<task>`.
+the other. Remove it when done: `git worktree remove ../../uc-<task>`.
 
 Two agents must not both run the console on port 3001 or the marketing site on
 3000. Pick a port per agent and say which one you used.
