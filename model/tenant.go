@@ -43,14 +43,31 @@ type Tenant struct {
 	UsedQuota int    `json:"used_quota" gorm:"type:int;default:0;column:used_quota"`
 	// Group mirrors User.Group so pricing tiers can eventually be a tenant
 	// property rather than a per-member one. Not yet consulted by the relay.
-	Group     string         `json:"group" gorm:"type:varchar(64);default:'default'"`
-	Remark    string         `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
-	CreatedAt int64          `json:"created_at" gorm:"autoCreateTime;column:created_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index"`
+	Group  string `json:"group" gorm:"type:varchar(64);default:'default'"`
+	Remark string `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
+	// ExpiresAt is the end of the paid term, 0 meaning open-ended. Operators
+	// extend it rather than editing a subscription row, because a tenant term is
+	// a commercial fact about the account and outlives any single plan purchase.
+	ExpiresAt int64 `json:"expires_at" gorm:"type:bigint;default:0;column:expires_at"`
+	// SuspendedAt / SuspendReason record why access was cut, so the next
+	// operator to look does not have to guess.
+	SuspendedAt   int64          `json:"suspended_at" gorm:"type:bigint;default:0;column:suspended_at"`
+	SuspendReason string         `json:"suspend_reason,omitempty" gorm:"type:varchar(255)"`
+	CreatedAt     int64          `json:"created_at" gorm:"autoCreateTime;column:created_at"`
+	DeletedAt     gorm.DeletedAt `gorm:"index"`
 }
 
 const TenantStatusEnabled = 1
 const TenantStatusDisabled = 2
+
+// IsExpired reports whether the paid term has run out. 0 means open-ended.
+func (t *Tenant) IsExpired(now int64) bool {
+	return t.ExpiresAt > 0 && t.ExpiresAt < now
+}
+
+func (t *Tenant) IsSuspended() bool {
+	return t.Status == TenantStatusDisabled
+}
 
 // slugFromName produces a URL-safe handle. Not required to be pretty -- only
 // stable and unique; uniqueness is enforced by the caller retrying with a

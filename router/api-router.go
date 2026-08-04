@@ -271,6 +271,17 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			tenantRoute.GET("/", controller.GetTenantOverviews)
 			tenantRoute.GET("/:id/usage", controller.GetTenantUsage)
+			tenantRoute.GET("/:id/payments", controller.GetTenantPayments)
+			tenantRoute.GET("/:id/audits", controller.GetTenantAudits)
+
+			// Write actions cut off a paying customer or change their paid term,
+			// so they need root rather than admin. AdminAuth on the group already
+			// records them in the audit log (middleware/audit.go wraps write
+			// methods behind Admin/RootAuth), so these show up in the very trail
+			// GET /:id/audits reports.
+			tenantRoute.POST("/:id/suspend", middleware.RootAuth(), controller.SuspendTenant)
+			tenantRoute.POST("/:id/resume", middleware.RootAuth(), controller.ResumeTenant)
+			tenantRoute.POST("/:id/extend", middleware.RootAuth(), controller.ExtendTenantTerm)
 		}
 
 		redemptionRoute := apiRouter.Group("/redemption")

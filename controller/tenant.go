@@ -124,3 +124,121 @@ func GetTenantUsage(c *gin.Context) {
 		},
 	})
 }
+
+// ---------------------------------------------------------------------------
+// Lifecycle actions
+// ---------------------------------------------------------------------------
+
+type tenantSuspendRequest struct {
+	Reason string `json:"reason"`
+}
+
+// POST /api/tenant/:id/suspend
+func SuspendTenant(c *gin.Context) {
+	tenantId, ok := tenantIdParam(c)
+	if !ok {
+		return
+	}
+	var req tenantSuspendRequest
+	_ = c.ShouldBindJSON(&req) // reason is optional
+
+	if err := model.SuspendTenant(tenantId, req.Reason); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+}
+
+// POST /api/tenant/:id/resume
+func ResumeTenant(c *gin.Context) {
+	tenantId, ok := tenantIdParam(c)
+	if !ok {
+		return
+	}
+	if err := model.ResumeTenant(tenantId); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+}
+
+type tenantExtendRequest struct {
+	Days      int   `json:"days"`
+	ExpiresAt int64 `json:"expires_at"`
+}
+
+// POST /api/tenant/:id/extend
+// Either {"days": 30} to extend relative to the current term, or
+// {"expires_at": <unix>} to set it outright (0 = open-ended).
+func ExtendTenantTerm(c *gin.Context) {
+	tenantId, ok := tenantIdParam(c)
+	if !ok {
+		return
+	}
+	var req tenantExtendRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid request body"})
+		return
+	}
+
+	if req.Days != 0 {
+		expiry, err := model.ExtendTenantTerm(tenantId, req.Days)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true, "message": "",
+			"data": gin.H{"expires_at": expiry},
+		})
+		return
+	}
+
+	if err := model.SetTenantExpiry(tenantId, req.ExpiresAt); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true, "message": "",
+		"data": gin.H{"expires_at": req.ExpiresAt},
+	})
+}
+
+// GET /api/tenant/:id/payments
+func GetTenantPayments(c *gin.Context) {
+	tenantId, ok := tenantIdParam(c)
+	if !ok {
+		return
+	}
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	payments, err := model.GetTenantPayments(tenantId, limit)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": payments})
+}
+
+// GET /api/tenant/:id/audits
+func GetTenantAudits(c *gin.Context) {
+	tenantId, ok := tenantIdParam(c)
+	if !ok {
+		return
+	}
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	entries, err := model.GetTenantAuditLog(tenantId, limit)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": entries})
+}
+
+func tenantIdParam(c *gin.Context) (int, bool) {
+	tenantId, err := strconv.Atoi(c.Param("id"))
+	if err != nil || tenantId <= 0 {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid tenant id"})
+		return 0, false
+	}
+	return tenantId, true
+}
