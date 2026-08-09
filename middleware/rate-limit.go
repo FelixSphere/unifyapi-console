@@ -114,9 +114,12 @@ func redisRateLimiter(c *gin.Context, maxRequestNum int, duration int64, mark st
 		duration,
 	)
 	if err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("rate limit check failed (mark=%s): %v", mark, err))
-		c.Status(http.StatusInternalServerError)
-		c.Abort()
+		// UNIFYAPI-FORK: degrade to the in-process limiter instead of 500ing.
+		// Every rate-limited route -- which is most of /api -- went down with
+		// Redis, turning a cache blip into a site outage. The fallback keeps
+		// brute-force protection on, just per-instance instead of shared.
+		logger.LogError(c.Request.Context(), fmt.Sprintf("rate limit check failed (mark=%s), falling back to in-memory limiter: %v", mark, err))
+		memoryRateLimiter(c, maxRequestNum, duration, mark)
 		return
 	}
 	if !allowed {
@@ -140,18 +143,27 @@ func writeRateLimited(c *gin.Context, retryAfterSeconds int64) {
 	if retryAfterSeconds > 0 {
 		c.Header("Retry-After", strconv.FormatInt(retryAfterSeconds, 10))
 	}
-	c.Status(http.StatusTooManyRequests)
-	c.Abort()
+	// UNIFYAPI-FORK: answer with a body. A zero-length 429 is indistinguishable
+	// from a dead server to every HTTP client, and cost one incident's worth of
+	// investigation before anyone suspected rate limiting.
+	c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+		"success":     false,
+		"code":        "RATE_LIMITED",
+		"message":     "Too many requests. Please retry later.",
+		"retry_after": retryAfterSeconds,
+	})
 }
 
 func rateLimitFactory(maxRequestNum int, duration int64, mark string) func(c *gin.Context) {
+	// It's safe to call multi times. UNIFYAPI-FORK: initialise unconditionally,
+	// because the Redis path now degrades to this limiter and writing to a nil
+	// store panics.
+	inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
 	if common.RedisEnabled {
 		return func(c *gin.Context) {
 			redisRateLimiter(c, maxRequestNum, duration, mark)
 		}
 	}
-	// It's safe to call multi times.
-	inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
 	return func(c *gin.Context) {
 		memoryRateLimiter(c, maxRequestNum, duration, mark)
 	}
@@ -178,6 +190,18 @@ func CriticalRateLimit() func(c *gin.Context) {
 	return defNext
 }
 
+// SessionRateLimit bounds session lifecycle calls (token refresh, logout).
+// UNIFYAPI-FORK: these used to share the critical bucket with login and
+// register, so a browser refreshing its own token spent the credential
+// brute-force budget. They need a limit, but not the same one -- and not one
+// whose window is twenty minutes long.
+func SessionRateLimit() func(c *gin.Context) {
+	if common.SessionRateLimitEnable {
+		return rateLimitFactory(common.SessionRateLimitNum, common.SessionRateLimitDuration, "SN")
+	}
+	return defNext
+}
+
 func DownloadRateLimit() func(c *gin.Context) {
 	return rateLimitFactory(common.DownloadRateLimitNum, common.DownloadRateLimitDuration, "DW")
 }
@@ -190,6 +214,9 @@ func UploadRateLimit() func(c *gin.Context) {
 // instead of client IP, making it resistant to proxy rotation attacks.
 // Must be used AFTER authentication middleware (UserAuth).
 func userRateLimitFactory(maxRequestNum int, duration int64, mark string) func(c *gin.Context) {
+	// It's safe to call multi times. UNIFYAPI-FORK: see rateLimitFactory --
+	// the Redis path degrades to this limiter, which panics on a nil store.
+	inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
 	if common.RedisEnabled {
 		return func(c *gin.Context) {
 			userID := c.GetInt("id")
@@ -201,8 +228,6 @@ func userRateLimitFactory(maxRequestNum int, duration int64, mark string) func(c
 			userRedisRateLimiter(c, maxRequestNum, duration, redisUserRateLimitKey(mark, userID))
 		}
 	}
-	// It's safe to call multi times.
-	inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
 	return func(c *gin.Context) {
 		userID := c.GetInt("id")
 		if userID == 0 {
@@ -223,9 +248,11 @@ func userRateLimitFactory(maxRequestNum int, duration int64, mark string) func(c
 func userRedisRateLimiter(c *gin.Context, maxRequestNum int, duration int64, key string) {
 	allowed, _, ttlSeconds, err := redisFixedWindowTake(c.Request.Context(), key, maxRequestNum, duration)
 	if err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("rate limit check failed (key=%s): %v", key, err))
-		c.Status(http.StatusInternalServerError)
-		c.Abort()
+		// UNIFYAPI-FORK: degrade rather than 500, as in redisRateLimiter.
+		logger.LogError(c.Request.Context(), fmt.Sprintf("rate limit check failed (key=%s), falling back to in-memory limiter: %v", key, err))
+		if !inMemoryRateLimiter.Request(key, maxRequestNum, duration) {
+			writeRateLimited(c, duration)
+		}
 		return
 	}
 	if !allowed {
