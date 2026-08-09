@@ -215,11 +215,46 @@ func TestRedisFailurePolicies(t *testing.T) {
 		c.Status(http.StatusNoContent)
 	})
 
-	ipResponse := performRateLimitRequest(router, "/ip", "192.0.2.60:12345")
-	assert.Equal(t, http.StatusInternalServerError, ipResponse.Code)
-	assert.Empty(t, ipResponse.Body.String())
-	userResponse := performRateLimitRequest(router, "/user", "192.0.2.61:12345")
-	assert.Equal(t, http.StatusInternalServerError, userResponse.Code)
-	assert.Empty(t, userResponse.Body.String())
+	// UNIFYAPI-FORK: an unreachable Redis must not take the site down. Every
+	// limiter degrades to the in-process limiter, so the route still serves and
+	// is still bounded -- per instance rather than shared. This previously
+	// answered 500, which turned a cache blip into an outage of most of /api.
+	// Email verification already failed open upstream; this makes the three
+	// policies consistent.
+	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/ip", "192.0.2.60:12345").Code)
+	ipLimited := performRateLimitRequest(router, "/ip", "192.0.2.60:12345")
+	assert.Equal(t, http.StatusTooManyRequests, ipLimited.Code, "the fallback must still enforce a limit, not disable it")
+	assert.Equal(t, "30", ipLimited.Header().Get("Retry-After"))
+
+	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/user", "192.0.2.61:12345").Code)
+	userLimited := performRateLimitRequest(router, "/user", "192.0.2.61:12345")
+	assert.Equal(t, http.StatusTooManyRequests, userLimited.Code)
+
 	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/email", "192.0.2.62:12345").Code)
+}
+
+// TestRateLimitedResponseCarriesDiagnosableBody pins the response shape a
+// rate-limited client sees. A zero-length 429 is indistinguishable from a dead
+// server, which is exactly how one incident was misdiagnosed.
+func TestRateLimitedResponseCarriesDiagnosableBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	useRateLimitMiniRedis(t)
+
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.GET("/limited", rateLimitFactory(1, 45, "BODY"), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	remoteAddr := "192.0.2.70:12345"
+	require.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/limited", remoteAddr).Code)
+
+	response := performRateLimitRequest(router, "/limited", remoteAddr)
+	assert.Equal(t, http.StatusTooManyRequests, response.Code)
+	assert.Equal(t, "45", response.Header().Get("Retry-After"))
+	assert.JSONEq(
+		t,
+		`{"success":false,"code":"RATE_LIMITED","message":"Too many requests. Please retry later.","retry_after":45}`,
+		response.Body.String(),
+	)
 }

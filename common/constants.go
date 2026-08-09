@@ -210,6 +210,14 @@ var (
 	CriticalRateLimitNum            = 20
 	CriticalRateLimitDuration int64 = 20 * 60
 
+	// UNIFYAPI-FORK: session lifecycle (token refresh / logout) is keyed by IP
+	// like the critical limiter but budgeted separately. Sharing the critical
+	// bucket meant ordinary console use spent the credential brute-force budget
+	// and locked real users out for a full 20 minutes.
+	SessionRateLimitEnable         = true
+	SessionRateLimitNum            = 120
+	SessionRateLimitDuration int64 = 300
+
 	UploadRateLimitNum            = 10
 	UploadRateLimitDuration int64 = 60
 
