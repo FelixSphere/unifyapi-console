@@ -19,9 +19,12 @@ var Chats = []map[string]string{
 	{
 		"流畅阅读": "fluentread",
 	},
-	{
-		"CC Switch": "ccswitch",
-	},
+	// "CC Switch": "ccswitch" is deliberately absent. The value is a bare token
+	// with no scheme, so the browser resolved it against the current origin and
+	// served the SPA's 404 at /ccswitch. It also carried no key or endpoint, so
+	// it could not have imported anything even if it opened. The working
+	// integration is the dialog on the API keys page, which builds a full
+	// ccswitch://v1/import URL.
 	{
 		"DeepChat": "deepchat://provider/install?v=1&data={deepchatConfig}",
 	},

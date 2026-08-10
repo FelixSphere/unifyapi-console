@@ -129,11 +129,21 @@ export function parseChatConfig(raw: RawChatConfig): ChatPreset[] {
         return null
       }
 
+      const type = detectChatLinkType(url)
+      // A scheme-less value is not a link. The browser resolves it against the
+      // current origin, so it renders as a menu entry that 404s on our own
+      // domain — that is how "ccswitch" shipped a dead /ccswitch link. Drop it
+      // rather than offer it. 'fluent' is unaffected: it is handled by its own
+      // branch and never navigated to directly.
+      if (type === 'custom-protocol' && !url.includes('://')) {
+        return null
+      }
+
       return {
         id: String(index),
         name,
         url,
-        type: detectChatLinkType(url),
+        type,
       } satisfies ChatPreset
     })
     .filter((item): item is ChatPreset => item !== null)
