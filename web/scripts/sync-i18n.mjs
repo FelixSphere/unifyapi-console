@@ -111,6 +111,7 @@ const BRAND_AND_LITERAL_KEYS = new Set([
   'my-status',
   'new-api-key-tool',
   'price_xxx',
+  'prod_xxx',
   'whsec_xxx',
 ])
 

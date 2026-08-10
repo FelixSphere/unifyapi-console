@@ -21,6 +21,7 @@ import { useState, useCallback } from 'react'
 import { toast } from 'sonner'
 
 import { requestWaffoPayment, isApiSuccess } from '../api'
+import { getPaymentErrorMessage } from '../lib'
 
 function getPaymentUrl(data: unknown): string | null {
   if (!data || typeof data !== 'object') {
@@ -32,14 +33,6 @@ function getPaymentUrl(data: unknown): string | null {
   }
 
   return null
-}
-
-function getErrorMessage(message: string | undefined, data: unknown): string {
-  if (typeof data === 'string' && data.trim()) {
-    return data
-  }
-
-  return message || i18next.t('Payment request failed')
 }
 
 /**
@@ -68,7 +61,7 @@ export function useWaffoPayment() {
           }
         }
 
-        toast.error(getErrorMessage(response.message, response.data))
+        toast.error(getPaymentErrorMessage(response.message, response.data))
         return false
       } catch {
         toast.error(i18next.t('Payment request failed'))

@@ -29,6 +29,9 @@ var stripeAdaptor = &StripeAdaptor{}
 type StripePayRequest struct {
 	// Amount is the quantity of units to purchase.
 	Amount int64 `json:"amount"`
+	// Currency is the checkout currency the user selected. Empty means USD, so
+	// clients that predate multi-currency keep their existing behaviour.
+	Currency string `json:"currency,omitempty"`
 	// PaymentMethod specifies the payment method (e.g., "stripe").
 	PaymentMethod string `json:"payment_method"`
 	// SuccessURL is the optional custom URL to redirect after successful payment.
@@ -53,12 +56,18 @@ func (*StripeAdaptor) RequestAmount(c *gin.Context, req *StripePayRequest) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})
 		return
 	}
-	payMoney := getStripePayMoney(float64(req.Amount), group)
+	currency, ok := setting.FindStripeCurrency(req.Currency)
+	if !ok {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "不支持的结算货币"})
+		return
+	}
+	payMoney := getStripePayMoney(float64(req.Amount), group, currency)
 	if payMoney <= 0.01 {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值金额过低"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "success", "data": strconv.FormatFloat(payMoney, 'f', 2, 64)})
+	digits := int(setting.StripeCurrencyExponent(currency.Code))
+	c.JSON(http.StatusOK, gin.H{"message": "success", "data": strconv.FormatFloat(payMoney, 'f', digits, 64), "currency": currency.Code})
 }
 
 func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
@@ -85,16 +94,39 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		return
 	}
 
+	currency, ok := setting.FindStripeCurrency(req.Currency)
+	if !ok {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "不支持的结算货币"})
+		return
+	}
+
 	id := c.GetInt("id")
 	user, _ := model.GetUserById(id, false)
+
+	// Only inline (non-base-currency) pricing needs the fiat total, so the base
+	// currency keeps exactly the call sequence it had before multi-currency —
+	// no extra lookup that could fail a checkout that used to succeed.
+	payMoney := 0.0
+	if currency.Code != setting.StripeBaseCurrency {
+		group, groupErr := model.GetUserGroup(id, true)
+		if groupErr != nil {
+			c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})
+			return
+		}
+		payMoney = getStripePayMoney(float64(req.Amount), group, currency)
+	}
+
+	// TopUp.Money is the credit basis, not the fiat charge: model.Recharge
+	// credits `Money * QuotaPerUnit` on webhook. Writing the charged amount here
+	// would multiply everyone's quota by the unit price and the currency rate.
 	chargedMoney := GetChargedAmount(float64(req.Amount), *user)
 
 	reference := fmt.Sprintf("new-api-ref-%d-%d-%s", user.Id, time.Now().UnixMilli(), randstr.String(4))
 	referenceId := "ref_" + common.Sha1([]byte(reference))
 
-	payLink, err := genStripeLink(referenceId, user.StripeCustomer, user.Email, req.Amount, req.SuccessURL, req.CancelURL)
+	payLink, err := genStripeLink(referenceId, user.StripeCustomer, user.Email, req.Amount, currency.Code, payMoney, req.SuccessURL, req.CancelURL)
 	if err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 创建 Checkout Session 失败 user_id=%d trade_no=%s amount=%d error=%q", id, referenceId, req.Amount, err.Error()))
+		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 创建 Checkout Session 失败 user_id=%d trade_no=%s amount=%d currency=%s error=%q", id, referenceId, req.Amount, currency.Code, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "拉起支付失败"})
 		return
 	}
@@ -111,11 +143,14 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 	}
 	err = topUp.Insert()
 	if err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 创建充值订单失败 user_id=%d trade_no=%s amount=%d error=%q", id, referenceId, req.Amount, err.Error()))
+		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 创建充值订单失败 user_id=%d trade_no=%s amount=%d currency=%s error=%q", id, referenceId, req.Amount, currency.Code, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
 		return
 	}
-	logger.LogInfo(c.Request.Context(), fmt.Sprintf("Stripe 充值订单创建成功 user_id=%d trade_no=%s amount=%d money=%.2f", id, referenceId, req.Amount, chargedMoney))
+	// money is the stored credit basis, unchanged in meaning. The fiat actually
+	// charged lives on the Stripe session and is logged with amount_total by the
+	// webhook, so it is not duplicated here where it is only known for non-USD.
+	logger.LogInfo(c.Request.Context(), fmt.Sprintf("Stripe 充值订单创建成功 user_id=%d trade_no=%s amount=%d money=%.2f currency=%s", id, referenceId, req.Amount, chargedMoney, currency.Code))
 	c.JSON(http.StatusOK, gin.H{
 		"message": "success",
 		"data": gin.H{
@@ -338,9 +373,14 @@ func sessionExpired(ctx context.Context, event stripe.Event) {
 //   - cancelURL: custom URL to redirect when payment is canceled (empty for default)
 //
 // Returns the checkout session URL or an error if the session creation fails.
-func genStripeLink(referenceId string, customerId string, email string, amount int64, successURL string, cancelURL string) (string, error) {
+func genStripeLink(referenceId string, customerId string, email string, amount int64, currency string, payMoney float64, successURL string, cancelURL string) (string, error) {
 	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
 		return "", fmt.Errorf("无效的Stripe API密钥")
+	}
+
+	lineItem, err := stripeTopUpLineItem(amount, currency, payMoney)
+	if err != nil {
+		return "", err
 	}
 
 	stripe.Key = setting.StripeApiSecret
@@ -354,15 +394,10 @@ func genStripeLink(referenceId string, customerId string, email string, amount i
 	}
 
 	params := &stripe.CheckoutSessionParams{
-		ClientReferenceID: stripe.String(referenceId),
-		SuccessURL:        stripe.String(successURL),
-		CancelURL:         stripe.String(cancelURL),
-		LineItems: []*stripe.CheckoutSessionLineItemParams{
-			{
-				Price:    stripe.String(setting.StripePriceId),
-				Quantity: stripe.Int64(amount),
-			},
-		},
+		ClientReferenceID:   stripe.String(referenceId),
+		SuccessURL:          stripe.String(successURL),
+		CancelURL:           stripe.String(cancelURL),
+		LineItems:           []*stripe.CheckoutSessionLineItemParams{lineItem},
 		Mode:                stripe.String(string(stripe.CheckoutSessionModePayment)),
 		AllowPromotionCodes: stripe.Bool(setting.StripePromotionCodesEnabled),
 	}
@@ -385,6 +420,45 @@ func genStripeLink(referenceId string, customerId string, email string, amount i
 	return result.URL, nil
 }
 
+// stripeTopUpLineItem prices one checkout session.
+//
+// The base currency keeps billing against the configured Price with the credit
+// count as the quantity — that path is what upstream ships and what production
+// runs, so it is left alone. Every other currency is priced inline against
+// StripeProductId, because a Stripe Price carries exactly one currency. Inline
+// pricing charges the total this server already computed and showed the user,
+// which is also why it is a single unit at quantity 1: rounding a per-credit
+// price and then multiplying would drift away from the displayed total.
+func stripeTopUpLineItem(amount int64, currency string, payMoney float64) (*stripe.CheckoutSessionLineItemParams, error) {
+	if currency == setting.StripeBaseCurrency {
+		// Checkout line items take a price, not a product; a prod_ id here
+		// would otherwise fail as an opaque Stripe 400 on every topup attempt.
+		if !strings.HasPrefix(setting.StripePriceId, "price_") {
+			return nil, fmt.Errorf("无效的Stripe价格ID，应以 price_ 开头")
+		}
+		return &stripe.CheckoutSessionLineItemParams{
+			Price:    stripe.String(setting.StripePriceId),
+			Quantity: stripe.Int64(amount),
+		}, nil
+	}
+
+	if !strings.HasPrefix(setting.StripeProductId, "prod_") {
+		return nil, fmt.Errorf("无效的Stripe产品ID，应以 prod_ 开头")
+	}
+	minorUnits, err := setting.StripeAmountToMinorUnits(payMoney, currency)
+	if err != nil {
+		return nil, err
+	}
+	return &stripe.CheckoutSessionLineItemParams{
+		PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
+			Currency:   stripe.String(strings.ToLower(currency)),
+			Product:    stripe.String(setting.StripeProductId),
+			UnitAmount: stripe.Int64(minorUnits),
+		},
+		Quantity: stripe.Int64(1),
+	}, nil
+}
+
 func GetChargedAmount(count float64, user model.User) float64 {
 	topUpGroupRatio := common.GetTopupGroupRatio(user.Group)
 	if topUpGroupRatio == 0 {
@@ -394,7 +468,11 @@ func GetChargedAmount(count float64, user model.User) float64 {
 	return count * topUpGroupRatio
 }
 
-func getStripePayMoney(amount float64, group string) float64 {
+// getStripePayMoney returns what the user pays, in currency.Code.
+//
+// StripeUnitPrice is denominated in the base currency, so the currency rate is
+// the last factor applied: base-currency total × (1 base = rate target).
+func getStripePayMoney(amount float64, group string, currency setting.StripeCurrency) float64 {
 	originalAmount := amount
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
 		amount = amount / common.QuotaPerUnit
@@ -411,7 +489,11 @@ func getStripePayMoney(amount float64, group string) float64 {
 			discount = ds
 		}
 	}
-	payMoney := amount * setting.StripeUnitPrice * topupGroupRatio * discount
+	rate := currency.Rate
+	if rate <= 0 {
+		rate = 1
+	}
+	payMoney := amount * setting.StripeUnitPrice * topupGroupRatio * discount * rate
 	return payMoney
 }
 

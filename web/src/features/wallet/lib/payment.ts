@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import i18next from 'i18next'
+
 import {
   PAYMENT_TYPES,
   DEFAULT_PRESET_MULTIPLIERS,
@@ -69,6 +71,27 @@ export function submitPaymentForm(
 }
 
 /**
+ * Extract the human-readable failure reason from a topup response.
+ *
+ * The topup endpoints answer failures with `{"message": "error", "data":
+ * "<reason>"}`, so surfacing `message` alone shows the user a bare "error"
+ * while the actual reason sits in `data`. Every payment failure toast must go
+ * through here.
+ */
+export function getPaymentErrorMessage(
+  message: string | undefined,
+  data: unknown
+): string {
+  if (typeof data === 'string' && data.trim()) {
+    return data
+  }
+  if (message && message !== 'error') {
+    return message
+  }
+  return i18next.t('Payment request failed')
+}
+
+/**
  * Check if payment method is Stripe
  */
 export function isStripePayment(paymentType: string): boolean {
@@ -94,7 +117,11 @@ export function isWaffoPancakePayment(paymentType: string): boolean {
 }
 
 export interface PaymentProcessors {
-  regular: (topupAmount: number, paymentType: string) => Promise<boolean>
+  regular: (
+    topupAmount: number,
+    paymentType: string,
+    currency?: string
+  ) => Promise<boolean>
   waffo: (topupAmount: number, payMethodIndex: number) => Promise<boolean>
   waffoPancake: (topupAmount: number) => Promise<boolean>
 }
@@ -103,7 +130,8 @@ export async function dispatchSelectedPayment(
   paymentMethod: PaymentMethod,
   topupAmount: number,
   waffoMethodIndex: number | null,
-  processors: PaymentProcessors
+  processors: PaymentProcessors,
+  currency?: string
 ): Promise<boolean> {
   if (isWaffoPayment(paymentMethod.type)) {
     if (waffoMethodIndex === null) {
@@ -116,7 +144,7 @@ export async function dispatchSelectedPayment(
     return processors.waffoPancake(topupAmount)
   }
 
-  return processors.regular(topupAmount, paymentMethod.type)
+  return processors.regular(topupAmount, paymentMethod.type, currency)
 }
 
 /**

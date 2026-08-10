@@ -26,6 +26,14 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { IconBadge } from '@/components/ui/icon-badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
 import {
@@ -34,8 +42,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { formatExplicitCurrencyAmount } from '@/lib/currency'
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
+
+import { STRIPE_BASE_CURRENCY } from '../constants'
 
 import {
   formatCurrency,
@@ -47,6 +58,7 @@ import {
 import type {
   PaymentMethod,
   PresetAmount,
+  StripeCurrency,
   TopupInfo,
   CreemProduct,
   WaffoPayMethod,
@@ -61,7 +73,12 @@ interface RechargeFormCardProps {
   topupAmount: number
   onTopupAmountChange: (amount: number) => void
   paymentAmount: number
+  /** ISO code paymentAmount is charged in; undefined falls back to site display */
+  paymentCurrency?: string
   calculating: boolean
+  stripeCurrencies?: StripeCurrency[]
+  selectedCurrency?: string
+  onCurrencyChange?: (code: string) => void
   onPaymentMethodSelect: (method: PaymentMethod) => void
   paymentLoading: string | null
   redemptionCode: string
@@ -83,6 +100,16 @@ interface RechargeFormCardProps {
   enableWaffoPancakeTopup?: boolean
 }
 
+// Every figure that represents money leaving the user must carry the currency it
+// will actually be charged in; a bare number next to a differently-labelled one
+// reads as the wrong price right before the user authorises it.
+function paymentAmountFormatter(paymentCurrency: string | undefined) {
+  return (value: number) =>
+    paymentCurrency
+      ? formatExplicitCurrencyAmount(value, paymentCurrency)
+      : formatCurrency(value)
+}
+
 export function RechargeFormCard({
   topupInfo,
   presetAmounts,
@@ -91,7 +118,11 @@ export function RechargeFormCard({
   topupAmount,
   onTopupAmountChange,
   paymentAmount,
+  paymentCurrency,
   calculating,
+  stripeCurrencies,
+  selectedCurrency = STRIPE_BASE_CURRENCY,
+  onCurrencyChange,
   onPaymentMethodSelect,
   paymentLoading,
   redemptionCode,
@@ -114,6 +145,9 @@ export function RechargeFormCard({
 }: RechargeFormCardProps) {
   const { t } = useTranslation()
   const [localAmount, setLocalAmount] = useState(topupAmount.toString())
+  const formatPayment = paymentAmountFormatter(paymentCurrency)
+  const currencyChoices = stripeCurrencies ?? []
+  const showCurrencySelector = Boolean(onCurrencyChange) && currencyChoices.length > 1
 
   useEffect(() => {
     // Empty string must survive, otherwise the field can never be cleared
@@ -266,11 +300,11 @@ export function RechargeFormCard({
                             )}
                           </div>
                           <div className='text-muted-foreground mt-1.5 w-full text-xs sm:mt-2'>
-                            Pay {formatCurrency(actualPrice)}
+                            Pay {formatPayment(actualPrice)}
                             {hasDiscount && savedAmount > 0 && (
                               <span className='text-green-600'>
                                 {' '}
-                                • Save {formatCurrency(savedAmount)}
+                                • Save {formatPayment(savedAmount)}
                               </span>
                             )}
                           </div>
@@ -278,6 +312,47 @@ export function RechargeFormCard({
                       )
                     })}
                   </div>
+                </div>
+              )}
+
+              {showCurrencySelector && (
+                <div className='space-y-2.5 sm:space-y-3'>
+                  <Label
+                    htmlFor='topup-currency'
+                    className='text-muted-foreground text-xs font-medium tracking-wider uppercase'
+                  >
+                    {t('Payment Currency')}
+                  </Label>
+                  <Select
+                    items={currencyChoices.map((choice) => ({
+                      value: choice.code,
+                      label: choice.code,
+                    }))}
+                    value={selectedCurrency}
+                    onValueChange={(value) => {
+                      // Clearing the select must not blank the currency —
+                      // a checkout always needs one.
+                      if (value) onCurrencyChange?.(value)
+                    }}
+                  >
+                    <SelectTrigger id='topup-currency' className='h-9 sm:h-10'>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      <SelectGroup>
+                        {currencyChoices.map((choice) => (
+                          <SelectItem key={choice.code} value={choice.code}>
+                            {choice.code}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <p className='text-muted-foreground text-xs'>
+                    {t(
+                      'Applies to card payments. Alipay and WeChat are always charged in CNY.'
+                    )}
+                  </p>
                 </div>
               )}
 
@@ -306,7 +381,7 @@ export function RechargeFormCard({
                       <Skeleton className='h-5 w-16' />
                     ) : (
                       <span className='text-sm font-semibold'>
-                        {formatCurrency(paymentAmount)}
+                        {formatPayment(paymentAmount)}
                       </span>
                     )}
                   </div>

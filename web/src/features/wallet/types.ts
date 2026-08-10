@@ -117,6 +117,20 @@ export interface WaffoPayMethod {
 }
 
 /**
+ * A checkout currency the user may pay Stripe in.
+ *
+ * Only Stripe supports a choice of currency; epay (Alipay/WeChat) has no
+ * currency field in its protocol, so its amounts are always the gateway's own
+ * currency regardless of what is selected here.
+ */
+export interface StripeCurrency {
+  /** ISO 4217 code, upper-case */
+  code: string
+  /** 1 USD = rate <code> */
+  rate: number
+}
+
+/**
  * Topup configuration information
  */
 export interface TopupInfo {
@@ -130,6 +144,8 @@ export interface TopupInfo {
   min_topup: number
   /** Minimum topup amount for Stripe */
   stripe_min_topup: number
+  /** Checkout currencies Stripe accepts; always contains USD first */
+  stripe_currencies?: StripeCurrency[]
   /** Preset amount options */
   amount_options: number[]
   /** Discount rates by amount */
@@ -184,6 +200,8 @@ export interface PaymentRequest {
   amount: number
   /** Payment method identifier */
   payment_method: string
+  /** Checkout currency; Stripe only, omitted means USD */
+  currency?: string
 }
 
 /**
@@ -210,6 +228,8 @@ export interface WaffoPancakePaymentRequest {
 export interface AmountRequest {
   /** Topup amount to calculate */
   amount: number
+  /** Checkout currency; Stripe only, omitted means USD */
+  currency?: string
 }
 
 /**

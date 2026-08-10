@@ -30,6 +30,7 @@ import {
   isApiSuccess,
 } from '../api'
 import {
+  getPaymentErrorMessage,
   isStripePayment,
   isWaffoPayment,
   isWaffoPancakePayment,
@@ -60,6 +61,7 @@ const defaultPaymentAmountCalculators: PaymentAmountCalculators = {
 export async function requestPaymentAmount(
   topupAmount: number,
   paymentType: string,
+  currency?: string,
   calculators: PaymentAmountCalculators = defaultPaymentAmountCalculators
 ): Promise<number> {
   let calculator = calculators.regular
@@ -71,7 +73,11 @@ export async function requestPaymentAmount(
     calculator = calculators.waffoPancake
   }
 
-  const response = await calculator({ amount: topupAmount })
+  // Currency is Stripe-only; the other gateways ignore the field.
+  const response = await calculator({
+    amount: topupAmount,
+    ...(isStripePayment(paymentType) && currency ? { currency } : {}),
+  })
   if (!isApiSuccess(response) || !response.data) {
     return 0
   }
@@ -86,12 +92,13 @@ export function usePayment() {
 
   // Calculate payment amount
   const calculatePaymentAmount = useCallback(
-    async (topupAmount: number, paymentType: string) => {
+    async (topupAmount: number, paymentType: string, currency?: string) => {
       try {
         setCalculating(true)
         const calculatedAmount = await requestPaymentAmount(
           topupAmount,
-          paymentType
+          paymentType,
+          currency
         )
         setAmount(calculatedAmount)
         return calculatedAmount
@@ -107,7 +114,7 @@ export function usePayment() {
 
   // Process payment
   const processPayment = useCallback(
-    async (topupAmount: number, paymentType: string) => {
+    async (topupAmount: number, paymentType: string, currency?: string) => {
       try {
         setProcessing(true)
 
@@ -118,6 +125,7 @@ export function usePayment() {
           ? await requestStripePayment({
               amount,
               payment_method: 'stripe',
+              ...(currency ? { currency } : {}),
             })
           : await requestPayment({
               amount,
@@ -125,7 +133,7 @@ export function usePayment() {
             })
 
         if (!isApiSuccess(response)) {
-          toast.error(response.message || i18next.t('Payment request failed'))
+          toast.error(getPaymentErrorMessage(response.message, response.data))
           return false
         }
 

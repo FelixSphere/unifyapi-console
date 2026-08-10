@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import i18next from 'i18next'
 import { Code2, Eye, ShieldAlert } from 'lucide-react'
 import * as React from 'react'
 import { useForm, type Resolver } from 'react-hook-form'
@@ -94,6 +95,31 @@ function isHttpOriginUrl(value: string) {
   }
 }
 
+// Each entry must be an ISO 4217 code with a positive rate against USD; a bad
+// rate would silently charge the wrong price rather than fail visibly.
+function getStripeCurrenciesError(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    return null // shape errors are already reported by getJsonError
+  }
+  if (!Array.isArray(parsed)) return null
+
+  for (const entry of parsed) {
+    const row = entry as { code?: unknown; rate?: unknown }
+    if (typeof row?.code !== 'string' || !/^[A-Za-z]{3}$/.test(row.code)) {
+      return i18next.t('Every entry needs a 3-letter ISO currency code')
+    }
+    if (typeof row?.rate !== 'number' || !(row.rate > 0)) {
+      return i18next.t('Every entry needs a rate greater than 0')
+    }
+  }
+  return null
+}
+
 const paymentSchema = z.object({
   PayAddress: z.string().refine((value) => {
     const trimmed = value.trim()
@@ -143,7 +169,43 @@ const paymentSchema = z.object({
   }),
   StripeApiSecret: z.string(),
   StripeWebhookSecret: z.string(),
-  StripePriceId: z.string(),
+  // A product id (prod_…) is accepted by this form but rejected by Stripe at
+  // checkout creation, which surfaces to the user as a failed topup.
+  StripePriceId: z.string().superRefine((value, ctx) => {
+    const trimmed = value.trim()
+    if (trimmed && !trimmed.startsWith('price_')) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: i18next.t(
+          'Must be a Stripe price ID starting with price_ (not a prod_ product ID)'
+        ),
+      })
+    }
+  }),
+  // Non-USD checkouts are priced inline against this product, because a Stripe
+  // Price carries exactly one currency.
+  StripeProductId: z.string().superRefine((value, ctx) => {
+    const trimmed = value.trim()
+    if (trimmed && !trimmed.startsWith('prod_')) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: i18next.t(
+          'Must be a Stripe product ID starting with prod_ (not a price_ price ID)'
+        ),
+      })
+    }
+  }),
+  StripeCurrencies: z.string().superRefine((value, ctx) => {
+    const error = getJsonError(value, (parsed) => Array.isArray(parsed))
+    if (error) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: error })
+      return
+    }
+    const invalid = getStripeCurrenciesError(value)
+    if (invalid) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: invalid })
+    }
+  }),
   StripeUnitPrice: z.coerce.number().min(0),
   StripeMinTopUp: z.coerce.number().min(0),
   StripePromotionCodesEnabled: z.boolean(),
@@ -413,6 +475,7 @@ export function PaymentSettingsSection({
       AmountOptions: formatJsonForEditor(parsedDefaults.AmountOptions),
       AmountDiscount: formatJsonForEditor(parsedDefaults.AmountDiscount),
       CreemProducts: formatJsonForEditor(parsedDefaults.CreemProducts),
+      StripeCurrencies: formatJsonForEditor(parsedDefaults.StripeCurrencies),
     })
   }, [defaultsSignature, form])
 
@@ -430,6 +493,8 @@ export function PaymentSettingsSection({
       StripeApiSecret: values.StripeApiSecret.trim(),
       StripeWebhookSecret: values.StripeWebhookSecret.trim(),
       StripePriceId: values.StripePriceId.trim(),
+      StripeProductId: values.StripeProductId.trim(),
+      StripeCurrencies: values.StripeCurrencies.trim(),
       StripeUnitPrice: values.StripeUnitPrice,
       StripeMinTopUp: values.StripeMinTopUp,
       StripePromotionCodesEnabled: values.StripePromotionCodesEnabled,
@@ -474,6 +539,8 @@ export function PaymentSettingsSection({
       StripeApiSecret: initialRef.current.StripeApiSecret.trim(),
       StripeWebhookSecret: initialRef.current.StripeWebhookSecret.trim(),
       StripePriceId: initialRef.current.StripePriceId.trim(),
+      StripeProductId: initialRef.current.StripeProductId.trim(),
+      StripeCurrencies: initialRef.current.StripeCurrencies.trim(),
       StripeUnitPrice: initialRef.current.StripeUnitPrice,
       StripeMinTopUp: initialRef.current.StripeMinTopUp,
       StripePromotionCodesEnabled:
@@ -581,6 +648,20 @@ export function PaymentSettingsSection({
 
     if (sanitized.StripePriceId !== initial.StripePriceId) {
       updates.push({ key: 'StripePriceId', value: sanitized.StripePriceId })
+    }
+
+    if (sanitized.StripeProductId !== initial.StripeProductId) {
+      updates.push({ key: 'StripeProductId', value: sanitized.StripeProductId })
+    }
+
+    if (
+      normalizeJsonForComparison(sanitized.StripeCurrencies) !==
+      normalizeJsonForComparison(initial.StripeCurrencies)
+    ) {
+      updates.push({
+        key: 'StripeCurrencies',
+        value: sanitized.StripeCurrencies,
+      })
     }
 
     if (sanitized.StripeUnitPrice !== initial.StripeUnitPrice) {
@@ -1372,7 +1453,59 @@ export function PaymentSettingsSection({
                       </FormItem>
                     )}
                   />
+
+                  <FormField
+                    control={form.control}
+                    name='StripeProductId'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Product ID')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder={t('prod_xxx')}
+                            {...field}
+                            onChange={(event) =>
+                              field.onChange(event.target.value)
+                            }
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Required for non-USD checkout currencies. Leave blank to offer USD only.'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
+
+                <FormField
+                  control={form.control}
+                  name='StripeCurrencies'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Checkout Currencies')}</FormLabel>
+                      <FormControl>
+                        <JsonCodeEditor
+                          value={field.value}
+                          onChange={field.onChange}
+                          name={field.name}
+                          onBlur={field.onBlur}
+                          textareaRef={field.ref}
+                          heightClassName='h-40 min-h-40 max-h-40'
+                          placeholder='[{"code": "USD", "rate": 1}, {"code": "MYR", "rate": 4.3}]'
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Currencies the user may pay in, with the rate against USD (1 USD = rate). USD is always offered. Alipay and WeChat ignore this and are always charged in CNY.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
                 <div className='grid gap-6 md:grid-cols-3'>
                   <FormField

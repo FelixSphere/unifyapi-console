@@ -56,6 +56,12 @@ export const PAYMENT_ICON_COLORS = {
 } as const
 
 /**
+ * Currency StripeUnitPrice is denominated in, and the fallback whenever no
+ * checkout currency has been chosen. Must match setting.StripeBaseCurrency.
+ */
+export const STRIPE_BASE_CURRENCY = 'USD'
+
+/**
  * Default discount rate (no discount)
  */
 export const DEFAULT_DISCOUNT_RATE = 1.0

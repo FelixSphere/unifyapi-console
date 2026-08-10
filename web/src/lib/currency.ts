@@ -615,3 +615,47 @@ export function formatLocalCurrencyAmount(
 
   return formatCurrencyValue(amount, merged, meta)
 }
+
+/**
+ * Checkout amounts in this currency keep their symbol rather than their ISO
+ * code — see formatExplicitCurrencyAmount for why the others do not.
+ */
+const SYMBOL_SAFE_CURRENCY = 'USD'
+
+/**
+ * Format an amount in an explicitly named ISO 4217 currency, ignoring the
+ * site's display configuration entirely.
+ *
+ * Use this for a figure whose currency is decided per transaction rather than
+ * by the admin — a checkout amount in the currency the user picked. The
+ * site-wide formatters above would relabel it with the display currency's
+ * symbol while leaving the number untouched, which is exactly the kind of
+ * mismatch that must never appear next to a payment button.
+ *
+ * Only the base currency is shown as a symbol. Everything else gets its ISO
+ * code, because narrow symbols collide: SGD renders as "$13.20" in en-US,
+ * indistinguishable from USD on the button that charges the card. Fraction
+ * digits are left to `Intl`, so each currency uses its own minor unit and
+ * JPY/VND are not given cents they do not have.
+ */
+export function formatExplicitCurrencyAmount(
+  amount: number | null | undefined,
+  currencyCode: string,
+  locale?: Intl.LocalesArgument
+): string {
+  if (amount == null || Number.isNaN(amount)) return '-'
+
+  const code = currencyCode.trim().toUpperCase()
+  if (!/^[A-Z]{3}$/.test(code)) return formatLocalCurrencyAmount(amount)
+
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency: code,
+      currencyDisplay: code === SYMBOL_SAFE_CURRENCY ? 'narrowSymbol' : 'code',
+    }).format(amount)
+  } catch {
+    // A payment figure must never render as an exception.
+    return formatLocalCurrencyAmount(amount)
+  }
+}

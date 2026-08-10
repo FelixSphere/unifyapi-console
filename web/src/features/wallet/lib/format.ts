@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { formatLocalCurrencyAmount } from '@/lib/currency'
+
 import { DEFAULT_DISCOUNT_RATE } from '../constants'
 
 // ============================================================================
@@ -47,18 +49,23 @@ export function formatQuotaShort(quota: number): string {
 }
 
 /**
- * Format currency amount that is already in local currency.
- * This is used for payment amounts that have been calculated via priceRatio.
+ * Format a payment amount that is already in local currency (i.e. computed via
+ * priceRatio by the backend).
+ *
+ * Delegates to `formatLocalCurrencyAmount` so the symbol matches every other
+ * money figure on the page — a bare "10" next to a "$10" reads as a different
+ * currency to the user right before they authorise a charge.
  */
 export function formatCurrency(amount: number | string): string {
   const numeric =
     typeof amount === 'number' ? amount : Number.parseFloat(String(amount))
   if (!Number.isFinite(numeric)) return '-'
 
-  return new Intl.NumberFormat(undefined, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: Math.abs(numeric) >= 1 ? 2 : 4,
-  }).format(numeric)
+  return formatLocalCurrencyAmount(numeric, {
+    digitsLarge: 2,
+    digitsSmall: 4,
+    abbreviate: false,
+  })
 }
 
 /**

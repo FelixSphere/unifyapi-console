@@ -15,6 +15,10 @@ type TopUp struct {
 	Id              int     `json:"id"`
 	UserId          int     `json:"user_id" gorm:"index"`
 	Amount          int64   `json:"amount"`
+	// Money means different things per gateway: epay stores the fiat charged and
+	// credits from Amount, while Stripe credits from Money (see model.Recharge,
+	// `quota = Money * QuotaPerUnit`). Do not write a fiat amount here for
+	// Stripe — it would scale every user's quota by the unit price.
 	Money           float64 `json:"money"`
 	TradeNo         string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
 	PaymentMethod   string  `json:"payment_method" gorm:"type:varchar(50)"`

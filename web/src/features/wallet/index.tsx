@@ -32,7 +32,11 @@ import { TransferDialog } from './components/dialogs/transfer-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
 import { WalletStatsCard } from './components/wallet-stats-card'
-import { DEFAULT_DISCOUNT_RATE, PAYMENT_TYPES } from './constants'
+import {
+  DEFAULT_DISCOUNT_RATE,
+  PAYMENT_TYPES,
+  STRIPE_BASE_CURRENCY,
+} from './constants'
 import {
   useTopupInfo,
   usePayment,
@@ -46,6 +50,7 @@ import {
   getDefaultPaymentType,
   getMinTopupAmount,
   dispatchSelectedPayment,
+  isStripePayment,
 } from './lib'
 import type {
   UserWalletData,
@@ -79,10 +84,13 @@ export function Wallet(props: WalletProps) {
   const [selectedCreemProduct, setSelectedCreemProduct] =
     useState<CreemProduct | null>(null)
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
+  const [selectedCurrency, setSelectedCurrency] = useState(STRIPE_BASE_CURRENCY)
 
   const { status } = useStatus()
   const { currency } = useSystemConfig()
   const { topupInfo, presetAmounts, loading: topupLoading } = useTopupInfo()
+
+  const stripeCurrencies = topupInfo?.stripe_currencies ?? []
 
   // Calculate effective exchange rate - when display type is USD, use rate of 1
   const effectiveUsdExchangeRate = useMemo(() => {
@@ -146,27 +154,48 @@ export function Wallet(props: WalletProps) {
 
       // Calculate initial payment amount with default payment type
       const defaultPaymentType = getDefaultPaymentType(topupInfo)
-      calculatePaymentAmount(minTopup, defaultPaymentType)
+      calculatePaymentAmount(minTopup, defaultPaymentType, selectedCurrency)
     }
-  }, [topupInfo, calculatePaymentAmount])
+  }, [topupInfo, calculatePaymentAmount, selectedCurrency])
 
   // Get current payment type (selected or default)
   const getCurrentPaymentType = useCallback(() => {
     return selectedPaymentMethod?.type || getDefaultPaymentType(topupInfo)
   }, [selectedPaymentMethod, topupInfo])
 
+  // The checkout currency only describes Stripe amounts — epay (Alipay/WeChat)
+  // and Waffo return amounts in their own gateway currency, so labelling those
+  // with the selected code would misstate what the user is about to be charged.
+  const payingWithStripe = isStripePayment(getCurrentPaymentType())
+  const paymentCurrency = payingWithStripe ? selectedCurrency : undefined
+
+  // The preset buttons price themselves client-side, so they must use the same
+  // unit price the gateway will bill. status.price is epay's ratio; billing a
+  // Stripe checkout with it overstates the price by that ratio.
+  const selectedCurrencyRate =
+    stripeCurrencies.find((entry) => entry.code === selectedCurrency)?.rate ?? 1
+  const effectivePriceRatio = payingWithStripe
+    ? ((status?.stripe_unit_price as number) ?? 1) * selectedCurrencyRate
+    : (status?.price as number) || 1
+
   // Handle preset selection
   const handleSelectPreset = (preset: PresetAmount) => {
     setTopupAmount(preset.value)
     setSelectedPreset(preset.value)
-    calculatePaymentAmount(preset.value, getCurrentPaymentType())
+    calculatePaymentAmount(preset.value, getCurrentPaymentType(), selectedCurrency)
   }
 
   // Handle topup amount change
   const handleTopupAmountChange = (amount: number) => {
     setTopupAmount(amount)
     setSelectedPreset(null)
-    calculatePaymentAmount(amount, getCurrentPaymentType())
+    calculatePaymentAmount(amount, getCurrentPaymentType(), selectedCurrency)
+  }
+
+  // Handle checkout currency change
+  const handleCurrencyChange = (code: string) => {
+    setSelectedCurrency(code)
+    calculatePaymentAmount(topupAmount, getCurrentPaymentType(), code)
   }
 
   // Handle payment method selection
@@ -183,7 +212,7 @@ export function Wallet(props: WalletProps) {
       }
 
       // Calculate payment amount and show confirmation dialog
-      await calculatePaymentAmount(topupAmount, method.type)
+      await calculatePaymentAmount(topupAmount, method.type, selectedCurrency)
       setConfirmDialogOpen(true)
     } finally {
       setPaymentLoading(null)
@@ -202,7 +231,8 @@ export function Wallet(props: WalletProps) {
         regular: processPayment,
         waffo: processWaffoPayment,
         waffoPancake: processWaffoPancakePayment,
-      }
+      },
+      selectedCurrency
     )
 
     if (success) {
@@ -306,7 +336,11 @@ export function Wallet(props: WalletProps) {
                   topupAmount={topupAmount}
                   onTopupAmountChange={handleTopupAmountChange}
                   paymentAmount={paymentAmount}
+                  paymentCurrency={paymentCurrency}
                   calculating={calculating}
+                  stripeCurrencies={stripeCurrencies}
+                  selectedCurrency={selectedCurrency}
+                  onCurrencyChange={handleCurrencyChange}
                   onPaymentMethodSelect={handlePaymentMethodSelect}
                   paymentLoading={paymentLoading}
                   redemptionCode={redemptionCode}
@@ -315,7 +349,7 @@ export function Wallet(props: WalletProps) {
                   redeeming={redeeming}
                   topupLink={topupInfo?.topup_link}
                   loading={topupLoading}
-                  priceRatio={(status?.price as number) || 1}
+                  priceRatio={effectivePriceRatio}
                   usdExchangeRate={effectiveUsdExchangeRate}
                   onOpenBilling={() => setBillingDialogOpen(true)}
                   creemProducts={topupInfo?.creem_products}
@@ -358,6 +392,7 @@ export function Wallet(props: WalletProps) {
         onConfirm={handlePaymentConfirm}
         topupAmount={topupAmount}
         paymentAmount={paymentAmount}
+        paymentCurrency={paymentCurrency}
         paymentMethod={selectedPaymentMethod}
         calculating={calculating}
         processing={processing || waffoProcessing || pancakeProcessing}
