@@ -44,9 +44,13 @@ function ChatRouteComponent() {
   const { chatId } = Route.useParams()
   const { chatPresets, serverAddress } = useChatPresets()
   const preset = useMemo(() => {
-    const index = Number(chatId)
-    if (!Number.isInteger(index)) return undefined
-    return chatPresets[index]
+    // Match on id, not array position. parseChatConfig assigns each preset the
+    // index it had in the configured list but drops unusable entries, so the
+    // surviving array is shorter than the ids it carries. The sidebar links with
+    // preset.id, so indexing here sent the user to a different client than the
+    // one they clicked whenever anything ahead of it had been dropped.
+    if (!Number.isInteger(Number(chatId))) return undefined
+    return chatPresets.find((candidate) => candidate.id === chatId)
   }, [chatId, chatPresets])
 
   const isWebLink = preset?.type === 'web'
