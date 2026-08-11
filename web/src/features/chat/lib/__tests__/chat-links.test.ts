@@ -53,6 +53,26 @@ describe('parseChatConfig', () => {
     )
   })
 
+  test('surviving presets keep the id of their configured position', () => {
+    // The sidebar links with preset.id and the /chat/$chatId route matches on
+    // it, so an id must stay pinned to its entry when something ahead of it is
+    // dropped. Renumbering here would send a click to a different client.
+    const presets = parseChatConfig([
+      { 'Cherry Studio': 'cherrystudio://x' },
+      { 'CC Switch': 'ccswitch' },
+      { DeepChat: 'deepchat://provider/install' },
+      { OpenCat: 'opencat://team/join' },
+    ])
+    assert.deepEqual(
+      presets.map((p) => [p.id, p.name]),
+      [
+        ['0', 'Cherry Studio'],
+        ['2', 'DeepChat'],
+        ['3', 'OpenCat'],
+      ]
+    )
+  })
+
   test('keeps web links', () => {
     const presets = parseChatConfig([
       { 'Lobe Chat': 'https://chat-preview.lobehub.com/?settings={}' },
