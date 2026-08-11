@@ -177,6 +177,26 @@ bills `users.quota` through the per-user Redis cache; a per-user cache diverges
 across members of one tenant, so that cache must move to the billing entity
 before tenant balances are authoritative in the request path.
 
+## 4b. You do not deploy this
+
+**Only the UnifyAI CI/CD agent releases to production.** Getting your change
+merged to `main` is where your task ends.
+
+Nothing here deploys on merge, and that is deliberate: a release is a tag, an
+image build, and an SSM image swap on a single live instance. Do not run that
+chain because your change is ready. Finish, then **tell the CI/CD agent** what
+is waiting — the commit, what it changes, and anything the release needs in a
+particular order (a seed to run, an SSM parameter, a `variables.tf` bump).
+
+The exception is a genuine hotfix: a live outage, a security issue, data being
+lost. Then ship it, mark it `HOTFIX`, and tell the CI/CD agent straight after.
+Wanting your feature live is not a hotfix.
+
+The full procedure lives in `unifyai/.claude/agents/cicd.md`. Two things there
+that matter even if you never run it: the instance is arm64, and
+`GET /api/status` reports the upstream tag, so it lies about which release is
+running.
+
 ## 5. Before you hand off
 
 ```bash
