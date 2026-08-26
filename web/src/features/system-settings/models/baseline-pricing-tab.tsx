@@ -83,9 +83,13 @@ export function BaselinePricingTab() {
       toast.success(response.message ?? t('Discounts saved'))
       response.markups?.forEach((markup) => toast.warning(markup))
       queryClient.invalidateQueries({ queryKey: ['pricing-baseline'] })
-      // The pricing page and the relay read the same ratio map, so a saved
-      // discount changes what customers are quoted immediately.
       queryClient.invalidateQueries({ queryKey: ['system-options'] })
+      // The relay bills the new price immediately, so the model square has to
+      // stop showing the old one immediately too. Its query is keyed ['pricing']
+      // with a 5-minute staleTime; without this the page quoted the previous
+      // price for minutes after the save while customers were already charged
+      // the new one.
+      queryClient.invalidateQueries({ queryKey: ['pricing'] })
     },
     onError: (err: Error) => toast.error(err.message),
   })

@@ -469,7 +469,7 @@ func checkAndSendQuotaNotify(relayInfo *relaycommon.RelayInfo, quota int, preCon
 			quotaTooLow = true
 		}
 		if quotaTooLow {
-			prompt := "Your balance is running low"  // UNIFYAPI-BRAND: English copy
+			prompt := "Your balance is running low" // UNIFYAPI-BRAND: English copy
 			topUpLink := PaymentReturnURL("/wallet")
 
 			// 根据通知方式生成不同的内容格式
@@ -523,7 +523,7 @@ func checkAndSendSubscriptionQuotaNotify(relayInfo *relaycommon.RelayInfo) {
 			return
 		}
 
-		prompt := "Your subscription balance is running low"  // UNIFYAPI-BRAND: English copy
+		prompt := "Your subscription balance is running low" // UNIFYAPI-BRAND: English copy
 		topUpLink := PaymentReturnURL("/wallet")
 
 		var content string

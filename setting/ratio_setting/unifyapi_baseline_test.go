@@ -231,6 +231,41 @@ func TestInitRatioSettingsSeedsExactlyTheCatalog(t *testing.T) {
 	}
 }
 
+// TestInitRatioSettingsSeedsEveryRatioMapNotJustModelRatio guards a silent
+// mispricing. Each of these getters falls back to 1 when its map has no entry,
+// and 1 is a plausible-looking ratio, not an error: an unseeded cache map bills
+// cached reads at FULL input price (Anthropic charges a tenth), and an unseeded
+// completion map bills output at input price (Anthropic charges 5x). Nothing
+// would log, and the numbers would look ordinary.
+//
+// An earlier version of this test only checked modelRatioMap, which is exactly
+// the gap that let a billing-path test pass with completion and cache ratios
+// silently stuck at 1.
+func TestInitRatioSettingsSeedsEveryRatioMapNotJustModelRatio(t *testing.T) {
+	resetRatioMapsToBaseline(t)
+
+	for _, entry := range Catalog() {
+		gotCompletion := GetCompletionRatio(entry.Model)
+		require.InDelta(t, entry.CompletionRatio(), gotCompletion, 1e-9,
+			"%s: output multiplier must come from the catalog, not the fallback of 1", entry.Model)
+
+		if want, published := entry.CacheReadRatio(); published {
+			got, found := GetCacheRatio(entry.Model)
+			require.True(t, found,
+				"%s: vendor publishes a cached-read price but the map has no entry, so reads bill at full price",
+				entry.Model)
+			require.InDelta(t, want, got, 1e-9, "%s cached-read multiplier", entry.Model)
+		}
+
+		if want, published := entry.CacheWriteRatio(); published {
+			got, found := GetCreateCacheRatio(entry.Model)
+			require.True(t, found,
+				"%s: vendor publishes a cache-write price but the map has no entry", entry.Model)
+			require.InDelta(t, want, got, 1e-9, "%s cache-write multiplier", entry.Model)
+		}
+	}
+}
+
 // TestUncataloguedModelIsRefused is the reason the catalog can double as an
 // allow-list: a model with no ratio makes GetModelRatio report failure, and the
 // relay turns that into a refusal rather than a guess.

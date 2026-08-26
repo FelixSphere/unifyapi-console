@@ -82,6 +82,10 @@ export function ChannelCostTab() {
       }
       toast.success(response.message ?? t('Upstream costs saved'))
       queryClient.invalidateQueries({ queryKey: ['channel-cost'] })
+      // Upstream cost never changes a customer price, but it does change the
+      // cost basis that the reconciliation report and the pricing payload
+      // publish alongside it.
+      queryClient.invalidateQueries({ queryKey: ['pricing'] })
     },
     onError: (err: Error) => toast.error(err.message),
   })

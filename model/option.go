@@ -617,7 +617,44 @@ func updateOptionMap(key string, value string) (err error) {
 		// The value is already stored in OptionMap at the top of this function (line: common.OptionMap[key] = value).
 		// No additional in-memory variable to update.
 	}
+
+	// UNIFYAPI-FORK: drop the cached pricing table whenever a price changed.
+	//
+	// GetPricing memoises the whole /api/pricing payload for a minute, and
+	// nothing invalidated it on a ratio change -- InvalidatePricingCache was
+	// only wired to billing_setting.* and to channel edits. So saving a price
+	// left the model square quoting the OLD number while the relay already
+	// billed the NEW one: charged correctly, displayed wrongly, for up to a
+	// minute (and up to five more from the SPA's staleTime). A customer seeing
+	// one price and being charged another is a trust problem even when the
+	// charge is right.
+	if err == nil && pricingDisplayOptions[key] {
+		InvalidatePricingCache()
+		ratio_setting.InvalidateExposedDataCache()
+	}
 	return err
+}
+
+// pricingDisplayOptions are the options whose value changes what /api/pricing
+// reports. Kept as a set next to the dispatch above so adding a pricing option
+// without invalidating its cache is a visible omission rather than a silent one.
+var pricingDisplayOptions = map[string]bool{
+	"ModelDiscount":        true,
+	"ModelRatio":           true,
+	"CompletionRatio":      true,
+	"CacheRatio":           true,
+	"CreateCacheRatio":     true,
+	"ModelPrice":           true,
+	"ImageRatio":           true,
+	"AudioRatio":           true,
+	"AudioCompletionRatio": true,
+	"GroupRatio":           true,
+	"GroupGroupRatio":      true,
+	"UserUsableGroups":     true,
+	"AutoGroups":           true,
+	// Not a displayed price, but the reconciliation cost basis is served
+	// alongside it and readers compare the two.
+	"ChannelCostRatio": true,
 }
 
 // handleConfigUpdate 处理分层配置更新，返回是否已处理

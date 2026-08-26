@@ -252,6 +252,8 @@ func SetApiRouter(router *gin.Engine) {
 			pricingAdminRoute.GET("/baseline", controller.GetPricingBaseline)
 			pricingAdminRoute.PUT("/discount", controller.UpdatePricingDiscount)
 			pricingAdminRoute.GET("/reconcile", controller.GetReconciliation)
+			pricingAdminRoute.GET("/reconcile/snapshots", controller.GetReconcileSnapshots)
+			pricingAdminRoute.POST("/reconcile/run", controller.RunReconcileNow)
 			pricingAdminRoute.GET("/reconcile.csv", controller.ExportReconciliationCSV)
 			pricingAdminRoute.GET("/channel_cost", controller.GetChannelCost)
 			pricingAdminRoute.PUT("/channel_cost", controller.UpdateChannelCost)

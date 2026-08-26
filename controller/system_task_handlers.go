@@ -22,6 +22,8 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
+	// UNIFYAPI-FORK: nightly reconciliation, see reconcile_task.go
+	service.RegisterSystemTaskHandler(reconcileHandler{})
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and

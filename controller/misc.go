@@ -244,7 +244,7 @@ func SendEmailVerification(c *gin.Context) {
 	if len(parts) != 2 {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": "Invalid email address",  // UNIFYAPI-BRAND: English copy
+			"message": "Invalid email address", // UNIFYAPI-BRAND: English copy
 		})
 		return
 	}
@@ -271,7 +271,7 @@ func SendEmailVerification(c *gin.Context) {
 		if containsSpecialSymbols {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": "The administrator has enabled email alias restrictions; your address was rejected because it contains special symbols.",  // UNIFYAPI-BRAND: English copy
+				"message": "The administrator has enabled email alias restrictions; your address was rejected because it contains special symbols.", // UNIFYAPI-BRAND: English copy
 			})
 			return
 		}

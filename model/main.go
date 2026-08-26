@@ -274,6 +274,8 @@ func migrateDB() error {
 		&Midjourney{},
 		&TopUp{},
 		&QuotaData{},
+		// UNIFYAPI-FORK: persisted reconciliation runs, see reconcile_snapshot.go
+		&ReconcileSnapshot{},
 		&Task{},
 		&Model{},
 		&Vendor{},
