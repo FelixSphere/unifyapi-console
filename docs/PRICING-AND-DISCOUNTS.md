@@ -200,6 +200,44 @@ curl -s "$CONSOLE/api/pricing/reconcile?start=2026-08-01&end=2026-08-31&group_by
 | `invoiced but nothing modelled` | 有发票没流量 | 渠道的厂商归属错了 |
 | `modelled but not invoiced` | 有流量没发票 | 发票没到，或渠道其实不是这家 |
 
+### 自动化：每天自己跑，不用你想着去查
+
+对账挂在 new-api 自带的 system-task 框架上（`controller/reconcile_task.go`），有数据库租约锁，
+多个 master 实例不会重复跑，每次运行留一条 task 记录。
+
+- **跑的是"昨天"，永不跑今天。** 预扣额度是请求时扣、结束后结算，所以进行中的当天收入落后于 token 数，
+  看起来像毛利崩了。
+- 每次快照三个维度：`model`（什么定错价了）、`vendor`（发票对不对）、`customer`（哪个客户不赚钱）
+- 检查间隔 6 小时，但只补还没有快照的日期，所以重启后很快就有数据，也不会重复算
+- 关掉：把 option `ReconcileEnabled` 设成 `false`（默认开）
+
+**告警规则**（`service/reconcile_alerts.go`，阈值可调）：
+
+| 级别 | 类型 | 触发 |
+|---|---|---|
+| critical | `loss-making` | 售价低于建模成本 |
+| critical | `unpriced-traffic` | 有流量走了价目表外的模型 → 该行成本偏低、毛利偏高，**不受金额下限限制** |
+| critical | `invoice-variance` | 厂商发票**高于**模型 >2% → 有没记账的真实支出 |
+| warning | `thin-margin` | 毛利低于 10% → 厂商一涨价就翻负 |
+| warning | `invoice-variance` | 发票**低于**模型 >2% → 有谈好的折扣没配进去 |
+
+金额下限 $1：低于一美元的行由取整和单次请求主导，报出来只会淹没真正的问题。
+告警按"严重度 → 涉及金额绝对值"排序，所以列表第一条就是该先修的那个。
+每条 critical 会**单独**打一行 `RECONCILE critical [...]` 日志——task 记录里的计数容易被划过去，写明哪个模型在亏钱不会。
+
+```bash
+# 快照历史（含告警明细）
+curl -s "$CONSOLE/api/pricing/reconcile/snapshots?group_by=model&limit=30" \
+  -H "Authorization: Bearer $ROOT_TOKEN" | jq '.data[] | {period_start,margin_pct,critical_alerts,alerts}'
+
+# 改完渠道成本/补完价目表后立刻重算某段（force 覆盖已有快照）
+curl -s -X POST "$CONSOLE/api/pricing/reconcile/run?start=2026-08-01&end=2026-08-31&force=true" \
+  -H "Authorization: Bearer $ROOT_TOKEN"
+```
+
+快照保留两年，够做同比；底层日志有自己的清理策略。
+存的是**当时算出来的完整报表 JSON**，不做规范化——否则历史快照会随着厂商改价而悄悄变化。
+
 ### 三个已知限制
 
 1. **`cached_tokens` 是新加的字段。** 这次改动之前，缓存命中数只存在日志的 `other` JSON 里，SQL 查不到。现在提成了列，但**改动之前的历史行读到 0**——所以那段时间的成本会被高估（缓存读在 Anthropic 只要输入价的 1/10）。方向是保守的：只会低估毛利。
