@@ -108,24 +108,49 @@ curl -s -X PUT "$CONSOLE/api/pricing/discount" \
 
 ---
 
-## 二、配上游成本（对账用）
+## 二、配上游采购成本（对账用）
 
 **只影响对账报表，绝不影响客户账单。**
 
 原因是路由做负载均衡：同一个请求今天走 A 渠道、明天走 B 渠道。
 如果渠道成本进了客户账单，同样的请求价格会跳变，客户自己没法对自己的账。
 
-```bash
-# 看当前配置，以及哪些渠道还没配
-curl -s "$CONSOLE/api/pricing/channel_cost" -H "Authorization: Bearer $ROOT_TOKEN"
+**后台 → 系统设置 → 计费与支付 → 模型定价 → 「上游采购成本」tab**（第二个 tab）
 
-# 渠道 3 拿到 list 的 85 折，渠道 7 是直采原价
+一行一个渠道：
+
+| 列 | 可改 | 说明 |
+|---|---|---|
+| 渠道 | ✗ | `#id 名称`；禁用的渠道置灰 |
+| 供应商 | ✗ | **从该渠道提供的模型自动推导**——你不用记渠道 id 对应哪家合同 |
+| 模型数 | ✗ | 红色徽章 = 该渠道有价目表之外的模型，这部分**算不出成本**，鼠标悬停看是哪些。该渠道的毛利会被高估 |
+| **采购倍率** | ✓ | 官方价的倍数。`0.7` = 采购价是官方价的七折；留空 = 按官方原价采购 |
+| 采购折扣 | ✗ | 换算成人话。**填了大于 1 的值会标红**——那意味着我们付得比厂商公开价还高，几乎总是填错 |
+| 客户折扣下限 | ✗ | 见下 |
+
+改完点「保存采购成本」。只有偏离官方价的渠道会入库，清空即撤销。
+
+### 「客户折扣下限」是什么
+
+它等于采购倍率本身，这不是巧合：
+
+**按官方价卖 + 按官方价采购 = 毛利恰好为零。** 所以毛利 100% 来自低于官方价的采购。
+一个模型的客户折扣**只要深于该厂商的采购折扣，每一个请求都在亏钱**。
+
+Anthropic 采购 0.65 → 该厂商模型的客户折扣不能低于 0.65。这一列就是把这个约束放在你填数字的地方，
+而不是让你一个月后在对账报表里发现。
+
+命令行等价操作：
+
+```bash
+curl -s "$CONSOLE/api/pricing/channel_cost" -H "Authorization: Bearer $ROOT_TOKEN"
 curl -s -X PUT "$CONSOLE/api/pricing/channel_cost" \
   -H "Authorization: Bearer $ROOT_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"cost_ratios":{"3":0.85,"7":1.0}}'
+  -d '{"cost_ratios":{"1":0.65,"2":0.8}}'
 ```
 
-没配的渠道按 **1.0（即 list 原价）** 计算成本。这是保守方向——只会低估毛利，不会高估。
+没配的渠道按 **1.0（即官方原价）** 计算成本。这是保守方向——只会低估毛利，不会高估。
+校验会拒绝 0、超过 5 倍、以及用渠道名而不是 id 作为 key。
 
 ---
 
@@ -259,4 +284,5 @@ curl -s "$CONSOLE/api/pricing/reconcile?start=...&end=...&group_by=model" | \
 | `controller/reconcile.go` | 对账接口 + CSV |
 | `scripts/pricing-drift/` | 漂移检查器 + 离线 fixture |
 | `seed-pricing.sql` | 删掉覆盖代码基线的 options 行 |
-| `web/src/features/system-settings/models/baseline-pricing-tab.tsx` | 后台折扣配置 UI |
+| `web/src/features/system-settings/models/baseline-pricing-tab.tsx` | 后台「官方报价与折扣」tab |
+| `web/src/features/system-settings/models/channel-cost-tab.tsx` | 后台「上游采购成本」tab |
