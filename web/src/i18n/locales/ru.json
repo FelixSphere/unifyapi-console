@@ -5271,6 +5271,26 @@
     "Clear all discounts": "Clear all discounts",
     "unverified": "unverified",
     "Discounts saved": "Discounts saved",
-    "Snapshot:": "Snapshot:"
+    "Snapshot:": "Snapshot:",
+    "All margin comes from buying below list: at list price in and list price out, margin is exactly zero. So a customer discount can never be deeper than the purchasing discount on that vendor.": "All margin comes from buying below list: at list price in and list price out, margin is exactly zero. So a customer discount can never be deeper than the purchasing discount on that vendor.",
+    "Cost ratio": "Cost ratio",
+    "Invalid cost ratio for channel: ": "Invalid cost ratio for channel: ",
+    "Max safe customer discount": "Max safe customer discount",
+    "Not in the pricing catalog, so not costable:": "Not in the pricing catalog, so not costable:",
+    "Purchasing discount": "Purchasing discount",
+    "Reset all to list price": "Reset all to list price",
+    "Save upstream costs": "Save upstream costs",
+    "Some channels serve models that are not in the pricing catalog. Their traffic cannot be costed, so margin for those channels is overstated.": "Some channels serve models that are not in the pricing catalog. Their traffic cannot be costed, so margin for those channels is overstated.",
+    "Upstream cost": "Upstream cost",
+    "Upstream costs saved": "Upstream costs saved",
+    "What our upstream charges us, as a multiplier on the vendor official list price. Used for reconciliation only -- it never changes what customers are billed. A channel left blank is costed at list price, which understates margin rather than overstating it.": "What our upstream charges us, as a multiplier on the vendor official list price. Used for reconciliation only -- it never changes what customers are billed. A channel left blank is costed at list price, which understates margin rather than overstating it.",
+    "channels have a negotiated rate configured": "channels have a negotiated rate configured",
+    "must be between 0 and 5": "must be between 0 and 5",
+    "+{{percent}}% markup": "+{{percent}}% markup",
+    "-{{percent}}%": "-{{percent}}%",
+    "list price": "list price",
+    "official price": "official price",
+    "paying {{percent}}% ABOVE list": "paying {{percent}}% ABOVE list",
+    "{{percent}}% off list": "{{percent}}% off list"
   }
 }

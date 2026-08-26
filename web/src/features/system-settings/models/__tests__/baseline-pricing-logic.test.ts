@@ -90,17 +90,19 @@ describe('invalidDiscountModels', () => {
 })
 
 describe('discountLabel', () => {
-  test('reads as the discount an operator would say', () => {
-    assert.equal(discountLabel(1), 'list')
-    assert.equal(discountLabel(0.85), '-15%')
-    assert.equal(discountLabel(0.7), '-30%')
+  test('classifies the position without baking in a language', () => {
+    assert.deepEqual(discountLabel(1), { kind: 'list' })
+    const fifteen = discountLabel(0.85)
+    assert.equal(fifteen.kind, 'discount')
+    assert.ok(fifteen.kind === 'discount' && Math.abs(fifteen.percent - 15) < 1e-9)
   })
 
-  test('a multiplier above 1 is named a markup, not a discount', () => {
+  test('a multiplier above 1 is a markup, not a discount', () => {
     // Four models on production were priced above vendor list. That is a valid
-    // decision but must never read as if it were a discount.
-    assert.equal(discountLabel(2), '+100% markup')
-    assert.equal(discountLabel(1.2), '+20% markup')
+    // decision but must never classify as if it were a discount.
+    const markup = discountLabel(2)
+    assert.equal(markup.kind, 'markup')
+    assert.ok(markup.kind === 'markup' && Math.abs(markup.percent - 100) < 1e-9)
   })
 })
 

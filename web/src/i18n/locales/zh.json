@@ -5271,6 +5271,26 @@
     "Invalid discount for: ": "折扣数值无效：",
     "Official in/out": "官方价 入/出",
     "unverified": "未核验",
-    "must be > 0": "必须大于 0"
+    "must be > 0": "必须大于 0",
+    "All margin comes from buying below list: at list price in and list price out, margin is exactly zero. So a customer discount can never be deeper than the purchasing discount on that vendor.": "毛利全部来自低于官方价的采购：按官方价卖 + 按官方价采购 = 毛利恰好为零。因此给客户的折扣不能深于该厂商的采购折扣。",
+    "Cost ratio": "采购倍率",
+    "Invalid cost ratio for channel: ": "采购倍率无效的渠道：",
+    "Max safe customer discount": "客户折扣下限",
+    "Not in the pricing catalog, so not costable:": "不在价目表中，无法计算成本：",
+    "Purchasing discount": "采购折扣",
+    "Reset all to list price": "全部重置为官方原价",
+    "Save upstream costs": "保存采购成本",
+    "Some channels serve models that are not in the pricing catalog. Their traffic cannot be costed, so margin for those channels is overstated.": "有渠道在提供价目表之外的模型，这部分流量算不出成本，对应渠道的毛利会被高估。",
+    "Upstream cost": "上游采购成本",
+    "Upstream costs saved": "采购成本已保存",
+    "What our upstream charges us, as a multiplier on the vendor official list price. Used for reconciliation only -- it never changes what customers are billed. A channel left blank is costed at list price, which understates margin rather than overstating it.": "上游实际收我们多少，以厂商官方报价的倍数表示。仅用于对账，绝不影响客户计费。留空的渠道按官方原价计成本——方向保守，只会低估毛利，不会高估。",
+    "channels have a negotiated rate configured": "个渠道已配置采购价",
+    "must be between 0 and 5": "必须在 0 与 5 之间",
+    "+{{percent}}% markup": "加价 {{percent}}%",
+    "-{{percent}}%": "-{{percent}}%",
+    "list price": "官方原价",
+    "official price": "官方报价",
+    "paying {{percent}}% ABOVE list": "高于官方价 {{percent}}%",
+    "{{percent}}% off list": "官方价 {{percent}}% 折让"
   }
 }

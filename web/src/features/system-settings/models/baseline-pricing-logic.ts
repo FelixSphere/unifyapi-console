@@ -48,11 +48,20 @@ export function formatUSD(value: number): string {
   return `$${value.toFixed(2)}`
 }
 
-/** discountLabel turns a multiplier into the discount an operator would say. */
-export function discountLabel(discount: number): string {
-  if (discount === 1) return 'list'
-  if (discount > 1) return `+${((discount - 1) * 100).toFixed(0)}% markup`
-  return `-${((1 - discount) * 100).toFixed(0)}%`
+/**
+ * DiscountLabel describes the pricing position in a language-neutral way, so
+ * the component can localise it rather than the helper baking in English.
+ */
+export type DiscountLabel =
+  | { kind: 'list' }
+  | { kind: 'discount'; percent: number }
+  | { kind: 'markup'; percent: number }
+
+/** discountLabel classifies a discount multiplier against the official price. */
+export function discountLabel(discount: number): DiscountLabel {
+  if (discount === 1) return { kind: 'list' }
+  if (discount > 1) return { kind: 'markup', percent: (discount - 1) * 100 }
+  return { kind: 'discount', percent: (1 - discount) * 100 }
 }
 
 /** invalidDiscountModels lists rows whose field cannot be saved. */

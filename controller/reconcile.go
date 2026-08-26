@@ -10,6 +10,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
@@ -167,31 +168,82 @@ func ExportReconciliationCSV(c *gin.Context) {
 	writeLine(report.Total)
 }
 
-// GetChannelCost serves the per-channel upstream cost multipliers, alongside
-// the channels that have none so the gaps are visible.
+// GetChannelCost serves the per-channel upstream cost multipliers, plus enough
+// context to actually set them.
+//
+// A channel id and a name are not enough: to type a purchasing discount you
+// have to know which vendor contract the channel is, so the models it serves are
+// resolved to catalog vendors. Channels serving models that are NOT catalogued
+// are called out too -- their traffic cannot be costed, so any margin computed
+// for that channel is overstated, and this is the screen where you would act on
+// it.
 func GetChannelCost(c *gin.Context) {
 	configured := ratio_setting.GetChannelCostRatioCopy()
 
-	channels, err := model.GetAllChannels(0, 0, true, false)
+	channels, err := model.GetAllChannels(0, 0, true, true)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
 	}
 
 	type channelCost struct {
-		ID         int     `json:"id"`
-		Name       string  `json:"name"`
-		CostRatio  float64 `json:"cost_ratio"`
-		Configured bool    `json:"configured"`
+		ID              int      `json:"id"`
+		Name            string   `json:"name"`
+		Status          int      `json:"status"`
+		Group           string   `json:"group"`
+		CostRatio       float64  `json:"cost_ratio"`
+		Configured      bool     `json:"configured"`
+		Vendors         []string `json:"vendors"`
+		ModelCount      int      `json:"model_count"`
+		UncataloguedNum int      `json:"uncatalogued_count"`
+		Uncatalogued    []string `json:"uncatalogued_models,omitempty"`
 	}
+
 	rows := make([]channelCost, 0, len(channels))
 	for _, channel := range channels {
 		_, configuredForChannel := configured[strconv.Itoa(channel.Id)]
+
+		vendors := map[string]bool{}
+		var uncatalogued []string
+		var modelCount int
+		for _, name := range splitAndTrim(channel.Models, ',') {
+			modelCount++
+			entry, ok := ratio_setting.CatalogEntryFor(name)
+			switch {
+			case !ok:
+				uncatalogued = append(uncatalogued, name)
+			case entry.Vendor != "":
+				vendors[entry.Vendor] = true
+			default:
+				vendors["unlisted"] = true
+			}
+		}
+
+		vendorList := make([]string, 0, len(vendors))
+		for vendor := range vendors {
+			vendorList = append(vendorList, vendor)
+		}
+		sort.Strings(vendorList)
+		sort.Strings(uncatalogued)
+
+		// Cap the sample: a misconfigured channel can carry hundreds of unknown
+		// model names, and the count is the number that matters.
+		sample := uncatalogued
+		if len(sample) > 8 {
+			sample = sample[:8]
+		}
+
 		rows = append(rows, channelCost{
-			ID:         channel.Id,
-			Name:       channel.Name,
-			CostRatio:  ratio_setting.GetChannelCostRatio(channel.Id),
-			Configured: configuredForChannel,
+			ID:              channel.Id,
+			Name:            channel.Name,
+			Status:          channel.Status,
+			Group:           channel.Group,
+			CostRatio:       ratio_setting.GetChannelCostRatio(channel.Id),
+			Configured:      configuredForChannel,
+			Vendors:         vendorList,
+			ModelCount:      modelCount,
+			UncataloguedNum: len(uncatalogued),
+			Uncatalogued:    sample,
 		})
 	}
 
@@ -201,7 +253,8 @@ func GetChannelCost(c *gin.Context) {
 			"channels": rows,
 			"note": "cost_ratio multiplies the vendor's official list price. Unconfigured channels " +
 				"default to 1 (we pay list), which is conservative: it can only understate margin. " +
-				"This never affects customer billing -- routing is load balanced.",
+				"This never affects customer billing -- routing is load balanced, so a channel's " +
+				"cost must not reach a customer's invoice.",
 		},
 	})
 }

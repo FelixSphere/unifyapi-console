@@ -506,3 +506,32 @@ export type UpdatePricingDiscountResponse = {
   errors?: string[]
   markups?: string[]
 }
+
+/* UNIFYAPI-FORK: per-channel upstream cost types. */
+export type ChannelCostRow = {
+  id: number
+  name: string
+  status: number
+  group: string
+  cost_ratio: number
+  configured: boolean
+  vendors: string[]
+  model_count: number
+  uncatalogued_count: number
+  uncatalogued_models?: string[]
+}
+
+export type ChannelCostResponse = {
+  success: boolean
+  message?: string
+  data: {
+    channels: ChannelCostRow[]
+    note: string
+  }
+}
+
+export type UpdateChannelCostResponse = {
+  success: boolean
+  message?: string
+  errors?: string[]
+}

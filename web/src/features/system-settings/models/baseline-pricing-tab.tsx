@@ -237,6 +237,22 @@ export function BaselinePricingTab() {
   )
 }
 
+/** renderDiscountLabel localises the pricing position. */
+function renderDiscountLabel(
+  t: (key: string, options?: Record<string, unknown>) => string,
+  discount: number
+): string {
+  const label = discountLabel(discount)
+  switch (label.kind) {
+    case 'list':
+      return t('official price')
+    case 'markup':
+      return t('+{{percent}}% markup', { percent: label.percent.toFixed(0) })
+    default:
+      return t('-{{percent}}%', { percent: label.percent.toFixed(0) })
+  }
+}
+
 type BaselineRowProps = {
   row: PricingBaselineModel
   groups: string[]
@@ -285,7 +301,7 @@ function BaselineRow({ row, groups, draft, onChange }: BaselineRowProps) {
         <span
           className={`block text-[10px] ${discount > 1 ? 'text-amber-600' : 'text-muted-foreground'}`}
         >
-          {invalid ? t('must be > 0') : discountLabel(discount)}
+          {invalid ? t('must be > 0') : renderDiscountLabel(t, discount)}
         </span>
       </TableCell>
       {groups.map((group) => {

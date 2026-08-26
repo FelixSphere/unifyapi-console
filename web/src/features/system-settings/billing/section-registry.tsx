@@ -117,6 +117,7 @@ const BILLING_SECTIONS = [
           // uncatalogued model, but saving them shadows the code baseline and
           // the baseline tab warns when that has happened.
           'baseline',
+          'channel-cost',
           'models',
           'unset-models',
           'tool-prices',

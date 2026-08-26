@@ -27,7 +27,9 @@ import type {
   SystemTaskResponse,
   UpdateOptionRequest,
   UpdateOptionResponse,
+  ChannelCostResponse,
   PricingBaselineResponse,
+  UpdateChannelCostResponse,
   UpdatePricingDiscountResponse,
   UpstreamChannelsResponse,
   UpstreamRatiosResponse,
@@ -125,6 +127,26 @@ export async function updatePricingDiscount(discounts: Record<string, number>) {
   const res = await api.put<UpdatePricingDiscountResponse>(
     '/api/pricing/discount',
     { discounts }
+  )
+  return res.data
+}
+
+/*
+ * UNIFYAPI-FORK: per-channel upstream cost, for reconciliation only.
+ *
+ * Kept separate from the discount endpoints because it is the one pricing number
+ * that must NOT reach a customer's invoice: routing is load balanced, so a
+ * channel's cost varies by route while a customer's price must not.
+ */
+export async function getChannelCost() {
+  const res = await api.get<ChannelCostResponse>('/api/pricing/channel_cost')
+  return res.data
+}
+
+export async function updateChannelCost(costRatios: Record<string, number>) {
+  const res = await api.put<UpdateChannelCostResponse>(
+    '/api/pricing/channel_cost',
+    { cost_ratios: costRatios }
   )
   return res.data
 }

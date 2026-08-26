@@ -28,6 +28,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import { BaselinePricingTab } from './baseline-pricing-tab'
+import { ChannelCostTab } from './channel-cost-tab'
 
 import { resetModelRatios } from '../api'
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
@@ -145,6 +146,9 @@ type RatioTabId =
   // listed first because it is the tab an operator should use; the raw-ratio
   // tabs below it write an options row that shadows the code baseline.
   | 'baseline'
+  // 'channel-cost' is the upstream purchasing cost -- reconciliation only, it
+  // never reaches a customer's invoice.
+  | 'channel-cost'
   | 'models'
   | 'unset-models'
   | 'groups'
@@ -410,6 +414,7 @@ export function RatioSettingsCard({
 
   const tabLabels: Record<RatioTabId, string> = {
     baseline: 'Official price & discount',
+    'channel-cost': 'Upstream cost',
     models: 'Model prices',
     'unset-models': 'Unset price models',
     groups: 'Group ratios',
@@ -424,12 +429,16 @@ export function RatioSettingsCard({
       4: 'grid-cols-4',
       5: 'grid-cols-5',
       6: 'grid-cols-6',
+      7: 'grid-cols-7',
     }[visibleTabs.length] ?? 'grid-cols-4'
   const defaultTab = visibleTabs[0] ?? 'models'
 
   const renderTabContent = (tab: RatioTabId) => {
     if (tab === 'baseline') {
       return <BaselinePricingTab />
+    }
+    if (tab === 'channel-cost') {
+      return <ChannelCostTab />
     }
     if (tab === 'models' || tab === 'unset-models') {
       return (

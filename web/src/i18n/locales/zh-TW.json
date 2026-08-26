@@ -5271,6 +5271,26 @@
     "Invalid discount for: ": "折扣數值無效：",
     "Official in/out": "官方價 入/出",
     "unverified": "未核驗",
-    "must be > 0": "必須大於 0"
+    "must be > 0": "必須大於 0",
+    "All margin comes from buying below list: at list price in and list price out, margin is exactly zero. So a customer discount can never be deeper than the purchasing discount on that vendor.": "All margin comes from buying below list: at list price in and list price out, margin is exactly zero. So a customer discount can never be deeper than the purchasing discount on that vendor.",
+    "Cost ratio": "採購倍率",
+    "Invalid cost ratio for channel: ": "採購倍率無效的渠道：",
+    "Max safe customer discount": "客戶折扣下限",
+    "Not in the pricing catalog, so not costable:": "不在價目表中，無法計算成本：",
+    "Purchasing discount": "採購折扣",
+    "Reset all to list price": "全部重設為官方原價",
+    "Save upstream costs": "儲存採購成本",
+    "Some channels serve models that are not in the pricing catalog. Their traffic cannot be costed, so margin for those channels is overstated.": "Some channels serve models that are not in the pricing catalog. Their traffic cannot be costed, so margin for those channels is overstated.",
+    "Upstream cost": "上游採購成本",
+    "Upstream costs saved": "採購成本已儲存",
+    "What our upstream charges us, as a multiplier on the vendor official list price. Used for reconciliation only -- it never changes what customers are billed. A channel left blank is costed at list price, which understates margin rather than overstating it.": "What our upstream charges us, as a multiplier on the vendor official list price. Used for reconciliation only -- it never changes what customers are billed. A channel left blank is costed at list price, which understates margin rather than overstating it.",
+    "channels have a negotiated rate configured": "個渠道已設定採購價",
+    "must be between 0 and 5": "必須在 0 與 5 之間",
+    "+{{percent}}% markup": "加價 {{percent}}%",
+    "-{{percent}}%": "-{{percent}}%",
+    "list price": "官方原價",
+    "official price": "官方報價",
+    "paying {{percent}}% ABOVE list": "高於官方價 {{percent}}%",
+    "{{percent}}% off list": "官方價 {{percent}}% 折讓"
   }
 }
