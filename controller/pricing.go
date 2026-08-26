@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"fmt"
+
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -76,26 +78,44 @@ func GetPricing(c *gin.Context) {
 	})
 }
 
+// ResetModelRatio restores the pricing baseline from the catalog.
+//
+// UNIFYAPI-FORK: this used to write ModelRatio alone. Because every ratio is
+// now derived from one list price, restoring the input ratio without also
+// restoring the output/cache multipliers leaves a half-reset price -- so all
+// four token-pricing maps go back together, in one transaction, via
+// UpdateOptionsBulk. Anything not in the catalog is dropped rather than merged,
+// which is the point: reset is how you get the DB back to exactly the models
+// UnifyAPI sells.
 func ResetModelRatio(c *gin.Context) {
-	defaultStr := ratio_setting.DefaultModelRatio2JSONString()
-	err := model.UpdateOption("ModelRatio", defaultStr)
-	if err != nil {
+	baseline := ratio_setting.BaselineRatios()
+	values := make(map[string]string, len(baseline))
+	for option, ratios := range baseline {
+		encoded, err := common.Marshal(ratios)
+		if err != nil {
+			c.JSON(200, gin.H{
+				"success": false,
+				"message": "序列化 " + option + " 失败：" + err.Error(),
+			})
+			return
+		}
+		values[option] = string(encoded)
+	}
+
+	// UpdateOptionsBulk persists every key in one transaction and only then
+	// dispatches them into the in-memory maps, so a failure part-way cannot
+	// leave the process billing on a half-applied baseline.
+	if err := model.UpdateOptionsBulk(values); err != nil {
 		c.JSON(200, gin.H{
 			"success": false,
 			"message": err.Error(),
 		})
 		return
 	}
-	err = ratio_setting.UpdateModelRatioByJSONString(defaultStr)
-	if err != nil {
-		c.JSON(200, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
-		return
-	}
+
 	c.JSON(200, gin.H{
 		"success": true,
-		"message": "重置模型倍率成功",
+		"message": fmt.Sprintf("已按官方报价基线重置 %d 个模型的定价（倍率、补全、缓存读、缓存写）",
+			len(baseline["ModelRatio"])),
 	})
 }

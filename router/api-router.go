@@ -242,6 +242,20 @@ func SetApiRouter(router *gin.Engine) {
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
 		}
+		// UNIFYAPI-FORK: the three-price admin surface -- official list price
+		// (read-only, from the code catalog), our per-model customer discount,
+		// and per-channel upstream cost for reconciliation. Root only: these
+		// decide what customers are billed.
+		pricingAdminRoute := apiRouter.Group("/pricing")
+		pricingAdminRoute.Use(middleware.RootAuth())
+		{
+			pricingAdminRoute.GET("/baseline", controller.GetPricingBaseline)
+			pricingAdminRoute.PUT("/discount", controller.UpdatePricingDiscount)
+			pricingAdminRoute.GET("/reconcile", controller.GetReconciliation)
+			pricingAdminRoute.GET("/reconcile.csv", controller.ExportReconciliationCSV)
+			pricingAdminRoute.GET("/channel_cost", controller.GetChannelCost)
+			pricingAdminRoute.PUT("/channel_cost", controller.UpdateChannelCost)
+		}
 		registerChannelRoutes(apiRouter)
 		registerAuthzRoutes(apiRouter)
 		tokenRoute := apiRouter.Group("/token")

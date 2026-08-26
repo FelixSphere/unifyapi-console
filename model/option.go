@@ -142,6 +142,13 @@ func InitOptionMap() {
 	common.OptionMap["ModelRequestRateLimitDurationMinutes"] = strconv.Itoa(setting.ModelRequestRateLimitDurationMinutes)
 	common.OptionMap["ModelRequestRateLimitSuccessCount"] = strconv.Itoa(setting.ModelRequestRateLimitSuccessCount)
 	common.OptionMap["ModelRequestRateLimitGroup"] = setting.ModelRequestRateLimitGroup2JSONString()
+	// UNIFYAPI-FORK: per-model customer discount. Kept separate from ModelRatio
+	// so the baseline can stay at the vendors' official prices -- see
+	// setting/ratio_setting/unifyapi_discount.go.
+	common.OptionMap["ModelDiscount"] = ratio_setting.ModelDiscount2JSONString()
+	// UNIFYAPI-FORK: what our upstream charges us, per channel. Reconciliation
+	// only -- never customer billing.
+	common.OptionMap["ChannelCostRatio"] = ratio_setting.ChannelCostRatio2JSONString()
 	common.OptionMap["ModelRatio"] = ratio_setting.ModelRatio2JSONString()
 	common.OptionMap["ModelPrice"] = ratio_setting.ModelPrice2JSONString()
 	common.OptionMap["CacheRatio"] = ratio_setting.CacheRatio2JSONString()
@@ -557,6 +564,10 @@ func updateOptionMap(key string, value string) (err error) {
 		common.DataExportInterval, _ = strconv.Atoi(value)
 	case "DataExportDefaultTime":
 		common.DataExportDefaultTime = value
+	case "ModelDiscount":
+		err = ratio_setting.UpdateModelDiscountByJSONString(value)
+	case "ChannelCostRatio":
+		err = ratio_setting.UpdateChannelCostRatioByJSONString(value)
 	case "ModelRatio":
 		err = ratio_setting.UpdateModelRatioByJSONString(value)
 	case "GroupRatio":

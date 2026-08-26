@@ -449,3 +449,60 @@ export type UpstreamRatiosResponse = {
     test_results: TestResult[]
   }
 }
+
+/*
+ * UNIFYAPI-FORK: pricing baseline types.
+ *
+ * Prices are USD per 1M tokens -- the unit the vendors publish and the unit an
+ * operator can sanity-check. Billing ratios are derived from them server-side;
+ * the UI never asks anyone to reason in ratio units, which is how the
+ * claude-opus-4-8 typo (0.2125 where 2.5 was meant) survived review.
+ */
+export type PricingBaselineGroupPrice = {
+  group_ratio: number
+  input_usd: number
+  output_usd: number
+}
+
+export type PricingBaselineModel = {
+  model: string
+  vendor: string
+  upstream_model?: string
+  unverified: boolean
+  official_input_usd: number
+  official_output_usd: number
+  official_cache_read_usd?: number
+  official_cache_write_usd?: number
+  discount: number
+  model_ratio: number
+  completion_ratio: number
+  group_prices: Record<string, PricingBaselineGroupPrice>
+}
+
+export type PricingBaselineShadow = {
+  option: string
+  model: string
+  baseline: number
+  live: number
+  reason: string
+}
+
+export type PricingBaselineResponse = {
+  success: boolean
+  message?: string
+  data: {
+    models: PricingBaselineModel[]
+    group_ratios: Record<string, number>
+    snapshot_date: string
+    discounts: Record<string, number>
+    shadows: PricingBaselineShadow[]
+    shadow_warning: string
+  }
+}
+
+export type UpdatePricingDiscountResponse = {
+  success: boolean
+  message?: string
+  errors?: string[]
+  markups?: string[]
+}

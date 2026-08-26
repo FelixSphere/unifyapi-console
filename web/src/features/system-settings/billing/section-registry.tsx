@@ -111,7 +111,17 @@ const BILLING_SECTIONS = [
         modelDefaults={getModelDefaults(settings)}
         groupDefaults={getGroupDefaults(settings)}
         toolPricesDefault={settings['tool_price_setting.prices']}
-        visibleTabs={['models', 'unset-models', 'tool-prices', 'upstream-sync']}
+        visibleTabs={[
+          // UNIFYAPI-FORK: 'baseline' first -- it is the supported way to price
+          // a model. The raw-ratio tabs are kept for the rare case of an
+          // uncatalogued model, but saving them shadows the code baseline and
+          // the baseline tab warns when that has happened.
+          'baseline',
+          'models',
+          'unset-models',
+          'tool-prices',
+          'upstream-sync',
+        ]}
       />
     ),
   },

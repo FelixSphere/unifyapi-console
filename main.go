@@ -324,6 +324,23 @@ func InitResources() error {
 	}
 	model.InitOptionMap()
 
+	// UNIFYAPI-FORK: InitOptionMap ends by loading the options table, and the
+	// pricing loader REPLACES its map rather than merging, so a single
+	// ModelRatio row silently discards the whole code baseline. That is how
+	// production ended up 11.8x under on claude-opus-4-8 with nothing to catch
+	// it. Say so at boot; seed-pricing.sql explains the fix.
+	if shadows := ratio_setting.DetectBaselineShadow(); len(shadows) > 0 {
+		common.SysError(fmt.Sprintf(
+			"PRICING: %d model/ratio pairs are billing at something other than the official-price baseline -- "+
+				"a database options row is shadowing setting/ratio_setting/unifyapi_catalog.go. "+
+				"Inspect via GET /api/pricing/baseline; fix by running seed-pricing.sql and restarting.",
+			len(shadows)))
+		for _, shadow := range shadows[:min(len(shadows), 10)] {
+			common.SysError(fmt.Sprintf("PRICING:   %s[%s]: baseline=%g live=%g (%s)",
+				shadow.Option, shadow.Model, shadow.Baseline, shadow.Live, shadow.Reason))
+		}
+	}
+
 	// 清理旧的磁盘缓存文件
 	common.CleanupOldCacheFiles()
 

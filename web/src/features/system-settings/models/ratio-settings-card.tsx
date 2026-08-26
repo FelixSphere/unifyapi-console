@@ -27,6 +27,8 @@ import * as z from 'zod'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
+import { BaselinePricingTab } from './baseline-pricing-tab'
+
 import { resetModelRatios } from '../api'
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
@@ -139,6 +141,10 @@ const createGroupSchema = (t: Translate) =>
 type ModelFormValues = z.infer<ReturnType<typeof createModelSchema>>
 type GroupFormValues = z.infer<ReturnType<typeof createGroupSchema>>
 type RatioTabId =
+  // UNIFYAPI-FORK: 'baseline' is the official-price + discount view. It is
+  // listed first because it is the tab an operator should use; the raw-ratio
+  // tabs below it write an options row that shadows the code baseline.
+  | 'baseline'
   | 'models'
   | 'unset-models'
   | 'groups'
@@ -403,6 +409,7 @@ export function RatioSettingsCard({
   }, [resetMutate])
 
   const tabLabels: Record<RatioTabId, string> = {
+    baseline: 'Official price & discount',
     models: 'Model prices',
     'unset-models': 'Unset price models',
     groups: 'Group ratios',
@@ -416,10 +423,14 @@ export function RatioSettingsCard({
       3: 'grid-cols-3',
       4: 'grid-cols-4',
       5: 'grid-cols-5',
+      6: 'grid-cols-6',
     }[visibleTabs.length] ?? 'grid-cols-4'
   const defaultTab = visibleTabs[0] ?? 'models'
 
   const renderTabContent = (tab: RatioTabId) => {
+    if (tab === 'baseline') {
+      return <BaselinePricingTab />
+    }
     if (tab === 'models' || tab === 'unset-models') {
       return (
         <ModelRatioForm

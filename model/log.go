@@ -57,17 +57,28 @@ func sanitizeClickHouseLikePattern(input string) (string, error) {
 }
 
 type Log struct {
-	Id                int    `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2"`
-	UserId            int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
-	CreatedAt         int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type"`
-	Type              int    `json:"type" gorm:"index:idx_created_at_type"`
-	Content           string `json:"content"`
-	Username          string `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
-	TokenName         string `json:"token_name" gorm:"index;default:''"`
-	ModelName         string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
-	Quota             int    `json:"quota" gorm:"default:0"`
-	PromptTokens      int    `json:"prompt_tokens" gorm:"default:0"`
-	CompletionTokens  int    `json:"completion_tokens" gorm:"default:0"`
+	Id               int    `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2"`
+	UserId           int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
+	CreatedAt        int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type"`
+	Type             int    `json:"type" gorm:"index:idx_created_at_type"`
+	Content          string `json:"content"`
+	Username         string `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
+	TokenName        string `json:"token_name" gorm:"index;default:''"`
+	ModelName        string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
+	Quota            int    `json:"quota" gorm:"default:0"`
+	PromptTokens     int    `json:"prompt_tokens" gorm:"default:0"`
+	CompletionTokens int    `json:"completion_tokens" gorm:"default:0"`
+	// CachedTokens is the subset of PromptTokens that was served from a prompt
+	// cache.
+	//
+	// UNIFYAPI-FORK: promoted to a column. It was only ever inside the `other`
+	// JSON blob, which meant reconciliation could not see it without parsing
+	// every row -- and cached reads cost a tenth of fresh input at Anthropic, so
+	// ignoring them overstates modelled upstream cost by up to 10x on
+	// cache-heavy traffic and makes every margin look negative. Rows written
+	// before this column exists read 0, which is the conservative direction:
+	// cost is overstated, never understated.
+	CachedTokens      int    `json:"cached_tokens" gorm:"default:0"`
 	UseTime           int    `json:"use_time" gorm:"default:0"`
 	IsStream          bool   `json:"is_stream"`
 	ChannelId         int    `json:"channel" gorm:"index"`
@@ -340,6 +351,36 @@ type RecordConsumeLogParams struct {
 	Other            map[string]interface{} `json:"other"`
 }
 
+// cachedTokensFromOther pulls the cached-prompt-token count out of the log's
+// `other` map so it can be stored as a column.
+//
+// The value arrives as whatever the JSON round-trip produced, so int and
+// float64 both have to be handled -- GenerateTextOtherInfo writes an int, but
+// the same map is rebuilt from JSON on some paths.
+func cachedTokensFromOther(other map[string]interface{}) int {
+	raw, ok := other["cache_tokens"]
+	if !ok {
+		return 0
+	}
+	switch typed := raw.(type) {
+	case int:
+		return maxInt(typed, 0)
+	case int64:
+		return maxInt(int(typed), 0)
+	case float64:
+		return maxInt(int(typed), 0)
+	default:
+		return 0
+	}
+}
+
+func maxInt(value, floor int) int {
+	if value < floor {
+		return floor
+	}
+	return value
+}
+
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
 	if !common.LogConsumeEnabled {
 		return
@@ -365,6 +406,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		Content:          params.Content,
 		PromptTokens:     params.PromptTokens,
 		CompletionTokens: params.CompletionTokens,
+		CachedTokens:     cachedTokensFromOther(params.Other),
 		TokenName:        params.TokenName,
 		ModelName:        params.ModelName,
 		Quota:            params.Quota,

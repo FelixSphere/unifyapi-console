@@ -27,6 +27,8 @@ import type {
   SystemTaskResponse,
   UpdateOptionRequest,
   UpdateOptionResponse,
+  PricingBaselineResponse,
+  UpdatePricingDiscountResponse,
   UpstreamChannelsResponse,
   UpstreamRatiosResponse,
 } from './types'
@@ -102,6 +104,27 @@ export async function fetchUpstreamRatios(request: FetchUpstreamRatiosRequest) {
   const res = await api.post<UpstreamRatiosResponse>(
     '/api/ratio_sync/fetch',
     request
+  )
+  return res.data
+}
+
+/*
+ * UNIFYAPI-FORK: the pricing baseline and the per-model customer discount.
+ *
+ * These are separate from the ratio endpoints above on purpose. Saving a ratio
+ * writes an options row that replaces the whole code baseline; saving a
+ * discount leaves the official prices alone and only records the multiplier we
+ * sell at. See setting/ratio_setting/unifyapi_discount.go.
+ */
+export async function getPricingBaseline() {
+  const res = await api.get<PricingBaselineResponse>('/api/pricing/baseline')
+  return res.data
+}
+
+export async function updatePricingDiscount(discounts: Record<string, number>) {
+  const res = await api.put<UpdatePricingDiscountResponse>(
+    '/api/pricing/discount',
+    { discounts }
   )
   return res.data
 }

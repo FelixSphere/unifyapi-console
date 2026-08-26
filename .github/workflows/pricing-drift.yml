@@ -1,0 +1,150 @@
+# Keeps the pricing baseline honest.
+#
+# Two jobs, deliberately different in what they block:
+#
+#   offline  runs on every PR. Diffs the catalog against the committed
+#            models.dev fixture, so editing a price without updating the
+#            fixture (or vice versa) fails the PR that does it. No network, so
+#            a models.dev outage can never redden an unrelated change.
+#
+#   live     runs weekly and on demand. Fetches models.dev for real and opens
+#            an issue when a vendor has repriced. It does NOT push a fix: a
+#            repricing changes what customers are invoiced the moment it
+#            deploys, so it needs a human deciding whether the per-model
+#            discount absorbs the change or passes it through.
+name: Pricing drift
+
+on:
+  pull_request:
+    paths:
+      - 'setting/ratio_setting/**'
+      - 'scripts/pricing-drift/**'
+      - '.github/workflows/pricing-drift.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'setting/ratio_setting/**'
+      - 'scripts/pricing-drift/**'
+  schedule:
+    # Mondays 06:00 UTC -- before the week's pricing decisions, after any
+    # weekend vendor announcements.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    if: github.repository == 'FelixSphere/unifyapi-console'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      # go vet and the build trip on //go:embed web/dist in a tree that has
+      # never built the SPA. The stub is enough for the pricing packages.
+      - name: Create embed stub
+        run: mkdir -p web/dist && echo '<!doctype html>' > web/dist/index.html
+      - name: Baseline tests
+        run: go test ./setting/ratio_setting/ ./service/ ./scripts/pricing-drift/ -count=1
+        env:
+          GOWORK: off
+
+  live:
+    if: |
+      github.repository == 'FelixSphere/unifyapi-console' &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Create embed stub
+        run: mkdir -p web/dist && echo '<!doctype html>' > web/dist/index.html
+
+      - name: Check the catalog against models.dev
+        id: drift
+        env:
+          GOWORK: off
+        run: |
+          set +e
+          go run ./scripts/pricing-drift > drift.txt 2>&1
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          set -e
+          cat drift.txt
+
+      - name: Open an issue when a vendor has repriced
+        if: steps.drift.outputs.exit_code == '1'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            const report = fs.readFileSync('drift.txt', 'utf8')
+            const title = 'Pricing drift: a vendor has changed its list price'
+
+            // Reuse an open issue rather than opening one a week until someone
+            // acts -- a pile of duplicates trains people to close them unread.
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'pricing-drift',
+            })
+
+            const body = [
+              'The pricing baseline in `setting/ratio_setting/unifyapi_catalog.go`',
+              'no longer matches models.dev.',
+              '',
+              '```',
+              report.trim(),
+              '```',
+              '',
+              '**What to do**',
+              '',
+              '1. Update the affected rows in `unifyapi_catalog.go` to the new official prices.',
+              '2. Bump `PricingSnapshotDate`.',
+              '3. Refresh the fixture:',
+              '   `go run ./scripts/pricing-drift -save scripts/pricing-drift/testdata/models-dev-<date>.json`',
+              '   and update `fixturePath` in `main_test.go`.',
+              '4. **Decide the commercial question:** a higher official price raises what every',
+              '   customer pays unless the per-model discount is lowered to absorb it. Check',
+              '   `GET /api/pricing/reconcile?group_by=model` for the affected models first --',
+              '   a model already thin on margin cannot absorb a rise.',
+              '',
+              'Prices are never updated automatically, by design.',
+            ].join('\n')
+
+            if (existing.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.data[0].number,
+                body: `Still drifting as of ${context.sha.slice(0, 7)}:\n\n${body}`,
+              })
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                labels: ['pricing-drift'],
+                body,
+              })
+            }
+
+      - name: Fail the run so the schedule shows red
+        if: steps.drift.outputs.exit_code == '1'
+        run: exit 1
+
+      - name: Fail on a checker error
+        if: steps.drift.outputs.exit_code == '2'
+        run: |
+          echo "pricing-drift could not run (network or parse failure). Not a pricing problem."
+          exit 1

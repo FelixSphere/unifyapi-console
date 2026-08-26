@@ -2044,7 +2044,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "Projets liés",
     "footer.defaultCopyright": "Tous droits réservés.",
-    "footer.new\u0061pi.projectAttributionSuffix": "Tous droits réservés. Conçu et développé par les contributeurs du projet.",
+    "footer.newapi.projectAttributionSuffix": "Tous droits réservés. Conçu et développé par les contributeurs du projet.",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "Pour les canaux ajoutés après le 10 mai 2025, pas besoin de supprimer \".\" des noms de modèles lors du déploiement",
     "For private deployments, format: https://fastgpt.run/api/openapi": "Pour les déploiements privés, format : https://fastgpt.run/api/openapi",
     "Force a syntactically valid JSON response": "Imposer une réponse JSON syntaxiquement valide",
@@ -5258,6 +5258,19 @@
     "Zero retention": "Aucune rétention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Filter by model or vendor": "Filter by model or vendor",
+    "Save discounts": "Save discounts",
+    "Database is overriding the code baseline": "Database is overriding the code baseline",
+    "Failed to save discounts": "Failed to save discounts",
+    "Official price & discount": "Official price & discount",
+    "must be > 0": "must be > 0",
+    "Official prices come from the code catalog and are verified against models.dev; they are not editable here. Only the discount column is. Customer price = official price x discount x group ratio.": "Official prices come from the code catalog and are verified against models.dev; they are not editable here. Only the discount column is. Customer price = official price x discount x group ratio.",
+    "Invalid discount for: ": "Invalid discount for: ",
+    "Official in/out": "Official in/out",
+    "Clear all discounts": "Clear all discounts",
+    "unverified": "unverified",
+    "Discounts saved": "Discounts saved",
+    "Snapshot:": "Snapshot:"
   }
 }

@@ -2044,7 +2044,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "相关项目",
     "footer.defaultCopyright": "版权所有。",
-    "footer.new\u0061pi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
+    "footer.newapi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "对于 2025 年 5 月 10 日之后添加的渠道，在部署时无需从模型名称中移除 \".\"",
     "For private deployments, format: https://fastgpt.run/api/openapi": "对于私有部署，格式为：https://fastgpt.run/api/openapi",
     "Force a syntactically valid JSON response": "强制返回语法合法的 JSON",
@@ -5258,6 +5258,19 @@
     "Zero retention": "零数据保留",
     "Zhipu": "智谱",
     "Zhipu V4": "智谱 V4",
-    "Zoom": "缩放"
+    "Zoom": "缩放",
+    "Official price & discount": "官方报价与折扣",
+    "Official prices come from the code catalog and are verified against models.dev; they are not editable here. Only the discount column is. Customer price = official price x discount x group ratio.": "官方报价来自代码中的价目表，并已对 models.dev 校验，此处不可编辑；只有「折扣」一列可改。客户价 = 官方报价 × 模型折扣 × 分组倍率。",
+    "Snapshot:": "价格快照日期：",
+    "Database is overriding the code baseline": "数据库正在覆盖代码基线",
+    "Filter by model or vendor": "按模型或供应商筛选",
+    "Clear all discounts": "清除全部折扣",
+    "Save discounts": "保存折扣",
+    "Discounts saved": "折扣已保存",
+    "Failed to save discounts": "折扣保存失败",
+    "Invalid discount for: ": "折扣数值无效：",
+    "Official in/out": "官方价 入/出",
+    "unverified": "未核验",
+    "must be > 0": "必须大于 0"
   }
 }
