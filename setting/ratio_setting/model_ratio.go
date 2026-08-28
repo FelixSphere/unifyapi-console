@@ -333,12 +333,34 @@ var defaultCompletionRatio = map[string]float64{
 }
 
 // InitRatioSettings initializes all model related settings maps
+//
+// UNIFYAPI-FORK: the four token-pricing maps are seeded from the pricing
+// catalog (unifyapi_catalog.go) rather than upstream's defaultModelRatio &
+// friends, so the baseline is exactly the models we sell and every ratio is
+// derived from a vendor list price. modelRatioMap is the gate -- GetModelRatio
+// missing a model makes the relay refuse it -- so seeding it from the catalog
+// is what makes "only catalogued models are sellable" true.
+//
+// modelPriceMap, imageRatioMap and the two audio maps keep upstream's defaults:
+// those are separate namespaces (per-call task pseudo-models like mj_*/suno_*,
+// and image/audio token modifiers), none of which can be billed unless the
+// model also has a catalog ratio.
 func InitRatioSettings() {
 	modelPriceMap.AddAll(defaultModelPrice)
-	modelRatioMap.AddAll(defaultModelRatio)
-	completionRatioMap.AddAll(defaultCompletionRatio)
-	cacheRatioMap.AddAll(defaultCacheRatio)
-	createCacheRatioMap.AddAll(defaultCreateCacheRatio)
+	// applyModelDiscounts builds modelRatioMap as official price x per-model
+	// customer discount. With no discounts configured yet it is the official
+	// price; UpdateModelDiscountByJSONString re-runs it when they load.
+	applyModelDiscounts()
+	for option, ratios := range BaselineRatios() {
+		switch option {
+		case "CompletionRatio":
+			completionRatioMap.AddAll(ratios)
+		case "CacheRatio":
+			cacheRatioMap.AddAll(ratios)
+		case "CreateCacheRatio":
+			createCacheRatioMap.AddAll(ratios)
+		}
+	}
 	imageRatioMap.AddAll(defaultImageRatio)
 	audioRatioMap.AddAll(defaultAudioRatio)
 	audioCompletionRatioMap.AddAll(defaultAudioCompletionRatio)
@@ -409,8 +431,16 @@ func GetModelRatio(name string) (float64, bool, string) {
 	return ratio, true, name
 }
 
+// DefaultModelRatio2JSONString is what the admin "reset model ratios" button
+// writes back.
+//
+// UNIFYAPI-FORK: it returns the catalog baseline, not upstream's
+// defaultModelRatio. Before this, reset wrote 237 legacy models over the live
+// map -- and because the loader replaces the map rather than merging into it
+// (types.LoadFromJsonString), every model we actually sell lost its ratio and
+// started refusing requests. One click was a site-wide outage.
 func DefaultModelRatio2JSONString() string {
-	jsonBytes, err := common.Marshal(defaultModelRatio)
+	jsonBytes, err := common.Marshal(baselineModelRatio())
 	if err != nil {
 		common.SysError("error marshalling model ratio: " + err.Error())
 	}
@@ -418,7 +448,7 @@ func DefaultModelRatio2JSONString() string {
 }
 
 func GetDefaultModelRatioMap() map[string]float64 {
-	return defaultModelRatio
+	return baselineModelRatio()
 }
 
 func GetDefaultModelPriceMap() map[string]float64 {
