@@ -48,6 +48,11 @@ func (reconcileHandler) Type() string { return model.SystemTaskTypeReconcile }
 // Enabled defaults to ON. Reconciliation that has to be switched on is
 // reconciliation nobody switches on; the run is a couple of aggregate queries
 // against an indexed table once a day.
+//
+// Safe to leave on before any purchasing cost is entered: with no
+// ChannelCostRatio configured, EvaluateReconcileAlerts reports one "no cost
+// basis" warning instead of flagging the entire catalog as loss-making. The
+// snapshots it writes in that state still carry real revenue and token counts.
 func (reconcileHandler) Enabled() bool {
 	value, ok := common.OptionMap["ReconcileEnabled"]
 	if !ok || value == "" {
