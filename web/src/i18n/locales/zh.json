@@ -5291,6 +5291,7 @@
     "list price": "官方原价",
     "official price": "官方报价",
     "paying {{percent}}% ABOVE list": "高于官方价 {{percent}}%",
-    "{{percent}}% off list": "官方价 {{percent}}% 折让"
+    "{{percent}}% off list": "官方价 {{percent}}% 折让",
+    "Model count": "模型数"
   }
 }

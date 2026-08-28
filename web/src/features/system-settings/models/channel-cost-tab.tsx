@@ -183,7 +183,10 @@ export function ChannelCostTab() {
             <TableRow>
               <TableHead>{t('Channel')}</TableHead>
               <TableHead>{t('Vendor')}</TableHead>
-              <TableHead className='text-right'>{t('Models')}</TableHead>
+              {/* Its own key, not the generic 'Models': this column holds a
+                  COUNT, and a column headed "模型" showing "3" reads as a model
+                  named 3. */}
+              <TableHead className='text-right'>{t('Model count')}</TableHead>
               <TableHead className='w-32'>{t('Cost ratio')}</TableHead>
               <TableHead>{t('Purchasing discount')}</TableHead>
               <TableHead className='text-right'>

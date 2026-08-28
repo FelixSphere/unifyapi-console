@@ -5272,7 +5272,7 @@
     "Official in/out": "官方價 入/出",
     "unverified": "未核驗",
     "must be > 0": "必須大於 0",
-    "All margin comes from buying below list: at list price in and list price out, margin is exactly zero. So a customer discount can never be deeper than the purchasing discount on that vendor.": "All margin comes from buying below list: at list price in and list price out, margin is exactly zero. So a customer discount can never be deeper than the purchasing discount on that vendor.",
+    "All margin comes from buying below list: at list price in and list price out, margin is exactly zero. So a customer discount can never be deeper than the purchasing discount on that vendor.": "毛利全部來自低於官方價的採購：按官方價賣 + 按官方價採購 = 毛利恰好為零。因此給客戶的折扣不能深於該廠商的採購折扣。",
     "Cost ratio": "採購倍率",
     "Invalid cost ratio for channel: ": "採購倍率無效的渠道：",
     "Max safe customer discount": "客戶折扣下限",
@@ -5280,10 +5280,10 @@
     "Purchasing discount": "採購折扣",
     "Reset all to list price": "全部重設為官方原價",
     "Save upstream costs": "儲存採購成本",
-    "Some channels serve models that are not in the pricing catalog. Their traffic cannot be costed, so margin for those channels is overstated.": "Some channels serve models that are not in the pricing catalog. Their traffic cannot be costed, so margin for those channels is overstated.",
+    "Some channels serve models that are not in the pricing catalog. Their traffic cannot be costed, so margin for those channels is overstated.": "有渠道在提供價目表之外的模型，這部分流量算不出成本，對應渠道的毛利會被高估。",
     "Upstream cost": "上游採購成本",
     "Upstream costs saved": "採購成本已儲存",
-    "What our upstream charges us, as a multiplier on the vendor official list price. Used for reconciliation only -- it never changes what customers are billed. A channel left blank is costed at list price, which understates margin rather than overstating it.": "What our upstream charges us, as a multiplier on the vendor official list price. Used for reconciliation only -- it never changes what customers are billed. A channel left blank is costed at list price, which understates margin rather than overstating it.",
+    "What our upstream charges us, as a multiplier on the vendor official list price. Used for reconciliation only -- it never changes what customers are billed. A channel left blank is costed at list price, which understates margin rather than overstating it.": "上游實際收我們多少，以廠商官方報價的倍數表示。僅用於對帳，絕不影響客戶計費。留空的渠道按官方原價計成本——方向保守，只會低估毛利，不會高估。",
     "channels have a negotiated rate configured": "個渠道已設定採購價",
     "must be between 0 and 5": "必須在 0 與 5 之間",
     "+{{percent}}% markup": "加價 {{percent}}%",
@@ -5291,6 +5291,7 @@
     "list price": "官方原價",
     "official price": "官方報價",
     "paying {{percent}}% ABOVE list": "高於官方價 {{percent}}%",
-    "{{percent}}% off list": "官方價 {{percent}}% 折讓"
+    "{{percent}}% off list": "官方價 {{percent}}% 折讓",
+    "Model count": "模型數"
   }
 }

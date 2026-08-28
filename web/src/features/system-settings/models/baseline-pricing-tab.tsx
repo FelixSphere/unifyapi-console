@@ -94,7 +94,10 @@ export function BaselinePricingTab() {
     onError: (err: Error) => toast.error(err.message),
   })
 
-  const models = data?.data?.models ?? []
+  // Memoised off the fetched array rather than the `?? []` fallback: that
+  // literal is a fresh array on every render, so depending on it would make
+  // the filter below re-run on every keystroke over all 59 rows.
+  const models = useMemo(() => data?.data?.models ?? [], [data?.data?.models])
   const groups = useMemo(
     () => Object.keys(data?.data?.group_ratios ?? {}).sort(),
     [data?.data?.group_ratios]

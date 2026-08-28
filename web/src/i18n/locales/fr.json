@@ -5291,6 +5291,7 @@
     "list price": "list price",
     "official price": "official price",
     "paying {{percent}}% ABOVE list": "paying {{percent}}% ABOVE list",
-    "{{percent}}% off list": "{{percent}}% off list"
+    "{{percent}}% off list": "{{percent}}% off list",
+    "Model count": "Model count"
   }
 }
