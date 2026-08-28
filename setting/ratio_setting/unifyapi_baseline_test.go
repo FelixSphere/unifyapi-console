@@ -21,12 +21,11 @@ import (
 )
 
 // publishedModels is the exact set of models UnifyAPI sells, as served by
-// GET /api/pricing on 2026-08-25. It is spelled out rather than derived from
+// GET /api/pricing on 2026-08-28. It is spelled out rather than derived from
 // the catalog so that adding or dropping a model is a deliberate, reviewed edit
 // to this list -- a test that reads the catalog to check the catalog would pass
 // no matter what changed.
 var publishedModels = []string{
-	"MiniMax-H3",
 	"MiniMax-M2.5",
 	"MiniMax-M2.7",
 	"claude-fable-5",
@@ -81,10 +80,6 @@ var publishedModels = []string{
 	"qwen3.7-max",
 	"qwen3.7-plus",
 	"qwen3.8-max",
-	"seedance-2.0",
-	"seedance-2.0-fast",
-	"seedance-2.0-mini",
-	"seedance2.0-pro",
 }
 
 // resetRatioMapsToBaseline puts the package's global ratio maps back into the
@@ -341,21 +336,16 @@ func TestDetectBaselineShadowCatchesEachWayTheDatabaseCanWin(t *testing.T) {
 	require.True(t, ok, "a catalogued model missing from a live map must be reported")
 }
 
-// TestUnverifiedEntriesAreDeclared keeps the ten models with no models.dev
+// TestUnverifiedEntriesAreDeclared keeps the five models with no models.dev
 // listing from quietly becoming forty. Each one is a price nothing can check,
 // so the list is pinned here and the drift report prints it every run.
 func TestUnverifiedEntriesAreDeclared(t *testing.T) {
 	want := []string{
-		"MiniMax-H3",             // not listed by models.dev
 		"deepseek-v3",            // retired; DeepSeek publishes v4 only
 		"deepseek-v3.2",          //
 		"deepseek-v3.2-thinking", //
 		"glm-5-turbo",            // not listed; Zhipu lists glm-5v-turbo
 		"qwen3.5-flash",          // not listed
-		"seedance-2.0",           // video, billed per second upstream
-		"seedance-2.0-fast",      //
-		"seedance-2.0-mini",      //
-		"seedance2.0-pro",        //
 	}
 
 	var got []string
