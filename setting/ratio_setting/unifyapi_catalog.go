@@ -64,10 +64,6 @@ var unifyapiCatalog = []CatalogEntry{
 
 	// ---- unlisted vendor ----
 	{Model: "nano-banana-pro-preview", Vendor: "google", UpstreamModel: "gemini-3-pro-image", InputUSD: 2, OutputUSD: 120, CacheReadUSD: 0, CacheWriteUSD: 0},
-	{Model: "seedance-2.0", Vendor: "", InputUSD: 1, OutputUSD: 1, CacheReadUSD: 0, CacheWriteUSD: 0, Unverified: true},
-	{Model: "seedance-2.0-fast", Vendor: "", InputUSD: 1, OutputUSD: 1, CacheReadUSD: 0, CacheWriteUSD: 0, Unverified: true},
-	{Model: "seedance-2.0-mini", Vendor: "", InputUSD: 1, OutputUSD: 1, CacheReadUSD: 0, CacheWriteUSD: 0, Unverified: true},
-	{Model: "seedance2.0-pro", Vendor: "", InputUSD: 1, OutputUSD: 1, CacheReadUSD: 0, CacheWriteUSD: 0, Unverified: true},
 
 	// ---- Anthropic ----
 	{Model: "claude-fable-5", Vendor: "anthropic", InputUSD: 10, OutputUSD: 50, CacheReadUSD: 1, CacheWriteUSD: 12.5},
@@ -116,7 +112,6 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "gemini-pro-latest", Vendor: "google", UpstreamModel: "gemini-3.1-pro-preview", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 0},
 
 	// ---- MiniMax ----
-	{Model: "MiniMax-H3", Vendor: "", InputUSD: 1, OutputUSD: 1, CacheReadUSD: 0, CacheWriteUSD: 0, Unverified: true},
 	{Model: "MiniMax-M2.5", Vendor: "minimax", InputUSD: 0.3, OutputUSD: 1.2, CacheReadUSD: 0.03, CacheWriteUSD: 0.375},
 	{Model: "MiniMax-M2.7", Vendor: "minimax", InputUSD: 0.3, OutputUSD: 1.2, CacheReadUSD: 0.06, CacheWriteUSD: 0.375},
 
