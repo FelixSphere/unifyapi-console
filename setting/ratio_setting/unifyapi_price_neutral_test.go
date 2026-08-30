@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -178,5 +179,91 @@ func TestServedButUnsellableModelsAreDeclaredAndRefused(t *testing.T) {
 	for _, name := range uncatalogued {
 		_, ok, _ := GetModelRatio(name)
 		require.False(t, ok, "%s must be refused, not billed at the 37.5 fallback", name)
+	}
+}
+
+// --- seed-pricing.sql consistency ---
+
+const pricingSeedPath = "../../seed-pricing.sql"
+
+// keysInSQLList pulls the quoted identifiers out of one region of the seed.
+func keysInSQLList(t *testing.T, region string) []string {
+	t.Helper()
+	var keys []string
+	for _, m := range regexp.MustCompile(`'([A-Za-z]\w+)'`).FindAllStringSubmatch(region, -1) {
+		keys = append(keys, m[1])
+	}
+	require.NotEmpty(t, keys)
+	return keys
+}
+
+func sectionBetween(t *testing.T, body, from, to string) string {
+	t.Helper()
+	require.Equal(t, 1, strings.Count(body, from),
+		"anchor %q must appear exactly once, or the extracted region is not the one intended", from)
+	start := strings.Index(body, from)
+	require.GreaterOrEqual(t, start, 0, "could not find %q in the seed", from)
+	end := strings.Index(body[start:], to)
+	require.GreaterOrEqual(t, end, 0, "could not find %q after %q", to, from)
+	return body[start : start+end]
+}
+
+// TestSeedBacksUpEverythingItDeletes is the one that stops a rollback from being
+// impossible.
+//
+// The seed's header tells the operator to \copy the rows out before deleting
+// them. When the DELETE grew from four keys to eight, the backup instruction did
+// not -- so following the file literally would have destroyed four rows with no
+// copy of them anywhere, and production's are hand-tuned values that exist in no
+// other place. The two lists must be the same set, and the preview SELECT above
+// them must match too, since that is what an operator eyeballs first.
+func TestSeedBacksUpEverythingItDeletes(t *testing.T) {
+	raw, err := os.ReadFile(pricingSeedPath)
+	require.NoError(t, err)
+	body := string(raw)
+
+	deleted := keysInSQLList(t, sectionBetween(t, body, "DELETE FROM options", ");"))
+	backed := keysInSQLList(t, sectionBetween(t, body, `\copy (SELECT key, value`, "TO '"))
+	// Anchored on the full statement: the header also mentions
+	// "SELECT key, length(value)" in prose a few lines above, and matching that
+	// makes the region swallow the \copy block and read sixteen keys.
+	preview := keysInSQLList(t, sectionBetween(t, body, "SELECT key, length(value) FROM options", ");"))
+
+	require.ElementsMatch(t, deleted, backed,
+		"the \\copy backup must cover exactly what the DELETE removes, or following this file "+
+			"loses rows that exist nowhere else")
+	require.ElementsMatch(t, deleted, preview,
+		"the preview SELECT is what an operator checks before running the seed; it must show "+
+			"the same rows the DELETE will take")
+}
+
+// TestSeedDeletesEveryCatalogOwnedMap -- the catalog is authoritative for these
+// maps, so leaving one in the database means it silently keeps shadowing the
+// code baseline and the admin pricing page keeps listing models we do not sell.
+func TestSeedDeletesEveryCatalogOwnedMap(t *testing.T) {
+	raw, err := os.ReadFile(pricingSeedPath)
+	require.NoError(t, err)
+
+	deleted := keysInSQLList(t, sectionBetween(t, string(raw), "DELETE FROM options", ");"))
+
+	owned := make([]string, 0, len(BaselineRatios()))
+	for option := range BaselineRatios() {
+		owned = append(owned, option)
+	}
+	require.ElementsMatch(t, owned, deleted,
+		"every option the catalog owns must be deleted by the seed, and nothing else")
+}
+
+// TestSeedPreservesTheDiscountTable -- a baseline reset must not double as a
+// silent repricing. ModelDiscount and ChannelCostRatio are business config and
+// have to survive.
+func TestSeedPreservesTheDiscountTable(t *testing.T) {
+	raw, err := os.ReadFile(pricingSeedPath)
+	require.NoError(t, err)
+
+	deleted := keysInSQLList(t, sectionBetween(t, string(raw), "DELETE FROM options", ");"))
+	for _, mustSurvive := range []string{"ModelDiscount", "ChannelCostRatio", "GroupRatio", "GroupGroupRatio"} {
+		require.NotContains(t, deleted, mustSurvive,
+			"%s is business config; deleting it here would turn a baseline reset into a repricing", mustSurvive)
 	}
 }

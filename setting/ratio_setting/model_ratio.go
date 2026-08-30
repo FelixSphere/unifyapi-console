@@ -341,12 +341,22 @@ var defaultCompletionRatio = map[string]float64{
 // missing a model makes the relay refuse it -- so seeding it from the catalog
 // is what makes "only catalogued models are sellable" true.
 //
-// modelPriceMap, imageRatioMap and the two audio maps keep upstream's defaults:
-// those are separate namespaces (per-call task pseudo-models like mj_*/suno_*,
-// and image/audio token modifiers), none of which can be billed unless the
-// model also has a catalog ratio.
+// The per-call price map and the image/audio modifier maps are seeded from the
+// catalog too, which today means they are EMPTY.
+//
+// They used to keep upstream's defaults -- 31 per-call task pseudo-models
+// (mj_*, suno_*, dall-e-3, sora-2, veo-*, gpt-4-gizmo-*) plus 13 image and
+// audio entries. The argument for keeping them was that they are a separate
+// namespace and cannot be billed without a catalog ratio anyway. That was true
+// and still missed the point: they are listed in the admin pricing page, so an
+// operator scrolls past 44 models UnifyAPI does not sell, looking for the ones
+// it does. "The catalog is the allow-list" has to mean every pricing map, or
+// the page keeps teaching people that the list is not the list.
+//
+// Nothing serves these: no channel lists an mj_*, suno_* or video task model,
+// and none appears in GET /api/pricing. If one is ever offered, it gets a
+// catalog row like everything else.
 func InitRatioSettings() {
-	modelPriceMap.AddAll(defaultModelPrice)
 	// applyModelDiscounts builds modelRatioMap as official price x per-model
 	// customer discount. With no discounts configured yet it is the official
 	// price; UpdateModelDiscountByJSONString re-runs it when they load.
@@ -359,11 +369,16 @@ func InitRatioSettings() {
 			cacheRatioMap.AddAll(ratios)
 		case "CreateCacheRatio":
 			createCacheRatioMap.AddAll(ratios)
+		case "ModelPrice":
+			modelPriceMap.AddAll(ratios)
+		case "ImageRatio":
+			imageRatioMap.AddAll(ratios)
+		case "AudioRatio":
+			audioRatioMap.AddAll(ratios)
+		case "AudioCompletionRatio":
+			audioCompletionRatioMap.AddAll(ratios)
 		}
 	}
-	imageRatioMap.AddAll(defaultImageRatio)
-	audioRatioMap.AddAll(defaultAudioRatio)
-	audioCompletionRatioMap.AddAll(defaultAudioCompletionRatio)
 }
 
 func GetModelPriceMap() map[string]float64 {
@@ -451,8 +466,15 @@ func GetDefaultModelRatioMap() map[string]float64 {
 	return baselineModelRatio()
 }
 
+// GetDefaultModelPriceMap is the per-call fallback ModelPriceHelperPerCall uses
+// when a task model has no configured price.
+//
+// UNIFYAPI-FORK: returns the catalog's per-call entries, not upstream's 31 task
+// pseudo-models. Otherwise a model deleted from every options row would still
+// be billable through this fallback, which would make the catalog an allow-list
+// everywhere except the one path that quietly is not.
 func GetDefaultModelPriceMap() map[string]float64 {
-	return defaultModelPrice
+	return baselineModelPrice()
 }
 
 func CompletionRatio2JSONString() string {
