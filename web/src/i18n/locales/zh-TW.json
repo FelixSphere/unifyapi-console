@@ -1,7 +1,7 @@
 {
   "translation": {
     "Official price & discount": "官方報價與折扣",
-    "Official prices come from the code catalog and are verified against models.dev; they are not editable here. Only the discount column is. Customer price = official price x discount x group ratio.": "官方報價來自程式碼中的價目表，並已對 models.dev 校驗，此處不可編輯；只有「折扣」一欄可改。客戶價 = 官方報價 × 模型折扣 × 分組倍率。",
+    "Official prices come from the code catalog and are verified against models.dev; they are not editable here. Only the discount column is. Customer price = official price x discount x group ratio.": "官方報價來自程式碼中的價目表，並已對 models.dev 校驗，此處不可編輯；只有「優惠」一欄可改。客戶價 = 官方報價 × 模型折扣 × 分組倍率。",
     "Snapshot:": "價格快照日期：",
     "Database is overriding the code baseline": "資料庫正在覆蓋程式碼基線",
     "Filter by model or vendor": "依模型或供應商篩選",

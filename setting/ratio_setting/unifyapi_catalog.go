@@ -14,11 +14,12 @@ package ratio_setting
 //
 // So the fork's baseline is a single table of OFFICIAL VENDOR LIST PRICES in
 // USD per 1M tokens -- the number the vendor publishes, nothing else. Every
-// billing ratio is derived from it (see catalogRatios). Customer discounts are
-// NOT expressed here: they live entirely in group ratios, so a model has one
-// price basis and every discount is visible in one place.
+// billing ratio is derived from it. Customer discounts are NOT expressed here:
+// a per-model discount lives in ModelDiscount (unifyapi_discount.go) and a
+// per-group one in GroupRatio, so a model has exactly one price basis and every
+// discount is visible in its own table.
 //
-//	customer price = official list price  x  group ratio
+//	customer price = official list price  x  model discount  x  group ratio
 //
 // Vendor + UpstreamModel point at the models.dev id this row was taken from,
 // which is what makes the baseline checkable: scripts/pricing-drift re-fetches
@@ -33,7 +34,7 @@ package ratio_setting
 
 // PricingSnapshotDate is the day the official prices below were last verified
 // against models.dev. scripts/pricing-drift compares against it.
-const PricingSnapshotDate = "2026-08-25"
+const PricingSnapshotDate = "2026-08-30"
 
 // CatalogEntry is one model's official vendor list price. Prices are USD per
 // 1M tokens, exactly as the vendor publishes them. A zero CacheReadUSD or
@@ -47,6 +48,22 @@ type CatalogEntry struct {
 	CacheReadUSD  float64
 	CacheWriteUSD float64
 	Unverified    bool // no models.dev listing; needs a manual quote
+
+	// PerCallUSD prices a model per request instead of per token (image and
+	// video generation work this way). Zero means per-token, which is every
+	// catalogued model today. Set it and the model moves to quota_type 1.
+	PerCallUSD float64
+
+	// ImageRatio / AudioRatio / AudioCompletionRatio are multipliers for models
+	// that bill image or audio tokens at a different rate from text. Zero means
+	// "no separate rate", which is every catalogued model today.
+	//
+	// They live here rather than in upstream's parallel default maps so that
+	// every price a model has comes from its one catalog row, and the admin
+	// pricing page never lists a model UnifyAPI does not sell.
+	ImageRatio           float64
+	AudioRatio           float64
+	AudioCompletionRatio float64
 }
 
 // UpstreamID is the models.dev model id this row was priced from.

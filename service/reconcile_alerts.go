@@ -14,6 +14,8 @@ package service
 import (
 	"fmt"
 	"sort"
+
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
 // AlertSeverity ranks a finding. Only two levels on purpose: something either
@@ -79,6 +81,27 @@ func DefaultAlertThresholds() AlertThresholds {
 // Ordered by severity then by absolute money at stake, so the top of the list is
 // the thing to fix first rather than the alphabetically first model.
 func EvaluateReconcileAlerts(report ReconcileReport, thresholds AlertThresholds) []ReconcileAlert {
+	// With no purchasing cost configured anywhere, every model is costed at the
+	// vendor's list price -- and since we also SELL at list price times a
+	// discount, margin is then zero by construction on an undiscounted model and
+	// negative on every discounted one. Reporting that as hundreds of
+	// loss-making findings is not a signal, it is the alert list destroying its
+	// own credibility on day one. The margin is not zero here, it is unmeasured;
+	// say so once and stop.
+	if len(ratio_setting.GetChannelCostRatioCopy()) == 0 {
+		return []ReconcileAlert{{
+			Severity: AlertWarning,
+			Kind:     "no-cost-basis",
+			Subject:  "(all channels)",
+			Detail: "no channel has a purchasing cost configured, so every line is costed at the vendor's " +
+				"list price and its margin is unmeasured rather than zero. Margin findings are suppressed " +
+				"until at least one channel has a cost ratio.",
+			Action:     "enter the negotiated rates under 系统设置 → 计费与支付 → 模型定价 → 上游采购成本",
+			RevenueUSD: report.Total.RevenueUSD,
+			CostUSD:    report.Total.CostUSD,
+		}}
+	}
+
 	var alerts []ReconcileAlert
 	dimension := string(report.GroupBy)
 
