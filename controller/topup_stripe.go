@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
@@ -56,7 +57,7 @@ func (*StripeAdaptor) RequestAmount(c *gin.Context, req *StripePayRequest) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})
 		return
 	}
-	currency, ok := setting.FindStripeCurrency(req.Currency)
+	currency, ok := findEstimateCurrency(req.Currency)
 	if !ok {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "不支持的结算货币"})
 		return
@@ -98,7 +99,7 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 	// at checkout. It is resolved only so an unknown code is rejected rather
 	// than silently ignored, and recorded so support can tell what estimate the
 	// user acted on when they query the amount they were actually charged.
-	shownCurrency, ok := setting.FindStripeCurrency(req.Currency)
+	shownCurrency, ok := findEstimateCurrency(req.Currency)
 	if !ok {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "不支持的结算货币"})
 		return
@@ -443,6 +444,23 @@ func GetChargedAmount(count float64, user model.User) float64 {
 	}
 
 	return count * topUpGroupRatio
+}
+
+// findEstimateCurrency resolves a client-supplied code against the currencies
+// the wallet page may quote, with the live reference rate already applied. The
+// estimate and the dropdown must come from the same list or the preset buttons
+// and the amount box disagree on the same screen.
+func findEstimateCurrency(code string) (setting.StripeCurrency, bool) {
+	normalized := strings.ToUpper(strings.TrimSpace(code))
+	if normalized == "" {
+		normalized = setting.StripeBaseCurrency
+	}
+	for _, currency := range service.EffectiveStripeCurrencies() {
+		if currency.Code == normalized {
+			return currency, true
+		}
+	}
+	return setting.StripeCurrency{}, false
 }
 
 // getStripePayMoney returns what the user pays, in currency.Code.

@@ -1302,7 +1302,7 @@
     "Creem products must be a JSON array": "Creem 产品必须是 JSON 数组",
     "Cross-group": "跨分组",
     "Cross-group retry": "跨分组重试",
-    "Currencies the user may pay in, with the rate against USD (1 USD = rate). USD is always offered. Alipay and WeChat ignore this and are always charged in CNY.": "用户可选的支付货币及其对美元汇率（1 美元 = 汇率）。美元始终可用。支付宝和微信不受此设置影响，始终以人民币结算。",
+    "Currencies the wallet page can quote an estimate in. Rates refresh automatically from the ECB reference rate; the value here is only the fallback if that feed is unavailable. Stripe sets the currency and amount actually charged at checkout.": "钱包页可用于估算显示的货币。汇率会自动从 ECB 参考汇率刷新；这里填的值仅在该数据源不可用时作为兜底。实际扣款的货币与金额由 Stripe 在支付页决定。",
     "Currency": "货币",
     "Currency & Display": "货币与展示",
     "Current": "当前",

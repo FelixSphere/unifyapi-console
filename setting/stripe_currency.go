@@ -94,3 +94,13 @@ func StripeCurrencyExponent(code string) int32 {
 	}
 	return 2
 }
+
+// GetStripeEstimateMargin returns the display markup, ignoring values that
+// would make the estimate useless (negative, or more than a quarter over
+// mid-market).
+func GetStripeEstimateMargin() float64 {
+	if StripeEstimateMargin < 0 || StripeEstimateMargin > 0.25 {
+		return 0.04
+	}
+	return StripeEstimateMargin
+}

@@ -1302,7 +1302,7 @@
     "Creem products must be a JSON array": "Продукты Creem должны быть JSON-массивом",
     "Cross-group": "Межгрупповой",
     "Cross-group retry": "Повтор между группами",
-    "Currencies the user may pay in, with the rate against USD (1 USD = rate). USD is always offered. Alipay and WeChat ignore this and are always charged in CNY.": "Валюты на выбор пользователя и курс к USD (1 USD = курс). USD доступен всегда. Alipay и WeChat игнорируют эту настройку и всегда списывают в CNY.",
+    "Currencies the wallet page can quote an estimate in. Rates refresh automatically from the ECB reference rate; the value here is only the fallback if that feed is unavailable. Stripe sets the currency and amount actually charged at checkout.": "Валюты, в которых страница кошелька может дать оценку. Курсы обновляются автоматически по справочному курсу ЕЦБ; значение здесь — только запасной вариант. Валюту и сумму списания определяет Stripe при оплате.",
     "Currency": "Валюта",
     "Currency & Display": "Валюта и отображение",
     "Current": "Текущий",
