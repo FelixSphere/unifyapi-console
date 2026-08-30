@@ -121,6 +121,18 @@ type OptionUpdateRequest struct {
 	Value any    `json:"value"`
 }
 
+// optionChangeActor names whoever is making an options change, for the billing
+// config history. Falls back to the id, then to "unknown" -- never to a guess.
+func optionChangeActor(c *gin.Context) string {
+	if username := c.GetString("username"); username != "" {
+		return username
+	}
+	if id := c.GetInt("id"); id != 0 {
+		return fmt.Sprintf("user:%d", id)
+	}
+	return "unknown"
+}
+
 func UpdateOption(c *gin.Context) {
 	var option OptionUpdateRequest
 	err := common.DecodeJson(c.Request.Body, &option)
@@ -363,7 +375,10 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	}
-	err = model.UpdateOption(option.Key, option.Value.(string))
+	// UNIFYAPI-FORK: attribute the change. For a billing key the previous value
+	// is snapshotted before it is replaced, and "who changed it" is half of
+	// what makes that snapshot useful.
+	err = model.UpdateOptionAs(option.Key, option.Value.(string), optionChangeActor(c))
 	if err != nil {
 		common.ApiError(c, err)
 		return

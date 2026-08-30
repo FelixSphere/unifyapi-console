@@ -96,7 +96,7 @@ func UpdateModelDiscountByJSONString(jsonStr string) error {
 	if err := types.LoadFromJsonString(modelDiscountMap, jsonStr); err != nil {
 		return err
 	}
-	applyModelDiscounts()
+	RebuildRatioMapsFromCatalog()
 	InvalidateExposedDataCache()
 	return nil
 }
@@ -108,8 +108,9 @@ func UpdateModelDiscountByJSONString(jsonStr string) error {
 // behind -- the failure mode that makes a discount table impossible to reason
 // about after a few edits.
 func applyModelDiscounts() {
-	effective := make(map[string]float64, len(unifyapiCatalog))
-	for _, entry := range unifyapiCatalog {
+	catalog := Catalog()
+	effective := make(map[string]float64, len(catalog))
+	for _, entry := range catalog {
 		effective[entry.Model] = entry.ModelRatio() * GetModelDiscount(entry.Model)
 	}
 	modelRatioMap.Clear()

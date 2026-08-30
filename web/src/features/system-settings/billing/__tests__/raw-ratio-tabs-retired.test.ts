@@ -69,4 +69,15 @@ describe('billing section tabs', () => {
       assert.ok(all.includes(tab), `${tab} must remain reachable`)
     }
   })
+
+  test('pricing an uncatalogued model is still possible without a release', () => {
+    // The raw-ratio tabs were kept for exactly one legitimate case: a model the
+    // catalog does not carry. Removing them without a replacement would trade a
+    // footgun for a deploy on every new model, so the replacement is asserted
+    // here rather than assumed.
+    assert.ok(
+      arrays.flat().includes('extra-models'),
+      'extra-models replaces the raw-ratio editor; without it, adding a model needs a release'
+    )
+  })
 })

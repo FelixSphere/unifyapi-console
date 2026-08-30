@@ -32,6 +32,9 @@ import type {
   ReconcileParams,
   ReconcileResponse,
   ReconcileSnapshotsResponse,
+  ExtraModelsResponse,
+  ModelPriceLookupResponse,
+  UpdateExtraModelsResponse,
   IssueSettlementParams,
   SettlementRecord,
   SettlementResponse,
@@ -240,6 +243,44 @@ export async function updateSettlement(
 export async function deleteSettlement(id: number) {
   const res = await api.delete<{ success: boolean; message?: string }>(
     `/api/pricing/settlement/${id}`
+  )
+  return res.data
+}
+
+/*
+ * UNIFYAPI-FORK: admin-added model pricing.
+ *
+ * The whole table is sent on save, because that is what the underlying option
+ * row is. Sending a single model would be indistinguishable from sending a
+ * table containing one model, and the difference between those two readings is
+ * every other model's price.
+ */
+export async function getExtraModels() {
+  const res = await api.get<ExtraModelsResponse>('/api/pricing/extra_models')
+  return res.data
+}
+
+export async function updateExtraModels(
+  models: Record<string, Record<string, number | string>>
+) {
+  const res = await api.put<UpdateExtraModelsResponse>('/api/pricing/extra_models', {
+    models,
+  })
+  return res.data
+}
+
+/**
+ * lookupModelPrice asks models.dev what a model costs.
+ *
+ * Returns every provider's listing rather than one price: the same id is sold by
+ * hundreds of providers at different rates, and the server picking one would
+ * make the console invent a commercial decision. The vendor's own listing sorts
+ * first; the operator chooses.
+ */
+export async function lookupModelPrice(model: string) {
+  const res = await api.get<ModelPriceLookupResponse>(
+    '/api/pricing/extra_models/lookup',
+    { params: { model } }
   )
   return res.data
 }

@@ -29,7 +29,7 @@ const usdPerMillionPerRatioUnit = 2.0
 // catalogIndex is the catalog keyed by model name, built once at init.
 var catalogIndex = func() map[string]CatalogEntry {
 	index := make(map[string]CatalogEntry, len(unifyapiCatalog))
-	for _, entry := range unifyapiCatalog {
+	for _, entry := range Catalog() {
 		index[entry.Model] = entry
 	}
 	return index
@@ -68,23 +68,45 @@ func (e CatalogEntry) CacheWriteRatio() (float64, bool) {
 	return e.CacheWriteUSD / e.InputUSD, true
 }
 
-// Catalog returns the pricing baseline in catalog order.
+// Catalog returns the pricing baseline -- the compiled entries first, in catalog
+// order, then any admin-added extras.
+//
+// Compiled first is not cosmetic: it is the merge order. An extra can only add a
+// model the catalog does not carry (ValidateExtraModels enforces it), so the two
+// sets never overlap and nothing compiled can be shadowed.
 func Catalog() []CatalogEntry {
+	extras := ExtraModelEntries()
+	out := make([]CatalogEntry, 0, len(unifyapiCatalog)+len(extras))
+	out = append(out, unifyapiCatalog...)
+	out = append(out, extras...)
+	return out
+}
+
+// CompiledCatalog returns only the entries compiled into the binary, excluding
+// admin-added extras. The drift checker uses it: models.dev has nothing to say
+// about a price somebody typed into the console.
+func CompiledCatalog() []CatalogEntry {
 	out := make([]CatalogEntry, len(unifyapiCatalog))
 	copy(out, unifyapiCatalog)
 	return out
 }
 
-// CatalogEntryFor looks a model up in the baseline.
+// CatalogEntryFor looks a model up in the baseline, compiled entries first.
 func CatalogEntryFor(model string) (CatalogEntry, bool) {
-	entry, ok := catalogIndex[model]
-	return entry, ok
+	if entry, ok := catalogIndex[model]; ok {
+		return entry, true
+	}
+	if extra, ok := extraModelMap.Get(model); ok {
+		return extra.toCatalogEntry(model), true
+	}
+	return CatalogEntry{}, false
 }
 
 // CatalogModels lists every priced model, sorted, for seeds and reports.
 func CatalogModels() []string {
-	names := make([]string, 0, len(unifyapiCatalog))
-	for _, entry := range unifyapiCatalog {
+	catalog := Catalog()
+	names := make([]string, 0, len(catalog))
+	for _, entry := range catalog {
 		names = append(names, entry.Model)
 	}
 	sort.Strings(names)
@@ -96,7 +118,7 @@ func CatalogModels() []string {
 // compares against models.dev, and the cost basis reconciliation starts from.
 func officialModelRatio() map[string]float64 {
 	out := make(map[string]float64, len(unifyapiCatalog))
-	for _, entry := range unifyapiCatalog {
+	for _, entry := range Catalog() {
 		out[entry.Model] = entry.ModelRatio()
 	}
 	return out
@@ -110,7 +132,7 @@ func officialModelRatio() map[string]float64 {
 // a discount cannot be lost by a reset and cannot be mistaken for drift.
 func baselineModelRatio() map[string]float64 {
 	out := make(map[string]float64, len(unifyapiCatalog))
-	for _, entry := range unifyapiCatalog {
+	for _, entry := range Catalog() {
 		out[entry.Model] = entry.ModelRatio() * GetModelDiscount(entry.Model)
 	}
 	return out
@@ -119,7 +141,7 @@ func baselineModelRatio() map[string]float64 {
 // baselineCompletionRatio is the derived completion-ratio baseline.
 func baselineCompletionRatio() map[string]float64 {
 	out := make(map[string]float64, len(unifyapiCatalog))
-	for _, entry := range unifyapiCatalog {
+	for _, entry := range Catalog() {
 		out[entry.Model] = entry.CompletionRatio()
 	}
 	return out
@@ -129,7 +151,7 @@ func baselineCompletionRatio() map[string]float64 {
 // whose vendor publishes a cached-read price.
 func baselineCacheRatio() map[string]float64 {
 	out := make(map[string]float64)
-	for _, entry := range unifyapiCatalog {
+	for _, entry := range Catalog() {
 		if ratio, ok := entry.CacheReadRatio(); ok {
 			out[entry.Model] = ratio
 		}
@@ -141,7 +163,7 @@ func baselineCacheRatio() map[string]float64 {
 // models whose vendor publishes a cache-write price.
 func baselineCreateCacheRatio() map[string]float64 {
 	out := make(map[string]float64)
-	for _, entry := range unifyapiCatalog {
+	for _, entry := range Catalog() {
 		if ratio, ok := entry.CacheWriteRatio(); ok {
 			out[entry.Model] = ratio
 		}
@@ -166,7 +188,7 @@ func OfficialRatios() map[string]map[string]float64 {
 // like every other price.
 func baselineModelPrice() map[string]float64 {
 	out := make(map[string]float64)
-	for _, entry := range unifyapiCatalog {
+	for _, entry := range Catalog() {
 		if entry.PerCallUSD > 0 {
 			out[entry.Model] = entry.PerCallUSD
 		}
@@ -183,7 +205,7 @@ func baselineModelPrice() map[string]float64 {
 // nothing UnifyAPI does not sell.
 func baselineImageRatio() map[string]float64 {
 	out := make(map[string]float64)
-	for _, entry := range unifyapiCatalog {
+	for _, entry := range Catalog() {
 		if entry.ImageRatio > 0 {
 			out[entry.Model] = entry.ImageRatio
 		}
@@ -193,7 +215,7 @@ func baselineImageRatio() map[string]float64 {
 
 func baselineAudioRatio() map[string]float64 {
 	out := make(map[string]float64)
-	for _, entry := range unifyapiCatalog {
+	for _, entry := range Catalog() {
 		if entry.AudioRatio > 0 {
 			out[entry.Model] = entry.AudioRatio
 		}
@@ -203,7 +225,7 @@ func baselineAudioRatio() map[string]float64 {
 
 func baselineAudioCompletionRatio() map[string]float64 {
 	out := make(map[string]float64)
-	for _, entry := range unifyapiCatalog {
+	for _, entry := range Catalog() {
 		if entry.AudioCompletionRatio > 0 {
 			out[entry.Model] = entry.AudioCompletionRatio
 		}
@@ -235,7 +257,7 @@ func ValidateCatalog() []error {
 	var problems []error
 	seen := make(map[string]bool, len(unifyapiCatalog))
 
-	for _, entry := range unifyapiCatalog {
+	for _, entry := range Catalog() {
 		switch {
 		case entry.Model == "":
 			problems = append(problems, fmt.Errorf("catalog has an entry with an empty model name"))

@@ -357,25 +357,49 @@ var defaultCompletionRatio = map[string]float64{
 // and none appears in GET /api/pricing. If one is ever offered, it gets a
 // catalog row like everything else.
 func InitRatioSettings() {
-	// applyModelDiscounts builds modelRatioMap as official price x per-model
-	// customer discount. With no discounts configured yet it is the official
-	// price; UpdateModelDiscountByJSONString re-runs it when they load.
+	RebuildRatioMapsFromCatalog()
+}
+
+// RebuildRatioMapsFromCatalog rebuilds every billing map from the catalog --
+// compiled entries plus admin-added extras -- with per-model discounts applied.
+//
+// It CLEARS each map before refilling it, which is the whole point. Adding an
+// extra model is easy to get right by accident; REMOVING one is not. If the
+// derived maps were only ever added to, deleting an extra would drop it from
+// modelRatioMap (which applyModelDiscounts rebuilds) while leaving its
+// completion, cache and cache-write ratios behind, attached to a model that no
+// longer has a price. Those stale multipliers would then apply to whatever
+// model later took the same name.
+//
+// Called at startup and again whenever the discount table or the extras table
+// changes, so the maps the relay bills from are never a stale merge.
+func RebuildRatioMapsFromCatalog() {
+	// applyModelDiscounts rebuilds modelRatioMap as official price x per-model
+	// customer discount, clearing it first.
 	applyModelDiscounts()
+
 	for option, ratios := range BaselineRatios() {
 		switch option {
 		case "CompletionRatio":
+			completionRatioMap.Clear()
 			completionRatioMap.AddAll(ratios)
 		case "CacheRatio":
+			cacheRatioMap.Clear()
 			cacheRatioMap.AddAll(ratios)
 		case "CreateCacheRatio":
+			createCacheRatioMap.Clear()
 			createCacheRatioMap.AddAll(ratios)
 		case "ModelPrice":
+			modelPriceMap.Clear()
 			modelPriceMap.AddAll(ratios)
 		case "ImageRatio":
+			imageRatioMap.Clear()
 			imageRatioMap.AddAll(ratios)
 		case "AudioRatio":
+			audioRatioMap.Clear()
 			audioRatioMap.AddAll(ratios)
 		case "AudioCompletionRatio":
+			audioCompletionRatioMap.Clear()
 			audioCompletionRatioMap.AddAll(ratios)
 		}
 	}

@@ -3,6 +3,7 @@ package model
 import (
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -228,6 +229,10 @@ func UpdateOption(key string, value string) error {
 	if err := validateOptionValue(key, value); err != nil {
 		return err
 	}
+	// UNIFYAPI-FORK: snapshot a billing key before it is overwritten. Every
+	// pricing map here is replace-not-merge, so a save does not edit the old
+	// value -- it destroys it. See model/pricing_config_history.go.
+	snapshotBillingKeyBeforeWrite(key, value, optionActor(), "update-option")
 	// Save to database first
 	option := Option{
 		Key: key,
@@ -257,6 +262,13 @@ func UpdateOptionsBulk(values map[string]string) error {
 			return err
 		}
 	}
+	// UNIFYAPI-FORK: same guard as UpdateOption. Taken before the transaction
+	// rather than inside it, so a snapshot is never rolled back with the write
+	// it was protecting -- an extra history row costs nothing, a missing one
+	// costs the operator their configuration.
+	for key, value := range values {
+		snapshotBillingKeyBeforeWrite(key, value, optionActor(), "update-options-bulk")
+	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		for k, v := range values {
 			option := Option{Key: k}
@@ -279,6 +291,50 @@ func UpdateOptionsBulk(values map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// snapshotBillingKeyBeforeWrite records the value a billing key is about to
+// lose. Reads the in-memory OptionMap rather than the database because that is
+// what the running process is actually billing from; if the two ever disagree,
+// the one customers were charged against is the one worth keeping.
+func snapshotBillingKeyBeforeWrite(key, newValue, actor, reason string) {
+	if !IsBillingConfigKey(key) {
+		return
+	}
+	common.OptionMapRWMutex.RLock()
+	previous := common.OptionMap[key]
+	common.OptionMapRWMutex.RUnlock()
+	RecordPricingConfigChange(key, previous, newValue, actor, reason)
+}
+
+// UpdateOptionAs is UpdateOption with an attributed actor, for callers that
+// have a request context. The model layer cannot see who is asking, and
+// guessing would be worse than admitting it: a history row blaming the wrong
+// person is harder to unpick than one that says "unknown".
+func UpdateOptionAs(key, value, actor string) error {
+	setOptionActor(actor)
+	defer setOptionActor("")
+	return UpdateOption(key, value)
+}
+
+// optionActor / setOptionActor carry attribution across the one call between
+// UpdateOptionAs and the snapshot. Guarded by its own mutex; the value is only
+// ever read on the same goroutine that set it.
+var (
+	optionActorMu    sync.RWMutex
+	optionActorValue string
+)
+
+func setOptionActor(actor string) {
+	optionActorMu.Lock()
+	optionActorValue = actor
+	optionActorMu.Unlock()
+}
+
+func optionActor() string {
+	optionActorMu.RLock()
+	defer optionActorMu.RUnlock()
+	return optionActorValue
 }
 
 func updateOptionMap(key string, value string) (err error) {
@@ -568,6 +624,9 @@ func updateOptionMap(key string, value string) (err error) {
 		err = ratio_setting.UpdateModelDiscountByJSONString(value)
 	case "ChannelCostRatio":
 		err = ratio_setting.UpdateChannelCostRatioByJSONString(value)
+	// UNIFYAPI-FORK: admin-added prices, merged on top of the code catalog.
+	case "ExtraModelPricing":
+		err = ratio_setting.UpdateExtraModelsByJSONString(value)
 	case "ModelRatio":
 		err = ratio_setting.UpdateModelRatioByJSONString(value)
 	case "GroupRatio":

@@ -176,7 +176,10 @@ func Check(feed map[string]modelsDevProvider) []Finding {
 		})
 	}
 
-	for _, entry := range ratio_setting.Catalog() {
+	// CompiledCatalog, not Catalog: models.dev has nothing to say about a price
+	// somebody typed into the console, and reporting those as "unverifiable"
+	// every run would bury the entries that genuinely need a vendor quote.
+	for _, entry := range ratio_setting.CompiledCatalog() {
 		if entry.Unverified {
 			findings = append(findings, Finding{
 				Model:  entry.Model,

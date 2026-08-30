@@ -29,6 +29,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import { BaselinePricingTab } from './baseline-pricing-tab'
 import { ChannelCostTab } from './channel-cost-tab'
+import { ExtraModelsTab } from './extra-models-tab'
 
 import { resetModelRatios } from '../api'
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
@@ -151,6 +152,7 @@ type RatioTabId =
   | 'channel-cost'
   | 'models'
   | 'unset-models'
+  | 'extra-models'
   | 'groups'
   | 'tool-prices'
   | 'upstream-sync'
@@ -417,6 +419,7 @@ export function RatioSettingsCard({
     'channel-cost': 'Upstream cost',
     models: 'Model prices',
     'unset-models': 'Unset price models',
+    'extra-models': 'Extra model pricing',
     groups: 'Group ratios',
     'tool-prices': 'Tool prices',
     'upstream-sync': 'Upstream price sync',
@@ -439,6 +442,9 @@ export function RatioSettingsCard({
     }
     if (tab === 'channel-cost') {
       return <ChannelCostTab />
+    }
+    if (tab === 'extra-models') {
+      return <ExtraModelsTab />
     }
     if (tab === 'models' || tab === 'unset-models') {
       return (

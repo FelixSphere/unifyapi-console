@@ -23,6 +23,9 @@ const (
 	SystemTaskTypeAsyncTaskPoll  = "async_task_poll"
 	// UNIFYAPI-FORK: the nightly revenue-vs-upstream-cost reconciliation.
 	SystemTaskTypeReconcile = "reconcile"
+
+	// UNIFYAPI-FORK: hourly billing-config snapshot, see pricing_snapshot_task.go
+	SystemTaskTypePricingSnapshot = "pricing_snapshot"
 )
 
 var ErrSystemTaskLockLost = errors.New("system task lock lost")
