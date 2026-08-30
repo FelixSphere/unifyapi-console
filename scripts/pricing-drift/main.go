@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -103,11 +104,22 @@ func main() {
 }
 
 // hasDrift distinguishes findings that require action from informational ones.
-// An unverifiable entry is reported every run by design -- it is a standing
-// known gap, not a regression -- so it must not fail the check forever.
+//
+// Two kinds are reported every run by design and must not fail the check
+// forever, or the run goes permanently red and stops being read:
+//
+//	unverifiable  a standing known gap -- the vendor has no machine-readable
+//	              listing, so only a human re-reading their page can check it.
+//	feed-stale    the catalog deliberately holds a direct vendor quote that the
+//	              aggregator has not caught up to. The catalog is RIGHT here;
+//	              demanding action would mean demanding it be changed back to
+//	              the wrong number.
 func hasDrift(findings []Finding) bool {
 	for _, finding := range findings {
-		if finding.Kind != "unverifiable" {
+		switch finding.Kind {
+		case "unverifiable", "feed-stale":
+			continue
+		default:
 			return true
 		}
 	}
@@ -167,10 +179,9 @@ func Check(feed map[string]modelsDevProvider) []Finding {
 	for _, entry := range ratio_setting.Catalog() {
 		if entry.Unverified {
 			findings = append(findings, Finding{
-				Model: entry.Model,
-				Kind:  "unverifiable",
-				Detail: "no models.dev listing; price cannot be checked automatically and " +
-					"needs a manual quote from the vendor",
+				Model:  entry.Model,
+				Kind:   "unverifiable",
+				Detail: unverifiableDetail(entry),
 			})
 			continue
 		}
@@ -223,8 +234,43 @@ func kindRank(kind string) int {
 		return 1
 	case "model-retired", "vendor-missing", "price-withdrawn":
 		return 2
-	default: // unverifiable
+	case "feed-stale":
+		// Below the failures but above "unverifiable": it is information, not a
+		// fault -- the catalog is the number we chose on purpose.
 		return 3
+	default: // unverifiable
+		return 4
+	}
+}
+
+// unverifiableDetail says whether anyone has ever checked this price by hand.
+// "Never checked" and "checked against the vendor's own page on this date" are
+// very different states to be in, and the old wording reported both as the
+// first one.
+func unverifiableDetail(entry ratio_setting.CatalogEntry) string {
+	if entry.QuoteDate == "" {
+		return "no models.dev listing and no manual quote on record; this price has " +
+			"never been checked against the vendor"
+	}
+	return fmt.Sprintf("no models.dev listing; quoted by hand from %s on %s. "+
+		"Only a human re-reading that page can catch the next change.",
+		entry.QuoteSource, entry.QuoteDate)
+}
+
+// priceField pairs one catalog price with the feed's, so the drift path and the
+// stale-feed path can never end up comparing different sets of fields.
+type priceField struct {
+	name    string
+	catalog float64
+	feed    float64
+}
+
+func priceFields(entry ratio_setting.CatalogEntry, upstream modelsDevCost) []priceField {
+	return []priceField{
+		{"input", entry.InputUSD, upstream.Input},
+		{"output", entry.OutputUSD, upstream.Output},
+		{"cache_read", entry.CacheReadUSD, deref(upstream.CacheRead)},
+		{"cache_write", entry.CacheWriteUSD, deref(upstream.CacheWrite)},
 	}
 }
 
@@ -240,6 +286,30 @@ func comparePrices(entry ratio_setting.CatalogEntry, upstream modelsDevCost) []F
 					entry.Vendor, entry.UpstreamID(), field, upstreamValue, catalogValue),
 			})
 		}
+	}
+
+	// A dated direct quote outranks the feed. models.dev lagged DeepSeek's
+	// 2026-08-16 increase by more than two weeks, and during that gap this
+	// checker reported "no drift" on two models we were selling below cost.
+	// Reporting the FEED as stale keeps the disagreement visible without
+	// demanding that someone "fix" the catalog back to the wrong number.
+	if entry.QuoteDate != "" {
+		var stale []string
+		for _, f := range priceFields(entry, upstream) {
+			if differs(f.catalog, f.feed) {
+				stale = append(stale, fmt.Sprintf("%s $%g vs $%g", f.name, f.feed, f.catalog))
+			}
+		}
+		if len(stale) > 0 {
+			return []Finding{{
+				Model: entry.Model, Kind: "feed-stale",
+				Detail: fmt.Sprintf("models.dev disagrees with the vendor quote taken on %s (%s): %s. "+
+					"The quote wins. Re-read %s; if the vendor now matches models.dev, clear "+
+					"QuoteSource/QuoteDate and let the feed take over again.",
+					entry.QuoteDate, entry.QuoteSource, strings.Join(stale, ", "), entry.QuoteSource),
+			}}
+		}
+		return nil
 	}
 
 	compare("input", entry.InputUSD, upstream.Input)
@@ -299,6 +369,11 @@ func report(findings []Finding) {
 		fmt.Println("should absorb the change or be passed through. Prices are NOT updated")
 		fmt.Println("automatically: a repricing changes customer invoices and needs review.")
 	} else {
-		fmt.Printf("No drift. %d entries remain unverifiable and need manual quotes.\n", counts["unverifiable"])
+		fmt.Printf("No drift. %d entries need manual quotes", counts["unverifiable"])
+		if counts["feed-stale"] > 0 {
+			fmt.Printf(", and %d hold a direct vendor quote models.dev has not caught up to",
+				counts["feed-stale"])
+		}
+		fmt.Println(".")
 	}
 }

@@ -49,6 +49,18 @@ type CatalogEntry struct {
 	CacheWriteUSD float64
 	Unverified    bool // no models.dev listing; needs a manual quote
 
+	// QuoteSource and QuoteDate record a price read directly off the vendor's own
+	// price list, by hand, on a date. They exist because models.dev is an
+	// aggregator and aggregators lag: on 2026-08-30 it still carried DeepSeek's
+	// pre-August prices, seventeen days after DeepSeek raised them, so
+	// pricing-drift reported "no drift" on two models we were selling below cost.
+	//
+	// A dated direct quote therefore OUTRANKS the feed. When they disagree, the
+	// drift checker reports the feed as stale rather than the catalog as wrong --
+	// see scripts/pricing-drift. Clear both fields when the feed catches up.
+	QuoteSource string
+	QuoteDate   string // YYYY-MM-DD
+
 	// PerCallUSD prices a model per request instead of per token (image and
 	// video generation work this way). Zero means per-token, which is every
 	// catalogued model today. Set it and the model moves to quota_type 1.
@@ -109,6 +121,18 @@ var unifyapiCatalog = []CatalogEntry{
 	// ---- 智谱 ----
 	{Model: "glm-4.7", Vendor: "zhipuai", InputUSD: 0.6, OutputUSD: 2.2, CacheReadUSD: 0.11, CacheWriteUSD: 0},
 	{Model: "glm-5", Vendor: "zhipuai", InputUSD: 1, OutputUSD: 3.2, CacheReadUSD: 0.2, CacheWriteUSD: 0},
+	// glm-5-turbo is CHINA-ONLY. Zhipu's international list (docs.z.ai, which is
+	// what models.dev mirrors) does not carry it, so there is no official USD
+	// price to copy. Zhipu's own CNY list, read 2026-08-30, is tiered by input
+	// length:
+	//
+	//	input < 32K   in CNY 5   out CNY 22   cache CNY 1.2
+	//	input >= 32K  in CNY 7   out CNY 26   cache CNY 1.8
+	//
+	// The figures below are the CHEAP tier at roughly 6.9 CNY/USD. Two open
+	// questions, both business decisions rather than lookups: whether that rate
+	// is still the one to use, and that a single USD number cannot express a
+	// tier -- every request over 32K input costs 40% more than we charge for it.
 	{Model: "glm-5-turbo", Vendor: "", InputUSD: 0.72, OutputUSD: 3.2, CacheReadUSD: 0.144, CacheWriteUSD: 0, Unverified: true},
 	{Model: "glm-5.1", Vendor: "zhipuai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
 	{Model: "glm-5.2", Vendor: "zhipuai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
@@ -136,7 +160,13 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "qwen3.5-27b", Vendor: "alibaba", InputUSD: 0.3, OutputUSD: 2.4, CacheReadUSD: 0, CacheWriteUSD: 0},
 	{Model: "qwen3.5-35b-a3b", Vendor: "alibaba", InputUSD: 0.25, OutputUSD: 2, CacheReadUSD: 0, CacheWriteUSD: 0},
 	{Model: "qwen3.5-397b-a17b", Vendor: "alibaba", InputUSD: 0.6, OutputUSD: 3.6, CacheReadUSD: 0, CacheWriteUSD: 0},
-	{Model: "qwen3.5-flash", Vendor: "", InputUSD: 0.1, OutputUSD: 0.4, CacheReadUSD: 0.05, CacheWriteUSD: 0, Unverified: true},
+	// Confirmed against Alibaba's own Singapore price list: $0.1 in / $0.4 out,
+	// one flat 0-1M bracket. Still Unverified because models.dev does not carry
+	// it, so only a human re-reading that page can catch the next change.
+	// CacheReadUSD is a local estimate -- Alibaba publishes no separate cache
+	// rate for this model.
+	{Model: "qwen3.5-flash", Vendor: "", InputUSD: 0.1, OutputUSD: 0.4, CacheReadUSD: 0.05, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing", QuoteDate: "2026-08-30"},
 	{Model: "qwen3.5-plus", Vendor: "alibaba", InputUSD: 0.4, OutputUSD: 2.4, CacheReadUSD: 0, CacheWriteUSD: 0},
 	{Model: "qwen3.6-max-preview", Vendor: "alibaba", InputUSD: 1.3, OutputUSD: 7.8, CacheReadUSD: 0.13, CacheWriteUSD: 1.625},
 	{Model: "qwen3.6-plus", Vendor: "alibaba", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0.625},
@@ -145,8 +175,25 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "qwen3.8-max", Vendor: "alibaba", InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.25, CacheWriteUSD: 2.5},
 
 	// ---- DeepSeek ----
+	// RETIRED BY THE VENDOR -- these three have no price because they no longer
+	// exist as products. DeepSeek folded V3.2 into V4 in April 2026 and retired
+	// the legacy names on 2026-07-24; its price list (checked 2026-08-30) shows
+	// only the v4 generation. The prices below are whatever was true before
+	// that and cannot be refreshed.
+	//
+	// They are still advertised on production to all three groups, so they are
+	// sold and then fail upstream. Delisting them is a customer-visible change
+	// and needs the same review as any other repricing, which is why they are
+	// still here rather than quietly deleted.
 	{Model: "deepseek-v3", Vendor: "", InputUSD: 0.287, OutputUSD: 1.147, CacheReadUSD: 0, CacheWriteUSD: 0, Unverified: true},
 	{Model: "deepseek-v3.2", Vendor: "", InputUSD: 0.18, OutputUSD: 0.35, CacheReadUSD: 0.04, CacheWriteUSD: 0, Unverified: true},
 	{Model: "deepseek-v3.2-thinking", Vendor: "", InputUSD: 0.29, OutputUSD: 0.43, CacheReadUSD: 0, CacheWriteUSD: 0, Unverified: true},
-	{Model: "deepseek-v4-flash", Vendor: "deepseek", InputUSD: 0.14, OutputUSD: 0.28, CacheReadUSD: 0.0028, CacheWriteUSD: 0},
-	{Model: "deepseek-v4-pro", Vendor: "deepseek", InputUSD: 0.435, OutputUSD: 0.87, CacheReadUSD: 0.003625, CacheWriteUSD: 0}}
+	// DeepSeek raised prices at 16:00 UTC on 2026-08-16 (announced 2026-08-13)
+	// and moved to peak/off-peak billing, off-peak being half of peak. The PEAK
+	// price is carried here deliberately: which tier a request lands in is the
+	// vendor's clock, not something we can know when quoting a customer, so
+	// pricing off-peak would sell below cost for part of every weekday.
+	{Model: "deepseek-v4-flash", Vendor: "deepseek", InputUSD: 0.44, OutputUSD: 1.32, CacheReadUSD: 0.014, CacheWriteUSD: 0,
+		QuoteSource: "https://api-docs.deepseek.com/quick_start/pricing (peak tier)", QuoteDate: "2026-08-30"},
+	{Model: "deepseek-v4-pro", Vendor: "deepseek", InputUSD: 1.32, OutputUSD: 3.96, CacheReadUSD: 0.044, CacheWriteUSD: 0,
+		QuoteSource: "https://api-docs.deepseek.com/quick_start/pricing (peak tier)", QuoteDate: "2026-08-30"}}

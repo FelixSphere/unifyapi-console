@@ -83,14 +83,42 @@ psql "$SQL_DSN" -f seed-pricing.sql
 
 ### 目录就是当前官方报价
 
-`scripts/pricing-drift` 会拉 models.dev 和目录对差。2026-08-30 跑的结果：
-**54 个模型无漂移**，其中 5 个在 models.dev 上没有条目，需要人工问厂商要报价：
+`scripts/pricing-drift` 拉 models.dev 和目录对差。**但 models.dev 是聚合站，会滞后**——
+这不是理论风险，2026-08-30 就踩到了：DeepSeek 在 08-16 涨价，models.dev 到 08-30
+还挂着涨价前的数，于是漂移检查报「无漂移」，而我们正在亏本卖那两个模型。
 
-```
-deepseek-v3   deepseek-v3.2   deepseek-v3.2-thinking   glm-5-turbo   qwen3.5-flash
-```
+所以目录多了一对字段：`QuoteSource` / `QuoteDate`——**人工从厂商自己的价格页读到的报价，
+写上出处和日期**。有日期的直接报价**优先级高于 feed**：两者不一致时，漂移检查报
+`feed-stale`（models.dev 落后了），而不是报目录写错了。等 feed 追上来，清掉这两个字段
+就交还给自动检查。
 
-这 5 个带的是写表当时的价格，漂移检查每次都会把它们报出来，不会烂在那里没人知道。
+`feed-stale` 和 `unverifiable` 都**不会让检查失败**——长期红的检查等于没有检查。真正的
+价格变动仍然会失败。哪些模型允许覆盖 feed 是**写死在
+`scripts/pricing-drift/main_test.go` 的 `feedStaleModels` 里的**，加一个必须是主动改测试，
+不能是改目录的副作用。
+
+当前状态（2026-08-30）：
+
+| 模型 | 状态 |
+|---|---|
+| 49 个 | models.dev 自动核对，无漂移 |
+| `deepseek-v4-flash`、`deepseek-v4-pro` | 人工报价覆盖 feed（DeepSeek 08-16 涨价） |
+| `qwen3.5-flash` | 人工核对过阿里云新加坡价目表，价格本来就对 |
+| `glm-5-turbo` | 中国区独有，只有人民币价、且按输入长度分档 |
+| `deepseek-v3`、`deepseek-v3.2`、`deepseek-v3.2-thinking` | **厂商已下架**，没有官方价可填 |
+
+### DeepSeek 的峰谷价：目录取峰值
+
+DeepSeek 从 2026-08-16 16:00 UTC 起改成峰谷计价，谷价是峰价的一半。目录里存的是
+**峰值**，这是故意的：一个请求落在哪个时段是厂商的钟决定的，报价给客户时无法预知，
+按谷价定价等于每个工作日都有一段时间在亏本卖。
+
+### 几个模型没有官方价可填
+
+`deepseek-v3` / `deepseek-v3.2` / `deepseek-v3.2-thinking` 已被 DeepSeek 下架
+（V3.2 在 2026-04 并入 V4，旧模型名 2026-07-24 停用），它们的价格页上已经没有这几个了。
+**但生产仍然对三个分组都在售**——卖出去再到上游失败。下架是客户可见的变更，需要和其他
+调价一样走评审，所以它们还留在目录里、带着注释，不是被悄悄删掉。
 
 ## 一、给客户打折（最常见的操作）
 
