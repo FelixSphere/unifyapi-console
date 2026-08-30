@@ -42,6 +42,7 @@ import argparse
 import json
 import os
 import ssl
+import multiprocessing
 import statistics
 import sys
 import threading
@@ -50,7 +51,8 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-ALLOWED_HOSTS = {"app.unifyapi.ai"}
+# Our own gateway, plus a local rig. Anything else is someone else's capacity.
+ALLOWED_HOSTS = {"app.unifyapi.ai", "127.0.0.1", "localhost", "::1"}
 DEFAULT_URL = "https://app.unifyapi.ai/v1/chat/completions"
 
 
@@ -95,23 +97,48 @@ def one_request(url, key, model, timeout):
         return False, time.perf_counter() - t0, 0, f"{type(e).__name__}: {e}"
 
 
-def run_step(url, key, model, concurrency, per_worker, timeout):
-    """One rung of the ramp. Returns aggregate stats."""
-    results, lock = [], threading.Lock()
+def _proc_worker(url, key, model, threads_n, per_worker, timeout, q):
+    """One generator process: threads_n threads, each issuing per_worker requests."""
+    out, lock = [], threading.Lock()
 
     def worker():
         local = []
         for _ in range(per_worker):
             local.append(one_request(url, key, model, timeout))
         with lock:
-            results.extend(local)
+            out.extend(local)
 
-    threads = [threading.Thread(target=worker, daemon=True) for _ in range(concurrency)]
-    t0 = time.perf_counter()
-    for t in threads:
+    ts = [threading.Thread(target=worker, daemon=True) for _ in range(threads_n)]
+    for t in ts:
         t.start()
-    for t in threads:
+    for t in ts:
         t.join()
+    q.put(out)
+
+
+def run_step(url, key, model, concurrency, per_worker, timeout, processes=1):
+    """One rung of the ramp. Returns aggregate stats.
+
+    Concurrency is split across `processes`; with processes=1 this is the
+    original thread-only behaviour."""
+    processes = max(1, min(processes, concurrency))
+    base, extra = divmod(concurrency, processes)
+    shares = [base + (1 if i < extra else 0) for i in range(processes)]
+
+    ctx = multiprocessing.get_context("spawn")
+    q = ctx.Queue()
+    procs = [ctx.Process(target=_proc_worker,
+                         args=(url, key, model, n, per_worker, timeout, q))
+             for n in shares if n > 0]
+
+    t0 = time.perf_counter()
+    for p in procs:
+        p.start()
+    results = []
+    for _ in procs:
+        results.extend(q.get())
+    for p in procs:
+        p.join()
     wall = time.perf_counter() - t0
 
     lat = [r[1] for r in results if r[0]]
@@ -143,6 +170,9 @@ def main():
                     help="concurrency rungs, comma separated")
     ap.add_argument("-n", "--per-worker", type=int, default=10,
                     help="requests per worker per step")
+    ap.add_argument("--processes", type=int, default=1,
+                    help="fan concurrency across N OS processes; threads alone are "
+                         "GIL-bound and will cap the generator below the server's knee")
     ap.add_argument("--timeout", type=float, default=60.0)
     ap.add_argument("--settle", type=float, default=3.0,
                     help="seconds to idle between steps")
@@ -163,8 +193,10 @@ def main():
 
     print(f"target      {args.url}")
     print(f"model       {args.model}")
-    print(f"ramp        {steps} concurrent x {args.per_worker} req/worker")
-    print(f"TOTAL       {total} requests (all forwarded upstream to Flatkey)")
+    print(f"ramp        {steps} concurrent x {args.per_worker} req/worker "
+          f"across {args.processes} process(es)")
+    upstream = "a mock upstream" if host in ("127.0.0.1", "localhost", "::1") else "Flatkey"
+    print(f"TOTAL       {total} requests (all forwarded upstream to {upstream})")
     print(f"breaker     abort if error rate > {args.max_error_rate:.0%}, "
           f"p95 > {args.max_p95:.0f}s, or any 5xx/429\n")
 
@@ -185,7 +217,8 @@ def main():
 
     aborted = None
     for c in steps:
-        s = run_step(args.url, key, args.model, c, args.per_worker, args.timeout)
+        s = run_step(args.url, key, args.model, c, args.per_worker, args.timeout,
+                     processes=args.processes)
         out["steps"].append(s)
         f = lambda v: f"{v:>8.2f}" if v is not None else f"{'-':>8}"
         print(f"{c:>5} {s['requests']:>5} {s['rps']:>7.1f} {f(s['p50'])} {f(s['p95'])} "
