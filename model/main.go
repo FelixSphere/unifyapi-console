@@ -278,6 +278,8 @@ func migrateDB() error {
 		&ReconcileSnapshot{},
 		// UNIFYAPI-FORK: issued customer bills and upstream settlements, see settlement.go
 		&Settlement{},
+		// UNIFYAPI-FORK: previous values of billing config, see pricing_config_history.go
+		&PricingConfigHistory{},
 		&Task{},
 		&Model{},
 		&Vendor{},
