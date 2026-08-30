@@ -21,11 +21,23 @@ const HERE = new URL('.', import.meta.url).pathname
 const MODELS_DIR = join(HERE, '..')
 const LOCALES_DIR = join(HERE, '../../../../i18n/locales')
 
-/** The fork-owned pricing tabs. */
+/** The fork-owned pricing, profit and settlement screens. */
 const TAB_SOURCES = [
   'baseline-pricing-tab.tsx',
   'channel-cost-tab.tsx',
+  'profit-section.tsx',
+  'settlement-section.tsx',
 ]
+
+/**
+ * Logic modules whose string literals are ALSO translation keys.
+ *
+ * The screens render `t(step.noteKey)` and `t(LABELS[state])` -- keys chosen at
+ * runtime, which a scan of `t('…')` calls cannot see. Left uncovered, an
+ * untranslated derivation step or status badge renders as English with no
+ * warning, which is exactly how the first version of the pricing tab shipped.
+ */
+const LOGIC_SOURCES = ['profit-logic.ts', 'settlement-logic.ts']
 
 /** Locales that must carry a real translation, not the English fallback. */
 const TRANSLATED_LOCALES = ['zh.json', 'zh-TW.json']
@@ -42,6 +54,26 @@ function extractKeys(source: string): string[] {
   // t('…') and t(\n  '…'\n) — the formatter wraps long strings onto their own line.
   for (const match of source.matchAll(/\bt\(\s*'((?:[^'\\]|\\.)*)'/g)) {
     keys.add(match[1].replaceAll("\\'", "'"))
+  }
+  return [...keys]
+}
+
+/**
+ * extractDynamicKeys pulls keys out of a logic module: the `labelKey`/`noteKey`
+ * fields of a derivation step, and the values of the exhaustive `…_LABELS`
+ * records the screens index by state.
+ */
+function extractDynamicKeys(source: string): string[] {
+  const keys = new Set<string>()
+  for (const match of source.matchAll(
+    /(?:labelKey|noteKey):\s*\n?\s*'((?:[^'\\]|\\.)*)'/g
+  )) {
+    keys.add(match[1].replaceAll("\\'", "'"))
+  }
+  for (const block of source.matchAll(/_LABELS: Record<[^>]+> = \{([\s\S]*?)\n\}/g)) {
+    for (const entry of block[1].matchAll(/:\s*'((?:[^'\\]|\\.)*)'/g)) {
+      keys.add(entry[1].replaceAll("\\'", "'"))
+    }
   }
   return [...keys]
 }
@@ -103,6 +135,55 @@ describe('pricing tab translations', () => {
         )
       })
     }
+  }
+
+  for (const file of LOGIC_SOURCES) {
+    const keys = extractDynamicKeys(readFileSync(join(MODELS_DIR, file), 'utf8'))
+
+    test(`${file} exposes its runtime-chosen keys`, () => {
+      // Zero keys means the extractor stopped matching how the file is
+      // written, and every assertion below would vacuously pass.
+      assert.ok(keys.length >= 3, `only ${keys.length} dynamic keys found in ${file}`)
+    })
+
+    for (const locale of TRANSLATED_LOCALES) {
+      test(`${file}'s runtime keys are translated in ${locale}`, () => {
+        const ns = loadNamespace(locale)
+        const missing = keys.filter((key) => !(key in ns))
+        assert.deepEqual(
+          missing,
+          [],
+          `these runtime-chosen keys have no ${locale} entry:\n  ${missing.join('\n  ')}`
+        )
+      })
+    }
+  }
+
+  /*
+   * A runtime-chosen key must come from a `…_LABELS` record or a derivation
+   * step, never from a helper that returns string literals.
+   *
+   * This is the general form of a bug found by eye during local verification:
+   * three button labels were refactored into `primaryActionKey()`, which made
+   * them invisible to BOTH extractors above — the `t('…')` scan no longer saw a
+   * literal, and the `_LABELS` scan had nothing to find. They rendered in
+   * English. Forbidding `t(someHelper(...))` outright keeps every runtime key
+   * somewhere a scan can reach.
+   */
+  for (const file of TAB_SOURCES) {
+    test(`${file} routes runtime keys through a record, not a helper`, () => {
+      const source = readFileSync(join(MODELS_DIR, file), 'utf8')
+      const offenders = [...source.matchAll(/\bt\(\s*([a-z][A-Za-z0-9_]*)\(/g)].map(
+        (match) => match[1]
+      )
+      assert.deepEqual(
+        offenders,
+        [],
+        `${file} calls t() on the result of ${offenders.join(', ')}. ` +
+          'String literals returned from a helper cannot be checked for a translation. ' +
+          'Move them into an exhaustive `…_LABELS: Record<…>` and index it at the call site.'
+      )
+    })
   }
 
   // The specific mistake that shipped: a count column reusing the generic
