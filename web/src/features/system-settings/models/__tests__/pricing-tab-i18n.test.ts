@@ -25,6 +25,7 @@ const LOCALES_DIR = join(HERE, '../../../../i18n/locales')
 const TAB_SOURCES = [
   'baseline-pricing-tab.tsx',
   'channel-cost-tab.tsx',
+  'extra-models-tab.tsx',
   'profit-section.tsx',
   'settlement-section.tsx',
 ]

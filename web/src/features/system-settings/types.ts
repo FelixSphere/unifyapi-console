@@ -733,3 +733,72 @@ export type IssueSettlementParams = {
   status?: SettlementStatus
   note?: string
 }
+
+/*
+ * UNIFYAPI-FORK: admin-added model prices.
+ *
+ * These merge ON TOP of the compiled catalog rather than replacing it, which is
+ * the difference between this and the raw-ratio editor it replaced. Prices are
+ * USD per 1M tokens, like the catalog — never ratios.
+ */
+export type ExtraModelRow = {
+  model: string
+  vendor?: string
+  note?: string
+  input_usd: number
+  output_usd: number
+  cache_read_usd?: number
+  cache_write_usd?: number
+  /** Effective billing values, so the screen never re-derives what the server knows. */
+  discount: number
+  model_ratio: number
+  completion_ratio: number
+}
+
+/** ExtraModelDraft is the form's shape: strings, because a half-typed number is
+ *  not a number and coercing it early loses what the user actually typed. */
+export type ExtraModelDraft = {
+  model: string
+  input_usd: string
+  output_usd: string
+  cache_read_usd: string
+  cache_write_usd: string
+  vendor: string
+  note: string
+}
+
+export type ExtraModelsResponse = {
+  success: boolean
+  message?: string
+  data: {
+    models: ExtraModelRow[]
+    /** Names the form must refuse to shadow — the same rule the server enforces. */
+    catalogued_models: string[]
+    note: string
+  }
+}
+
+export type UpdateExtraModelsResponse = {
+  success: boolean
+  message?: string
+  errors?: string[]
+}
+
+/** One provider's published price for a model, from models.dev. */
+export type ModelPriceCandidate = {
+  provider: string
+  model: string
+  input_usd: number
+  output_usd: number
+  cache_read_usd?: number
+  cache_write_usd?: number
+  /** Listed under a vendor the compiled catalog already sources prices from. */
+  first_party: boolean
+}
+
+export type ModelPriceLookupResponse = {
+  success: boolean
+  message?: string
+  note?: string
+  data?: { candidates: ModelPriceCandidate[] }
+}

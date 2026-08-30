@@ -624,6 +624,9 @@ func updateOptionMap(key string, value string) (err error) {
 		err = ratio_setting.UpdateModelDiscountByJSONString(value)
 	case "ChannelCostRatio":
 		err = ratio_setting.UpdateChannelCostRatioByJSONString(value)
+	// UNIFYAPI-FORK: admin-added prices, merged on top of the code catalog.
+	case "ExtraModelPricing":
+		err = ratio_setting.UpdateExtraModelsByJSONString(value)
 	case "ModelRatio":
 		err = ratio_setting.UpdateModelRatioByJSONString(value)
 	case "GroupRatio":

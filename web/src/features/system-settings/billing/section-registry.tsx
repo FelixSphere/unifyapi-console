@@ -115,28 +115,23 @@ const BILLING_SECTIONS = [
         toolPricesDefault={settings['tool_price_setting.prices']}
         visibleTabs={[
           /*
-            UNIFYAPI-FORK: the raw-ratio tabs are deliberately not here.
+            UNIFYAPI-FORK: the raw-ratio tabs are deliberately gone, replaced by
+            'extra-models'.
 
-            'models', 'unset-models' and 'upstream-sync' all write the
-            ModelRatio / CompletionRatio / CacheRatio / ModelPrice options rows.
-            The moment any of those rows exists it REPLACES the code catalog --
-            types.LoadFromJsonString is replace-not-merge -- so the catalog stops
-            driving billing and scripts/pricing-drift is left checking a table
-            nobody bills from. That is the failure this fork was built to remove:
-            the row found in production held 2,877 keys.
+            'models', 'unset-models' and 'upstream-sync' all wrote the
+            ModelRatio / CompletionRatio / CacheRatio / ModelPrice options rows,
+            and types.LoadFromJsonString is replace-not-merge -- so one save
+            discarded the entire code catalog. Production held such a row with
+            2,877 keys. 'upstream-sync' was the worst: it bulk-copied a ratio map
+            out of ANOTHER new-api deployment, which is how a row that size gets
+            recreated in one click.
 
-            'upstream-sync' was the worst of the three. It bulk-copies a ratio
-            map out of ANOTHER new-api deployment, which is how a 2,877-key row
-            gets recreated in one click, and it is redundant here anyway --
-            upstream prices reach us through the catalog and the models.dev drift
-            check, not by trusting a peer instance.
-
-            To price a model now, add a row to unifyapi_catalog.go. That earns it
-            an official price, a provenance record and automatic drift checking,
-            none of which a hand-typed ratio ever had. Customer discounts live in
-            the baseline tab, purchasing cost in the upstream-cost tab.
+            'extra-models' does the one thing they were kept for -- pricing a
+            model the catalog does not carry, without a release -- and merges
+            instead of replacing, so it cannot touch a catalogued price.
           */
           'baseline',
+          'extra-models',
           'channel-cost',
           'tool-prices',
         ]}
