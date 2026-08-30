@@ -33,7 +33,7 @@ package ratio_setting
 
 // PricingSnapshotDate is the day the official prices below were last verified
 // against models.dev. scripts/pricing-drift compares against it.
-const PricingSnapshotDate = "2026-08-25"
+const PricingSnapshotDate = "2026-08-30"
 
 // CatalogEntry is one model's official vendor list price. Prices are USD per
 // 1M tokens, exactly as the vendor publishes them. A zero CacheReadUSD or
