@@ -114,16 +114,31 @@ const BILLING_SECTIONS = [
         groupDefaults={getGroupDefaults(settings)}
         toolPricesDefault={settings['tool_price_setting.prices']}
         visibleTabs={[
-          // UNIFYAPI-FORK: 'baseline' first -- it is the supported way to price
-          // a model. The raw-ratio tabs are kept for the rare case of an
-          // uncatalogued model, but saving them shadows the code baseline and
-          // the baseline tab warns when that has happened.
+          /*
+            UNIFYAPI-FORK: the raw-ratio tabs are deliberately not here.
+
+            'models', 'unset-models' and 'upstream-sync' all write the
+            ModelRatio / CompletionRatio / CacheRatio / ModelPrice options rows.
+            The moment any of those rows exists it REPLACES the code catalog --
+            types.LoadFromJsonString is replace-not-merge -- so the catalog stops
+            driving billing and scripts/pricing-drift is left checking a table
+            nobody bills from. That is the failure this fork was built to remove:
+            the row found in production held 2,877 keys.
+
+            'upstream-sync' was the worst of the three. It bulk-copies a ratio
+            map out of ANOTHER new-api deployment, which is how a 2,877-key row
+            gets recreated in one click, and it is redundant here anyway --
+            upstream prices reach us through the catalog and the models.dev drift
+            check, not by trusting a peer instance.
+
+            To price a model now, add a row to unifyapi_catalog.go. That earns it
+            an official price, a provenance record and automatic drift checking,
+            none of which a hand-typed ratio ever had. Customer discounts live in
+            the baseline tab, purchasing cost in the upstream-cost tab.
+          */
           'baseline',
           'channel-cost',
-          'models',
-          'unset-models',
           'tool-prices',
-          'upstream-sync',
         ]}
       />
     ),
