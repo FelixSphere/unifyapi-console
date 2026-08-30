@@ -92,7 +92,12 @@ func TestNeutralSeedReproducesProductionPricing(t *testing.T) {
 			row.Model, row.Ratio, got, entry.ModelRatio(), GetModelDiscount(row.Model))
 		checked++
 	}
-	require.GreaterOrEqual(t, checked, 55, "fixture should cover essentially the whole catalog")
+
+	// Derived, not a magic number: every fixture row is either catalogued and
+	// checked, or listed below as deliberately unsellable. A hardcoded floor
+	// silently stops covering the catalog as models come and go.
+	require.Equal(t, len(production.Data)-len(servedButUnsellable), checked,
+		"every production model must be either price-checked or a known unsellable")
 }
 
 // TestNeutralSeedOnlyCarriesDeviations keeps the table reviewable: a model sold
@@ -130,15 +135,33 @@ func TestNeutralSeedPassesAdminValidation(t *testing.T) {
 	require.Len(t, markups, 3, "expected exactly the three known markups: %v", markups)
 }
 
-// TestUncataloguedProductionModelIsAlreadyRefused documents the one model that
-// production serves but the catalog does not price.
+// servedButUnsellable are models a channel still offers that the catalog does
+// not price, so the relay refuses them.
 //
-// It is not a regression from this work: GetModelRatio already misses it, so it
-// already returns the 37.5 fallback with ok=false and the relay already refuses
-// it. What the pricing page shows for it -- $75 per 1M input -- has always been
-// that fallback rendered as if it were a price. Worth fixing, separately: either
-// catalogue glm-5.3 or drop it from the channel's model list.
-func TestUncataloguedProductionModelIsAlreadyRefused(t *testing.T) {
+// Six, for two different reasons, and the distinction is the point:
+//
+//   - glm-5.3 was never catalogued. It has always been refused, and
+//     /api/pricing has always shown its 37.5 fallback as though it were a real
+//     price -- $75 per 1M input.
+//   - the other five were dropped deliberately in #17 as models nobody had ever
+//     been billed for. Correct to drop, but they are STILL on their channels'
+//     model lists, so the pricing page keeps advertising them and a caller who
+//     tries one now gets a refusal instead of a response.
+//
+// Neither is a regression from the pricing work. Both are loose ends with the
+// same fix: take them off the channel model lists, or catalogue them. Pinned
+// here so the set cannot quietly grow -- every entry is a model we advertise
+// and cannot serve.
+var servedButUnsellable = []string{
+	"MiniMax-H3",
+	"glm-5.3",
+	"seedance-2.0",
+	"seedance-2.0-fast",
+	"seedance-2.0-mini",
+	"seedance2.0-pro",
+}
+
+func TestServedButUnsellableModelsAreDeclaredAndRefused(t *testing.T) {
 	resetRatioMapsToBaseline(t)
 	production := loadProductionPricing(t)
 
@@ -148,9 +171,12 @@ func TestUncataloguedProductionModelIsAlreadyRefused(t *testing.T) {
 			uncatalogued = append(uncatalogued, row.Model)
 		}
 	}
-	require.Equal(t, []string{"glm-5.3"}, uncatalogued,
-		"a new uncatalogued model in production means traffic that will be refused; catalogue it or unlist it")
+	require.ElementsMatch(t, servedButUnsellable, uncatalogued,
+		"a model that production serves but the catalog does not price is advertised and then refused. "+
+			"Adding one needs a reason; removing one means it was catalogued or unlisted, which is the fix.")
 
-	_, ok, _ := GetModelRatio("glm-5.3")
-	require.False(t, ok, "must be refused rather than billed at the 37.5 fallback")
+	for _, name := range uncatalogued {
+		_, ok, _ := GetModelRatio(name)
+		require.False(t, ok, "%s must be refused, not billed at the 37.5 fallback", name)
+	}
 }
