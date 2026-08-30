@@ -52,6 +52,32 @@ Scenarios (`--scenario`): `ttft` (default, short streaming prompt),
 benchmark script measures, warm is what a long-lived agent client actually gets.
 The cold/warm delta *is* the edge opportunity.
 
+## Load testing
+
+```bash
+python3 loadtest.py --dry-run              # always preview the plan first
+python3 loadtest.py --steps 20,40,80 -n 5
+```
+
+Targets `app.unifyapi.ai` and **refuses any other host**. A ramp against a third
+party spends capacity that is not ours and is very likely a ToS violation;
+`bench.py`'s low-concurrency comparison is normal API use, a ramp is not. Note
+that loading our gateway also loads Flatkey, since every relay forwards
+upstream -- hence small, capped ramps on the cheapest healthy channel.
+
+The breaker aborts the run on the first sign of distress: error rate over 20%,
+p95 over 30s, or any 5xx/429.
+
+**What the committed baseline does and does not show.** At 31 RPS the console
+container peaked at 12.46% CPU and 2.42% memory, load 0.35 on two cores --
+enormous headroom, and CPU will not be the binding constraint. But two limits
+were not reached: the ramp saturated the *load generator* (80 CPython threads,
+GIL-bound: 31 RPS observed against 47 implied by p50), and the requests were
+`max_tokens=16` toys, roughly 500x smaller than the 105.6 KB production
+average, so the 128 Mbps network baseline was never approached. Finding the
+real ceiling needs a mock upstream, a non-production target, and a
+multi-process generator.
+
 ## Tests
 
 ```bash
