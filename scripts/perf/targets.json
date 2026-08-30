@@ -1,0 +1,86 @@
+{
+  "_comment": "Endpoints under comparison. api_key_env names the env var holding the key; the harness never stores keys on disk.",
+  "targets": {
+    "unifyai": {
+      "label": "UnifyAI",
+      "base_url": "https://app.unifyapi.ai",
+      "host": "app.unifyapi.ai",
+      "api_key_env": "UNIFYAI_API_KEY",
+      "chat_path": "/v1/chat/completions",
+      "models_path": "/v1/models"
+    },
+    "openrouter": {
+      "label": "OpenRouter",
+      "base_url": "https://openrouter.ai",
+      "host": "openrouter.ai",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "chat_path": "/api/v1/chat/completions",
+      "models_path": "/api/v1/models"
+    }
+  },
+  "_model_map_comment": "Logical case -> provider-specific id. Both sides MUST resolve to the same underlying model or the comparison is meaningless. Verify OpenRouter ids at https://openrouter.ai/models before trusting a run.",
+  "model_map": {
+    "gemini-flash": {
+      "unifyai": "gemini-flash-latest",
+      "openrouter": "~google/gemini-flash-latest"
+    },
+    "claude-opus-4-8": {
+      "unifyai": "claude-opus-4-8",
+      "openrouter": "anthropic/claude-opus-4.8"
+    },
+    "claude-sonnet-5": {
+      "unifyai": "claude-sonnet-5",
+      "openrouter": "anthropic/claude-sonnet-5"
+    },
+    "claude-opus-5": {
+      "unifyai": "claude-opus-5",
+      "openrouter": "anthropic/claude-opus-5"
+    },
+    "deepseek-v4-flash": {
+      "unifyai": "deepseek-v4-flash",
+      "openrouter": "deepseek/deepseek-v4-flash"
+    },
+    "deepseek-v4-pro": {
+      "unifyai": "deepseek-v4-pro",
+      "openrouter": "deepseek/deepseek-v4-pro"
+    },
+    "qwen3.7-max": {
+      "unifyai": "qwen3.7-max",
+      "openrouter": "qwen/qwen3.7-max"
+    },
+    "qwen3.6-plus": {
+      "unifyai": "qwen3.6-plus",
+      "openrouter": "qwen/qwen3.6-plus"
+    },
+    "kimi-k3": {
+      "unifyai": "kimi-k3",
+      "openrouter": "moonshotai/kimi-k3"
+    },
+    "kimi-k2.6": {
+      "unifyai": "kimi-k2.6",
+      "openrouter": "moonshotai/kimi-k2.6"
+    },
+    "glm-5.2": {
+      "unifyai": "glm-5.2",
+      "openrouter": "z-ai/glm-5.2"
+    },
+    "glm-5.1": {
+      "unifyai": "glm-5.1",
+      "openrouter": "z-ai/glm-5.1"
+    },
+    "gpt-5-mini": {
+      "unifyai": "gpt-5-mini",
+      "openrouter": "openai/gpt-5-mini"
+    },
+    "gemini-flash-lite": {
+      "unifyai": "gemini-flash-lite-latest",
+      "openrouter": "google/gemini-2.5-flash-lite",
+      "_inexact": "OR has no flash-lite-latest alias"
+    },
+    "qwen3.5-plus": {
+      "unifyai": "qwen3.5-plus",
+      "openrouter": "qwen/qwen3.5-plus-20260420",
+      "_inexact": "unify alias vs OR dated build"
+    }
+  }
+}
