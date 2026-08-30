@@ -415,11 +415,25 @@
      "output": 0.6
     }
    },
+   "gpt-5": {
+    "cost": {
+     "cache_read": 0.125,
+     "input": 1.25,
+     "output": 10
+    }
+   },
    "gpt-5-mini": {
     "cost": {
      "cache_read": 0.025,
      "input": 0.25,
      "output": 2
+    }
+   },
+   "gpt-5.4": {
+    "cost": {
+     "cache_read": 0.25,
+     "input": 2.5,
+     "output": 15
     }
    },
    "gpt-image-2": {
