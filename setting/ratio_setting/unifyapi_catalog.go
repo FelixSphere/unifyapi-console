@@ -82,6 +82,18 @@ type CatalogEntry struct {
 	ImageRatio           float64
 	AudioRatio           float64
 	AudioCompletionRatio float64
+
+	// AudioInputUSD is the vendor's price for audio tokens inside an ordinary
+	// chat request, when it differs from the text input price. Zero means
+	// audio bills at the text rate, which is true for most models.
+	//
+	// Setting it moves the model onto a billing expression -- the flat ratio
+	// maps have nowhere to put it. See unifyapi_billing_expr.go.
+	AudioInputUSD float64
+
+	// ContextTier is the vendor's price above a context-length threshold, for
+	// models that charge more for long inputs. Nil for a flat-priced model.
+	ContextTier *ContextTier
 }
 
 // UpstreamID is the models.dev model id this row was priced from.
@@ -148,16 +160,19 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "glm-5.3", Vendor: "zhipuai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
 
 	// ---- Google ----
-	{Model: "gemini-2.5-flash", Vendor: "google", InputUSD: 0.3, OutputUSD: 2.5, CacheReadUSD: 0.03, CacheWriteUSD: 0},
+	{Model: "gemini-2.5-flash", Vendor: "google", InputUSD: 0.3, OutputUSD: 2.5, CacheReadUSD: 0.03, CacheWriteUSD: 0, AudioInputUSD: 1.0},
 	{Model: "gemini-2.5-flash-image", Vendor: "google", InputUSD: 0.3, OutputUSD: 30, CacheReadUSD: 0.075, CacheWriteUSD: 0},
-	{Model: "gemini-2.5-flash-lite", Vendor: "google", InputUSD: 0.1, OutputUSD: 0.4, CacheReadUSD: 0.01, CacheWriteUSD: 0},
-	{Model: "gemini-2.5-pro", Vendor: "google", InputUSD: 1.25, OutputUSD: 10, CacheReadUSD: 0.125, CacheWriteUSD: 0},
-	{Model: "gemini-3-flash-preview", Vendor: "google", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0},
+	{Model: "gemini-2.5-flash-lite", Vendor: "google", InputUSD: 0.1, OutputUSD: 0.4, CacheReadUSD: 0.01, CacheWriteUSD: 0, AudioInputUSD: 0.3},
+	{Model: "gemini-2.5-pro", Vendor: "google", InputUSD: 1.25, OutputUSD: 10, CacheReadUSD: 0.125, CacheWriteUSD: 0,
+		ContextTier: &ContextTier{ThresholdTokens: 200000, InputUSD: 2.5, OutputUSD: 15, CacheReadUSD: 0.25}},
+	{Model: "gemini-3-flash-preview", Vendor: "google", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0, AudioInputUSD: 1.0},
 	{Model: "gemini-3-pro-image", Vendor: "google", InputUSD: 2, OutputUSD: 120, CacheReadUSD: 0, CacheWriteUSD: 0},
 	{Model: "gemini-3.1-flash-image", Vendor: "google", InputUSD: 0.5, OutputUSD: 60, CacheReadUSD: 0, CacheWriteUSD: 0},
-	{Model: "gemini-3.1-flash-lite-preview", Vendor: "google", InputUSD: 0.25, OutputUSD: 1.5, CacheReadUSD: 0.025, CacheWriteUSD: 0},
-	{Model: "gemini-3.1-pro-preview", Vendor: "google", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 0},
-	{Model: "gemini-3.1-pro-preview-customtools", Vendor: "google", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 0},
+	{Model: "gemini-3.1-flash-lite-preview", Vendor: "google", InputUSD: 0.25, OutputUSD: 1.5, CacheReadUSD: 0.025, CacheWriteUSD: 0, AudioInputUSD: 0.5},
+	{Model: "gemini-3.1-pro-preview", Vendor: "google", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 0,
+		ContextTier: &ContextTier{ThresholdTokens: 200000, InputUSD: 4, OutputUSD: 18, CacheReadUSD: 0.4}},
+	{Model: "gemini-3.1-pro-preview-customtools", Vendor: "google", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 0,
+		ContextTier: &ContextTier{ThresholdTokens: 200000, InputUSD: 4, OutputUSD: 18, CacheReadUSD: 0.4}},
 	{Model: "gemini-flash-latest", Vendor: "google", InputUSD: 0.75, OutputUSD: 3.75, CacheReadUSD: 0.075, CacheWriteUSD: 0},
 	{Model: "gemini-flash-lite-latest", Vendor: "google", InputUSD: 0.3, OutputUSD: 2.5, CacheReadUSD: 0.03, CacheWriteUSD: 0},
 	{Model: "gemini-pro-latest", Vendor: "google", UpstreamModel: "gemini-3.1-pro-preview", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 0},
@@ -179,9 +194,11 @@ var unifyapiCatalog = []CatalogEntry{
 		QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing", QuoteDate: "2026-08-30"},
 	{Model: "qwen3.5-plus", Vendor: "alibaba", InputUSD: 0.4, OutputUSD: 2.4, CacheReadUSD: 0, CacheWriteUSD: 0},
 	{Model: "qwen3.6-max-preview", Vendor: "alibaba", InputUSD: 1.3, OutputUSD: 7.8, CacheReadUSD: 0.13, CacheWriteUSD: 1.625},
-	{Model: "qwen3.6-plus", Vendor: "alibaba", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0.625},
+	{Model: "qwen3.6-plus", Vendor: "alibaba", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0.625,
+		ContextTier: &ContextTier{ThresholdTokens: 256000, InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.2, CacheWriteUSD: 2.5}},
 	{Model: "qwen3.7-max", Vendor: "alibaba", InputUSD: 2.5, OutputUSD: 7.5, CacheReadUSD: 0.5, CacheWriteUSD: 3.125},
-	{Model: "qwen3.7-plus", Vendor: "alibaba", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0.625},
+	{Model: "qwen3.7-plus", Vendor: "alibaba", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0.625,
+		ContextTier: &ContextTier{ThresholdTokens: 256000, InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.2, CacheWriteUSD: 2.5}},
 	{Model: "qwen3.8-max", Vendor: "alibaba", InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.25, CacheWriteUSD: 2.5},
 
 	// ---- DeepSeek ----
