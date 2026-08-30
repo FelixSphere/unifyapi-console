@@ -100,7 +100,9 @@ func newRelayHTTPTransport() *http.Transport {
 
 func newRelayHTTPClient(transport http.RoundTripper) *http.Client {
 	client := &http.Client{
-		Transport:     transport,
+		// UNIFYAPI-FORK: bounds the wait for headers on streaming relays only.
+		// No-op at the default. See relay_header_timeout.go.
+		Transport:     wrapRelayStreamHeaderTimeout(transport),
 		CheckRedirect: checkRedirect,
 	}
 	if common.RelayTimeout != 0 {
