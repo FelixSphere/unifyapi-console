@@ -535,3 +535,201 @@ export type UpdateChannelCostResponse = {
   message?: string
   errors?: string[]
 }
+
+/* UNIFYAPI-FORK: profit / reconciliation types. */
+export type ReconcileGroupBy =
+  | 'model'
+  | 'vendor'
+  | 'customer'
+  | 'channel'
+  | 'group'
+  | 'day'
+
+export type ReconcileParams = {
+  start: string
+  end: string
+  group_by: ReconcileGroupBy
+}
+
+export type ReconcileLine = {
+  key: string
+  label: string
+  requests: number
+  prompt_tokens: number
+  cached_tokens: number
+  completion_tokens: number
+  revenue_usd: number
+  cost_usd: number
+  margin_usd: number
+  margin_pct: number
+  unpriced_requests: number
+  unpriced_models?: string[]
+}
+
+export type ReconcileReport = {
+  group_by: ReconcileGroupBy
+  lines: ReconcileLine[]
+  total: ReconcileLine
+  loss_makers?: ReconcileLine[]
+}
+
+export type ReconcileResponse = {
+  success: boolean
+  message?: string
+  warning?: string
+  data: ReconcileReport
+  cost_basis: {
+    description: string
+    snapshot_date: string
+    channel_cost_ratios: Record<string, number>
+    unconfigured_channel: string
+  }
+}
+
+export type ReconcileAlert = {
+  severity: 'critical' | 'warning'
+  kind: string
+  subject: string
+  detail: string
+  action: string
+  revenue_usd: number
+  cost_usd: number
+  margin_usd: number
+  margin_pct: number
+}
+
+export type ReconcileSnapshotRow = {
+  id: number
+  group_by: string
+  period_start: string
+  period_end: string
+  revenue_usd: number
+  cost_usd: number
+  margin_usd: number
+  margin_pct: number
+  critical_alerts: number
+  warning_alerts: number
+  alerts: ReconcileAlert[] | null
+  created_at: number
+}
+
+export type ReconcileSnapshotsResponse = {
+  success: boolean
+  message?: string
+  data: ReconcileSnapshotRow[]
+}
+
+/*
+ * UNIFYAPI-FORK: settlement -- billing a customer, and paying an upstream.
+ *
+ * The two directions are asymmetric on purpose. A customer statement's amount
+ * is read from the consume-log ledger, so it is defensible line by line. A
+ * vendor statement's amount is modelled from token counts, so it is a claim to
+ * be checked against the invoice that arrives. See service/statement.go.
+ */
+export type StatementKind = 'customer' | 'vendor'
+
+export type StatementLine = {
+  model: string
+  requests: number
+  prompt_tokens: number
+  cached_tokens: number
+  completion_tokens: number
+  amount_usd: number
+  /** Vendor side only: this model has no catalog price, so it billed nothing. */
+  unpriced?: boolean
+}
+
+export type Statement = {
+  kind: StatementKind
+  counterparty: string
+  label: string
+  group?: string
+  period_start: string
+  period_end: string
+  lines: StatementLine[]
+  requests: number
+  prompt_tokens: number
+  cached_tokens: number
+  completion_tokens: number
+  amount_usd: number
+  unpriced_requests: number
+  unpriced_models?: string[]
+}
+
+export type SettlementStatus = 'issued' | 'settled' | 'void'
+
+export type SettlementRecord = {
+  id: number
+  kind: StatementKind
+  counterparty: string
+  label: string
+  period_start: string
+  period_end: string
+  amount_usd: number
+  invoiced_usd: number
+  /** Distinguishes "their invoice says zero" from "no invoice entered yet". */
+  invoice_recorded: boolean
+  status: SettlementStatus
+  note: string
+  statement_json: string
+  pricing_snapshot_date: string
+  created_at: number
+  updated_at: number
+}
+
+export type SettlementRow = {
+  statement: Statement
+  settlement?: SettlementRecord
+  /** Live minus frozen: non-zero means pricing moved after this was issued. */
+  drift_usd?: number
+  variance_usd?: number
+  variance_pct?: number
+}
+
+export type CustomerPayment = {
+  user_id: number
+  provider: string
+  orders: number
+  credited_usd: number
+  charged_money: number
+}
+
+export type SettlementTotals = {
+  counterparties: number
+  requests: number
+  amount_usd: number
+  unpriced_requests: number
+}
+
+export type SettlementResponse = {
+  success: boolean
+  message?: string
+  warning?: string
+  data: {
+    kind: StatementKind
+    period_start: string
+    period_end: string
+    rows: SettlementRow[]
+    totals: SettlementTotals
+    orphaned?: SettlementRecord[]
+  }
+  /** Customer side only, keyed by user id as a string. */
+  payments?: Record<string, CustomerPayment[]>
+  cost_basis?: {
+    description: string
+    snapshot_date: string
+    channel_cost_ratios: Record<string, number>
+  }
+}
+
+export type IssueSettlementParams = {
+  kind: StatementKind
+  counterparty: string
+  start: string
+  end: string
+  invoiced_usd?: number
+  invoice_recorded?: boolean
+  status?: SettlementStatus
+  note?: string
+}
