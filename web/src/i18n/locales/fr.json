@@ -1223,7 +1223,7 @@
     "Creem products must be a JSON array": "Les produits Creem doivent être un tableau JSON",
     "Cross-group": "Inter-groupes",
     "Cross-group retry": "Nouvelle tentative inter-groupes",
-    "Currencies the user may pay in, with the rate against USD (1 USD = rate). USD is always offered. Alipay and WeChat ignore this and are always charged in CNY.": "Devises que l'utilisateur peut choisir, avec le taux face à l'USD (1 USD = taux). L'USD est toujours proposé. Alipay et WeChat ignorent ce réglage et sont toujours facturés en CNY.",
+    "Currencies the wallet page can quote an estimate in. Rates refresh automatically from the ECB reference rate; the value here is only the fallback if that feed is unavailable. Stripe sets the currency and amount actually charged at checkout.": "Devises dans lesquelles la page portefeuille peut donner une estimation. Les taux se rafraîchissent depuis le taux de référence BCE ; la valeur saisie ici ne sert que de repli. Stripe fixe la devise et le montant réellement débités au paiement.",
     "Currency": "Devise",
     "Currency & Display": "Devise et affichage",
     "Current": "Actuelle",

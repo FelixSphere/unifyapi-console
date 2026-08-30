@@ -1223,7 +1223,7 @@
     "Creem products must be a JSON array": "Sản phẩm Creem phải là mảng JSON",
     "Cross-group": "Liên nhóm",
     "Cross-group retry": "Thử lại liên nhóm",
-    "Currencies the user may pay in, with the rate against USD (1 USD = rate). USD is always offered. Alipay and WeChat ignore this and are always charged in CNY.": "Các loại tiền người dùng có thể chọn, kèm tỷ giá so với USD (1 USD = tỷ giá). USD luôn khả dụng. Alipay và WeChat bỏ qua thiết lập này và luôn thu bằng CNY.",
+    "Currencies the wallet page can quote an estimate in. Rates refresh automatically from the ECB reference rate; the value here is only the fallback if that feed is unavailable. Stripe sets the currency and amount actually charged at checkout.": "Các loại tiền trang ví có thể hiển thị ước tính. Tỷ giá tự động làm mới theo tỷ giá tham chiếu ECB; giá trị ở đây chỉ là dự phòng. Stripe quyết định loại tiền và số tiền thực tế bị trừ khi thanh toán.",
     "Currency": "Tiền tệ",
     "Currency & Display": "Tiền tệ & hiển thị",
     "Current": "Hiện tại",
