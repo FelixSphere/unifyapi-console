@@ -116,7 +116,14 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "gpt-4.1-mini", Vendor: "openai", InputUSD: 0.4, OutputUSD: 1.6, CacheReadUSD: 0.1, CacheWriteUSD: 0},
 	{Model: "gpt-4o", Vendor: "openai", InputUSD: 2.5, OutputUSD: 10, CacheReadUSD: 1.25, CacheWriteUSD: 0},
 	{Model: "gpt-4o-mini", Vendor: "openai", InputUSD: 0.15, OutputUSD: 0.6, CacheReadUSD: 0.075, CacheWriteUSD: 0},
+	{Model: "gpt-5", Vendor: "openai", InputUSD: 1.25, OutputUSD: 10, CacheReadUSD: 0.125, CacheWriteUSD: 0,
+		QuoteSource: "https://models.dev/api.json (openai/gpt-5)", QuoteDate: "2026-08-30"},
 	{Model: "gpt-5-mini", Vendor: "openai", InputUSD: 0.25, OutputUSD: 2, CacheReadUSD: 0.025, CacheWriteUSD: 0},
+	// Standard tier. OpenAI also publishes a higher band above a 272k context
+	// ($5/$22.5); the catalog carries one price per model, and the standard
+	// tier is what the relay bills, so that is what is recorded here.
+	{Model: "gpt-5.4", Vendor: "openai", InputUSD: 2.5, OutputUSD: 15, CacheReadUSD: 0.25, CacheWriteUSD: 0,
+		QuoteSource: "https://models.dev/api.json (openai/gpt-5.4)", QuoteDate: "2026-08-30"},
 	{Model: "gpt-image-2", Vendor: "openai", InputUSD: 5, OutputUSD: 30, CacheReadUSD: 1.25, CacheWriteUSD: 0},
 
 	// ---- Moonshot ----
