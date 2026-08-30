@@ -50,7 +50,8 @@
 -- 2,877 hand-tuned ratios exist nowhere else -- not in git, not in the catalog.
 --
 --   \copy (SELECT key, value FROM options WHERE key IN
---     ('ModelRatio','CompletionRatio','CacheRatio','CreateCacheRatio'))
+--     ('ModelRatio','CompletionRatio','CacheRatio','CreateCacheRatio',
+--      'ModelPrice','ImageRatio','AudioRatio','AudioCompletionRatio'))
 --     TO '/tmp/options-pricing-backup.tsv'
 --
 -- Copy that file off the instance before continuing.
@@ -72,31 +73,43 @@
 --
 -- To check what you are about to delete, run this first:
 --   SELECT key, length(value) FROM options
---    WHERE key IN ('ModelRatio','CompletionRatio','CacheRatio','CreateCacheRatio');
+--    WHERE key IN ('ModelRatio','CompletionRatio','CacheRatio','CreateCacheRatio',
+--      'ModelPrice','ImageRatio','AudioRatio','AudioCompletionRatio');
 
 BEGIN;
 
 DELETE FROM options
  WHERE key IN (
-   'ModelRatio',        -- input-token ratio; also the sellable-model allow-list
-   'CompletionRatio',   -- output multiplier over input
-   'CacheRatio',        -- cached-read multiplier
-   'CreateCacheRatio'   -- cache-write multiplier
+   'ModelRatio',           -- input-token ratio; also the sellable-model allow-list
+   'CompletionRatio',      -- output multiplier over input
+   'CacheRatio',           -- cached-read multiplier
+   'CreateCacheRatio',     -- cache-write multiplier
+   'ModelPrice',           -- per-call price (image/video/task pseudo-models)
+   'ImageRatio',           -- image-token multiplier
+   'AudioRatio',           -- audio-input multiplier
+   'AudioCompletionRatio'  -- audio-output multiplier
  );
 
 COMMIT;
 
+-- ALL EIGHT pricing maps are cleared, not just the four token ones.
+--
+-- An earlier version of this file kept ModelPrice, ImageRatio, AudioRatio and
+-- AudioCompletionRatio, reasoning that they are separate namespaces and cannot
+-- bill anything without a catalog ratio. True, and beside the point: they are
+-- listed in the admin pricing page, so an operator scrolled past 44 models
+-- UnifyAPI does not sell -- dall-e-3, gpt-4-gizmo-*, mj_*, suno_*, sora-2,
+-- veo-*, tts-1 -- to reach the ones it does. Production's row is worse still,
+-- carrying names like fugu-ultra that appear in no channel and no catalog.
+--
+-- "The catalog is the allow-list" has to hold for every pricing map, or the
+-- page keeps teaching its readers that the list is not the list.
+--
 -- Deliberately NOT deleted:
 --
 --   GroupRatio, GroupGroupRatio  -- customer discounts, business config
 --   UserUsableGroups, AutoGroups -- which groups a customer may buy
+--   ModelDiscount                -- per-model customer discount. Survives on
+--                                   purpose, so a baseline reset does not also
+--                                   silently reprice every customer.
 --   ChannelCostRatio             -- per-channel upstream cost, reconciliation only
---   ModelPrice                   -- per-call task pseudo-models (mj_*, suno_*,
---                                   video). A different namespace from the
---                                   token-priced catalog, and harmless: a model
---                                   with no ModelRatio entry is refused anyway.
---   ImageRatio, AudioRatio, AudioCompletionRatio
---                                -- token-type modifiers. Same reasoning: they
---                                   only apply to a model that already has a
---                                   catalog ratio, so a stale entry cannot
---                                   produce a charge on its own.

@@ -160,20 +160,72 @@ func OfficialRatios() map[string]map[string]float64 {
 	}
 }
 
-// BaselineRatios is every ratio map the catalog is authoritative for, keyed by
-// the option name it is stored under, with per-model customer discounts applied.
-// gen-pricing-seed, the reset endpoint and the shadow check all go through this,
-// so a model can never end up in one map and miss another.
+// baselineModelPrice is the per-call price baseline: models billed per request
+// rather than per token. Empty today -- no catalogued model is per-call -- and
+// deliberately derived rather than hardcoded, so adding one is a catalog edit
+// like every other price.
+func baselineModelPrice() map[string]float64 {
+	out := make(map[string]float64)
+	for _, entry := range unifyapiCatalog {
+		if entry.PerCallUSD > 0 {
+			out[entry.Model] = entry.PerCallUSD
+		}
+	}
+	return out
+}
+
+// baselineImageRatio / baselineAudioRatio / baselineAudioCompletionRatio are the
+// image- and audio-token modifiers. All empty today: none of the 54 catalogued
+// models bills image or audio tokens at a rate different from text.
 //
-// ModelPrice is deliberately absent: that map holds per-call task pseudo-models
-// (mj_*, suno_*, video), a different namespace from the token-priced catalog,
-// and it keeps upstream's defaults.
+// They exist as functions rather than as an omission so that "every pricing map
+// comes from the catalog" is literally true, and so the admin pricing page shows
+// nothing UnifyAPI does not sell.
+func baselineImageRatio() map[string]float64 {
+	out := make(map[string]float64)
+	for _, entry := range unifyapiCatalog {
+		if entry.ImageRatio > 0 {
+			out[entry.Model] = entry.ImageRatio
+		}
+	}
+	return out
+}
+
+func baselineAudioRatio() map[string]float64 {
+	out := make(map[string]float64)
+	for _, entry := range unifyapiCatalog {
+		if entry.AudioRatio > 0 {
+			out[entry.Model] = entry.AudioRatio
+		}
+	}
+	return out
+}
+
+func baselineAudioCompletionRatio() map[string]float64 {
+	out := make(map[string]float64)
+	for _, entry := range unifyapiCatalog {
+		if entry.AudioCompletionRatio > 0 {
+			out[entry.Model] = entry.AudioCompletionRatio
+		}
+	}
+	return out
+}
+
+// BaselineRatios is every pricing map the catalog is authoritative for, keyed by
+// the option name it is stored under, with per-model customer discounts applied.
+// The reset endpoint, the seed generator and the shadow check all go through
+// this, so a model can never end up in one map and miss another -- and no map
+// can quietly keep a set of models the catalog does not list.
 func BaselineRatios() map[string]map[string]float64 {
 	return map[string]map[string]float64{
-		"ModelRatio":       baselineModelRatio(),
-		"CompletionRatio":  baselineCompletionRatio(),
-		"CacheRatio":       baselineCacheRatio(),
-		"CreateCacheRatio": baselineCreateCacheRatio(),
+		"ModelRatio":           baselineModelRatio(),
+		"CompletionRatio":      baselineCompletionRatio(),
+		"CacheRatio":           baselineCacheRatio(),
+		"CreateCacheRatio":     baselineCreateCacheRatio(),
+		"ModelPrice":           baselineModelPrice(),
+		"ImageRatio":           baselineImageRatio(),
+		"AudioRatio":           baselineAudioRatio(),
+		"AudioCompletionRatio": baselineAudioCompletionRatio(),
 	}
 }
 

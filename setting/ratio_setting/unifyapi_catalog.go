@@ -48,6 +48,22 @@ type CatalogEntry struct {
 	CacheReadUSD  float64
 	CacheWriteUSD float64
 	Unverified    bool // no models.dev listing; needs a manual quote
+
+	// PerCallUSD prices a model per request instead of per token (image and
+	// video generation work this way). Zero means per-token, which is every
+	// catalogued model today. Set it and the model moves to quota_type 1.
+	PerCallUSD float64
+
+	// ImageRatio / AudioRatio / AudioCompletionRatio are multipliers for models
+	// that bill image or audio tokens at a different rate from text. Zero means
+	// "no separate rate", which is every catalogued model today.
+	//
+	// They live here rather than in upstream's parallel default maps so that
+	// every price a model has comes from its one catalog row, and the admin
+	// pricing page never lists a model UnifyAPI does not sell.
+	ImageRatio           float64
+	AudioRatio           float64
+	AudioCompletionRatio float64
 }
 
 // UpstreamID is the models.dev model id this row was priced from.
