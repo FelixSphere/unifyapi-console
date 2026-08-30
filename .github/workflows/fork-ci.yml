@@ -87,3 +87,35 @@ jobs:
       - run: go test ./...
         env:
           GOWORK: off
+
+  perf-tools:
+    # Gates scripts/perf/ -- the benchmark harness. Nothing here ships in the
+    # console image, so this protects a measurement tool rather than the
+    # product. It earns a job anyway: the harness reads raw HTTP off a socket,
+    # and a bug in that reader is invisible by construction -- a truncated body
+    # still yields a 200 with plausible timings, so a stalled upstream is
+    # scored as a clean success. That exact bug shipped once (#19, fixed #20).
+    #
+    # Unconditional rather than behind a paths filter: the suite is stdlib-only
+    # with no network and runs in ~1ms, so a filter would cost more in missed
+    # renames than it saves in runner time.
+    if: github.repository == 'FelixSphere/unifyapi-console'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned for the same reason go and bun are pinned above.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: bench.py wire-format tests
+        run: python3 scripts/perf/test_bench.py
+
+      # netpath.py and monitor.sh have no unit tests -- they are almost entirely
+      # I/O. A syntax check is the honest floor: it catches the edit that breaks
+      # them outright, and claims nothing more.
+      - name: Syntax-check the untested tools
+        run: |
+          python3 -m py_compile scripts/perf/bench.py scripts/perf/netpath.py
+          bash -n scripts/perf/monitor.sh

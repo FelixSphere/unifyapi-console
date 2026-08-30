@@ -63,6 +63,11 @@ which is the one place a bug is invisible: a truncated read still produces a 200
 with plausible timings, so the harness reports a clean success for exactly the
 stalled upstream it was built to detect.
 
+Enforced, not advisory: the `perf-tools` job in `.github/workflows/fork-ci.yml`
+runs this on every PR and every push, and a failure blocks the merge. Anything
+weaker would be worse than nothing here -- a benchmark you cannot trust is one
+you will act on anyway.
+
 ## Fairness rules
 
 - Both sides must resolve to the same underlying model. Check `model_map` in
