@@ -177,16 +177,18 @@ class Conn:
             else:
                 got = 0
             if raw_len is None:
-                # Connection: close delimits the body -- read until EOF.
+                # Connection: close delimits the body -- read until the peer
+                # closes. Catch ConnectionError ONLY: socket.timeout is
+                # TimeoutError which subclasses OSError, so catching OSError
+                # would turn a stalled upstream into a silent truncation that
+                # scores as a clean 200 with an understated roundtrip_ms.
                 while True:
                     try:
-                        c = self._fill()
-                    except (ConnectionError, OSError):
+                        self._fill()          # raises ConnectionError at EOF
+                    except ConnectionError:
                         return
                     yield self.buf
                     self.buf = b""
-                    if not c:
-                        return
             clen = int(raw_len)
             while got < clen:
                 c = self._fill()
@@ -363,6 +365,8 @@ def main():
     proxy = None
     if args.proxy:
         ph, _, pp = args.proxy.rpartition(":")
+        if not ph or not pp.isdigit():
+            ap.error(f"--proxy must be HOST:PORT, got {args.proxy!r}")
         proxy = (ph, int(pp))
 
     cfg = json.load(open(args.targets))

@@ -52,6 +52,17 @@ Scenarios (`--scenario`): `ttft` (default, short streaming prompt),
 benchmark script measures, warm is what a long-lived agent client actually gets.
 The cold/warm delta *is* the edge opportunity.
 
+## Tests
+
+```bash
+python3 test_bench.py
+```
+
+Stdlib `unittest`, no deps, no network. Pins every path through the body reader,
+which is the one place a bug is invisible: a truncated read still produces a 200
+with plausible timings, so the harness reports a clean success for exactly the
+stalled upstream it was built to detect.
+
 ## Fairness rules
 
 - Both sides must resolve to the same underlying model. Check `model_map` in
