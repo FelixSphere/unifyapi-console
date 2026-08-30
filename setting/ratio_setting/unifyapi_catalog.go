@@ -49,6 +49,12 @@ type CatalogEntry struct {
 	CacheWriteUSD float64
 	Unverified    bool // no models.dev listing; needs a manual quote
 
+	// AdminAdded marks a price typed into the console rather than compiled in --
+	// see unifyapi_extra_models.go. It flows through to the pricing page and the
+	// drift checker because nobody is watching these for vendor price changes,
+	// and a price with no provenance must never look like one that has it.
+	AdminAdded bool
+
 	// QuoteSource and QuoteDate record a price read directly off the vendor's own
 	// price list, by hand, on a date. They exist because models.dev is an
 	// aggregator and aggregators lag: on 2026-08-30 it still carried DeepSeek's
