@@ -61,6 +61,7 @@ var publishedModels = []string{
 	"glm-5-turbo",
 	"glm-5.1",
 	"glm-5.2",
+	"glm-5.3",
 	"gpt-4.1-mini",
 	"gpt-4o",
 	"gpt-4o-mini",
