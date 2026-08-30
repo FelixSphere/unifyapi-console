@@ -22,6 +22,7 @@ import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
+import { ProfitSection } from '../models/profit-section'
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
@@ -138,6 +139,14 @@ const BILLING_SECTIONS = [
         visibleTabs={['groups']}
       />
     ),
+  },
+  {
+    // UNIFYAPI-FORK: sits right after the two pricing sections on purpose --
+    // someone who has just set a discount or a purchasing cost is one click
+    // from seeing what it did to margin.
+    id: 'profit',
+    titleKey: 'Profit',
+    build: () => <ProfitSection />,
   },
   {
     id: 'payment',

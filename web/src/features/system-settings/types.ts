@@ -535,3 +535,86 @@ export type UpdateChannelCostResponse = {
   message?: string
   errors?: string[]
 }
+
+/* UNIFYAPI-FORK: profit / reconciliation types. */
+export type ReconcileGroupBy =
+  | 'model'
+  | 'vendor'
+  | 'customer'
+  | 'channel'
+  | 'group'
+  | 'day'
+
+export type ReconcileParams = {
+  start: string
+  end: string
+  group_by: ReconcileGroupBy
+}
+
+export type ReconcileLine = {
+  key: string
+  label: string
+  requests: number
+  prompt_tokens: number
+  cached_tokens: number
+  completion_tokens: number
+  revenue_usd: number
+  cost_usd: number
+  margin_usd: number
+  margin_pct: number
+  unpriced_requests: number
+  unpriced_models?: string[]
+}
+
+export type ReconcileReport = {
+  group_by: ReconcileGroupBy
+  lines: ReconcileLine[]
+  total: ReconcileLine
+  loss_makers?: ReconcileLine[]
+}
+
+export type ReconcileResponse = {
+  success: boolean
+  message?: string
+  warning?: string
+  data: ReconcileReport
+  cost_basis: {
+    description: string
+    snapshot_date: string
+    channel_cost_ratios: Record<string, number>
+    unconfigured_channel: string
+  }
+}
+
+export type ReconcileAlert = {
+  severity: 'critical' | 'warning'
+  kind: string
+  subject: string
+  detail: string
+  action: string
+  revenue_usd: number
+  cost_usd: number
+  margin_usd: number
+  margin_pct: number
+}
+
+export type ReconcileSnapshotRow = {
+  id: number
+  group_by: string
+  period_start: string
+  period_end: string
+  revenue_usd: number
+  cost_usd: number
+  margin_usd: number
+  margin_pct: number
+  critical_alerts: number
+  warning_alerts: number
+  alerts: ReconcileAlert[] | null
+  created_at: number
+}
+
+export type ReconcileSnapshotsResponse = {
+  success: boolean
+  message?: string
+  data: ReconcileSnapshotRow[]
+}
