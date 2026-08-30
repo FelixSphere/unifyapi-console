@@ -35,7 +35,7 @@ import {
   formatLocalCurrencyAmount,
 } from '@/lib/currency'
 
-import { DEFAULT_DISCOUNT_RATE } from '../../constants'
+import { DEFAULT_DISCOUNT_RATE, STRIPE_BASE_CURRENCY } from '../../constants'
 import { formatCurrency, getPaymentIcon } from '../../lib'
 import type { PaymentMethod } from '../../types'
 
@@ -71,6 +71,11 @@ export function PaymentConfirmDialog({
   const hasDiscount = discountRate > 0 && discountRate < 1 && paymentAmount > 0
   const originalAmount = hasDiscount ? paymentAmount / discountRate : 0
   const discountAmount = hasDiscount ? originalAmount - paymentAmount : 0
+  // A non-base quote is converted by this server for display; Stripe re-quotes
+  // it at checkout with its own live rate, so it must not read as final.
+  const isEstimate = Boolean(
+    paymentCurrency && paymentCurrency !== STRIPE_BASE_CURRENCY
+  )
   const formatPayment = (value: number) =>
     paymentCurrency
       ? formatExplicitCurrencyAmount(value, paymentCurrency)
@@ -104,7 +109,7 @@ export function PaymentConfirmDialog({
 
           <div className='flex items-center justify-between'>
             <span className='text-muted-foreground text-sm'>
-              {t('You Pay')}
+              {isEstimate ? t('You Pay (approx.)') : t('You Pay')}
             </span>
             {calculating ? (
               <Skeleton className='h-6 w-24' />
@@ -121,6 +126,14 @@ export function PaymentConfirmDialog({
               </div>
             )}
           </div>
+
+          {isEstimate && !calculating && (
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'Stripe converts at its own live rate on the payment page; the amount there is what you are charged.'
+              )}
+            </p>
+          )}
 
           {hasDiscount && !calculating && (
             <div className='bg-muted/50 rounded-lg p-3'>

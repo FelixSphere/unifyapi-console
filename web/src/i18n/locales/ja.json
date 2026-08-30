@@ -1,4 +1,7 @@
 {
+    "Approx. to pay:": "お支払い目安：",
+    "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "概算です。最終的な通貨と金額は、Stripe が決済ページでその時のレートに基づいて決定します。",
+    "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe が決済ページでその時のレートに換算します。実際の請求額はそちらの金額です。",
   "translation": {
     "Update record": "Update record",
     "Issue statement": "Issue statement",
@@ -111,6 +114,7 @@
     "list price": "list price",
     "official price": "official price",
     "paying {{percent}}% ABOVE list": "paying {{percent}}% ABOVE list",
+    "You Pay (approx.)": "お支払い（概算）",
     "{{percent}}% off list": "{{percent}}% off list",
     "Model count": "Model count",
     "360": "360",
@@ -532,7 +536,6 @@
     "Applied {{name}} pricing to {{count}} models": "{{name}} の料金を {{count}} 個のモデルに適用しました",
     "Applied upstream model changes to {{count}} channels": "{{count}} 件のチャネルに上流モデルの変更を適用しました",
     "Applied upstream model changes to channel (ID: {{id}})": "チャネル（ID: {{id}}）に上流モデルの変更を適用しました",
-    "Applies to card payments. Alipay and WeChat are always charged in CNY.": "カード決済のみ適用されます。Alipay と WeChat は常に CNY で請求されます。",
     "Applies to custom completion endpoints. JSON map of model → ratio.": "カスタム補完エンドポイントに適用されます。モデル → 比率のJSONマップ。",
     "Apply All Upstream Updates": "すべてのアップストリーム更新を適用",
     "Apply Filters": "フィルターを適用",

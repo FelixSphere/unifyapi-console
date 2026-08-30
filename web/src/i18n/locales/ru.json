@@ -1,4 +1,7 @@
 {
+    "Approx. to pay:": "Примерно к оплате:",
+    "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Только оценка. Итоговую валюту и сумму Stripe определяет при оплате по своему текущему курсу.",
+    "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe пересчитает по своему текущему курсу на странице оплаты — списана будет та сумма.",
   "translation": {
     "Update record": "Update record",
     "Issue statement": "Issue statement",
@@ -111,6 +114,7 @@
     "list price": "list price",
     "official price": "official price",
     "paying {{percent}}% ABOVE list": "paying {{percent}}% ABOVE list",
+    "You Pay (approx.)": "Вы платите (примерно)",
     "{{percent}}% off list": "{{percent}}% off list",
     "Model count": "Model count",
     "360": "360",
@@ -532,7 +536,6 @@
     "Applied {{name}} pricing to {{count}} models": "Тариф {{name}} применён к {{count}} моделям",
     "Applied upstream model changes to {{count}} channels": "Изменения вышестоящих моделей применены к {{count}} каналам",
     "Applied upstream model changes to channel (ID: {{id}})": "Изменения вышестоящих моделей применены к каналу (ID: {{id}})",
-    "Applies to card payments. Alipay and WeChat are always charged in CNY.": "Применяется к оплате картой. Alipay и WeChat всегда списывают в CNY.",
     "Applies to custom completion endpoints. JSON map of model → ratio.": "Применяется к пользовательским конечным точкам завершения. JSON-карта модель → коэффициент.",
     "Apply All Upstream Updates": "Применить все обновления из upstream",
     "Apply Filters": "Применить фильтры",

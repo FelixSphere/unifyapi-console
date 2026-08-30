@@ -8,80 +8,47 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func withStripePricingConfig(t *testing.T, priceId string, productId string, unitPrice float64) {
+func withStripePricingConfig(t *testing.T, priceId string, unitPrice float64) {
 	t.Helper()
-	originalPrice, originalProduct, originalUnitPrice := setting.StripePriceId, setting.StripeProductId, setting.StripeUnitPrice
+	originalPrice, originalUnitPrice := setting.StripePriceId, setting.StripeUnitPrice
 	t.Cleanup(func() {
 		setting.StripePriceId = originalPrice
-		setting.StripeProductId = originalProduct
 		setting.StripeUnitPrice = originalUnitPrice
 	})
 	setting.StripePriceId = priceId
-	setting.StripeProductId = productId
 	setting.StripeUnitPrice = unitPrice
 }
 
-// The base-currency checkout must keep billing against the configured Price
-// with the credit count as the quantity. That is the shape production runs, so
-// any drift here silently changes what every existing USD topup charges.
-func TestStripeTopUpLineItemBaseCurrencyBillsThePriceByQuantity(t *testing.T) {
-	withStripePricingConfig(t, "price_live_1", "prod_live_1", 1)
+// Every checkout must bill the configured Price in the settlement currency,
+// whatever currency the wallet page quoted. Presenting a non-settlement
+// currency here switches off Stripe Adaptive Pricing, which is what localises
+// the amount for foreign buyers at a rate Stripe guarantees and we pay nothing
+// for. It would also leave us charging a rate this server stores, which is the
+// only way this flow could take on FX risk.
+func TestStripeTopUpLineItemAlwaysBillsThePriceInTheSettlementCurrency(t *testing.T) {
+	withStripePricingConfig(t, "price_live_1", 1)
 
-	lineItem, err := stripeTopUpLineItem(10, setting.StripeBaseCurrency, 10)
+	lineItem, err := stripeTopUpLineItem(10)
 	require.NoError(t, err)
 
 	require.NotNil(t, lineItem.Price)
 	assert.Equal(t, "price_live_1", *lineItem.Price)
 	require.NotNil(t, lineItem.Quantity)
 	assert.Equal(t, int64(10), *lineItem.Quantity)
-	assert.Nil(t, lineItem.PriceData, "base currency must not switch to inline pricing")
+	assert.Nil(t, lineItem.PriceData, "inline pricing would disable Adaptive Pricing")
 }
 
-// A non-base currency is priced inline for the exact total already shown to the
-// user: one unit at quantity 1, so no per-credit rounding can drift away from
-// the displayed figure.
-func TestStripeTopUpLineItemForeignCurrencyChargesTheDisplayedTotal(t *testing.T) {
-	withStripePricingConfig(t, "price_live_1", "prod_live_1", 1)
-
-	lineItem, err := stripeTopUpLineItem(10, "MYR", 40.9)
-	require.NoError(t, err)
-
-	assert.Nil(t, lineItem.Price)
-	require.NotNil(t, lineItem.PriceData)
-	require.NotNil(t, lineItem.PriceData.Currency)
-	assert.Equal(t, "myr", *lineItem.PriceData.Currency, "Stripe expects a lower-case code")
-	require.NotNil(t, lineItem.PriceData.Product)
-	assert.Equal(t, "prod_live_1", *lineItem.PriceData.Product)
-	require.NotNil(t, lineItem.PriceData.UnitAmount)
-	assert.Equal(t, int64(4090), *lineItem.PriceData.UnitAmount)
-	require.NotNil(t, lineItem.Quantity)
-	assert.Equal(t, int64(1), *lineItem.Quantity)
+func TestStripeTopUpLineItemRejectsAProductIdInThePriceField(t *testing.T) {
+	withStripePricingConfig(t, "prod_wrong_field", 1)
+	_, err := stripeTopUpLineItem(10)
+	require.Error(t, err)
 }
 
-func TestStripeTopUpLineItemRejectsMisconfiguredIds(t *testing.T) {
-	t.Run("base currency needs a price id", func(t *testing.T) {
-		withStripePricingConfig(t, "prod_wrong_field", "prod_live_1", 1)
-		_, err := stripeTopUpLineItem(10, setting.StripeBaseCurrency, 10)
-		require.Error(t, err)
-	})
-
-	t.Run("foreign currency needs a product id", func(t *testing.T) {
-		withStripePricingConfig(t, "price_live_1", "", 1)
-		_, err := stripeTopUpLineItem(10, "MYR", 40.9)
-		require.Error(t, err)
-	})
-
-	t.Run("foreign currency rejects a price id in the product field", func(t *testing.T) {
-		withStripePricingConfig(t, "price_live_1", "price_wrong_field", 1)
-		_, err := stripeTopUpLineItem(10, "MYR", 40.9)
-		require.Error(t, err)
-	})
-}
-
-// The currency rate is the only new factor in the pricing formula, so the base
-// currency must come out exactly where it did before multi-currency existed.
+// getStripePayMoney now only produces the wallet page estimate, but it still
+// must not distort the base currency: a USD quote has to equal the amount the
+// Price will actually charge, or the page contradicts the checkout it opens.
 func TestGetStripePayMoneyAppliesTheCurrencyRateLast(t *testing.T) {
-	withStripePricingConfig(t, "price_live_1", "prod_live_1", 8)
+	withStripePricingConfig(t, "price_live_1", 8)
 
 	cases := []struct {
 		name     string
