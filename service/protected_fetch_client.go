@@ -82,13 +82,15 @@ func newProtectedFetchHTTPClientWithProxy(resolver ssrfResolver, dialContext fun
 	}
 
 	client := &http.Client{
-		Transport: &ssrfProtectedRoundTripper{
+		// UNIFYAPI-FORK: bounds the wait for headers on streaming relays only.
+		// No-op at the default. See relay_header_timeout.go.
+		Transport: wrapRelayStreamHeaderTimeout(&ssrfProtectedRoundTripper{
 			resolver:      resolver,
 			dialContext:   dialContext,
 			getProtection: getProtection,
 			proxy:         proxy,
 			transports:    make(map[string]*http.Transport),
-		},
+		}),
 		CheckRedirect: checkProtectedFetchRedirect,
 	}
 	if common.RelayTimeout != 0 {
