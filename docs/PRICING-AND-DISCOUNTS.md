@@ -267,6 +267,87 @@ curl -s -X POST "$CONSOLE/api/pricing/reconcile/run?start=2026-08-01&end=2026-08
 
 ---
 
+## 三点五、出账单与结算（后台 · 计费与支付 → 对账结算）
+
+对账报表回答「赚不赚钱」。这一页产出的是随之而来的两份**单据**：给客户的账单，和拿去核厂商发票的那个数。
+
+两侧读的是同一批消费日志行，所以**账单和利润页永远对得上**——不是两条 SQL 各算各的。
+
+### 周期是自然月，不是滚动窗口
+
+没人按「最近 30 天」开票。默认停在**上个月**，因为当月还在累加：本月开出的账单会少掉这个月剩下的部分（页面会红字提醒）。
+
+### 客户账单
+
+1. 切到「客户账单」，选月份
+2. 表里按客户列出：请求数、Token、**应收金额**、**本期收款**
+3. 点开任意一行 → **账单明细**（逐模型的请求数/Token/金额，就是可以直接发给客户核对的东西）
+4. 「导出 CSV」出单个客户的明细，「导出全部明细」出整期所有客户
+5. 「开具账单」把这一期冻结成一条结算记录；收到钱后点「标记已收款」
+
+金额**直接读自消费日志账本**，就是客户被实际扣掉的 quota——已含模型折扣、分组倍率、缓存计价。正因为不是重算出来的，客户拿着账单来对，每一行都站得住。
+
+> **「本期收款」不是账户余额。** 它只统计本期内入账的充值，不含期初结转。展开行里的「本期收款减用量」也只是本期对比。
+
+### 上游结算
+
+1. 切到「上游结算」，选月份
+2. 按厂商列出**应付（建模估算）**
+3. 厂商发票到了，展开行 → 填「厂商本期账单金额」+ 发票号 → 「记录结算」
+4. 状态栏立刻显示差异和判定：`已对平` / `厂商账单高于我们的估算` / `厂商账单低于我们的估算`
+
+容差 **2%**，和 `service/reconcile.go` 里的 `varianceTolerancePct` 是同一个数（前端有测试钉住，防止页面和夜间告警对「算不算对平」各执一词）。厂商按自己的口径取整、tokenizer 计数有细微差别，都是正常漂移。
+
+**发票没到 ≠ 发票是 0。** 没填过的行显示「厂商账单未到」，不算差异——否则每个月每家没开票的厂商都会报一次 100% 差异，很快就没人看那一列了。
+
+### 为什么「开具」要把账单冻结下来
+
+**收入不会变，成本会。**
+
+客户金额来自消费日志，永远不动。上游金额是拿**今天**的目录价 × **今天**的采购倍率算出来的——12 月谈下来一个新价格，再跑一遍 8 月就得到一个不一样的 8 月。
+
+已经据以付过款的数字，不能在你背后移动。所以「开具/记录结算」会把整张单据连同逐模型明细一起冻成 JSON 存下来，并记下当时的价目表版本。之后重算出来的数不一样，那一行会标 **`计价基准已变`** 并同时给出冻结值和实时值——这不是错误，而是正好该被看见的事。
+
+填写厂商账单**不会**重算本期：那会把厂商账单要比对的那个数替换掉。
+
+### 会拒绝的两件事
+
+- **数据超过 20 万行上限时拒绝开具。** 冻结一张残缺的账单，等于把一个错了多少都不知道的数字变成权威数字。
+- **本期没有该对象的用量时拒绝开具**，并说明是哪一段时间。
+
+### 「无法计算成本」标记
+
+上游侧如果有请求用了价目表之外的模型，那部分**不计入金额**，所以**应付被低估**——照这个数付款就会少付。这一行会打红标，开具时也会在提示里再说一遍。
+
+客户侧永远不会出现这个标记：目录里没有的模型照样有实际扣掉的 quota。
+
+### 接口（要 root）
+
+```bash
+# 一期的所有客户账单（含逐模型明细、本期收款）
+curl -H "Authorization: Bearer $TOKEN" \
+  "$HOST/api/pricing/settlement?kind=customer&start=2026-08-01&end=2026-08-31"
+
+# 上游侧（含已录入的厂商发票和差异）
+curl -H "Authorization: Bearer $TOKEN" \
+  "$HOST/api/pricing/settlement?kind=vendor&start=2026-08-01&end=2026-08-31"
+
+# 记录厂商发票并冻结。注意：**不传我们自己的金额**，服务端一律从消费日志重算，
+# 页面无法被说服去迁就一张发票。
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  "$HOST/api/pricing/settlement" \
+  -d '{"kind":"vendor","counterparty":"anthropic","start":"2026-08-01","end":"2026-08-31",
+       "invoiced_usd":8.10,"invoice_recorded":true,"note":"INV-2026-08-ANT"}'
+
+# 单个客户的账单明细 CSV
+curl -H "Authorization: Bearer $TOKEN" \
+  "$HOST/api/pricing/settlement.csv?kind=customer&start=2026-08-01&end=2026-08-31&counterparty=1"
+```
+
+金额一律写 4 位小数：便宜模型上一整月的用量也可能是几厘钱，导出时四舍五入到分会把真实用量抹成 0.00。
+
+---
+
 ## 四、加一个新模型
 
 模型不在 catalog 里就没有价格，relay 会直接拒绝。这是故意的：定价没定，就不该能卖出去。
@@ -342,7 +423,13 @@ curl -s "$CONSOLE/api/pricing/reconcile?start=...&end=...&group_by=model" | \
 | `model/reconcile_query.go` | 日志聚合查询 |
 | `controller/pricing_baseline.go` | 基线与折扣接口 |
 | `controller/reconcile.go` | 对账接口 + CSV |
+| `service/statement.go` | 账单引擎（客户/上游两侧，纯函数） |
+| `model/settlement.go` | 已开具的结算记录（冻结的单据） |
+| `model/settlement_payments.go` | 本期收款（按网关分别换算入账额度） |
+| `controller/settlement.go` | 结算接口 + 账单 CSV |
 | `scripts/pricing-drift/` | 漂移检查器 + 离线 fixture |
 | `seed-pricing.sql` | 删掉覆盖代码基线的 options 行 |
 | `web/src/features/system-settings/models/baseline-pricing-tab.tsx` | 后台「官方报价与折扣」tab |
 | `web/src/features/system-settings/models/channel-cost-tab.tsx` | 后台「上游采购成本」tab |
+| `web/src/features/system-settings/models/profit-section.tsx` | 后台「利润」页 |
+| `web/src/features/system-settings/models/settlement-section.tsx` | 后台「对账结算」页 |

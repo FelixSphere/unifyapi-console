@@ -276,6 +276,8 @@ func migrateDB() error {
 		&QuotaData{},
 		// UNIFYAPI-FORK: persisted reconciliation runs, see reconcile_snapshot.go
 		&ReconcileSnapshot{},
+		// UNIFYAPI-FORK: issued customer bills and upstream settlements, see settlement.go
+		&Settlement{},
 		&Task{},
 		&Model{},
 		&Vendor{},

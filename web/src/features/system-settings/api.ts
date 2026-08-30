@@ -32,6 +32,11 @@ import type {
   ReconcileParams,
   ReconcileResponse,
   ReconcileSnapshotsResponse,
+  IssueSettlementParams,
+  SettlementRecord,
+  SettlementResponse,
+  SettlementStatus,
+  StatementKind,
   UpdateChannelCostResponse,
   UpdatePricingDiscountResponse,
   UpstreamChannelsResponse,
@@ -185,6 +190,56 @@ export async function runReconcileNow(params: {
     '/api/pricing/reconcile/run',
     null,
     { params }
+  )
+  return res.data
+}
+
+/*
+ * UNIFYAPI-FORK: settlement.
+ *
+ * Note what is NOT sent when issuing: our own amount. The server always
+ * recomputes it from the consume log, so the screen cannot be talked into
+ * agreeing with a counterparty's invoice. See controller/settlement.go.
+ */
+export async function getSettlements(params: {
+  kind: StatementKind
+  start: string
+  end: string
+}) {
+  const res = await api.get<SettlementResponse>('/api/pricing/settlement', {
+    params,
+  })
+  return res.data
+}
+
+export async function issueSettlement(params: IssueSettlementParams) {
+  const res = await api.post<{
+    success: boolean
+    message?: string
+    data?: SettlementRecord
+  }>('/api/pricing/settlement', params)
+  return res.data
+}
+
+export async function updateSettlement(
+  id: number,
+  body: {
+    invoiced_usd: number
+    invoice_recorded: boolean
+    status: SettlementStatus
+    note: string
+  }
+) {
+  const res = await api.put<{ success: boolean; message?: string }>(
+    `/api/pricing/settlement/${id}`,
+    body
+  )
+  return res.data
+}
+
+export async function deleteSettlement(id: number) {
+  const res = await api.delete<{ success: boolean; message?: string }>(
+    `/api/pricing/settlement/${id}`
   )
   return res.data
 }

@@ -255,6 +255,13 @@ func SetApiRouter(router *gin.Engine) {
 			pricingAdminRoute.GET("/reconcile/snapshots", controller.GetReconcileSnapshots)
 			pricingAdminRoute.POST("/reconcile/run", controller.RunReconcileNow)
 			pricingAdminRoute.GET("/reconcile.csv", controller.ExportReconciliationCSV)
+			// UNIFYAPI-FORK: settlement -- issuing a customer bill and paying an
+			// upstream. See controller/settlement.go.
+			pricingAdminRoute.GET("/settlement", controller.GetSettlements)
+			pricingAdminRoute.POST("/settlement", controller.IssueSettlement)
+			pricingAdminRoute.PUT("/settlement/:id", controller.UpdateSettlement)
+			pricingAdminRoute.DELETE("/settlement/:id", controller.DeleteSettlementRecord)
+			pricingAdminRoute.GET("/settlement.csv", controller.ExportSettlementCSV)
 			pricingAdminRoute.GET("/channel_cost", controller.GetChannelCost)
 			pricingAdminRoute.PUT("/channel_cost", controller.UpdateChannelCost)
 		}
