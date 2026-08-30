@@ -52,6 +52,62 @@ Scenarios (`--scenario`): `ttft` (default, short streaming prompt),
 benchmark script measures, warm is what a long-lived agent client actually gets.
 The cold/warm delta *is* the edge opportunity.
 
+## Load testing
+
+```bash
+python3 loadtest.py --dry-run              # always preview the plan first
+python3 loadtest.py --steps 20,40,80 -n 5
+```
+
+Targets `app.unifyapi.ai` and **refuses any other host**. A ramp against a third
+party spends capacity that is not ours and is very likely a ToS violation;
+`bench.py`'s low-concurrency comparison is normal API use, a ramp is not. Note
+that loading our gateway also loads Flatkey, since every relay forwards
+upstream -- hence small, capped ramps on the cheapest healthy channel.
+
+The breaker aborts the run on the first sign of distress: error rate over 20%,
+p95 over 30s, or any 5xx/429.
+
+**What the committed baseline does and does not show.** At 31 RPS the console
+container peaked at 12.46% CPU and 2.42% memory, load 0.35 on two cores --
+enormous headroom, and CPU will not be the binding constraint. But two limits
+were not reached: the ramp saturated the *load generator* (80 CPython threads,
+GIL-bound: 31 RPS observed against 47 implied by p50), and the requests were
+`max_tokens=16` toys, roughly 500x smaller than the 105.6 KB production
+average, so the 128 Mbps network baseline was never approached. Finding the
+real ceiling needs a mock upstream, a non-production target, and a
+multi-process generator.
+
+## The local rig
+
+```bash
+./rig.sh up            # console :3009 + mock upstream :8899, ~40s
+./rig.sh test          # one end-to-end request
+./rig.sh load --steps 10,25,50,100,150 -n 20
+./rig.sh down
+```
+
+Everything local: SQLite, no Redis, a mock upstream answering in 50ms. Removes
+the three things that make a production ramp useless or unsafe -- it does not
+load Flatkey, it cannot take the single production instance down, and provider
+latency no longer dominates the measurement.
+
+**Measured knee.** Throughput plateaus at **~100-127 RPS** from concurrency 25
+onward while p50 grows roughly linearly (0.13s to 1.09s at concurrency 150) --
+a saturation plateau, not a cliff. At the knee the console process consumed
+**110-133% CPU (~1.2 cores)** while the mock sat at 3.6-5.4%, so the gateway is
+genuinely the bottleneck rather than the rig around it.
+
+That works out to **~85-106 RPS per core**. On the production t4g.small (2 vCPU)
+that extrapolates to **~170-210 RPS CPU-bound**, against **148 RPS network-bound**
+from the 128 Mbps baseline. **Network binds first**, so the ~8,900 RPM / ~41M TPM
+figure stands -- now with a measured cross-check that CPU is not the limit.
+
+Caveats worth keeping: the rig runs generator, gateway and mock on one 8-core
+Intel Mac, so they compete; production is arm64 Graviton; the mock returns
+16-token payloads rather than the 105.6 KB production average; and SQLite is
+cheaper than Postgres-over-network. Treat the per-core number as indicative.
+
 ## Tests
 
 ```bash

@@ -1,0 +1,49 @@
+{
+  "utc": "2026-08-30T11:52:51+00:00",
+  "url": "https://app.unifyapi.ai/v1/chat/completions",
+  "model": "gemini-flash-lite-latest",
+  "steps": [
+    {
+      "concurrency": 20,
+      "requests": 100,
+      "wall_s": 8.70159873299417,
+      "rps": 11.49214104999192,
+      "ok": 100,
+      "errors": 0,
+      "error_rate": 0.0,
+      "server_errors": 0,
+      "p50": 1.3601838495014817,
+      "p95": 2.1491270306025396,
+      "mean": 1.4320910600500065,
+      "samples": []
+    },
+    {
+      "concurrency": 40,
+      "requests": 200,
+      "wall_s": 8.748855498997727,
+      "rps": 22.860132965153223,
+      "ok": 200,
+      "errors": 0,
+      "error_rate": 0.0,
+      "server_errors": 0,
+      "p50": 1.3829286500040325,
+      "p95": 2.059467734050122,
+      "mean": 1.466499403369744,
+      "samples": []
+    },
+    {
+      "concurrency": 80,
+      "requests": 400,
+      "wall_s": 12.90205556199362,
+      "rps": 31.002811767320598,
+      "ok": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "server_errors": 0,
+      "p50": 1.6969184590052464,
+      "p95": 2.8712957544958027,
+      "mean": 1.816308328629857,
+      "samples": []
+    }
+  ]
+}
