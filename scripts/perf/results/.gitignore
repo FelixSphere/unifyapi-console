@@ -1,0 +1,4 @@
+# Measurement output is machine-generated and grows without bound. Only the
+# committed baseline belongs in git; everything else is local scratch.
+*.json
+!baseline-*.json
