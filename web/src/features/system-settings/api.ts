@@ -29,6 +29,14 @@ import type {
   UpdateOptionResponse,
   ChannelCostResponse,
   PricingBaselineResponse,
+  ReconcileParams,
+  ReconcileResponse,
+  ReconcileSnapshotsResponse,
+  IssueSettlementParams,
+  SettlementRecord,
+  SettlementResponse,
+  SettlementStatus,
+  StatementKind,
   UpdateChannelCostResponse,
   UpdatePricingDiscountResponse,
   UpstreamChannelsResponse,
@@ -147,6 +155,91 @@ export async function updateChannelCost(costRatios: Record<string, number>) {
   const res = await api.put<UpdateChannelCostResponse>(
     '/api/pricing/channel_cost',
     { cost_ratios: costRatios }
+  )
+  return res.data
+}
+
+/*
+ * UNIFYAPI-FORK: the profit view.
+ *
+ * Revenue comes from the consume-log ledger untouched; cost is modelled from
+ * tokens x the vendor's official price x the channel's purchasing ratio. The
+ * two sides are built differently on purpose -- see service/reconcile.go.
+ */
+export async function getReconciliation(params: ReconcileParams) {
+  const res = await api.get<ReconcileResponse>('/api/pricing/reconcile', {
+    params,
+  })
+  return res.data
+}
+
+export async function getReconcileSnapshots(groupBy?: string, limit = 30) {
+  const res = await api.get<ReconcileSnapshotsResponse>(
+    '/api/pricing/reconcile/snapshots',
+    { params: { group_by: groupBy, limit } }
+  )
+  return res.data
+}
+
+export async function runReconcileNow(params: {
+  start?: string
+  end?: string
+  force?: boolean
+}) {
+  const res = await api.post<{ success: boolean; message?: string }>(
+    '/api/pricing/reconcile/run',
+    null,
+    { params }
+  )
+  return res.data
+}
+
+/*
+ * UNIFYAPI-FORK: settlement.
+ *
+ * Note what is NOT sent when issuing: our own amount. The server always
+ * recomputes it from the consume log, so the screen cannot be talked into
+ * agreeing with a counterparty's invoice. See controller/settlement.go.
+ */
+export async function getSettlements(params: {
+  kind: StatementKind
+  start: string
+  end: string
+}) {
+  const res = await api.get<SettlementResponse>('/api/pricing/settlement', {
+    params,
+  })
+  return res.data
+}
+
+export async function issueSettlement(params: IssueSettlementParams) {
+  const res = await api.post<{
+    success: boolean
+    message?: string
+    data?: SettlementRecord
+  }>('/api/pricing/settlement', params)
+  return res.data
+}
+
+export async function updateSettlement(
+  id: number,
+  body: {
+    invoiced_usd: number
+    invoice_recorded: boolean
+    status: SettlementStatus
+    note: string
+  }
+) {
+  const res = await api.put<{ success: boolean; message?: string }>(
+    `/api/pricing/settlement/${id}`,
+    body
+  )
+  return res.data
+}
+
+export async function deleteSettlement(id: number) {
+  const res = await api.delete<{ success: boolean; message?: string }>(
+    `/api/pricing/settlement/${id}`
   )
   return res.data
 }
