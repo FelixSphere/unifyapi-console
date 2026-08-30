@@ -35,6 +35,14 @@ func loadFixture(t *testing.T) map[string]modelsDevProvider {
 	return feed
 }
 
+// feedStaleModels are the entries whose price deliberately disagrees with
+// models.dev because we hold a newer quote read off the vendor's own page.
+//
+// Pinned as an explicit list rather than blanket-allowed: overriding the feed is
+// how a typo becomes permanent, so adding one has to be a deliberate edit here
+// and not a side effect of editing the catalog.
+var feedStaleModels = []string{"deepseek-v4-flash", "deepseek-v4-pro"}
+
 // TestCatalogMatchesTheVerifiedSnapshot is the regression test that gives the
 // baseline its meaning: every official price in the catalog is exactly what the
 // vendor published on PricingSnapshotDate. Change a price without changing the
@@ -42,13 +50,53 @@ func loadFixture(t *testing.T) map[string]modelsDevProvider {
 func TestCatalogMatchesTheVerifiedSnapshot(t *testing.T) {
 	findings := Check(loadFixture(t))
 
+	var stale []string
 	for _, finding := range findings {
-		if finding.Kind != "unverifiable" {
+		switch finding.Kind {
+		case "unverifiable":
+		case "feed-stale":
+			stale = append(stale, finding.Model)
+		default:
 			t.Errorf("%s [%s/%s]: %s", finding.Kind, finding.Model, finding.Field, finding.Detail)
 		}
 	}
+
+	require.ElementsMatch(t, feedStaleModels, stale,
+		"a model overriding models.dev must be listed in feedStaleModels. Adding one means "+
+			"somebody decided the feed is behind the vendor; removing one means the feed caught "+
+			"up and QuoteSource/QuoteDate should be cleared.")
 	require.False(t, hasDrift(findings),
-		"the catalog must match the fixture it was verified against")
+		"the catalog must match the fixture it was verified against, except where a dated "+
+			"vendor quote deliberately overrides it")
+}
+
+// TestAFeedStaleEntryCarriesItsProvenance. Overriding the aggregator is only
+// defensible if the override says where the number came from and when. Without
+// both, it is indistinguishable from someone editing a price they liked better.
+func TestAFeedStaleEntryCarriesItsProvenance(t *testing.T) {
+	byModel := map[string]ratio_setting.CatalogEntry{}
+	for _, entry := range ratio_setting.Catalog() {
+		byModel[entry.Model] = entry
+	}
+
+	for _, name := range feedStaleModels {
+		entry, ok := byModel[name]
+		require.True(t, ok, "%s is listed as feed-stale but is not in the catalog", name)
+		require.NotEmpty(t, entry.QuoteSource, "%s must record where its price came from", name)
+		require.NotEmpty(t, entry.QuoteDate, "%s must record when it was quoted", name)
+		require.Regexp(t, `^\d{4}-\d{2}-\d{2}$`, entry.QuoteDate,
+			"%s: QuoteDate must be YYYY-MM-DD so staleness is legible", name)
+	}
+}
+
+// TestAStaleFeedDoesNotFailTheCheck -- a permanently red check is one nobody
+// reads. The catalog is deliberately right here, so this is information, not a
+// fault; the same reasoning as the standing "unverifiable" entries.
+func TestAStaleFeedDoesNotFailTheCheck(t *testing.T) {
+	require.False(t, hasDrift([]Finding{{Kind: "feed-stale", Model: "deepseek-v4-pro"}}))
+	require.False(t, hasDrift([]Finding{{Kind: "unverifiable", Model: "glm-5-turbo"}}))
+	require.True(t, hasDrift([]Finding{{Kind: "price-changed", Model: "gpt-4o"}}),
+		"a genuine price change must still fail")
 }
 
 // TestEveryCatalogEntryIsEitherCheckedOrDeclaredUnverifiable makes sure the
