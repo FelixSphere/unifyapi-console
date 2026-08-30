@@ -54,15 +54,16 @@ func loadProductionPricing(t *testing.T) productionPricing {
 // servedButUnsellable are models a channel still offers that the catalog does
 // not price, so the relay refuses them.
 //
-// Six, for two different reasons, and the distinction is the point:
+// Five, all for the same reason:
 //
-//   - glm-5.3 was never catalogued. It has always been refused, and
-//     /api/pricing has always shown its 37.5 fallback as though it were a real
-//     price -- $75 per 1M input.
-//   - the other five were dropped deliberately in #17 as models nobody had ever
-//     been billed for. Correct to drop, but they are STILL on their channels'
-//     model lists, so the pricing page keeps advertising them and a caller who
-//     tries one now gets a refusal instead of a response.
+//   - the five were dropped deliberately in #17 as models nobody had ever been
+//     billed for. Correct to drop, but they are STILL on their channels' model
+//     lists, so the pricing page keeps advertising them and a caller who tries
+//     one now gets a refusal instead of a response.
+//
+// glm-5.3 used to be a sixth. It is catalogued now: Zhipu publishes it at the
+// same 1.4/4.4/0.26 as glm-5.1 and glm-5.2, which we already sell, so there was
+// never a pricing reason to refuse it -- only that nobody had added the row.
 //
 // Neither is a regression from the pricing work. Both are loose ends with the
 // same fix: take them off the channel model lists, or catalogue them. Pinned
@@ -70,7 +71,6 @@ func loadProductionPricing(t *testing.T) productionPricing {
 // and cannot serve.
 var servedButUnsellable = []string{
 	"MiniMax-H3",
-	"glm-5.3",
 	"seedance-2.0",
 	"seedance-2.0-fast",
 	"seedance-2.0-mini",

@@ -136,6 +136,10 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "glm-5-turbo", Vendor: "", InputUSD: 0.72, OutputUSD: 3.2, CacheReadUSD: 0.144, CacheWriteUSD: 0, Unverified: true},
 	{Model: "glm-5.1", Vendor: "zhipuai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
 	{Model: "glm-5.2", Vendor: "zhipuai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
+	// Same price as 5.1 and 5.2, confirmed on Zhipu's own international list
+	// (docs.z.ai) and by models.dev's zhipuai provider. Cached-input storage is
+	// "limited-time free", hence CacheWriteUSD 0.
+	{Model: "glm-5.3", Vendor: "zhipuai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
 
 	// ---- Google ----
 	{Model: "gemini-2.5-flash", Vendor: "google", InputUSD: 0.3, OutputUSD: 2.5, CacheReadUSD: 0.03, CacheWriteUSD: 0},
