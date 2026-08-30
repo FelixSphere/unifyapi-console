@@ -39,6 +39,11 @@ python3 bench.py --all -n 5 --json results/bench-$(date +%F).json
 ./monitor.sh 7
 ```
 
+Both `netpath.py` and `bench.py` take `--proxy HOST:PORT`. **Pass the same value
+to both, or they measure different network paths and their numbers cannot be
+compared.** Raw sockets ignore `HTTP_PROXY`/`HTTPS_PROXY`, so the exit is never
+implicit — each run records its exit in the JSON as `"exit"`.
+
 Scenarios (`--scenario`): `ttft` (default, short streaming prompt),
 `roundtrip` (non-streaming), `long_prompt` (~2k tokens, surfaces prefill),
 `sustained` (400 tokens, measures TPS and inter-token latency).

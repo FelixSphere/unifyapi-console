@@ -78,7 +78,7 @@ class Conn:
         # Raw sockets ignore HTTP(S)_PROXY, so the exit point is explicit here.
         # It has to be: this client's proxy exits in a different country, and
         # OpenRouter geo-gates several providers -- measuring one side through
-        # the tunnel and the other直接 makes the comparison meaningless.
+        # the tunnel and the other direct makes the comparison meaningless.
         t0 = time.perf_counter()
         dial_host, dial_port = self.proxy if self.proxy else (self.host, self.port)
         infos = socket.getaddrinfo(dial_host, dial_port, socket.AF_INET, socket.SOCK_STREAM)
@@ -170,11 +170,24 @@ class Conn:
                 yield self.buf[:n]
                 self.buf = self.buf[n + 2:]
         else:
-            clen = int(hdrs.get("content-length", 0))
-            got = len(self.buf)
+            raw_len = hdrs.get("content-length")
             if self.buf:
                 yield self.buf
-                self.buf = b""
+                got, self.buf = len(self.buf), b""
+            else:
+                got = 0
+            if raw_len is None:
+                # Connection: close delimits the body -- read until EOF.
+                while True:
+                    try:
+                        c = self._fill()
+                    except (ConnectionError, OSError):
+                        return
+                    yield self.buf
+                    self.buf = b""
+                    if not c:
+                        return
+            clen = int(raw_len)
             while got < clen:
                 c = self._fill()
                 got += len(c)

@@ -44,3 +44,7 @@ go.work.sum
 
 # UNIFYAPI-FORK: the pricing-drift helper binary, if built in place.
 /pricing-drift
+
+# Python bytecode from scripts/perf tooling
+__pycache__/
+*.pyc

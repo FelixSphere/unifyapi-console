@@ -26,12 +26,32 @@ DEFAULT_TARGETS = [
 def ms(a, b):
     return (b - a) * 1000.0
 
-def probe(host, path, port=443, timeout=15.0, alpn=("http/1.1",)):
-    """One cold connection. Returns per-phase milliseconds."""
-    r = {"host": host}
+def _connect_tunnel(sock, host, port):
+    """Establish an HTTP CONNECT tunnel through an already-connected proxy."""
+    sock.sendall(f"CONNECT {host}:{port} HTTP/1.1\r\n"
+                 f"Host: {host}:{port}\r\n\r\n".encode())
+    resp = b""
+    while b"\r\n\r\n" not in resp:
+        c = sock.recv(4096)
+        if not c:
+            raise ConnectionError("proxy closed during CONNECT")
+        resp += c
+    status = resp.split(b"\r\n", 1)[0]
+    if b" 200 " not in status:
+        raise ConnectionError(f"proxy CONNECT refused: {status[:120]!r}")
+
+
+def probe(host, path, port=443, timeout=15.0, alpn=("http/1.1",), proxy=None):
+    """One cold connection. Returns per-phase milliseconds.
+
+    With proxy set, DNS/TCP are to the proxy and the TLS phase is measured
+    through the tunnel -- which is the only way these numbers can be read
+    alongside bench.py's when it is given the same --proxy."""
+    r = {"host": host, "via": f"proxy {proxy[0]}:{proxy[1]}" if proxy else "direct"}
     t0 = time.perf_counter()
+    dial_host, dial_port = proxy if proxy else (host, port)
     try:
-        infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+        infos = socket.getaddrinfo(dial_host, dial_port, socket.AF_INET, socket.SOCK_STREAM)
     except Exception as e:
         return {**r, "error": f"dns: {e}"}
     t_dns = time.perf_counter()
@@ -44,6 +64,8 @@ def probe(host, path, port=443, timeout=15.0, alpn=("http/1.1",)):
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     try:
         s.connect(sockaddr)
+        if proxy:
+            _connect_tunnel(s, host, port)
     except Exception as e:
         s.close()
         return {**r, "error": f"tcp: {e}"}
@@ -97,7 +119,7 @@ def probe(host, path, port=443, timeout=15.0, alpn=("http/1.1",)):
     r["total_ms"] = ms(t0, t_done)
     return r
 
-def warm_rtt(host, path, port=443, n=10, timeout=15.0):
+def warm_rtt(host, path, port=443, n=10, timeout=15.0, proxy=None):
     """Application RTT on an ALREADY-established connection (keepalive reuse).
 
     This is what a client pays per request once the connection is warm, and it
@@ -105,8 +127,10 @@ def warm_rtt(host, path, port=443, n=10, timeout=15.0):
     ctx = ssl.create_default_context()
     ctx.set_alpn_protocols(["http/1.1"])
     try:
-        raw = socket.create_connection((host, port), timeout=timeout)
+        raw = socket.create_connection(proxy if proxy else (host, port), timeout=timeout)
         raw.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        if proxy:
+            _connect_tunnel(raw, host, port)
         ss = ctx.wrap_socket(raw, server_hostname=host)
     except Exception as e:
         return {"error": f"setup: {e}"}
@@ -167,11 +191,27 @@ def main():
     ap.add_argument("--json", default=None, help="write raw results to this path")
     ap.add_argument("--target", action="append", default=None,
                     help="label=host=path (repeatable); overrides defaults")
+    ap.add_argument("--proxy", default=None, metavar="HOST:PORT",
+                    help="tunnel via an HTTP CONNECT proxy (e.g. 127.0.0.1:7897). "
+                         "Use the same value you pass to bench.py, or the two "
+                         "tools measure different network paths.")
     args = ap.parse_args()
+
+    proxy = None
+    if args.proxy:
+        ph, _, pp = args.proxy.rpartition(":")
+        if not ph or not pp.isdigit():
+            ap.error(f"--proxy must be HOST:PORT, got {args.proxy!r}")
+        proxy = (ph, int(pp))
 
     targets = DEFAULT_TARGETS
     if args.target:
-        targets = [tuple(t.split("=", 2)) for t in args.target]
+        targets = []
+        for t in args.target:
+            parts = t.split("=", 2)
+            if len(parts) != 3:
+                ap.error(f"--target must be label=host=path, got {t!r}")
+            targets.append(tuple(parts))
 
     vantage = {
         "hostname": socket.gethostname(),
@@ -179,14 +219,17 @@ def main():
         "note": os.environ.get("PERF_VANTAGE", "unset -- set PERF_VANTAGE to name this location/region"),
     }
     print(f"# vantage: {vantage['note']}  ({vantage['utc']})")
-    print(f"# cold-connection samples per target: {args.samples}\n")
+    print(f"# cold-connection samples per target: {args.samples}")
+    print(f"# exit: {'proxy ' + args.proxy if args.proxy else 'direct'}\n")
 
-    out = {"vantage": vantage, "targets": {}}
+    out = {"vantage": vantage,
+           "exit": ("proxy " + args.proxy) if args.proxy else "direct",
+           "targets": {}}
     for label, host, path in targets:
-        cold = [probe(host, path) for _ in range(args.samples)]
+        cold = [probe(host, path, proxy=proxy) for _ in range(args.samples)]
         ok = [c for c in cold if "error" not in c]
         errs = [c["error"] for c in cold if "error" in c]
-        warm = warm_rtt(host, path, n=max(5, args.samples // 2))
+        warm = warm_rtt(host, path, n=max(5, args.samples // 2), proxy=proxy)
 
         out["targets"][label] = {"host": host, "path": path, "cold": cold, "warm": warm}
         print(f"═══ {label}  ({host})")
