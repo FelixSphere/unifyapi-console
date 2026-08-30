@@ -166,10 +166,35 @@ func (c ChannelInfo) Value() (driver.Value, error) {
 	return common.Marshal(&c)
 }
 
-// Scan implements sql.Scanner interface
+// Scan implements sql.Scanner interface.
+//
+// UNIFYAPI-FORK: handle the types different drivers actually return. This
+// previously did `value.([]byte)` and discarded the failed assertion, so any
+// driver handing back a string produced a nil slice and every load failed with
+// "unexpected end of JSON input". glebarez/sqlite returns a string for TEXT,
+// which makes a SQLite deployment -- the default when SQL_DSN is unset --
+// unable to load any channel at all. Postgres and MySQL return []byte, which
+// is why this never surfaced in production.
+//
+// Mirrors JSONValue.Scan in model/prefill_group.go, which already handles this.
 func (c *ChannelInfo) Scan(value interface{}) error {
-	bytesValue, _ := value.([]byte)
-	return common.Unmarshal(bytesValue, c)
+	var raw []byte
+	switch v := value.(type) {
+	case nil:
+		// NULL column: leave the zero value rather than failing the whole row.
+		return nil
+	case []byte:
+		raw = v
+	case string:
+		raw = []byte(v)
+	default:
+		return fmt.Errorf("channel_info: cannot scan %T", value)
+	}
+	if len(raw) == 0 {
+		// Empty is a legitimate "not set", not malformed JSON.
+		return nil
+	}
+	return common.Unmarshal(raw, c)
 }
 
 func (channel *Channel) GetKeys() []string {
