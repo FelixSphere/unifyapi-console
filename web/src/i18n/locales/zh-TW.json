@@ -1,4 +1,7 @@
 {
+    "Approx. to pay:": "預計支付：",
+    "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "僅為估算。最終貨幣與金額由 Stripe 在支付頁按其即時匯率決定。",
+    "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe 會在支付頁按其即時匯率換算，以該頁顯示的金額為準。",
   "translation": {
     "Official price & discount": "官方報價與折扣",
     "Official prices come from the code catalog and are verified against models.dev; they are not editable here. Only the discount column is. Customer price = official price x discount x group ratio.": "官方報價來自程式碼中的價目表，並已對 models.dev 校驗，此處不可編輯；只有「優惠」一欄可改。客戶價 = 官方報價 × 模型折扣 × 分組倍率。",
@@ -32,6 +35,7 @@
     "list price": "官方原價",
     "official price": "官方報價",
     "paying {{percent}}% ABOVE list": "高於官方價 {{percent}}%",
+    "You Pay (approx.)": "預計支付",
     "{{percent}}% off list": "官方價 {{percent}}% 折讓",
     "Model count": "模型數",
     "360": "360",
@@ -453,7 +457,6 @@
     "Applied {{name}} pricing to {{count}} models": "已將 {{name}} 的定價套用到 {{count}} 個模型",
     "Applied upstream model changes to {{count}} channels": "對 {{count}} 個渠道套用了上游模型變更",
     "Applied upstream model changes to channel (ID: {{id}})": "對渠道（ID: {{id}}）套用了上游模型變更",
-    "Applies to card payments. Alipay and WeChat are always charged in CNY.": "僅適用於卡支付。支付寶和微信始終以人民幣結算。",
     "Applies to custom completion endpoints. JSON map of model → ratio.": "適用於自訂補全端點。模型 → 比例的 JSON 映射。",
     "Apply All Upstream Updates": "套用所有上游更新",
     "Apply Filters": "套用篩選器",

@@ -146,6 +146,11 @@ export function RechargeFormCard({
   const { t } = useTranslation()
   const [localAmount, setLocalAmount] = useState(topupAmount.toString())
   const formatPayment = paymentAmountFormatter(paymentCurrency)
+  // Only a non-base quote is an estimate: the base currency is what Stripe is
+  // actually invoiced in, so that figure is exact.
+  const isEstimate = Boolean(
+    paymentCurrency && paymentCurrency !== STRIPE_BASE_CURRENCY
+  )
   const currencyChoices = stripeCurrencies ?? []
   const showCurrencySelector = Boolean(onCurrencyChange) && currencyChoices.length > 1
 
@@ -350,7 +355,7 @@ export function RechargeFormCard({
                   </Select>
                   <p className='text-muted-foreground text-xs'>
                     {t(
-                      'Applies to card payments. Alipay and WeChat are always charged in CNY.'
+                      'Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.'
                     )}
                   </p>
                 </div>
@@ -375,7 +380,7 @@ export function RechargeFormCard({
                   />
                   <div className='bg-muted/30 flex min-h-9 items-center justify-between gap-2 rounded-md border px-3 lg:min-w-52'>
                     <span className='text-muted-foreground truncate text-xs'>
-                      {t('Amount to pay:')}
+                      {isEstimate ? t('Approx. to pay:') : t('Amount to pay:')}
                     </span>
                     {calculating ? (
                       <Skeleton className='h-5 w-16' />

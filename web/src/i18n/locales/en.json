@@ -1,4 +1,7 @@
 {
+    "Approx. to pay:": "Approx. to pay:",
+    "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.",
+    "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.",
   "translation": {
     "Filter by model or vendor": "Filter by model or vendor",
     "Save discounts": "Save discounts",
@@ -32,6 +35,7 @@
     "list price": "list price",
     "official price": "official price",
     "paying {{percent}}% ABOVE list": "paying {{percent}}% ABOVE list",
+    "You Pay (approx.)": "You Pay (approx.)",
     "{{percent}}% off list": "{{percent}}% off list",
     "Model count": "Model count",
     "360": "360",
@@ -453,7 +457,6 @@
     "Applied {{name}} pricing to {{count}} models": "Applied {{name}} pricing to {{count}} models",
     "Applied upstream model changes to {{count}} channels": "Applied upstream model changes to {{count}} channels",
     "Applied upstream model changes to channel (ID: {{id}})": "Applied upstream model changes to channel (ID: {{id}})",
-    "Applies to card payments. Alipay and WeChat are always charged in CNY.": "Applies to card payments. Alipay and WeChat are always charged in CNY.",
     "Applies to custom completion endpoints. JSON map of model → ratio.": "Applies to custom completion endpoints. JSON map of model → ratio.",
     "Apply All Upstream Updates": "Apply All Upstream Updates",
     "Apply Filters": "Apply Filters",
