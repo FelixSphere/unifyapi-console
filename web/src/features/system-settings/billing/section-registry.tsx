@@ -22,9 +22,10 @@ import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
+import { CustomerModelContractsSection } from '../models/customer-model-contracts-section'
 import { ProfitSection } from '../models/profit-section'
-import { SettlementSection } from '../models/settlement-section'
 import { RatioSettingsCard } from '../models/ratio-settings-card'
+import { SettlementSection } from '../models/settlement-section'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 
@@ -139,20 +140,16 @@ const BILLING_SECTIONS = [
     ),
   },
   {
-    id: 'group-pricing',
-    titleKey: 'Group Pricing',
-    build: (settings: BillingSettings) => (
-      <RatioSettingsCard
-        titleKey='Group Pricing'
-        modelDefaults={getModelDefaults(settings)}
-        groupDefaults={getGroupDefaults(settings)}
-        toolPricesDefault={settings['tool_price_setting.prices']}
-        visibleTabs={['groups']}
-      />
-    ),
+    id: 'customer-model-pricing',
+    titleKey: 'Customer model pricing',
+    build: () => <CustomerModelContractsSection />,
   },
+  // UNIFYAPI-FORK: the old Group Pricing screen is intentionally absent.
+  // Customer-specific commercial terms belong in customer-model contracts;
+  // keeping a second editor would make double discounts possible. Legacy
+  // group data remains readable for uncontracted callers during migration.
   {
-    // UNIFYAPI-FORK: sits right after the two pricing sections on purpose --
+    // UNIFYAPI-FORK: sits right after the pricing sections on purpose --
     // someone who has just set a discount or a purchasing cost is one click
     // from seeing what it did to margin.
     id: 'profit',

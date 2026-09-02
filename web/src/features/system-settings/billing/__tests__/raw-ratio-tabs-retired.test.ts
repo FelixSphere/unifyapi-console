@@ -42,7 +42,7 @@ describe('billing section tabs', () => {
   test('the registry still declares visibleTabs the way this test reads it', () => {
     // Without this, a refactor that renamed the prop would make every
     // assertion below pass vacuously.
-    assert.ok(arrays.length >= 2, `found ${arrays.length} visibleTabs arrays`)
+    assert.ok(arrays.length >= 1, `found ${arrays.length} visibleTabs arrays`)
     assert.ok(
       arrays.flat().includes('baseline'),
       'expected the baseline tab to be visible somewhere'
@@ -62,12 +62,21 @@ describe('billing section tabs', () => {
     })
   }
 
-  test('the supported pricing paths are still reachable', () => {
+  test('the safe default pricing paths are still reachable', () => {
     // The point is to remove the footgun, not the ability to price anything.
-    const all = arrays.flat()
-    for (const tab of ['baseline', 'channel-cost', 'groups']) {
-      assert.ok(all.includes(tab), `${tab} must remain reachable`)
+    const all = new Set(arrays.flat())
+    for (const tab of ['baseline', 'channel-cost']) {
+      assert.ok(all.has(tab), `${tab} must remain reachable`)
     }
+  })
+
+  test('customer-model contracts replace the legacy group-pricing screen', () => {
+    assert.match(source, /id:\s*'customer-model-pricing'/)
+    assert.doesNotMatch(source, /id:\s*'group-pricing'/)
+    assert.ok(
+      !arrays.flat().includes('groups'),
+      'group pricing is a second discount editor and must not be reachable beside customer-model contracts'
+    )
   })
 
   test('pricing an uncatalogued model is still possible without a release', () => {

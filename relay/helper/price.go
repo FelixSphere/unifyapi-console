@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -47,6 +48,15 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 		GroupRatio:        1.0, // default ratio
 		GroupSpecialRatio: -1,
 	}
+	if discount, ok := activeTenantModelContractDiscount(ctx); ok {
+		// The contract discount is the complete sell-price multiplier. It
+		// deliberately replaces both the global ModelDiscount and legacy group
+		// ratio so an admin cannot accidentally apply 0.9 x 0.9 twice.
+		groupRatioInfo.GroupRatio = discount
+		groupRatioInfo.GroupSpecialRatio = discount
+		groupRatioInfo.HasSpecialRatio = true
+		return groupRatioInfo
+	}
 
 	// check auto group
 	autoGroup, exists := ctx.Get("auto_group")
@@ -72,6 +82,17 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (hosttypes.PriceData, error) {
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
+	_, hasTenantContract := activeTenantModelContractDiscount(c)
+	var contractEntry ratio_setting.CatalogEntry
+	if hasTenantContract {
+		var ok bool
+		contractEntry, ok = ratio_setting.CatalogEntryFor(info.OriginModelName)
+		if !ok {
+			return hosttypes.PriceData{}, fmt.Errorf("model %s has a customer contract but no official price", info.OriginModelName)
+		}
+		modelPrice = contractEntry.PerCallUSD
+		usePrice = contractEntry.PerCallUSD > 0
+	}
 
 	groupRatioInfo := HandleGroupRatio(c, info)
 
@@ -98,7 +119,13 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		}
 		var success bool
 		var matchName string
-		modelRatio, success, matchName = ratio_setting.GetModelRatio(info.OriginModelName)
+		if hasTenantContract {
+			modelRatio = contractEntry.ModelRatio()
+			success = true
+			matchName = info.OriginModelName
+		} else {
+			modelRatio, success, matchName = ratio_setting.GetModelRatio(info.OriginModelName)
+		}
 		if !success {
 			acceptUnsetRatio := false
 			if info.UserSetting.AcceptUnsetRatioModel {
@@ -188,6 +215,14 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 	groupRatioInfo := HandleGroupRatio(c, info)
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
+	if _, hasTenantContract := activeTenantModelContractDiscount(c); hasTenantContract {
+		entry, ok := ratio_setting.CatalogEntryFor(info.OriginModelName)
+		if !ok {
+			return hosttypes.PriceData{}, fmt.Errorf("model %s has a customer contract but no official price", info.OriginModelName)
+		}
+		modelPrice = entry.PerCallUSD
+		success = entry.PerCallUSD > 0
+	}
 	usePrice := success
 	var modelRatio float64
 
@@ -250,6 +285,15 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 		GroupRatioInfo: groupRatioInfo,
 	}
 	return priceData, nil
+}
+
+func activeTenantModelContractDiscount(c *gin.Context) (float64, bool) {
+	contractId := common.GetContextKeyInt(c, constant.ContextKeyTenantModelContractId)
+	if contractId <= 0 {
+		return 0, false
+	}
+	discount, ok := common.GetContextKeyType[float64](c, constant.ContextKeyTenantModelContractDiscount)
+	return discount, ok && discount > 0
 }
 
 func HasModelBillingConfig(modelName string) bool {

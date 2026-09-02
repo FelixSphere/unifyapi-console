@@ -36,6 +36,9 @@ type Pricing struct {
 	BillingMode            string                  `json:"billing_mode,omitempty"`
 	BillingExpr            string                  `json:"billing_expr,omitempty"`
 	PricingVersion         string                  `json:"pricing_version,omitempty"`
+	// UNIFYAPI-FORK: when present, the model square must show official price x
+	// this company-model multiplier and ignore legacy group pricing.
+	CustomerContractDiscount *float64 `json:"customer_contract_discount,omitempty"`
 }
 
 type PricingVendor struct {

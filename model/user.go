@@ -128,6 +128,7 @@ func (user *User) ToBaseUser() *UserBase {
 		Email:       user.Email,
 		AuthVersion: user.AuthVersion,
 		CacheSchema: userCacheSchemaVersion,
+		TenantId:    user.TenantId,
 	}
 	return cache
 }

@@ -183,6 +183,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	retryParam := &service.RetryParam{
 		Ctx:         c,
+		TenantId:    relayInfo.TenantId,
 		TokenGroup:  relayInfo.TokenGroup,
 		ModelName:   relayInfo.OriginModelName,
 		RequestPath: c.Request.URL.Path,
@@ -515,6 +516,7 @@ func RelayTask(c *gin.Context) {
 
 	retryParam := &service.RetryParam{
 		Ctx:         c,
+		TenantId:    relayInfo.TenantId,
 		TokenGroup:  relayInfo.TokenGroup,
 		ModelName:   relayInfo.OriginModelName,
 		RequestPath: c.Request.URL.Path,

@@ -52,6 +52,10 @@ const (
 	ContextKeyUserGroup   ContextKey = "user_group"
 	ContextKeyUsingGroup  ContextKey = "group"
 	ContextKeyUserName    ContextKey = "username"
+	// UNIFYAPI-FORK: company boundary and the active company-model contract.
+	ContextKeyTenantId                    ContextKey = "tenant_id"
+	ContextKeyTenantModelContractId       ContextKey = "tenant_model_contract_id"
+	ContextKeyTenantModelContractDiscount ContextKey = "tenant_model_contract_discount"
 
 	ContextKeyLocalCountTokens ContextKey = "local_count_tokens"
 

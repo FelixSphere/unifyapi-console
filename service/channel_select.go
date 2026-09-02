@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -12,6 +13,7 @@ import (
 
 type RetryParam struct {
 	Ctx          *gin.Context
+	TenantId     int
 	TokenGroup   string
 	ModelName    string
 	RequestPath  string
@@ -84,6 +86,37 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	var channel *model.Channel
 	var err error
 	selectGroup := param.TokenGroup
+
+	// UNIFYAPI-FORK: a company-model contract is a hard routing boundary. Once
+	// configured, retries may use only the channels bound to that contract and
+	// must never fall through to a generic group (which could carry another
+	// customer's upstream key).
+	tenantId := param.TenantId
+	if tenantId <= 0 {
+		tenantId = common.GetContextKeyInt(param.Ctx, constant.ContextKeyTenantId)
+	}
+	if tenantId > 0 {
+		contract, contractErr := model.GetTenantModelContract(tenantId, param.ModelName, true)
+		switch {
+		case contractErr == nil:
+			common.SetContextKey(param.Ctx, constant.ContextKeyTenantModelContractId, contract.Id)
+			common.SetContextKey(param.Ctx, constant.ContextKeyTenantModelContractDiscount, contract.Discount)
+			channel, err = model.GetTenantModelContractChannel(contract, param.GetRetry(), param.RequestPath)
+			return channel, fmt.Sprintf("tenant:%d/%s", tenantId, param.ModelName), err
+		case errors.Is(contractErr, model.ErrTenantModelContractNotFound):
+			strict, strictErr := model.TenantRequiresStrictModelContracts(tenantId)
+			if strictErr != nil {
+				return nil, selectGroup, strictErr
+			}
+			if strict {
+				return nil, selectGroup, fmt.Errorf("customer %d has no enabled contract for model %s", tenantId, param.ModelName)
+			}
+			// No contract remains the compatibility path until the customer is
+			// explicitly switched into strict contract mode.
+		default:
+			return nil, selectGroup, contractErr
+		}
+	}
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
 
 	if param.TokenGroup == "auto" {

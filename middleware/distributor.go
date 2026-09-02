@@ -54,6 +54,31 @@ func Distribute() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorChannelDisabled))
 				return
 			}
+			if tenantId := common.GetContextKeyInt(c, constant.ContextKeyTenantId); tenantId > 0 && modelRequest.Model != "" {
+				contract, contractErr := model.GetTenantModelContract(tenantId, modelRequest.Model, true)
+				if contractErr == nil {
+					if !model.TenantModelContractContainsChannel(contract, channel.Id) ||
+						!model.ChannelCarriesOnlyModel(channel, modelRequest.Model) {
+						abortWithOpenAiMessage(c, http.StatusForbidden, "该令牌指定的渠道不属于此客户的模型合同 / token-specific channel is not bound to this customer-model contract")
+						return
+					}
+					common.SetContextKey(c, constant.ContextKeyTenantModelContractId, contract.Id)
+					common.SetContextKey(c, constant.ContextKeyTenantModelContractDiscount, contract.Discount)
+				} else if errors.Is(contractErr, model.ErrTenantModelContractNotFound) {
+					strict, strictErr := model.TenantRequiresStrictModelContracts(tenantId)
+					if strictErr != nil {
+						abortWithOpenAiMessage(c, http.StatusInternalServerError, "读取客户合同模式失败 / failed to load customer contract mode")
+						return
+					}
+					if strict {
+						abortWithOpenAiMessage(c, http.StatusForbidden, "该客户未配置此模型合同 / this customer has no contract for this model")
+						return
+					}
+				} else {
+					abortWithOpenAiMessage(c, http.StatusInternalServerError, "读取客户模型合同失败 / failed to load customer-model contract")
+					return
+				}
+			}
 		} else {
 			// Select a channel for the user
 			// check token model mapping
@@ -102,7 +127,14 @@ func Distribute() func(c *gin.Context) {
 					}
 				}
 
-				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
+				tenantId := common.GetContextKeyInt(c, constant.ContextKeyTenantId)
+				_, tenantContractErr := model.GetTenantModelContract(tenantId, modelRequest.Model, true)
+				hasTenantContract := tenantContractErr == nil
+				if tenantContractErr != nil && !errors.Is(tenantContractErr, model.ErrTenantModelContractNotFound) {
+					abortWithOpenAiMessage(c, http.StatusInternalServerError, "读取客户模型合同失败 / failed to load customer-model contract")
+					return
+				}
+				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found && !hasTenantContract {
 					affinityUsable := false
 					preferred, err := model.CacheGetChannel(preferredChannelID)
 					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
@@ -135,6 +167,7 @@ func Distribute() func(c *gin.Context) {
 				if channel == nil {
 					channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
 						Ctx:         c,
+						TenantId:    tenantId,
 						ModelName:   modelRequest.Model,
 						TokenGroup:  usingGroup,
 						RequestPath: c.Request.URL.Path,

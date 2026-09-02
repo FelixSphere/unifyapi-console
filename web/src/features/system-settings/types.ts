@@ -507,6 +507,79 @@ export type UpdatePricingDiscountResponse = {
   markups?: string[]
 }
 
+export type CustomerModelTenant = {
+  id: number
+  name: string
+  slug: string
+  status: number
+  strict_model_contracts: boolean
+}
+
+export type CustomerModelCatalogEntry = {
+  model: string
+  vendor: string
+  official_input_usd: number
+  official_output_usd: number
+}
+
+export type CustomerModelChannel = {
+  id: number
+  name: string
+  status: number
+  models: string[]
+  group: string
+  priority: number
+  weight: number
+  single_model: boolean
+  bound_contract_id: number
+}
+
+export type CustomerModelContract = {
+  id: number
+  tenant_id: number
+  model: string
+  discount: number
+  enabled: boolean
+  channel_ids: number[]
+  official_input_usd: number
+  official_output_usd: number
+  customer_input_usd: number
+  customer_output_usd: number
+  updated_at: number
+}
+
+export type CustomerModelContractsResponse = {
+  success: boolean
+  message?: string
+  data: {
+    tenants: CustomerModelTenant[]
+    models: CustomerModelCatalogEntry[]
+    channels: CustomerModelChannel[]
+    contracts: CustomerModelContract[]
+    formula: string
+  }
+}
+
+export type UpsertCustomerModelContractRequest = {
+  tenant_id: number
+  model: string
+  discount: number
+  channel_ids: number[]
+  enabled: boolean
+}
+
+export type UpdateCustomerModelContractModeRequest = {
+  tenant_id: number
+  strict: boolean
+}
+
+export type CustomerModelContractMutationResponse = {
+  success: boolean
+  message?: string
+  errors?: string[]
+  data?: { id: number }
+}
+
 /* UNIFYAPI-FORK: per-channel upstream cost types. */
 export type ChannelCostRow = {
   id: number

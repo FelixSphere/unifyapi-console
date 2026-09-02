@@ -19,6 +19,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -44,6 +45,48 @@ func billingContextFor(t *testing.T, modelName, group string) (*gin.Context, *re
 		OriginModelName: modelName,
 		UserGroup:       group,
 		UsingGroup:      group,
+	}
+}
+
+func TestTenantModelContractIsOfficialTimesContractOnly(t *testing.T) {
+	resetPricingState(t)
+	require.NoError(t, ratio_setting.UpdateModelDiscountByJSONString(`{"claude-opus-5":0.9}`))
+
+	ctx, info := billingContextFor(t, "claude-opus-5", "vip")
+	ctx.Set(string(constant.ContextKeyTenantModelContractId), 42)
+	ctx.Set(string(constant.ContextKeyTenantModelContractDiscount), 0.7)
+	priceData, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+	require.NoError(t, err)
+
+	// Official $5/$25 x 0.7 exactly. The global model discount (0.9) and vip
+	// group ratio (0.8) are both deliberately replaced, not multiplied.
+	require.InDelta(t, 2.5, priceData.ModelRatio, 1e-9)
+	require.InDelta(t, 0.7, priceData.GroupRatioInfo.GroupRatio, 1e-9)
+	require.InDelta(t, 5*0.7, priceData.ModelRatio*priceData.GroupRatioInfo.GroupRatio*2, 1e-9)
+	require.InDelta(t, 25*0.7, priceData.ModelRatio*priceData.GroupRatioInfo.GroupRatio*2*priceData.CompletionRatio, 1e-9)
+	require.InDelta(t, 0.1, priceData.CacheRatio, 1e-9, "relative cache price is not discounted twice")
+}
+
+func TestDifferentModelsCanHaveDifferentContractDiscounts(t *testing.T) {
+	resetPricingState(t)
+	cases := []struct {
+		model    string
+		discount float64
+		inputUSD float64
+	}{
+		{"claude-opus-5", 0.7, 3.5},
+		{"claude-fable-5.1", 0.85, 8.5},
+	}
+	for _, tc := range cases {
+		t.Run(tc.model, func(t *testing.T) {
+			ctx, info := billingContextFor(t, tc.model, "vip")
+			ctx.Set(string(constant.ContextKeyTenantModelContractId), 42)
+			ctx.Set(string(constant.ContextKeyTenantModelContractDiscount), tc.discount)
+			priceData, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+			require.NoError(t, err)
+			actual := priceData.ModelRatio * priceData.GroupRatioInfo.GroupRatio * 2
+			require.InDelta(t, tc.inputUSD, actual, 1e-9)
+		})
 	}
 }
 
