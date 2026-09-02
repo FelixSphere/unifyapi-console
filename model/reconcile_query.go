@@ -30,8 +30,6 @@ type UsageRow struct {
 	UserGroup        string
 	Username         string
 	UserID           int
-	TenantID         int
-	TenantName       string
 	ChannelID        int
 	ChannelName      string
 	Requests         int64
@@ -60,7 +58,6 @@ type reconcileScanRow struct {
 	UserGroup        string
 	Username         string
 	UserID           int
-	TenantID         int
 	ChannelID        int
 	Requests         int64
 	PromptTokens     int64
@@ -91,7 +88,6 @@ func FetchReconcileUsage(query ReconcileQuery) ([]UsageRow, bool, error) {
 			`+quoteColumn("group")+` AS user_group,
 			username,
 			user_id,
-			tenant_id,
 			channel_id,
 			COUNT(*) AS requests,
 			COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
@@ -100,7 +96,7 @@ func FetchReconcileUsage(query ReconcileQuery) ([]UsageRow, bool, error) {
 			COALESCE(SUM(quota), 0) AS quota`).
 		Where("type = ?", LogTypeConsume).
 		Where("created_at >= ? AND created_at < ?", query.StartTimestamp, query.EndTimestamp).
-		Group(dayExpr + ", model_name, " + quoteColumn("group") + ", username, user_id, tenant_id, channel_id")
+		Group(dayExpr + ", model_name, " + quoteColumn("group") + ", username, user_id, channel_id")
 
 	if query.ModelName != "" {
 		tx = tx.Where("model_name = ?", query.ModelName)
@@ -126,7 +122,6 @@ func FetchReconcileUsage(query ReconcileQuery) ([]UsageRow, bool, error) {
 	}
 
 	channelNames := reconcileChannelNames(scanned)
-	tenantNames := reconcileTenantNames(scanned)
 
 	rows := make([]UsageRow, 0, len(scanned))
 	for _, row := range scanned {
@@ -136,8 +131,6 @@ func FetchReconcileUsage(query ReconcileQuery) ([]UsageRow, bool, error) {
 			UserGroup:        row.UserGroup,
 			Username:         row.Username,
 			UserID:           row.UserID,
-			TenantID:         row.TenantID,
-			TenantName:       tenantNames[row.TenantID],
 			ChannelID:        row.ChannelID,
 			ChannelName:      channelNames[row.ChannelID],
 			Requests:         row.Requests,
@@ -148,36 +141,6 @@ func FetchReconcileUsage(query ReconcileQuery) ([]UsageRow, bool, error) {
 		})
 	}
 	return rows, truncated, nil
-}
-
-func reconcileTenantNames(rows []reconcileScanRow) map[int]string {
-	ids := map[int]bool{}
-	for _, row := range rows {
-		if row.TenantID > 0 {
-			ids[row.TenantID] = true
-		}
-	}
-	if len(ids) == 0 {
-		return map[int]string{}
-	}
-
-	list := make([]int, 0, len(ids))
-	for id := range ids {
-		list = append(list, id)
-	}
-	var tenants []struct {
-		Id   int
-		Name string
-	}
-	names := make(map[int]string, len(list))
-	if err := DB.Table("tenants").Select("id, name").Where("id IN ?", list).Find(&tenants).Error; err != nil {
-		common.SysError("reconcile: failed to resolve tenant names: " + err.Error())
-		return names
-	}
-	for _, tenant := range tenants {
-		names[tenant.Id] = tenant.Name
-	}
-	return names
 }
 
 // reconcileDayExpression renders a unix timestamp as YYYY-MM-DD per dialect.

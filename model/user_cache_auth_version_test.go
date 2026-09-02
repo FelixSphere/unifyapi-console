@@ -86,19 +86,6 @@ func TestPendingUserAuthFenceRejectsStaleCacheWrite(t *testing.T) {
 	assert.False(t, server.Exists(getUserCacheKey(userID)))
 }
 
-func TestUserCachePersistsTenantBoundary(t *testing.T) {
-	useUserCacheMiniRedis(t)
-	const userID = 4203
-	require.NoError(t, writeUserCache(&UserBase{
-		Id: userID, Group: "default", Username: "tenant-user", TenantId: 73,
-		AuthVersion: 1, Quota: 100,
-	}, true))
-
-	cached, err := cacheGetUserBase(userID)
-	require.NoError(t, err)
-	assert.Equal(t, 73, cached.TenantId)
-}
-
 func TestUserAuthFieldUpdateRejectsVersionMismatch(t *testing.T) {
 	useUserCacheMiniRedis(t)
 	const userID = 4202

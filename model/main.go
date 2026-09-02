@@ -303,12 +303,6 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
-	// UNIFYAPI-FORK: company x model sell price and dedicated upstream routes.
-	// SQLite needs a dedicated migration because gorm cannot safely rewrite the
-	// existing decimal + foreign-key DDL on a second boot.
-	if err := migrateTenantModelContractTables(); err != nil {
-		return fmt.Errorf("failed to migrate tenant model contracts: %v", err)
-	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err
 	}
@@ -391,11 +385,6 @@ func migrateDBFast() error {
 			return err
 		}
 	}
-	// These two tables have an FK relationship and must not be migrated by two
-	// goroutines racing each other in fast mode.
-	if err := migrateTenantModelContractTables(); err != nil {
-		return fmt.Errorf("failed to migrate tenant model contracts: %v", err)
-	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err
 	}
@@ -425,12 +414,6 @@ func migrateLOGDB() error {
 func migrateClickHouseLogDB() error {
 	ttlDays := clickHouseLogTTLDays()
 	if err := LOG_DB.Exec(clickHouseLogCreateTableSQL(ttlDays)).Error; err != nil {
-		return err
-	}
-	// CREATE TABLE IF NOT EXISTS does not evolve an existing ClickHouse ledger.
-	// Keep the immutable company snapshot in step with the other log stores so
-	// a future log-store change cannot silently split a customer invoice by user.
-	if err := LOG_DB.Exec("ALTER TABLE logs ADD COLUMN IF NOT EXISTS tenant_id Int32 DEFAULT 0").Error; err != nil {
 		return err
 	}
 	return syncClickHouseLogTTL(ttlDays)
@@ -464,7 +447,6 @@ func clickHouseLogCreateTableSQL(ttlDays int) string {
 CREATE TABLE IF NOT EXISTS logs (
 	id Int64 DEFAULT 0,
 	user_id Int32 DEFAULT 0,
-	tenant_id Int32 DEFAULT 0,
 	created_at Int64 DEFAULT 0,
 	type Int32 DEFAULT 0,
 	content String DEFAULT '',

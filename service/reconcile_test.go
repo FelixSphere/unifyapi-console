@@ -201,25 +201,6 @@ func TestGroupingCollapsesTheRightRows(t *testing.T) {
 	}
 }
 
-func TestCustomerGroupingUsesCompanyInsteadOfIndividualUser(t *testing.T) {
-	rows := []model.UsageRow{
-		{Model: "claude-opus-5", TenantID: 13, TenantName: "GenAI", UserID: 7, Username: "kaiyong", Requests: 1, Quota: usdToQuota(2)},
-		{Model: "claude-opus-5", TenantID: 13, TenantName: "GenAI", UserID: 8, Username: "JoshuaSi", Requests: 1, Quota: usdToQuota(3)},
-		{Model: "claude-opus-5", TenantID: 14, TenantName: "UnifyAI", UserID: 4, Username: "Chris", Requests: 1, Quota: usdToQuota(4)},
-	}
-
-	report := Reconcile(rows, GroupByCustomer)
-	require.Len(t, report.Lines, 2)
-	byKey := map[string]ReconcileLine{}
-	for _, line := range report.Lines {
-		byKey[line.Key] = line
-	}
-	require.Equal(t, "GenAI", byKey["tenant:13"].Label)
-	require.EqualValues(t, 2, byKey["tenant:13"].Requests)
-	require.InDelta(t, 5, byKey["tenant:13"].RevenueUSD, 1e-9)
-	require.Equal(t, "UnifyAI", byKey["tenant:14"].Label)
-}
-
 func TestGroupByVendorUsesTheCatalogVendor(t *testing.T) {
 	rows := []model.UsageRow{
 		{Model: "gpt-4o", ChannelID: 1, Requests: 1, Quota: usdToQuota(1)},

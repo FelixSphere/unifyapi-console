@@ -26,7 +26,7 @@ func setupTenantTestDB(t *testing.T) {
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&Tenant{}, &User{}, &Log{}, &UserSession{}))
+	require.NoError(t, db.AutoMigrate(&Tenant{}, &User{}, &Log{}))
 
 	previous := DB
 	DB = db
@@ -156,24 +156,6 @@ func TestAddUserToTenantSharesOneBalance(t *testing.T) {
 	members, err := GetTenantMembers(tenant.Id)
 	require.NoError(t, err)
 	assert.Len(t, members, 2, "both humans share one billing entity")
-}
-
-func TestAddUserToTenantRefreshesTheRedisCompanyBoundary(t *testing.T) {
-	setupTenantTestDB(t)
-	useUserCacheMiniRedis(t)
-
-	owner := createTestUser(t, "cache-owner", 1000)
-	tenant, err := EnsureTenantForUser(owner.Id)
-	require.NoError(t, err)
-	member := createTestUser(t, "cache-member", 250)
-	require.NoError(t, populateUserCache(*member))
-
-	require.NoError(t, AddUserToTenant(member.Id, tenant.Id))
-	cached, err := GetUserCache(member.Id)
-	require.NoError(t, err)
-	assert.Equal(t, tenant.Id, cached.TenantId)
-	assert.EqualValues(t, 2, cached.AuthVersion)
-	assert.Zero(t, cached.Quota)
 }
 
 func TestAddUserToTenantIsIdempotent(t *testing.T) {

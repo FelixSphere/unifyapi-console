@@ -28,7 +28,6 @@ const TAB_SOURCES = [
   'extra-models-tab.tsx',
   'profit-section.tsx',
   'settlement-section.tsx',
-  'customer-model-contracts-section.tsx',
 ]
 
 /**
@@ -39,11 +38,7 @@ const TAB_SOURCES = [
  * untranslated derivation step or status badge renders as English with no
  * warning, which is exactly how the first version of the pricing tab shipped.
  */
-const LOGIC_SOURCES = [
-  'profit-logic.ts',
-  'settlement-logic.ts',
-  'customer-model-contract-logic.ts',
-]
+const LOGIC_SOURCES = ['profit-logic.ts', 'settlement-logic.ts']
 
 /** Locales that must carry a real translation, not the English fallback. */
 const TRANSLATED_LOCALES = ['zh.json', 'zh-TW.json']
@@ -76,9 +71,7 @@ function extractDynamicKeys(source: string): string[] {
   )) {
     keys.add(match[1].replaceAll("\\'", "'"))
   }
-  for (const block of source.matchAll(
-    /_LABELS: Record<[^>]+> = \{([\s\S]*?)\n\}/g
-  )) {
+  for (const block of source.matchAll(/_LABELS: Record<[^>]+> = \{([\s\S]*?)\n\}/g)) {
     for (const entry of block[1].matchAll(/:\s*'((?:[^'\\]|\\.)*)'/g)) {
       keys.add(entry[1].replaceAll("\\'", "'"))
     }
@@ -91,11 +84,7 @@ function loadNamespace(file: string): Record<string, string> {
   // The locale files are namespaced; the pricing strings live in whichever
   // namespace already holds the sibling pricing keys.
   for (const value of Object.values(raw)) {
-    if (
-      value &&
-      typeof value === 'object' &&
-      'Model prices' in (value as object)
-    ) {
+    if (value && typeof value === 'object' && 'Model prices' in (value as object)) {
       return value as Record<string, string>
     }
   }
@@ -105,10 +94,7 @@ function loadNamespace(file: string): Record<string, string> {
 describe('pricing tab translations', () => {
   test('the locale directory and tab sources are where the test expects', () => {
     const locales = readdirSync(LOCALES_DIR)
-    assert.ok(
-      locales.includes('zh.json'),
-      `zh.json not found in ${LOCALES_DIR}`
-    )
+    assert.ok(locales.includes('zh.json'), `zh.json not found in ${LOCALES_DIR}`)
     for (const file of TAB_SOURCES) {
       assert.ok(
         readFileSync(join(MODELS_DIR, file), 'utf8').length > 0,
@@ -141,9 +127,7 @@ describe('pricing tab translations', () => {
         // languages, i.e. ones carrying no letters (an interpolation like
         // "-{{percent}}%").
         const untranslated = keys.filter(
-          (key) =>
-            ns[key] === key &&
-            /[A-Za-z]{2,}/.test(key.replaceAll(/\{\{.*?\}\}/g, ''))
+          (key) => ns[key] === key && /[A-Za-z]{2,}/.test(key.replaceAll(/\{\{.*?\}\}/g, ''))
         )
         assert.deepEqual(
           untranslated,
@@ -155,17 +139,12 @@ describe('pricing tab translations', () => {
   }
 
   for (const file of LOGIC_SOURCES) {
-    const keys = extractDynamicKeys(
-      readFileSync(join(MODELS_DIR, file), 'utf8')
-    )
+    const keys = extractDynamicKeys(readFileSync(join(MODELS_DIR, file), 'utf8'))
 
     test(`${file} exposes its runtime-chosen keys`, () => {
       // Zero keys means the extractor stopped matching how the file is
       // written, and every assertion below would vacuously pass.
-      assert.ok(
-        keys.length >= 3,
-        `only ${keys.length} dynamic keys found in ${file}`
-      )
+      assert.ok(keys.length >= 3, `only ${keys.length} dynamic keys found in ${file}`)
     })
 
     for (const locale of TRANSLATED_LOCALES) {
@@ -195,9 +174,9 @@ describe('pricing tab translations', () => {
   for (const file of TAB_SOURCES) {
     test(`${file} routes runtime keys through a record, not a helper`, () => {
       const source = readFileSync(join(MODELS_DIR, file), 'utf8')
-      const offenders = [
-        ...source.matchAll(/\bt\(\s*([a-z][A-Za-z0-9_]*)\(/g),
-      ].map((match) => match[1])
+      const offenders = [...source.matchAll(/\bt\(\s*([a-z][A-Za-z0-9_]*)\(/g)].map(
+        (match) => match[1]
+      )
       assert.deepEqual(
         offenders,
         [],
@@ -211,10 +190,7 @@ describe('pricing tab translations', () => {
   // The specific mistake that shipped: a count column reusing the generic
   // `Models` key, which already meant 「模型」.
   test('the channel count column does not reuse the generic Models key', () => {
-    const source = readFileSync(
-      join(MODELS_DIR, 'channel-cost-tab.tsx'),
-      'utf8'
-    )
+    const source = readFileSync(join(MODELS_DIR, 'channel-cost-tab.tsx'), 'utf8')
     assert.ok(
       !/t\('Models'\)/.test(source),
       "the upstream-cost table shows a COUNT of models; `t('Models')` translates to 「模型」 " +
@@ -223,11 +199,7 @@ describe('pricing tab translations', () => {
     assert.ok(source.includes("t('Model count')"), "expected t('Model count')")
 
     const zh = loadNamespace('zh.json')
-    assert.notEqual(
-      zh['Model count'],
-      zh['Models'],
-      'the two must read differently'
-    )
+    assert.notEqual(zh['Model count'], zh['Models'], 'the two must read differently')
   })
 
   // The discount column's header is what the runbook and every support answer

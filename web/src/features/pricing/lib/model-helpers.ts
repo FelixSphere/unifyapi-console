@@ -61,12 +61,6 @@ export function getDisplayGroupRatio(
   model: PricingModel,
   selectedGroup?: string
 ): number {
-  if (
-    typeof model.customer_contract_discount === 'number' &&
-    Number.isFinite(model.customer_contract_discount)
-  ) {
-    return model.customer_contract_discount
-  }
   const modelEnableGroups = Array.isArray(model.enable_groups)
     ? model.enable_groups
     : []

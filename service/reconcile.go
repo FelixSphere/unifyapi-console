@@ -198,18 +198,10 @@ func reconcileKey(row model.UsageRow, groupBy GroupBy) (key, label string) {
 			label = "channel " + key
 		}
 	case GroupByCustomer:
-		if row.TenantID > 0 {
-			key = "tenant:" + strconv.Itoa(row.TenantID)
-			label = row.TenantName
-			if label == "" {
-				label = "customer " + strconv.Itoa(row.TenantID)
-			}
-		} else {
-			key = "user:" + strconv.Itoa(row.UserID)
-			label = row.Username
-			if label == "" {
-				label = "user " + strconv.Itoa(row.UserID)
-			}
+		key = strconv.Itoa(row.UserID)
+		label = row.Username
+		if label == "" {
+			label = "user " + key
 		}
 	case GroupByUserTier:
 		key, label = row.UserGroup, row.UserGroup

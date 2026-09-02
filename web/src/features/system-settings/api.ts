@@ -44,10 +44,6 @@ import type {
   UpdatePricingDiscountResponse,
   UpstreamChannelsResponse,
   UpstreamRatiosResponse,
-  CustomerModelContractsResponse,
-  CustomerModelContractMutationResponse,
-  UpsertCustomerModelContractRequest,
-  UpdateCustomerModelContractModeRequest,
 } from './types'
 
 export async function getSystemOptions() {
@@ -142,40 +138,6 @@ export async function updatePricingDiscount(discounts: Record<string, number>) {
   const res = await api.put<UpdatePricingDiscountResponse>(
     '/api/pricing/discount',
     { discounts }
-  )
-  return res.data
-}
-
-export async function getCustomerModelContracts() {
-  const res = await api.get<CustomerModelContractsResponse>(
-    '/api/pricing/customer_models'
-  )
-  return res.data
-}
-
-export async function upsertCustomerModelContract(
-  request: UpsertCustomerModelContractRequest
-) {
-  const res = await api.put<CustomerModelContractMutationResponse>(
-    '/api/pricing/customer_models',
-    request
-  )
-  return res.data
-}
-
-export async function deleteCustomerModelContract(id: number) {
-  const res = await api.delete<CustomerModelContractMutationResponse>(
-    `/api/pricing/customer_models/${id}`
-  )
-  return res.data
-}
-
-export async function updateCustomerModelContractMode(
-  request: UpdateCustomerModelContractModeRequest
-) {
-  const res = await api.put<CustomerModelContractMutationResponse>(
-    '/api/pricing/customer_models/tenant_mode',
-    request
   )
   return res.data
 }
@@ -301,12 +263,9 @@ export async function getExtraModels() {
 export async function updateExtraModels(
   models: Record<string, Record<string, number | string>>
 ) {
-  const res = await api.put<UpdateExtraModelsResponse>(
-    '/api/pricing/extra_models',
-    {
-      models,
-    }
-  )
+  const res = await api.put<UpdateExtraModelsResponse>('/api/pricing/extra_models', {
+    models,
+  })
   return res.data
 }
 

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/types"
 
@@ -58,12 +57,8 @@ func sanitizeClickHouseLikePattern(input string) (string, error) {
 }
 
 type Log struct {
-	Id     int `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2"`
-	UserId int `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
-	// TenantId freezes the company that owned this usage when it happened.
-	// Joining through users at report time is wrong after a user moves between
-	// companies and would rewrite old invoices retroactively.
-	TenantId         int    `json:"tenant_id" gorm:"default:0;index"`
+	Id               int    `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2"`
+	UserId           int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
 	CreatedAt        int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type"`
 	Type             int    `json:"type" gorm:"index:idx_created_at_type"`
 	Content          string `json:"content"`
@@ -311,7 +306,6 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	}
 	log := &Log{
 		UserId:           userId,
-		TenantId:         common.GetContextKeyInt(c, constant.ContextKeyTenantId),
 		Username:         username,
 		CreatedAt:        common.GetTimestamp(),
 		Type:             LogTypeError,
@@ -406,7 +400,6 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	}
 	log := &Log{
 		UserId:           userId,
-		TenantId:         common.GetContextKeyInt(c, constant.ContextKeyTenantId),
 		Username:         username,
 		CreatedAt:        createdAt,
 		Type:             LogTypeConsume,
@@ -477,10 +470,8 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		}
 	}
 	createdAt := common.GetTimestamp()
-	tenantId, _ := GetUserTenantId(params.UserId)
 	log := &Log{
 		UserId:    params.UserId,
-		TenantId:  tenantId,
 		Username:  username,
 		CreatedAt: createdAt,
 		Type:      params.LogType,

@@ -268,10 +268,6 @@ func SetApiRouter(router *gin.Engine) {
 			pricingAdminRoute.GET("/settlement.csv", controller.ExportSettlementCSV)
 			pricingAdminRoute.GET("/channel_cost", controller.GetChannelCost)
 			pricingAdminRoute.PUT("/channel_cost", controller.UpdateChannelCost)
-			pricingAdminRoute.GET("/customer_models", controller.GetTenantModelContracts)
-			pricingAdminRoute.PUT("/customer_models", controller.UpsertTenantModelContract)
-			pricingAdminRoute.PUT("/customer_models/tenant_mode", controller.UpdateTenantModelContractMode)
-			pricingAdminRoute.DELETE("/customer_models/:id", controller.DeleteTenantModelContract)
 		}
 		registerChannelRoutes(apiRouter)
 		registerAuthzRoutes(apiRouter)

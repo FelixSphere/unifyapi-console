@@ -36,10 +36,7 @@ func filterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string
 }
 
 func GetPricing(c *gin.Context) {
-	basePricing := model.GetPricing()
-	// Per-customer decoration must never mutate the shared one-minute cache.
-	pricing := make([]model.Pricing, len(basePricing))
-	copy(pricing, basePricing)
+	pricing := model.GetPricing()
 	userId, exists := c.Get("id")
 	usableGroup := map[string]string{}
 	groupRatio := map[string]float64{}
@@ -47,26 +44,16 @@ func GetPricing(c *gin.Context) {
 		groupRatio[s] = f
 	}
 	var group string
-	tenantId := 0
 	if exists {
 		user, err := model.GetUserCache(userId.(int))
 		if err == nil {
 			group = user.Group
-			tenantId = user.TenantId
 			for g := range groupRatio {
 				ratio, ok := ratio_setting.GetGroupGroupRatio(group, g)
 				if ok {
 					groupRatio[g] = ratio
 				}
 			}
-		}
-	}
-	if tenantId > 0 {
-		var err error
-		pricing, err = applyTenantModelContractPrices(pricing, tenantId)
-		if err != nil {
-			c.JSON(500, gin.H{"success": false, "message": "failed to load customer-model prices"})
-			return
 		}
 	}
 
@@ -89,42 +76,6 @@ func GetPricing(c *gin.Context) {
 		"auto_groups":        service.GetUserAutoGroup(group),
 		"pricing_version":    "a42d372ccf0b5dd13ecf71203521f9d2",
 	})
-}
-
-func applyTenantModelContractPrices(pricing []model.Pricing, tenantId int) ([]model.Pricing, error) {
-	contracts, err := model.ListEnabledTenantModelContractsForTenant(tenantId)
-	if err != nil {
-		return nil, err
-	}
-	strict, err := model.TenantRequiresStrictModelContracts(tenantId)
-	if err != nil {
-		return nil, err
-	}
-	byModel := make(map[string]float64, len(contracts))
-	for _, contract := range contracts {
-		byModel[contract.Model] = contract.Discount
-	}
-	decorated := make([]model.Pricing, 0, len(pricing))
-	for i := range pricing {
-		discount, ok := byModel[pricing[i].ModelName]
-		if !ok {
-			if !strict {
-				decorated = append(decorated, pricing[i])
-			}
-			continue
-		}
-		entry, ok := ratio_setting.CatalogEntryFor(pricing[i].ModelName)
-		if !ok {
-			continue
-		}
-		pricing[i].ModelRatio = entry.ModelRatio()
-		if entry.PerCallUSD > 0 {
-			pricing[i].ModelPrice = entry.PerCallUSD
-		}
-		pricing[i].CustomerContractDiscount = &discount
-		decorated = append(decorated, pricing[i])
-	}
-	return decorated, nil
 }
 
 // ResetModelRatio restores the pricing baseline from the catalog.

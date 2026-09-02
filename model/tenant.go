@@ -45,11 +45,6 @@ type Tenant struct {
 	// property rather than a per-member one. Not yet consulted by the relay.
 	Group  string `json:"group" gorm:"type:varchar(64);default:'default'"`
 	Remark string `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
-	// StrictModelContracts turns customer-model contracts into an allow-list.
-	// It stays false during migration so a company can be prepared model by
-	// model. Once enabled, an uncontracted model must never fall through to a
-	// generic channel or a legacy group price.
-	StrictModelContracts bool `json:"strict_model_contracts" gorm:"not null;default:false;column:strict_model_contracts"`
 	// ExpiresAt is the end of the paid term, 0 meaning open-ended. Operators
 	// extend it rather than editing a subscription row, because a tenant term is
 	// a commercial fact about the account and outlives any single plan purchase.
@@ -126,40 +121,6 @@ func GetTenantBySlug(slug string) (*Tenant, error) {
 		return nil, err
 	}
 	return tenant, nil
-}
-
-func GetUserTenantId(userId int) (int, error) {
-	if userId <= 0 {
-		return 0, nil
-	}
-	var tenantId int
-	err := DB.Model(&User{}).Where("id = ?", userId).Select("tenant_id").Scan(&tenantId).Error
-	return tenantId, err
-}
-
-func TenantRequiresStrictModelContracts(tenantId int) (bool, error) {
-	if tenantId <= 0 {
-		return false, nil
-	}
-	var strict bool
-	err := DB.Model(&Tenant{}).Where("id = ?", tenantId).
-		Select("strict_model_contracts").Scan(&strict).Error
-	return strict, err
-}
-
-func SetTenantStrictModelContracts(tenantId int, strict bool) error {
-	if tenantId <= 0 {
-		return errors.New("tenant id is required")
-	}
-	result := DB.Model(&Tenant{}).Where("id = ?", tenantId).
-		Update("strict_model_contracts", strict)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
 }
 
 // CreateTenantWithTx inserts a tenant, resolving slug collisions by suffixing.
@@ -286,8 +247,7 @@ func AddUserToTenant(userId int, tenantId int) error {
 	if userId == 0 || tenantId == 0 {
 		return errors.New("user id and tenant id are required")
 	}
-	changed := false
-	err := DB.Transaction(func(tx *gorm.DB) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
 		var user User
 		if err := tx.First(&user, "id = ?", userId).Error; err != nil {
 			return err
@@ -311,35 +271,9 @@ func AddUserToTenant(userId int, tenantId int) error {
 				return err
 			}
 		}
-		if _, err := IncrementUserAuthVersionWithTx(tx, userId); err != nil {
-			return err
-		}
-		if err := tx.Model(&User{}).Where("id = ?", userId).
-			Updates(map[string]any{"tenant_id": tenantId, "quota": 0}).Error; err != nil {
-			return err
-		}
-		changed = true
-		return nil
+		return tx.Model(&User{}).Where("id = ?", userId).
+			Updates(map[string]any{"tenant_id": tenantId, "quota": 0}).Error
 	})
-	if err != nil || !changed {
-		return err
-	}
-	// Tenant membership chooses both the customer price and the only upstream
-	// keys this user may reach. Publish the new company boundary immediately and
-	// revoke old sessions; a stale Redis hash must never price or route a request
-	// as the previous company.
-	if err := PublishUserAuthCache(userId); err != nil {
-		return err
-	}
-	// The move folds the member's personal quota into the tenant and writes the
-	// user row back to zero. PublishUserAuthCache intentionally preserves the
-	// cached quota for ordinary profile edits, so remove this hash and force the
-	// next request to refill the new zero balance from the database.
-	if err := invalidateUserCache(userId); err != nil {
-		return err
-	}
-	_, err = RevokeAllUserSessions(userId, "tenant_membership_changed")
-	return err
 }
 
 func GetTenantMembers(tenantId int) ([]*User, error) {
