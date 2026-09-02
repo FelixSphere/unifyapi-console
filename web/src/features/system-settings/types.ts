@@ -460,6 +460,7 @@ export type UpstreamRatiosResponse = {
  */
 export type PricingBaselineGroupPrice = {
   group_ratio: number
+  customer_multiplier?: number
   input_usd: number
   output_usd: number
 }
@@ -505,6 +506,33 @@ export type UpdatePricingDiscountResponse = {
   message?: string
   errors?: string[]
   markups?: string[]
+}
+
+export type GroupModelPricingModel = {
+  model: string
+  vendor: string
+  official_input_usd: number
+  official_output_usd: number
+  official_cache_read_usd?: number
+  official_cache_write_usd?: number
+}
+
+export type GroupModelPricingResponse = {
+  success: boolean
+  message?: string
+  data: {
+    groups: string[]
+    models: GroupModelPricingModel[]
+    discounts: Record<string, Record<string, number>>
+    fallback_discounts: Record<string, number>
+    group_ratios: Record<string, number>
+  }
+}
+
+export type UpdateGroupModelPricingResponse = {
+  success: boolean
+  message?: string
+  errors?: string[]
 }
 
 /* UNIFYAPI-FORK: per-channel upstream cost types. */
@@ -714,7 +742,7 @@ export type SettlementResponse = {
     totals: SettlementTotals
     orphaned?: SettlementRecord[]
   }
-  /** Customer side only, keyed by user id as a string. */
+  /** Customer side only, keyed by company User Group (user id for tenantless accounts). */
   payments?: Record<string, CustomerPayment[]>
   cost_basis?: {
     description: string

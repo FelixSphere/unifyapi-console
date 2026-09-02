@@ -127,3 +127,45 @@ func TestCacheGetRandomSatisfiedChannelUsesTokenAutoGroupsWhenGlobalAutoIsEmpty(
 	assert.Equal(t, "default", selectedGroup)
 	assert.Equal(t, "default", common.GetContextKeyString(ctx, constant.ContextKeyAutoGroup))
 }
+
+func TestTwoSuppliersForOneModelUseHigherPriorityThenFallback(t *testing.T) {
+	db := setupChannelSelectAutoGroupsTest(t)
+	const modelName = "claude-opus-5"
+	highPriority, lowPriority := int64(4), int64(0)
+	weight := uint(100)
+	for _, candidate := range []struct {
+		id       int
+		name     string
+		priority *int64
+	}{
+		{2201, "Flatkey claude-opus-5", &highPriority},
+		{2202, "OpenRouter claude-opus-5", &lowPriority},
+	} {
+		require.NoError(t, db.Create(&model.Channel{
+			Id: candidate.id, Type: constant.ChannelTypeOpenAI, Key: fmt.Sprintf("key-%d", candidate.id),
+			Status: common.ChannelStatusEnabled, Name: candidate.name, Weight: &weight,
+			Models: modelName, Group: "GenAI", Priority: candidate.priority,
+		}).Error)
+		require.NoError(t, db.Create(&model.Ability{
+			Group: "GenAI", Model: modelName, ChannelId: candidate.id, Enabled: true,
+			Priority: candidate.priority, Weight: weight,
+		}).Error)
+	}
+	model.InitChannelCache()
+
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	retry := 0
+	param := &RetryParam{Ctx: ctx, TokenGroup: "GenAI", ModelName: modelName, Retry: &retry}
+
+	primary, group, err := CacheGetRandomSatisfiedChannel(param)
+	require.NoError(t, err)
+	require.Equal(t, "GenAI", group)
+	require.Equal(t, 2201, primary.Id, "priority 4 must be attempted before priority 0")
+
+	param.IncreaseRetry()
+	fallback, group, err := CacheGetRandomSatisfiedChannel(param)
+	require.NoError(t, err)
+	require.Equal(t, "GenAI", group)
+	require.Equal(t, 2202, fallback.Id, "the lower-priority supplier is the next retry")
+}

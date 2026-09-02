@@ -67,11 +67,28 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 		groupRatioInfo.GroupRatio = ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
 	}
 
+	// UNIFYAPI-FORK: a negotiated customer x model price is a final multiplier
+	// over the official catalog price. It deliberately replaces both the broad
+	// model discount and the routing/group ratio; multiplying them would turn a
+	// contract value of 0.8 into (for example) 0.8 x 0.9 x 0.7.
+	if ratio, ok := ratio_setting.GetGroupModelDiscount(relayInfo.UserGroup, relayInfo.OriginModelName); ok {
+		groupRatioInfo.GroupSpecialRatio = ratio
+		groupRatioInfo.GroupRatio = ratio
+		groupRatioInfo.HasSpecialRatio = true
+	}
+
 	return groupRatioInfo
 }
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (hosttypes.PriceData, error) {
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
+	_, hasGroupModelDiscount := ratio_setting.GetGroupModelDiscount(info.UserGroup, info.OriginModelName)
+	if hasGroupModelDiscount {
+		if entry, ok := ratio_setting.CatalogEntryFor(info.OriginModelName); ok && entry.PerCallUSD > 0 {
+			modelPrice = entry.PerCallUSD
+			usePrice = true
+		}
+	}
 
 	groupRatioInfo := HandleGroupRatio(c, info)
 
@@ -99,6 +116,13 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		var success bool
 		var matchName string
 		modelRatio, success, matchName = ratio_setting.GetModelRatio(info.OriginModelName)
+		if hasGroupModelDiscount {
+			if entry, ok := ratio_setting.CatalogEntryFor(info.OriginModelName); ok {
+				modelRatio = entry.ModelRatio()
+				success = true
+				matchName = entry.Model
+			}
+		}
 		if !success {
 			acceptUnsetRatio := false
 			if info.UserSetting.AcceptUnsetRatioModel {
@@ -186,6 +210,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 // ModelPriceHelperPerCall 按次/按量计费的 PriceHelper (MJ、Task)
 func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hosttypes.PriceData, error) {
 	groupRatioInfo := HandleGroupRatio(c, info)
+	_, hasGroupModelDiscount := ratio_setting.GetGroupModelDiscount(info.UserGroup, info.OriginModelName)
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
 	usePrice := success
@@ -206,6 +231,17 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 			}
 			if !ratioSuccess && !acceptUnsetRatio {
 				return hosttypes.PriceData{}, modelPriceNotConfiguredError(matchName, info.UserId)
+			}
+		}
+	}
+	if hasGroupModelDiscount {
+		if entry, ok := ratio_setting.CatalogEntryFor(info.OriginModelName); ok {
+			if entry.PerCallUSD > 0 {
+				modelPrice = entry.PerCallUSD
+				usePrice = true
+			} else {
+				modelRatio = entry.ModelRatio()
+				usePrice = false
 			}
 		}
 	}

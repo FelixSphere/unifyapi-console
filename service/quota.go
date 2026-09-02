@@ -120,6 +120,15 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	if ok {
 		actualGroupRatio = userGroupRatio
 	}
+	// UNIFYAPI-FORK: realtime pre-consume historically rebuilt its own price
+	// instead of using PriceData. Keep it on the same contract precedence as
+	// ModelPriceHelper so websocket traffic cannot bypass customer-model prices.
+	if customerRatio, ok := ratio_setting.GetGroupModelDiscount(relayInfo.UserGroup, modelName); ok {
+		actualGroupRatio = customerRatio
+		if entry, found := ratio_setting.CatalogEntryFor(modelName); found {
+			modelRatio = entry.ModelRatio()
+		}
+	}
 
 	quotaInfo := QuotaInfo{
 		InputDetails: TokenDetails{
@@ -253,7 +262,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		TokenId:          relayInfo.TokenId,
 		UseTimeSeconds:   int(useTimeSeconds),
 		IsStream:         relayInfo.IsStream,
-		Group:            relayInfo.UsingGroup,
+		Group:            CustomerGroupForLog(relayInfo, other),
 		Other:            other,
 	})
 }
@@ -376,7 +385,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		TokenId:          relayInfo.TokenId,
 		UseTimeSeconds:   int(useTimeSeconds),
 		IsStream:         relayInfo.IsStream,
-		Group:            relayInfo.UsingGroup,
+		Group:            CustomerGroupForLog(relayInfo, other),
 		Other:            other,
 	})
 	gopool.Go(func() {

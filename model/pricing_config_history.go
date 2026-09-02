@@ -2,15 +2,13 @@ package model
 
 // UNIFYAPI-FORK: keep the previous value of every billing config row.
 //
-// Written after a real incident. On 2026-08-30 an agent wrote the price-neutral
-// seed into `ModelDiscount` over SSM. types.LoadFromJsonString is
-// replace-not-merge, so it did not merge with the discounts the operator had
-// configured -- it overwrote them, and the value they had spent time entering
-// existed nowhere afterwards. The revert six minutes later removed even the
-// seed. From the outside the end state was indistinguishable from "no discounts
-// were ever set", which is exactly why it went unnoticed: the check everyone ran
-// was "are prices back to official", and official is also what an emptied
-// discount table produces.
+// Written after a real near miss. On 2026-08-30 a price-neutral seed created a
+// `ModelDiscount` row through raw SQL and a later raw-SQL revert cleared it.
+// No configured customer discounts existed in that particular row beforehand,
+// but the operation exposed the dangerous property: types.LoadFromJsonString is
+// replace-not-merge, so the same write after launch would destroy the whole
+// operator-maintained table. Official prices are also what an emptied discount
+// table produces, making such a loss easy to mistake for a successful revert.
 //
 // So: before a billing key is overwritten, its old value is copied here. That
 // turns "my settings vanished" from an unanswerable question into a row with a
@@ -36,11 +34,12 @@ import (
 // GroupRatio and GroupGroupRatio are here for the same reason as ModelDiscount:
 // they multiply into the customer's price, and they are edited by hand.
 var billingConfigKeys = map[string]bool{
-	"ModelDiscount":     true,
-	"ExtraModelPricing": true,
-	"ChannelCostRatio":  true,
-	"GroupRatio":        true,
-	"GroupGroupRatio":   true,
+	"ModelDiscount":      true,
+	"GroupModelDiscount": true,
+	"ExtraModelPricing":  true,
+	"ChannelCostRatio":   true,
+	"GroupRatio":         true,
+	"GroupGroupRatio":    true,
 }
 
 // IsBillingConfigKey reports whether a key is snapshotted before overwrite.

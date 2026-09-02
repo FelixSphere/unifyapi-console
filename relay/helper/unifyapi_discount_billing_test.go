@@ -56,13 +56,61 @@ func resetPricingState(t *testing.T) {
 	// process serves from.
 	ratio_setting.InitRatioSettings()
 	require.NoError(t, ratio_setting.UpdateModelDiscountByJSONString(`{}`))
+	require.NoError(t, ratio_setting.UpdateGroupModelDiscountByJSONString(`{}`))
 	require.NoError(t, ratio_setting.UpdateChannelCostRatioByJSONString(`{}`))
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"vip":0.8}`))
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdateModelDiscountByJSONString(`{}`))
+		require.NoError(t, ratio_setting.UpdateGroupModelDiscountByJSONString(`{}`))
 		require.NoError(t, ratio_setting.UpdateChannelCostRatioByJSONString(`{}`))
 		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{}`))
 	})
+}
+
+// TestCustomerModelPriceIsFinal proves the negotiated value cannot be stacked
+// with either legacy discount layer. This is the business invariant behind the
+// Group Pricing UI: typing 0.8 must charge exactly 80% of official.
+func TestCustomerModelPriceIsFinal(t *testing.T) {
+	resetPricingState(t)
+	require.NoError(t, ratio_setting.UpdateModelDiscountByJSONString(`{"claude-opus-5":0.9}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"GenAI":0.7,"UnifyAI":1}`))
+	require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(`{"GenAI":{"GenAI":1.1}}`))
+	require.NoError(t, ratio_setting.UpdateGroupModelDiscountByJSONString(`{
+		"GenAI":{"claude-opus-5":0.8},
+		"UnifyAI":{"claude-opus-5":0.9}
+	}`))
+	t.Cleanup(func() { require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(`{}`)) })
+
+	for _, tc := range []struct {
+		group string
+		want  float64
+	}{
+		{"GenAI", 4.0},
+		{"UnifyAI", 4.5},
+	} {
+		t.Run(tc.group, func(t *testing.T) {
+			ctx, info := billingContextFor(t, "claude-opus-5", tc.group)
+			priceData, err := ModelPriceHelper(ctx, info, 1_000_000, &types.TokenCountMeta{})
+			require.NoError(t, err)
+			require.InDelta(t, 2.5, priceData.ModelRatio, 1e-12, "base must be official, not global-discounted")
+			require.InDelta(t, tc.want/5, priceData.GroupRatioInfo.GroupRatio, 1e-12)
+			require.InDelta(t, tc.want, priceData.ModelRatio*2*priceData.GroupRatioInfo.GroupRatio, 1e-12)
+			require.Equal(t, int(tc.want*500000), priceData.QuotaToPreConsume,
+				"one million input tokens must pre-consume the exact contracted dollars")
+		})
+	}
+}
+
+func TestCustomerModelPriceFallsBackToLegacyLayersWhenAbsent(t *testing.T) {
+	resetPricingState(t)
+	require.NoError(t, ratio_setting.UpdateModelDiscountByJSONString(`{"claude-opus-5":0.9}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"GenAI":0.7}`))
+	require.NoError(t, ratio_setting.UpdateGroupModelDiscountByJSONString(`{"GenAI":{"gpt-4o":0.8}}`))
+
+	ctx, info := billingContextFor(t, "claude-opus-5", "GenAI")
+	priceData, err := ModelPriceHelper(ctx, info, 1_000_000, &types.TokenCountMeta{})
+	require.NoError(t, err)
+	require.InDelta(t, 5*0.9*0.7, priceData.ModelRatio*2*priceData.GroupRatioInfo.GroupRatio, 1e-12)
 }
 
 // TestModelPriceHelperBillsTheOfficialPriceWithoutADiscount is the control: no
@@ -165,6 +213,30 @@ func TestUpstreamCostRatioNeverChangesWhatTheCustomerIsBilled(t *testing.T) {
 	cost, ok := ratio_setting.UpstreamCostUSD("gpt-4o", 1, 1_000_000, 0, 0)
 	require.True(t, ok)
 	require.InDelta(t, 1.25, cost, 1e-9, "$2.50/1M list x 0.5 purchasing ratio")
+}
+
+func TestTwoSuppliersChangeCostButNeverCustomerContractPrice(t *testing.T) {
+	resetPricingState(t)
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"GenAI":1}`))
+	require.NoError(t, ratio_setting.UpdateGroupModelDiscountByJSONString(`{"GenAI":{"claude-opus-5":0.8}}`))
+	require.NoError(t, ratio_setting.UpdateChannelCostRatioByJSONString(`{"2201":0.9,"2202":0.6}`))
+
+	ctx, info := billingContextFor(t, "claude-opus-5", "GenAI")
+	primaryPrice, err := ModelPriceHelper(ctx, info, 1_000_000, &types.TokenCountMeta{})
+	require.NoError(t, err)
+	ctx, info = billingContextFor(t, "claude-opus-5", "GenAI")
+	fallbackPrice, err := ModelPriceHelper(ctx, info, 1_000_000, &types.TokenCountMeta{})
+	require.NoError(t, err)
+
+	require.Equal(t, primaryPrice.QuotaToPreConsume, fallbackPrice.QuotaToPreConsume)
+	require.Equal(t, 2_000_000, primaryPrice.QuotaToPreConsume, "$5 official input x 0.8 x 500k quota/$")
+
+	primaryCost, ok := ratio_setting.UpstreamCostUSD("claude-opus-5", 2201, 1_000_000, 0, 0)
+	require.True(t, ok)
+	fallbackCost, ok := ratio_setting.UpstreamCostUSD("claude-opus-5", 2202, 1_000_000, 0, 0)
+	require.True(t, ok)
+	require.InDelta(t, 4.5, primaryCost, 1e-9)
+	require.InDelta(t, 3.0, fallbackCost, 1e-9)
 }
 
 // TestRemovingADiscountRestoresTheBilledPrice -- the ratio map is rebuilt rather

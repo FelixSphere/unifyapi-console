@@ -3,7 +3,6 @@ package model
 import (
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -147,6 +146,10 @@ func InitOptionMap() {
 	// so the baseline can stay at the vendors' official prices -- see
 	// setting/ratio_setting/unifyapi_discount.go.
 	common.OptionMap["ModelDiscount"] = ratio_setting.ModelDiscount2JSONString()
+	// UNIFYAPI-FORK: negotiated final price multiplier per customer group and
+	// model. Unlike GroupGroupRatio this keys directly by model and never needs
+	// a fake pricing group for every model.
+	common.OptionMap["GroupModelDiscount"] = ratio_setting.GroupModelDiscount2JSONString()
 	// UNIFYAPI-FORK: what our upstream charges us, per channel. Reconciliation
 	// only -- never customer billing.
 	common.OptionMap["ChannelCostRatio"] = ratio_setting.ChannelCostRatio2JSONString()
@@ -226,24 +229,32 @@ func validateOptionValue(key string, value string) error {
 }
 
 func UpdateOption(key string, value string) error {
+	return updateOptionAs(key, value, "")
+}
+
+func updateOptionAs(key string, value string, actor string) error {
 	if err := validateOptionValue(key, value); err != nil {
 		return err
 	}
 	// UNIFYAPI-FORK: snapshot a billing key before it is overwritten. Every
 	// pricing map here is replace-not-merge, so a save does not edit the old
 	// value -- it destroys it. See model/pricing_config_history.go.
-	snapshotBillingKeyBeforeWrite(key, value, optionActor(), "update-option")
+	snapshotBillingKeyBeforeWrite(key, value, actor, "update-option")
 	// Save to database first
 	option := Option{
 		Key: key,
 	}
 	// https://gorm.io/docs/update.html#Save-All-Fields
-	DB.FirstOrCreate(&option, Option{Key: key})
+	if err := DB.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
+		return err
+	}
 	option.Value = value
 	// Save is a combination function.
 	// If save value does not contain primary key, it will execute Create,
 	// otherwise it will execute Update (with all fields).
-	DB.Save(&option)
+	if err := DB.Save(&option).Error; err != nil {
+		return err
+	}
 	// Update OptionMap
 	return updateOptionMap(key, value)
 }
@@ -254,6 +265,13 @@ func UpdateOption(key string, value string) error {
 // is touched — safe for callers that must commit a set of related options
 // atomically (e.g. payment gateway binding).
 func UpdateOptionsBulk(values map[string]string) error {
+	return UpdateOptionsBulkAs(values, "")
+}
+
+// UpdateOptionsBulkAs is the attributed bulk equivalent of UpdateOptionAs.
+// Actor is a plain argument so concurrent admin requests can never overwrite
+// request-scoped attribution through package-global state.
+func UpdateOptionsBulkAs(values map[string]string, actor string) error {
 	if len(values) == 0 {
 		return nil
 	}
@@ -267,7 +285,7 @@ func UpdateOptionsBulk(values map[string]string) error {
 	// it was protecting -- an extra history row costs nothing, a missing one
 	// costs the operator their configuration.
 	for key, value := range values {
-		snapshotBillingKeyBeforeWrite(key, value, optionActor(), "update-options-bulk")
+		snapshotBillingKeyBeforeWrite(key, value, actor, "update-options-bulk")
 	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		for k, v := range values {
@@ -312,29 +330,7 @@ func snapshotBillingKeyBeforeWrite(key, newValue, actor, reason string) {
 // guessing would be worse than admitting it: a history row blaming the wrong
 // person is harder to unpick than one that says "unknown".
 func UpdateOptionAs(key, value, actor string) error {
-	setOptionActor(actor)
-	defer setOptionActor("")
-	return UpdateOption(key, value)
-}
-
-// optionActor / setOptionActor carry attribution across the one call between
-// UpdateOptionAs and the snapshot. Guarded by its own mutex; the value is only
-// ever read on the same goroutine that set it.
-var (
-	optionActorMu    sync.RWMutex
-	optionActorValue string
-)
-
-func setOptionActor(actor string) {
-	optionActorMu.Lock()
-	optionActorValue = actor
-	optionActorMu.Unlock()
-}
-
-func optionActor() string {
-	optionActorMu.RLock()
-	defer optionActorMu.RUnlock()
-	return optionActorValue
+	return updateOptionAs(key, value, actor)
 }
 
 func updateOptionMap(key string, value string) (err error) {
@@ -622,6 +618,8 @@ func updateOptionMap(key string, value string) (err error) {
 		common.DataExportDefaultTime = value
 	case "ModelDiscount":
 		err = ratio_setting.UpdateModelDiscountByJSONString(value)
+	case "GroupModelDiscount":
+		err = ratio_setting.UpdateGroupModelDiscountByJSONString(value)
 	case "ChannelCostRatio":
 		err = ratio_setting.UpdateChannelCostRatioByJSONString(value)
 	// UNIFYAPI-FORK: admin-added prices, merged on top of the code catalog.
@@ -699,6 +697,7 @@ func updateOptionMap(key string, value string) (err error) {
 // without invalidating its cache is a visible omission rather than a silent one.
 var pricingDisplayOptions = map[string]bool{
 	"ModelDiscount":        true,
+	"GroupModelDiscount":   true,
 	"ModelRatio":           true,
 	"CompletionRatio":      true,
 	"CacheRatio":           true,

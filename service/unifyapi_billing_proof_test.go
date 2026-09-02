@@ -51,7 +51,7 @@ func priceDataFor(t *testing.T, model, group string) hosttypes.PriceData {
 	cacheCreationRatio, _ := ratio_setting.GetCreateCacheRatio(model)
 	imageRatio, _ := ratio_setting.GetImageRatio(model)
 
-	return hosttypes.PriceData{
+	priceData := hosttypes.PriceData{
 		ModelRatio:           modelRatio,
 		CompletionRatio:      ratio_setting.GetCompletionRatio(model),
 		CacheRatio:           cacheRatio,
@@ -65,6 +65,17 @@ func priceDataFor(t *testing.T, model, group string) hosttypes.PriceData {
 			GroupRatio: ratio_setting.GetGroupRatio(group),
 		},
 	}
+	if finalMultiplier, configured := ratio_setting.GetGroupModelDiscount(group, model); configured {
+		entry, catalogued := ratio_setting.CatalogEntryFor(model)
+		require.True(t, catalogued, "%s has a customer contract but no official catalog price", model)
+		priceData.ModelRatio = entry.ModelRatio()
+		priceData.GroupRatioInfo = hosttypes.GroupRatioInfo{
+			GroupRatio:        finalMultiplier,
+			GroupSpecialRatio: finalMultiplier,
+			HasSpecialRatio:   true,
+		}
+	}
+	return priceData
 }
 
 // chargeUSD runs the real quota formula and returns what the customer pays, in
@@ -103,6 +114,15 @@ func withDiscount(t *testing.T, jsonStr string) {
 	require.NoError(t, ratio_setting.UpdateModelDiscountByJSONString(jsonStr))
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdateModelDiscountByJSONString(previous))
+	})
+}
+
+func withCustomerModelPrices(t *testing.T, jsonStr string) {
+	t.Helper()
+	previous := ratio_setting.GroupModelDiscount2JSONString()
+	require.NoError(t, ratio_setting.UpdateGroupModelDiscountByJSONString(jsonStr))
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateGroupModelDiscountByJSONString(previous))
 	})
 }
 
@@ -156,6 +176,32 @@ func TestTheDiscountAppliesToOutputAndCacheToo(t *testing.T) {
 	withDiscount(t, `{"claude-opus-4-8":0.5}`)
 	require.InDelta(t, 13.20, chargeUSD(t, "claude-opus-4-8", "default", usage), 1e-6,
 		"half off must halve the whole bill -- input, output and cached reads alike")
+}
+
+// TestCustomerModelPriceControlsTheWholeFinalCharge proves the new contract
+// layer reaches post-consume dollars, including output and cache. It also pins
+// precedence: 0.8 is the final multiplier, not 0.8 x global discount x group.
+func TestCustomerModelPriceControlsTheWholeFinalCharge(t *testing.T) {
+	previousGroups := ratio_setting.GroupRatio2JSONString()
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"GenAI":0.3}`))
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(previousGroups))
+	})
+	withDiscount(t, `{"claude-opus-4-8":0.5}`)
+	withCustomerModelPrices(t, `{"GenAI":{"claude-opus-4-8":0.8}}`)
+
+	usage := &dto.Usage{
+		PromptTokens:     1_000_000,
+		CompletionTokens: 1_000_000,
+		TotalTokens:      2_000_000,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens: 800_000,
+		},
+	}
+
+	// List is $26.40 (fresh $1 + cache $0.40 + output $25).
+	// The customer's final 0.8 multiplier must produce exactly $21.12.
+	require.InDelta(t, 21.12, chargeUSD(t, "claude-opus-4-8", "GenAI", usage), 1e-6)
 }
 
 // TestFable51ChargesThePublishedDollars proves the new catalog row reaches the

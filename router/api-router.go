@@ -251,6 +251,8 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			pricingAdminRoute.GET("/baseline", controller.GetPricingBaseline)
 			pricingAdminRoute.PUT("/discount", controller.UpdatePricingDiscount)
+			pricingAdminRoute.GET("/group_model", controller.GetGroupModelPricing)
+			pricingAdminRoute.PUT("/group_model", controller.UpdateGroupModelPricing)
 			// UNIFYAPI-FORK: admin-added prices for models the catalog does not carry.
 			pricingAdminRoute.GET("/extra_models", controller.GetExtraModels)
 			pricingAdminRoute.PUT("/extra_models", controller.UpdateExtraModels)

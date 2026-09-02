@@ -10,16 +10,17 @@ package model
 
 // UNIFYAPI-FORK: tests for the billing config history.
 //
-// The first test reproduces the incident this exists because of. On 2026-08-30
-// a seed was written into ModelDiscount over SSM; the map is replace-not-merge,
-// so the operator's configured discounts were destroyed rather than merged with,
-// and the value existed nowhere afterwards. Everything else here protects the
-// property that made that unrecoverable: the OLD value must survive the write.
+// The first test reproduces the failure mode discovered by the 2026-08-30
+// raw-SQL pricing near miss. The live row was empty then, so no customer
+// discounts were actually lost, but the map is replace-not-merge: after launch,
+// the same operation would destroy the operator's whole table. Everything here
+// protects the key property: the OLD value must survive the write.
 
 import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -44,9 +45,9 @@ func setupPricingHistoryDB(t *testing.T) {
 	common.OptionMapRWMutex.Unlock()
 }
 
-// TestTheDiscountsThatWereLostWouldNowSurvive is the regression test for the
-// actual incident: a seed overwrites a configured discount table.
-func TestTheDiscountsThatWereLostWouldNowSurvive(t *testing.T) {
+// TestAFullMapOverwriteKeepsThePriorTable is the regression test for the
+// dangerous operation: a replacement payload overwrites a configured table.
+func TestAFullMapOverwriteKeepsThePriorTable(t *testing.T) {
 	setupPricingHistoryDB(t)
 
 	operatorTable := `{"claude-opus-4-8":0.8,"gpt-4o":0.75}`
@@ -86,7 +87,7 @@ func TestOnlyBillingKeysAreKept(t *testing.T) {
 // one is how the next table gets lost.
 func TestEveryGuardedKeyIsABillingKey(t *testing.T) {
 	for _, key := range []string{
-		"ModelDiscount", "ExtraModelPricing", "ChannelCostRatio", "GroupRatio", "GroupGroupRatio",
+		"ModelDiscount", "GroupModelDiscount", "ExtraModelPricing", "ChannelCostRatio", "GroupRatio", "GroupGroupRatio",
 	} {
 		assert.True(t, IsBillingConfigKey(key), "%s decides what a customer pays and must be guarded", key)
 	}
@@ -104,6 +105,55 @@ func TestANoOpSaveIsNotHistory(t *testing.T) {
 	history, err := ListPricingConfigHistory("ModelDiscount", 0)
 	require.NoError(t, err)
 	assert.Empty(t, history)
+}
+
+func TestUpdateOptionAsAttributesTheExactBillingWrite(t *testing.T) {
+	setupPricingHistoryDB(t)
+	previousDiscounts := ratio_setting.ModelDiscount2JSONString()
+	require.NoError(t, ratio_setting.UpdateModelDiscountByJSONString(`{"gpt-4o":1}`))
+	common.OptionMapRWMutex.Lock()
+	previousOption := common.OptionMap["ModelDiscount"]
+	common.OptionMap["ModelDiscount"] = `{"gpt-4o":1}`
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelDiscountByJSONString(previousDiscounts))
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap["ModelDiscount"] = previousOption
+		common.OptionMapRWMutex.Unlock()
+	})
+
+	require.NoError(t, UpdateOptionAs("ModelDiscount", `{"gpt-4o":0.8}`, "root-admin"))
+	history, err := ListPricingConfigHistory("ModelDiscount", 0)
+	require.NoError(t, err)
+	require.Len(t, history, 1)
+	assert.Equal(t, "root-admin", history[0].ChangedBy)
+	assert.Equal(t, `{"gpt-4o":0.8}`, history[0].NewValue)
+}
+
+func TestUpdateOptionDoesNotChangeLiveBillingWhenPersistenceFails(t *testing.T) {
+	setupPricingHistoryDB(t)
+	previousDiscounts := ratio_setting.ModelDiscount2JSONString()
+	require.NoError(t, ratio_setting.UpdateModelDiscountByJSONString(`{"gpt-4o":1}`))
+	common.OptionMapRWMutex.Lock()
+	previousOption := common.OptionMap["ModelDiscount"]
+	common.OptionMap["ModelDiscount"] = `{"gpt-4o":1}`
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelDiscountByJSONString(previousDiscounts))
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap["ModelDiscount"] = previousOption
+		common.OptionMapRWMutex.Unlock()
+	})
+
+	require.NoError(t, DB.Migrator().DropTable(&Option{}))
+	require.Error(t, UpdateOptionAs("ModelDiscount", `{"gpt-4o":0.8}`, "root-admin"))
+
+	ratio, ok := ratio_setting.GetModelDiscountCopy()["gpt-4o"]
+	require.True(t, ok)
+	assert.InDelta(t, 1, ratio, 1e-12)
+	common.OptionMapRWMutex.RLock()
+	assert.Equal(t, `{"gpt-4o":1}`, common.OptionMap["ModelDiscount"])
+	common.OptionMapRWMutex.RUnlock()
 }
 
 // TestHistoryIsBoundedButKeepsTheNewest. Unbounded growth would eventually get

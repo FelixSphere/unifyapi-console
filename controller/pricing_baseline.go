@@ -45,9 +45,10 @@ type baselineRow struct {
 
 // groupPrice is the customer-facing price for one group, in USD per 1M tokens.
 type groupPrice struct {
-	GroupRatio float64 `json:"group_ratio"`
-	InputUSD   float64 `json:"input_usd"`
-	OutputUSD  float64 `json:"output_usd"`
+	GroupRatio         float64  `json:"group_ratio"`
+	CustomerMultiplier *float64 `json:"customer_multiplier,omitempty"`
+	InputUSD           float64  `json:"input_usd"`
+	OutputUSD          float64  `json:"output_usd"`
 }
 
 // GetPricingBaseline serves the catalog, the discounts, the resulting
@@ -86,10 +87,17 @@ func GetPricingBaseline(c *gin.Context) {
 		}
 		for _, group := range groups {
 			factor := discount * groupRatios[group]
+			var customerMultiplier *float64
+			if negotiated, ok := ratio_setting.GetGroupModelDiscount(group, entry.Model); ok {
+				factor = negotiated
+				negotiatedCopy := negotiated
+				customerMultiplier = &negotiatedCopy
+			}
 			row.GroupPrices[group] = groupPrice{
-				GroupRatio: groupRatios[group],
-				InputUSD:   entry.InputUSD * factor,
-				OutputUSD:  entry.OutputUSD * factor,
+				GroupRatio:         groupRatios[group],
+				CustomerMultiplier: customerMultiplier,
+				InputUSD:           entry.InputUSD * factor,
+				OutputUSD:          entry.OutputUSD * factor,
 			}
 		}
 		rows = append(rows, row)
@@ -161,7 +169,7 @@ func UpdatePricingDiscount(c *gin.Context) {
 	// UpdateOption persists and then dispatches into
 	// UpdateModelDiscountByJSONString, which rebuilds the billing ratios. So
 	// the ratio map and the stored discount cannot disagree.
-	if err := model.UpdateOption("ModelDiscount", string(encoded)); err != nil {
+	if err := model.UpdateOptionAs("ModelDiscount", string(encoded), optionChangeActor(c)); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
 	}

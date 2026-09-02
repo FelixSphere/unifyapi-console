@@ -44,8 +44,8 @@ func TestCustomerStatementIsTheLedgerNotARecalculation(t *testing.T) {
 	require.Len(t, statements, 1)
 
 	statement := statements[0]
-	require.Equal(t, "7", statement.Counterparty)
-	require.Equal(t, "acme", statement.Label)
+	require.Equal(t, "vip", statement.Counterparty)
+	require.Equal(t, "vip", statement.Label)
 	require.Equal(t, "vip", statement.Group, "the tier is half the explanation of the amount")
 	require.InDelta(t, 1.00, statement.AmountUSD, 1e-9)
 	require.EqualValues(t, 5, statement.Requests)
@@ -77,21 +77,21 @@ func TestStatementLinesSumToTheStatementTotal(t *testing.T) {
 	require.InDelta(t, 10.0064, statements[0].AmountUSD, 1e-9)
 }
 
-// TestCustomersAreSeparatedByIdNotByName. Usernames are editable; billing two
-// different accounts onto one invoice because they were briefly renamed the
-// same thing is the kind of error nobody finds until a customer disputes it.
-func TestCustomersAreSeparatedByIdNotByName(t *testing.T) {
+// TestCustomerStatementCombinesEveryUserInTheCompany. User Group is the
+// customer boundary: three logins for GenAI must produce one company bill.
+func TestCustomerStatementCombinesEveryUserInTheCompany(t *testing.T) {
 	rows := []model.UsageRow{
-		{Model: "gpt-4o", UserID: 1, Username: "acme", Requests: 1, Quota: usdToQuota(5)},
-		{Model: "gpt-4o", UserID: 2, Username: "acme", Requests: 1, Quota: usdToQuota(9)},
+		{Model: "gpt-4o", UserID: 1, Username: "Aaron", UserGroup: "GenAI", Requests: 1, Quota: usdToQuota(5)},
+		{Model: "gpt-4o", UserID: 2, Username: "Joshua", UserGroup: "GenAI", Requests: 1, Quota: usdToQuota(9)},
+		{Model: "gpt-4o", UserID: 3, Username: "Chris", UserGroup: "UnifyAI", Requests: 1, Quota: usdToQuota(4)},
 	}
 	statements := BuildStatements(rows, StatementKindCustomer, "2026-08-01", "2026-08-31")
 	require.Len(t, statements, 2)
 
-	// Largest bill first, so the one worth getting right is at the top.
-	require.Equal(t, "2", statements[0].Counterparty)
-	require.InDelta(t, 9, statements[0].AmountUSD, 1e-9)
-	require.Equal(t, "1", statements[1].Counterparty)
+	require.Equal(t, "GenAI", statements[0].Counterparty)
+	require.InDelta(t, 14, statements[0].AmountUSD, 1e-9)
+	require.EqualValues(t, 2, statements[0].Requests)
+	require.Equal(t, "UnifyAI", statements[1].Counterparty)
 }
 
 // TestVendorStatementIsModelledAndTracksTheChannelRatio. The vendor side is the

@@ -56,6 +56,8 @@ export type PricingModel = {
   billing_expr?: string
   /** Pricing version returned by backend, useful for cache busting */
   pricing_version?: string
+  /** Final multiplier over official price negotiated for this user's group. */
+  customer_group_model_ratio?: number
   /**
    * Optional model metadata fields reserved for backend-provided catalog data.
    * Keep them data-driven; do not synthesize display values on the client.

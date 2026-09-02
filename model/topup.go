@@ -12,9 +12,10 @@ import (
 )
 
 type TopUp struct {
-	Id     int   `json:"id"`
-	UserId int   `json:"user_id" gorm:"index"`
-	Amount int64 `json:"amount"`
+	Id            int    `json:"id"`
+	UserId        int    `json:"user_id" gorm:"index"`
+	CustomerGroup string `json:"customer_group" gorm:"type:varchar(64);index"`
+	Amount        int64  `json:"amount"`
 	// Money means different things per gateway: epay stores the fiat charged and
 	// credits from Amount, while Stripe credits from Money (see model.Recharge,
 	// `quota = Money * QuotaPerUnit`). Do not write a fiat amount here for
@@ -26,6 +27,25 @@ type TopUp struct {
 	CreateTime      int64   `json:"create_time"`
 	CompleteTime    int64   `json:"complete_time"`
 	Status          string  `json:"status"`
+}
+
+// BeforeSave snapshots the company that owns this payment. Customer
+// statements are grouped by User Group, and a later reassignment must not move
+// historical cash between companies. Legacy rows without the snapshot fall
+// back to the user's current group in settlement_payments.go.
+func (topUp *TopUp) BeforeSave(tx *gorm.DB) error {
+	if topUp.CustomerGroup != "" || topUp.UserId == 0 {
+		return nil
+	}
+	var user User
+	if err := tx.Select("Group").First(&user, topUp.UserId).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	topUp.CustomerGroup = user.Group
+	return nil
 }
 
 const (

@@ -198,10 +198,16 @@ func reconcileKey(row model.UsageRow, groupBy GroupBy) (key, label string) {
 			label = "channel " + key
 		}
 	case GroupByCustomer:
-		key = strconv.Itoa(row.UserID)
-		label = row.Username
-		if label == "" {
-			label = "user " + key
+		// UNIFYAPI-FORK: User Group is the customer/company boundary. Several
+		// login accounts can belong to GenAI, and a customer report must fold
+		// all of them into one line rather than emit one pseudo-customer each.
+		key, label = row.UserGroup, row.UserGroup
+		if key == "" {
+			key = strconv.Itoa(row.UserID)
+			label = row.Username
+			if label == "" {
+				label = "user " + key
+			}
 		}
 	case GroupByUserTier:
 		key, label = row.UserGroup, row.UserGroup

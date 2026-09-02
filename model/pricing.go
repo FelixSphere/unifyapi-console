@@ -36,6 +36,9 @@ type Pricing struct {
 	BillingMode            string                  `json:"billing_mode,omitempty"`
 	BillingExpr            string                  `json:"billing_expr,omitempty"`
 	PricingVersion         string                  `json:"pricing_version,omitempty"`
+	// CustomerGroupModelRatio is a negotiated FINAL multiplier over the
+	// official catalog price for the authenticated user's group and this model.
+	CustomerGroupModelRatio *float64 `json:"customer_group_model_ratio,omitempty"`
 }
 
 type PricingVendor struct {
