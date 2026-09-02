@@ -10,6 +10,8 @@ package model
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -32,6 +34,7 @@ type UsageRow struct {
 	UserID           int
 	ChannelID        int
 	ChannelName      string
+	ChannelBaseURL   string
 	Requests         int64
 	PromptTokens     int64
 	CachedTokens     int64
@@ -49,6 +52,29 @@ type ReconcileQuery struct {
 	UserGroup      string
 }
 
+// NormalizeChannelBaseURL keeps the endpoint useful as an accounting
+// dimension: host casing, credentials, query strings and trailing slashes do
+// not create fake suppliers or fake channel-detail rows. The path is retained
+// because it can distinguish contracts on the same host.
+func NormalizeChannelBaseURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return strings.TrimRight(raw, "/")
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	parsed.RawPath = ""
+	return strings.TrimRight(parsed.String(), "/")
+}
+
 // reconcileScanRow mirrors the SELECT list. It is separate from
 // service.UsageRow so a column rename cannot silently change the report's
 // meaning: the mapping is written out once, below.
@@ -59,6 +85,7 @@ type reconcileScanRow struct {
 	Username         string
 	UserID           int
 	ChannelID        int
+	ChannelBaseURL   string
 	Requests         int64
 	PromptTokens     int64
 	CachedTokens     int64
@@ -89,6 +116,7 @@ func FetchReconcileUsage(query ReconcileQuery) ([]UsageRow, bool, error) {
 			username,
 			user_id,
 			channel_id,
+			channel_base_url,
 			COUNT(*) AS requests,
 			COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
 			COALESCE(SUM(cached_tokens), 0) AS cached_tokens,
@@ -96,7 +124,7 @@ func FetchReconcileUsage(query ReconcileQuery) ([]UsageRow, bool, error) {
 			COALESCE(SUM(quota), 0) AS quota`).
 		Where("type = ?", LogTypeConsume).
 		Where("created_at >= ? AND created_at < ?", query.StartTimestamp, query.EndTimestamp).
-		Group(dayExpr + ", model_name, " + quoteColumn("group") + ", username, user_id, channel_id")
+		Group(dayExpr + ", model_name, " + quoteColumn("group") + ", username, user_id, channel_id, channel_base_url")
 
 	if query.ModelName != "" {
 		tx = tx.Where("model_name = ?", query.ModelName)
@@ -121,10 +149,18 @@ func FetchReconcileUsage(query ReconcileQuery) ([]UsageRow, bool, error) {
 		scanned = scanned[:maxReconcileRows]
 	}
 
-	channelNames := reconcileChannelNames(scanned)
+	channelDetails := reconcileChannelDetails(scanned)
 
 	rows := make([]UsageRow, 0, len(scanned))
 	for _, row := range scanned {
+		detail := channelDetails[row.ChannelID]
+		baseURL := NormalizeChannelBaseURL(row.ChannelBaseURL)
+		if baseURL == "" {
+			// Rows written before channel_base_url was added have no snapshot.
+			// Falling back to the current channel is explicitly best-effort; new
+			// rows never take this branch and remain historically stable.
+			baseURL = NormalizeChannelBaseURL(detail.BaseURL)
+		}
 		rows = append(rows, UsageRow{
 			Day:              row.Day,
 			Model:            row.ModelName,
@@ -132,7 +168,8 @@ func FetchReconcileUsage(query ReconcileQuery) ([]UsageRow, bool, error) {
 			Username:         row.Username,
 			UserID:           row.UserID,
 			ChannelID:        row.ChannelID,
-			ChannelName:      channelNames[row.ChannelID],
+			ChannelName:      detail.Name,
+			ChannelBaseURL:   baseURL,
 			Requests:         row.Requests,
 			PromptTokens:     row.PromptTokens,
 			CachedTokens:     row.CachedTokens,
@@ -170,9 +207,14 @@ func quoteColumn(name string) string {
 	return `"` + name + `"`
 }
 
-// reconcileChannelNames resolves channel ids to names in one query, so a report
-// grouped by channel is readable without N lookups.
-func reconcileChannelNames(rows []reconcileScanRow) map[int]string {
+type reconcileChannelDetail struct {
+	Name    string
+	BaseURL string
+}
+
+// reconcileChannelDetails resolves display names and legacy-row URL fallbacks
+// in one query, so a report never performs N channel lookups.
+func reconcileChannelDetails(rows []reconcileScanRow) map[int]reconcileChannelDetail {
 	ids := map[int]bool{}
 	for _, row := range rows {
 		if row.ChannelID != 0 {
@@ -180,7 +222,7 @@ func reconcileChannelNames(rows []reconcileScanRow) map[int]string {
 		}
 	}
 	if len(ids) == 0 {
-		return map[int]string{}
+		return map[int]reconcileChannelDetail{}
 	}
 
 	list := make([]int, 0, len(ids))
@@ -188,20 +230,20 @@ func reconcileChannelNames(rows []reconcileScanRow) map[int]string {
 		list = append(list, id)
 	}
 
-	var channels []struct {
-		Id   int
-		Name string
-	}
-	names := make(map[int]string, len(list))
+	var channels []Channel
+	details := make(map[int]reconcileChannelDetail, len(list))
 	// A failure here costs labels, not numbers, so the report still stands.
-	if err := DB.Table("channels").Select("id, name").Where("id IN ?", list).Find(&channels).Error; err != nil {
+	if err := DB.Table("channels").Select("id, name, type, base_url").Where("id IN ?", list).Find(&channels).Error; err != nil {
 		common.SysError("reconcile: failed to resolve channel names: " + err.Error())
-		return names
+		return details
 	}
 	for _, channel := range channels {
-		names[channel.Id] = channel.Name
+		details[channel.Id] = reconcileChannelDetail{
+			Name:    channel.Name,
+			BaseURL: channel.GetBaseURL(),
+		}
 	}
-	return names
+	return details
 }
 
 // ParseReconcileWindow turns caller-supplied dates into a timestamp range.

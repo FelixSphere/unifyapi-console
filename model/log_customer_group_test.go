@@ -34,6 +34,7 @@ func TestRecordConsumeLogKeepsCustomerSeparateFromRoutingGroup(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Set("username", "Aaron")
 	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "GenAI")
+	common.SetContextKey(ctx, constant.ContextKeyChannelBaseUrl, "https://openrouter.ai/api/v1")
 
 	RecordConsumeLog(ctx, 7, RecordConsumeLogParams{
 		ModelName: "claude-opus-5",
@@ -45,6 +46,8 @@ func TestRecordConsumeLogKeepsCustomerSeparateFromRoutingGroup(t *testing.T) {
 	var log Log
 	require.NoError(t, db.First(&log).Error)
 	require.Equal(t, "GenAI", log.Group, "logs.group is the customer/company")
+	require.Equal(t, "https://openrouter.ai/api/v1", log.ChannelBaseURL,
+		"the immutable ledger snapshots the endpoint that was actually hit")
 	var other map[string]interface{}
 	require.NoError(t, common.Unmarshal([]byte(log.Other), &other))
 	require.Equal(t, "model--claude-opus-5", other["routing_group"])

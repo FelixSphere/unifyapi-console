@@ -179,9 +179,9 @@ func TestTotalEqualsTheSumOfLines(t *testing.T) {
 // a wrong grouping still produces a plausible-looking report.
 func TestGroupingCollapsesTheRightRows(t *testing.T) {
 	rows := []model.UsageRow{
-		{Day: "2026-08-01", Model: "gpt-4o", UserGroup: "Vip User", Username: "acme", UserID: 1, ChannelID: 1, Requests: 1, Quota: usdToQuota(1)},
-		{Day: "2026-08-02", Model: "gpt-4o", UserGroup: "Vip User", Username: "acme", UserID: 1, ChannelID: 2, Requests: 1, Quota: usdToQuota(1)},
-		{Day: "2026-08-02", Model: "claude-opus-5", UserGroup: "Standard User", Username: "globex", UserID: 2, ChannelID: 2, Requests: 1, Quota: usdToQuota(1)},
+		{Day: "2026-08-01", Model: "gpt-4o", UserGroup: "Vip User", Username: "acme", UserID: 1, ChannelID: 1, ChannelBaseURL: "https://api.openai.com", Requests: 1, Quota: usdToQuota(1)},
+		{Day: "2026-08-02", Model: "gpt-4o", UserGroup: "Vip User", Username: "acme", UserID: 1, ChannelID: 2, ChannelBaseURL: "https://api.anthropic.com", Requests: 1, Quota: usdToQuota(1)},
+		{Day: "2026-08-02", Model: "claude-opus-5", UserGroup: "Standard User", Username: "globex", UserID: 2, ChannelID: 2, ChannelBaseURL: "https://api.anthropic.com", Requests: 1, Quota: usdToQuota(1)},
 	}
 
 	for _, tc := range []struct {
@@ -219,12 +219,12 @@ func TestCustomerGroupingCombinesSeveralUsersInTheSameCompany(t *testing.T) {
 	require.EqualValues(t, 1, byCustomer["UnifyAI"].Requests)
 }
 
-func TestGroupByVendorUsesTheCatalogVendor(t *testing.T) {
+func TestGroupByVendorUsesTheActualChannelEndpoint(t *testing.T) {
 	rows := []model.UsageRow{
-		{Model: "gpt-4o", ChannelID: 1, Requests: 1, Quota: usdToQuota(1)},
-		{Model: "gpt-4o-mini", ChannelID: 1, Requests: 1, Quota: usdToQuota(1)},
-		{Model: "claude-opus-5", ChannelID: 1, Requests: 1, Quota: usdToQuota(1)},
-		{Model: "seedance-2.0", ChannelID: 1, Requests: 1, Quota: usdToQuota(1)},
+		{Model: "gpt-4o", ChannelID: 1, ChannelBaseURL: "https://openrouter.ai/api/v1", Requests: 1, Quota: usdToQuota(1)},
+		{Model: "claude-opus-5", ChannelID: 1, ChannelBaseURL: "https://openrouter.ai/api/v1", Requests: 1, Quota: usdToQuota(1)},
+		{Model: "gpt-4o-mini", ChannelID: 2, ChannelBaseURL: "https://api.flatkey.ai/v1", Requests: 1, Quota: usdToQuota(1)},
+		{Model: "gpt-4o", ChannelID: 3, ChannelName: "private reseller", ChannelBaseURL: "https://llm.example.net/v1", Requests: 1, Quota: usdToQuota(1)},
 	}
 
 	report := Reconcile(rows, GroupByVendor)
@@ -233,10 +233,12 @@ func TestGroupByVendorUsesTheCatalogVendor(t *testing.T) {
 		byKey[line.Key] = line
 	}
 
-	require.EqualValues(t, 2, byKey["openai"].Requests, "both gpt models roll up to openai")
-	require.EqualValues(t, 1, byKey["anthropic"].Requests)
-	require.EqualValues(t, 1, byKey["unlisted"].Requests,
-		"a catalog entry with no vendor must land in 'unlisted', not vanish")
+	require.EqualValues(t, 2, byKey["openrouter"].Requests,
+		"different model authors through one reseller are one payable")
+	require.Equal(t, "OpenRouter", byKey["openrouter"].Label)
+	require.EqualValues(t, 1, byKey["flatkey"].Requests)
+	require.Equal(t, "Flatkey", byKey["flatkey"].Label)
+	require.EqualValues(t, 1, byKey["llm.example.net"].Requests)
 }
 
 // TestMarginPctIsUndefinedWithoutRevenue -- reporting -100% or an infinity for
@@ -269,9 +271,9 @@ func TestParseGroupByRejectsUnknownDimensions(t *testing.T) {
 func TestCompareVendorInvoicesClassifiesEachOutcome(t *testing.T) {
 	report := Reconcile([]model.UsageRow{
 		// $2.50 modelled for openai.
-		{Model: "gpt-4o", ChannelID: 1, Requests: 1, PromptTokens: 1_000_000, Quota: usdToQuota(3)},
+		{Model: "gpt-4o", ChannelID: 1, ChannelBaseURL: "https://api.openai.com", Requests: 1, PromptTokens: 1_000_000, Quota: usdToQuota(3)},
 		// $5.00 modelled for anthropic.
-		{Model: "claude-opus-5", ChannelID: 1, Requests: 1, PromptTokens: 1_000_000, Quota: usdToQuota(6)},
+		{Model: "claude-opus-5", ChannelID: 2, ChannelBaseURL: "https://api.anthropic.com", Requests: 1, PromptTokens: 1_000_000, Quota: usdToQuota(6)},
 	}, GroupByVendor)
 
 	variances := CompareVendorInvoices(report, map[string]float64{
@@ -297,7 +299,7 @@ func TestCompareVendorInvoicesClassifiesEachOutcome(t *testing.T) {
 
 func TestCompareVendorInvoicesFlagsAMissingInvoice(t *testing.T) {
 	report := Reconcile([]model.UsageRow{
-		{Model: "gpt-4o", ChannelID: 1, Requests: 1, PromptTokens: 1_000_000, Quota: usdToQuota(3)},
+		{Model: "gpt-4o", ChannelID: 1, ChannelBaseURL: "https://api.openai.com", Requests: 1, PromptTokens: 1_000_000, Quota: usdToQuota(3)},
 	}, GroupByVendor)
 
 	variances := CompareVendorInvoices(report, map[string]float64{})

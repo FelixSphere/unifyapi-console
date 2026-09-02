@@ -10,6 +10,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -107,6 +108,7 @@ func TestVendorStatementIsModelledAndTracksTheChannelRatio(t *testing.T) {
 	// gpt-4o at list: 1M prompt + 1M completion.
 	rows := []model.UsageRow{{
 		Model: "gpt-4o", ChannelID: 3, UserID: 1, Username: "a", Requests: 1,
+		ChannelName: "flatkey-primary", ChannelBaseURL: "https://api.flatkey.ai/v1",
 		PromptTokens: 1_000_000, CompletionTokens: 1_000_000, Quota: usdToQuota(100),
 	}}
 
@@ -122,7 +124,11 @@ func TestVendorStatementIsModelledAndTracksTheChannelRatio(t *testing.T) {
 	// which is exactly what a broken catalog lookup produces.
 	require.InDelta(t, 12.50, list[0].AmountUSD, 1e-9)
 	require.InDelta(t, 6.25, discounted[0].AmountUSD, 1e-9)
-	require.Equal(t, "openai", discounted[0].Counterparty)
+	require.Equal(t, "flatkey", discounted[0].Counterparty)
+	require.Equal(t, "Flatkey", discounted[0].Label)
+	require.Equal(t, "https://api.flatkey.ai/v1", discounted[0].Lines[0].ChannelBaseURL)
+	require.Equal(t, "flatkey-primary", discounted[0].Lines[0].ChannelName)
+	require.InDelta(t, 0.5, discounted[0].Lines[0].CostRatio, 1e-9)
 
 	// And the customer side of the very same rows is untouched by it: routing
 	// picks a channel, so a channel's cost must never reach a customer's bill.
@@ -136,25 +142,101 @@ func TestVendorStatementIsModelledAndTracksTheChannelRatio(t *testing.T) {
 // the operator would under-pay an invoice without ever seeing why.
 func TestVendorStatementFlagsTrafficItCouldNotPrice(t *testing.T) {
 	rows := []model.UsageRow{
-		{Model: "gpt-4o", ChannelID: 1, UserID: 1, Username: "a", Requests: 2,
+		{Model: "gpt-4o", ChannelID: 1, ChannelBaseURL: "https://openrouter.ai/api", UserID: 1, Username: "a", Requests: 2,
 			PromptTokens: 1_000_000, CompletionTokens: 0, Quota: usdToQuota(10)},
-		{Model: "not-in-the-catalog", ChannelID: 1, UserID: 1, Username: "a", Requests: 5,
+		{Model: "not-in-the-catalog", ChannelID: 1, ChannelBaseURL: "https://openrouter.ai/api", UserID: 1, Username: "a", Requests: 5,
 			PromptTokens: 9_000_000, CompletionTokens: 9_000_000, Quota: usdToQuota(50)},
 	}
 
 	statements := BuildStatements(rows, StatementKindVendor, "2026-08-01", "2026-08-31")
 
-	openai, found := statementFor(statements, "openai")
-	require.True(t, found, "gpt-4o must settle against its catalog vendor")
-	require.True(t, openai.Complete())
+	openrouter, found := statementFor(statements, "openrouter")
+	require.True(t, found, "all traffic through the reseller belongs on its payable")
+	require.False(t, openrouter.Complete())
+	require.EqualValues(t, 5, openrouter.UnpricedRequests)
+	require.Equal(t, []string{"not-in-the-catalog"}, openrouter.UnpricedModels)
+	require.InDelta(t, 2.50, openrouter.AmountUSD, 1e-9)
+	require.True(t, openrouter.Lines[1].Unpriced)
+}
 
-	unlisted, found := statementFor(statements, "unlisted")
-	require.True(t, found, "unpriceable traffic must still appear, not vanish")
-	require.False(t, unlisted.Complete())
-	require.EqualValues(t, 5, unlisted.UnpricedRequests)
-	require.Equal(t, []string{"not-in-the-catalog"}, unlisted.UnpricedModels)
-	require.Zero(t, unlisted.AmountUSD, "nothing could be modelled, so nothing is claimed")
-	require.True(t, unlisted.Lines[0].Unpriced)
+func TestVendorLinesPreserveModelChannelAndCostRatio(t *testing.T) {
+	require.NoError(t, ratio_setting.UpdateChannelCostRatioByJSONString(`{"8":0.7,"9":0.9}`))
+	t.Cleanup(func() { require.NoError(t, ratio_setting.UpdateChannelCostRatioByJSONString(`{}`)) })
+	rows := []model.UsageRow{
+		{Model: "gpt-4o", ChannelID: 8, ChannelName: "or-a", ChannelBaseURL: "https://openrouter.ai/api", Requests: 1, PromptTokens: 1000},
+		{Model: "gpt-4o", ChannelID: 9, ChannelName: "or-b", ChannelBaseURL: "https://openrouter.ai/api", Requests: 2, PromptTokens: 2000},
+	}
+	statements := BuildStatements(rows, StatementKindVendor, "2026-08-01", "2026-08-31")
+	require.Len(t, statements, 1)
+	require.Len(t, statements[0].Lines, 2)
+	byChannel := map[int]StatementLine{}
+	for _, line := range statements[0].Lines {
+		byChannel[line.ChannelID] = line
+	}
+	require.Equal(t, "or-a", byChannel[8].ChannelName)
+	require.InDelta(t, 0.7, byChannel[8].CostRatio, 1e-9)
+	require.EqualValues(t, 2, byChannel[9].Requests)
+	require.InDelta(t, 0.9, byChannel[9].CostRatio, 1e-9)
+}
+
+func TestSupplierRollupUsesChannelHostNeverModelAuthor(t *testing.T) {
+	rows := []model.UsageRow{
+		// Different model authors, one Flatkey payable.
+		{Model: "gpt-4o", ChannelID: 1, ChannelBaseURL: "https://console.flatkey.ai/", Requests: 1, PromptTokens: 1000},
+		{Model: "claude-opus-5", ChannelID: 1, ChannelBaseURL: "https://console.flatkey.ai/v1", Requests: 2, PromptTokens: 2000},
+		// Same model author, a different actual supplier.
+		{Model: "gpt-4o", ChannelID: 2, ChannelBaseURL: "https://openrouter.ai", Requests: 3, PromptTokens: 3000},
+		{Model: "gpt-4o", ChannelID: 3, ChannelBaseURL: "https://openrouter.ai/api", Requests: 4, PromptTokens: 4000},
+		// Unknown hosts stay independent.
+		{Model: "gpt-4o", ChannelID: 4, ChannelBaseURL: "https://API.Reseller.Example/v1", Requests: 5, PromptTokens: 5000},
+	}
+	statements := BuildStatements(rows, StatementKindVendor, "2026-08-01", "2026-08-31")
+	require.Len(t, statements, 3)
+
+	flatkey, found := statementFor(statements, "flatkey")
+	require.True(t, found)
+	require.Equal(t, "Flatkey", flatkey.Label)
+	require.EqualValues(t, 3, flatkey.Requests)
+	require.Len(t, flatkey.Lines, 2)
+
+	openrouter, found := statementFor(statements, "openrouter")
+	require.True(t, found)
+	require.Equal(t, "OpenRouter", openrouter.Label)
+	require.EqualValues(t, 7, openrouter.Requests,
+		"root and /api paths on openrouter.ai are one supplier")
+	require.Len(t, openrouter.Lines, 2, "channel details stay separate below the supplier")
+
+	unknown, found := statementFor(statements, "api.reseller.example")
+	require.True(t, found)
+	require.Equal(t, "api.reseller.example", unknown.Label)
+	require.EqualValues(t, 5, unknown.Requests)
+}
+
+func TestStatementTotalEqualsEveryModelChannelDetail(t *testing.T) {
+	rows := []model.UsageRow{
+		{Model: "gpt-4o", ChannelID: 1, ChannelBaseURL: "https://console.flatkey.ai", Requests: 1, PromptTokens: 1_000_000},
+		{Model: "gpt-4o", ChannelID: 2, ChannelBaseURL: "https://console.flatkey.ai/api", Requests: 2, CompletionTokens: 1_000_000},
+		{Model: "claude-opus-5", ChannelID: 1, ChannelBaseURL: "https://console.flatkey.ai", Requests: 3, PromptTokens: 1_000_000},
+	}
+	statement, found := statementFor(
+		BuildStatements(rows, StatementKindVendor, "2026-08-01", "2026-08-31"), "flatkey")
+	require.True(t, found)
+	var amount float64
+	var requests int64
+	for _, line := range statement.Lines {
+		amount += line.AmountUSD
+		requests += line.Requests
+	}
+	require.InDelta(t, statement.AmountUSD, amount, 1e-9)
+	require.Equal(t, statement.Requests, requests)
+}
+
+func TestValidateClosedCalendarMonth(t *testing.T) {
+	today := time.Date(2026, time.September, 15, 9, 0, 0, 0, time.Local)
+	require.NoError(t, ValidateClosedCalendarMonth("2026-08-01", "2026-08-31", today))
+	require.Error(t, ValidateClosedCalendarMonth("2026-09-01", "2026-09-30", today), "open month")
+	require.Error(t, ValidateClosedCalendarMonth("2026-08-02", "2026-08-31", today), "partial month")
+	require.Error(t, ValidateClosedCalendarMonth("2026-08-01", "2026-09-01", today), "cross-month range")
 }
 
 // TestCustomerStatementIsNeverIncomplete. An uncatalogued model has no cost we

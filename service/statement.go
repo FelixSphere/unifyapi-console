@@ -25,8 +25,10 @@ package service
 // without a database.
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -54,6 +56,30 @@ func ParseStatementKind(raw string) (StatementKind, bool) {
 	}
 }
 
+// ValidateClosedCalendarMonth guards the accounting boundary at the server.
+// The UI may preview any month, but an official statement can only be issued
+// for one complete natural month that ended before today.
+func ValidateClosedCalendarMonth(start, end string, today time.Time) error {
+	const layout = "2006-01-02"
+	location := today.Location()
+	from, err := time.ParseInLocation(layout, start, location)
+	if err != nil {
+		return fmt.Errorf("invalid start %q: expected YYYY-MM-DD", start)
+	}
+	to, err := time.ParseInLocation(layout, end, location)
+	if err != nil {
+		return fmt.Errorf("invalid end %q: expected YYYY-MM-DD", end)
+	}
+	if from.Day() != 1 || !to.Equal(from.AddDate(0, 1, -1)) {
+		return fmt.Errorf("official statements require one complete calendar month")
+	}
+	todayStart := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, location)
+	if !to.Before(todayStart) {
+		return fmt.Errorf("period %s is still open; preview is allowed but issuing is not", from.Format("2006-01"))
+	}
+	return nil
+}
+
 // StatementLine is one model's worth of activity on a statement.
 //
 // Models, not days: a counterparty checking a bill asks "what did I pay for
@@ -61,6 +87,10 @@ func ParseStatementKind(raw string) (StatementKind, bool) {
 // is asking. The daily grain is still in the profit screen.
 type StatementLine struct {
 	Model            string  `json:"model"`
+	ChannelID        int     `json:"channel_id,omitempty"`
+	ChannelName      string  `json:"channel_name,omitempty"`
+	ChannelBaseURL   string  `json:"channel_base_url,omitempty"`
+	CostRatio        float64 `json:"cost_ratio,omitempty"`
 	Requests         int64   `json:"requests"`
 	PromptTokens     int64   `json:"prompt_tokens"`
 	CachedTokens     int64   `json:"cached_tokens"`
@@ -77,9 +107,10 @@ type StatementLine struct {
 type Statement struct {
 	Kind StatementKind `json:"kind"`
 
-	// Counterparty is the stable id -- a User Group for a customer/company, a
-	// models.dev vendor id for an upstream. Label is what it was called at build
-	// time. A tenant may contain several login users but receives one statement.
+	// Counterparty is the stable id -- a User Group for a customer/company, or
+	// the supplier identified from the actual Channel Base URL for an upstream.
+	// Label is what it was called at build time. A tenant may contain several
+	// login users but receives one statement.
 	Counterparty string `json:"counterparty"`
 	Label        string `json:"label"`
 
@@ -148,10 +179,22 @@ func BuildStatements(rows []model.UsageRow, kind StatementKind, periodStart, per
 			entry.unpriced[row.Model] = true
 		}
 
-		line, ok := entry.byModel[row.Model]
+		lineKey := row.Model
+		if kind == StatementKindVendor {
+			// A supplier invoice must retain the channel that incurred the cost.
+			// The same model on two channels can have different purchasing ratios.
+			lineKey = row.Model + "\x00" + strconv.Itoa(row.ChannelID) + "\x00" + model.NormalizeChannelBaseURL(row.ChannelBaseURL)
+		}
+		line, ok := entry.byModel[lineKey]
 		if !ok {
 			line = &StatementLine{Model: row.Model}
-			entry.byModel[row.Model] = line
+			if kind == StatementKindVendor {
+				line.ChannelID = row.ChannelID
+				line.ChannelName = row.ChannelName
+				line.ChannelBaseURL = model.NormalizeChannelBaseURL(row.ChannelBaseURL)
+				line.CostRatio = ratio_setting.GetChannelCostRatio(row.ChannelID)
+			}
+			entry.byModel[lineKey] = line
 		}
 		line.Requests += row.Requests
 		line.PromptTokens += row.PromptTokens
@@ -214,11 +257,8 @@ func statementParty(row model.UsageRow, kind StatementKind) (key, label, group s
 		return key, label, ""
 	}
 
-	key = "unlisted"
-	if entry, ok := ratio_setting.CatalogEntryFor(row.Model); ok && entry.Vendor != "" {
-		key = entry.Vendor
-	}
-	return key, key, ""
+	key, label = UpstreamVendor(row)
+	return key, label, ""
 }
 
 func sortedLines(byModel map[string]*StatementLine) []StatementLine {
@@ -230,7 +270,10 @@ func sortedLines(byModel map[string]*StatementLine) []StatementLine {
 		if out[i].AmountUSD != out[j].AmountUSD {
 			return out[i].AmountUSD > out[j].AmountUSD
 		}
-		return out[i].Model < out[j].Model
+		if out[i].Model != out[j].Model {
+			return out[i].Model < out[j].Model
+		}
+		return out[i].ChannelID < out[j].ChannelID
 	})
 	return out
 }

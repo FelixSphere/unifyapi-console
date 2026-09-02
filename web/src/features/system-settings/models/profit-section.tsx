@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -38,13 +39,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-import { getReconciliation } from '../api'
+import { downloadReconciliationCSV, getReconciliation } from '../api'
 import { SettingsSection } from '../components/settings-section'
 import type { ReconcileGroupBy, ReconcileLine } from '../types'
 import {
@@ -71,8 +68,10 @@ export function ProfitSection() {
   const [presetId, setPresetId] = useState('7d')
   const [groupBy, setGroupBy] = useState<ReconcileGroupBy>('model')
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
 
-  const preset = PERIOD_PRESETS.find((p) => p.id === presetId) ?? PERIOD_PRESETS[1]
+  const preset =
+    PERIOD_PRESETS.find((p) => p.id === presetId) ?? PERIOD_PRESETS[1]
   // Resolved once per render against the real clock. The window is part of the
   // query key, so crossing midnight refetches rather than serving yesterday.
   const period = useMemo(() => resolvePeriod(preset, new Date()), [preset])
@@ -87,6 +86,16 @@ export function ProfitSection() {
   const hasCostBasis = Object.keys(costRatios).length > 0
 
   const csvHref = `/api/pricing/reconcile.csv?start=${period.start}&end=${period.end}&group_by=${groupBy}`
+  const downloadCSV = async () => {
+    setDownloading(true)
+    try {
+      await downloadReconciliationCSV(csvHref)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Failed'))
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   return (
     <SettingsSection title={t('Profit')}>
@@ -125,22 +134,30 @@ export function ProfitSection() {
             variant='outline'
             size='sm'
             className='ml-auto'
-            render={<a href={csvHref} download />}
+            disabled={downloading}
+            onClick={downloadCSV}
           >
             <Download className='size-4' />
             {t('Export CSV')}
           </Button>
         </div>
 
-        {report ? <ProfitHeadline total={report.total} hasCostBasis={hasCostBasis} /> : null}
+        {report ? (
+          <ProfitHeadline total={report.total} hasCostBasis={hasCostBasis} />
+        ) : null}
 
         {data?.warning ? (
           <Alert variant='destructive'>
-            <AlertDescription className='text-xs'>{data.warning}</AlertDescription>
+            <AlertDescription className='text-xs'>
+              {data.warning}
+            </AlertDescription>
           </Alert>
         ) : null}
 
-        <Tabs value={groupBy} onValueChange={(v) => setGroupBy(v as ReconcileGroupBy)}>
+        <Tabs
+          value={groupBy}
+          onValueChange={(v) => setGroupBy(v as ReconcileGroupBy)}
+        >
           <TabsList>
             {DIMENSIONS.map((d) => (
               <TabsTrigger key={d.id} value={d.id}>
@@ -151,7 +168,9 @@ export function ProfitSection() {
         </Tabs>
 
         {isLoading ? (
-          <div className='text-muted-foreground p-6 text-sm'>{t('Loading...')}</div>
+          <div className='text-muted-foreground p-6 text-sm'>
+            {t('Loading...')}
+          </div>
         ) : null}
         {!isLoading && isError ? (
           <Alert variant='destructive'>
@@ -166,9 +185,13 @@ export function ProfitSection() {
                   <TableHead className='w-8' />
                   <TableHead>{t('Name')}</TableHead>
                   <TableHead className='text-right'>{t('Requests')}</TableHead>
-                  <TableHead className='text-right'>{t('Tokens in/out')}</TableHead>
+                  <TableHead className='text-right'>
+                    {t('Tokens in/out')}
+                  </TableHead>
                   <TableHead className='text-right'>{t('Billed')}</TableHead>
-                  <TableHead className='text-right'>{t('Upstream cost')}</TableHead>
+                  <TableHead className='text-right'>
+                    {t('Upstream cost')}
+                  </TableHead>
                   <TableHead className='text-right'>{t('Margin')}</TableHead>
                   <TableHead className='text-right'>{t('Margin %')}</TableHead>
                 </TableRow>
@@ -187,7 +210,10 @@ export function ProfitSection() {
                 ))}
                 {report && report.lines.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className='text-muted-foreground py-8 text-center text-sm'>
+                    <TableCell
+                      colSpan={8}
+                      className='text-muted-foreground py-8 text-center text-sm'
+                    >
                       {t('No usage in this period.')}
                     </TableCell>
                   </TableRow>
@@ -225,7 +251,9 @@ function marginToneClass(health: ReturnType<typeof marginHealth>): string {
   }
 }
 
-function statToneClass(tone: 'default' | 'positive' | 'negative' | 'muted'): string {
+function statToneClass(
+  tone: 'default' | 'positive' | 'negative' | 'muted'
+): string {
   switch (tone) {
     case 'positive':
       return 'text-emerald-600 dark:text-emerald-400'
@@ -254,7 +282,11 @@ function headlineIcon(
   positive: boolean
 ): React.ReactNode {
   if (health === 'unmeasured') return null
-  return positive ? <TrendingUp className='size-4' /> : <TrendingDown className='size-4' />
+  return positive ? (
+    <TrendingUp className='size-4' />
+  ) : (
+    <TrendingDown className='size-4' />
+  )
 }
 
 function ProfitHeadline({
@@ -270,8 +302,15 @@ function ProfitHeadline({
 
   return (
     <div className='grid gap-3 sm:grid-cols-3'>
-      <Stat label={t('Billed to customers')} value={formatUSD(total.revenue_usd)} />
-      <Stat label={t('Upstream cost')} value={formatUSD(total.cost_usd)} muted />
+      <Stat
+        label={t('Billed to customers')}
+        value={formatUSD(total.revenue_usd)}
+      />
+      <Stat
+        label={t('Upstream cost')}
+        value={formatUSD(total.cost_usd)}
+        muted
+      />
       <Stat
         label={t('Margin')}
         value={formatUSD(total.margin_usd)}
@@ -302,7 +341,9 @@ function Stat({
   return (
     <div className='rounded-md border p-3'>
       <div className='text-muted-foreground text-xs'>{label}</div>
-      <div className={`flex items-center gap-2 font-mono text-xl font-semibold tabular-nums ${toneClass}`}>
+      <div
+        className={`flex items-center gap-2 font-mono text-xl font-semibold tabular-nums ${toneClass}`}
+      >
         {icon}
         {value}
       </div>
@@ -338,17 +379,27 @@ function ProfitRow({
         aria-expanded={open}
       >
         <TableCell className='py-2'>
-          {open ? <ChevronDown className='size-4' /> : <ChevronRight className='size-4' />}
+          {open ? (
+            <ChevronDown className='size-4' />
+          ) : (
+            <ChevronRight className='size-4' />
+          )}
         </TableCell>
         <TableCell className='font-mono text-xs'>
           {line.label}
           {health === 'loss' ? (
-            <Badge variant='outline' className='text-destructive ml-2 text-[10px]'>
+            <Badge
+              variant='outline'
+              className='text-destructive ml-2 text-[10px]'
+            >
               {t('losing money')}
             </Badge>
           ) : null}
           {line.unpriced_requests > 0 ? (
-            <Badge variant='outline' className='text-destructive ml-2 gap-1 text-[10px]'>
+            <Badge
+              variant='outline'
+              className='text-destructive ml-2 gap-1 text-[10px]'
+            >
               <AlertTriangle className='size-3' />
               {t('not costable')}
             </Badge>
@@ -357,8 +408,9 @@ function ProfitRow({
         <TableCell className='text-right font-mono text-xs tabular-nums'>
           {line.requests.toLocaleString()}
         </TableCell>
-        <TableCell className='text-right font-mono text-xs tabular-nums whitespace-nowrap'>
-          {formatTokens(line.prompt_tokens)} / {formatTokens(line.completion_tokens)}
+        <TableCell className='text-right font-mono text-xs whitespace-nowrap tabular-nums'>
+          {formatTokens(line.prompt_tokens)} /{' '}
+          {formatTokens(line.completion_tokens)}
           {hit !== null && hit > 0 ? (
             <span className='text-muted-foreground block text-[10px]'>
               {t('cache')} {(hit * 100).toFixed(0)}%
@@ -371,10 +423,14 @@ function ProfitRow({
         <TableCell className='text-muted-foreground text-right font-mono text-xs tabular-nums'>
           {formatUSD(line.cost_usd)}
         </TableCell>
-        <TableCell className={`text-right font-mono text-xs tabular-nums ${marginClass}`}>
+        <TableCell
+          className={`text-right font-mono text-xs tabular-nums ${marginClass}`}
+        >
           {formatUSD(line.margin_usd)}
         </TableCell>
-        <TableCell className={`text-right font-mono text-xs tabular-nums ${marginClass}`}>
+        <TableCell
+          className={`text-right font-mono text-xs tabular-nums ${marginClass}`}
+        >
           {health === 'unmeasured' ? '—' : formatPct(line)}
         </TableCell>
       </TableRow>

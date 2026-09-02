@@ -9,6 +9,7 @@ reflecting the basis it was settled on.
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
+import type { SettlementRecord, SettlementRow, Statement } from '../../types'
 import {
   DRIFT_TOLERANCE_USD,
   PRIMARY_ACTION_LABELS,
@@ -20,17 +21,12 @@ import {
   formatSigned,
   isPeriodClosed,
   monthPeriod,
-  paymentsTotalUSD,
+  periodFromMonthLabel,
   recentPeriods,
   settlementState,
+  statementIsBalanced,
   varianceVerdict,
 } from '../settlement-logic'
-import type {
-  CustomerPayment,
-  SettlementRecord,
-  SettlementRow,
-  Statement,
-} from '../../types'
 
 function statement(over: Partial<Statement> = {}): Statement {
   return {
@@ -102,7 +98,10 @@ describe('monthPeriod', () => {
   test('resolves in local time, so an evening does not roll the month', () => {
     // 23:30 on the 1st. toISOString() would report the 2nd east of Greenwich —
     // harmless here, fatal on the boundary days this function is made of.
-    assert.equal(monthPeriod(new Date(2026, 8, 1, 23, 30), 0).start, '2026-09-01')
+    assert.equal(
+      monthPeriod(new Date(2026, 8, 1, 23, 30), 0).start,
+      '2026-09-01'
+    )
   })
 
   test('periods do not overlap or leave a gap', () => {
@@ -113,8 +112,34 @@ describe('monthPeriod', () => {
       const previousEnd = new Date(`${periods[i - 1][1]}T00:00:00`)
       const thisStart = new Date(`${periods[i][0]}T00:00:00`)
       const gapDays = (thisStart.getTime() - previousEnd.getTime()) / 86_400_000
-      assert.equal(gapDays, 1, `${periods[i - 1][1]} → ${periods[i][0]} must be consecutive`)
+      assert.equal(
+        gapDays,
+        1,
+        `${periods[i - 1][1]} → ${periods[i][0]} must be consecutive`
+      )
     }
+  })
+})
+
+describe('periodFromMonthLabel', () => {
+  test('supports an arbitrary natural month, not only the quick choices', () => {
+    assert.deepEqual(periodFromMonthLabel('2024-02'), {
+      start: '2024-02-01',
+      end: '2024-02-29',
+      label: '2024-02',
+    })
+  })
+
+  test('keeps the current and previous five months one click away', () => {
+    assert.deepEqual(
+      recentPeriods(new Date(2026, 8, 15)).map((period) => period.label),
+      ['2026-09', '2026-08', '2026-07', '2026-06', '2026-05', '2026-04']
+    )
+  })
+
+  test('rejects malformed and impossible month labels', () => {
+    assert.equal(periodFromMonthLabel('2026-13'), null)
+    assert.equal(periodFromMonthLabel('June 2026'), null)
   })
 })
 
@@ -198,7 +223,10 @@ describe('varianceVerdict', () => {
       amount_usd: 1000,
       invoiced_usd: 1000 * (1 + (VARIANCE_TOLERANCE_PCT - 0.1) / 100),
     })
-    assert.equal(varianceVerdict({ statement: statement(), settlement: inside }), 'reconciled')
+    assert.equal(
+      varianceVerdict({ statement: statement(), settlement: inside }),
+      'reconciled'
+    )
   })
 
   test('the tolerance matches the server', () => {
@@ -210,14 +238,22 @@ describe('varianceVerdict', () => {
     assert.equal(
       varianceVerdict({
         statement: statement(),
-        settlement: record({ invoice_recorded: true, amount_usd: 1000, invoiced_usd: 1200 }),
+        settlement: record({
+          invoice_recorded: true,
+          amount_usd: 1000,
+          invoiced_usd: 1200,
+        }),
       }),
       'over'
     )
     assert.equal(
       varianceVerdict({
         statement: statement(),
-        settlement: record({ invoice_recorded: true, amount_usd: 1000, invoiced_usd: 800 }),
+        settlement: record({
+          invoice_recorded: true,
+          amount_usd: 1000,
+          invoiced_usd: 800,
+        }),
       }),
       'under'
     )
@@ -227,39 +263,25 @@ describe('varianceVerdict', () => {
     assert.equal(
       varianceVerdict({
         statement: statement(),
-        settlement: record({ invoice_recorded: true, amount_usd: 0, invoiced_usd: 40 }),
+        settlement: record({
+          invoice_recorded: true,
+          amount_usd: 0,
+          invoiced_usd: 40,
+        }),
       }),
       'over'
     )
     assert.equal(
       varianceVerdict({
         statement: statement(),
-        settlement: record({ invoice_recorded: true, amount_usd: 0, invoiced_usd: 0 }),
+        settlement: record({
+          invoice_recorded: true,
+          amount_usd: 0,
+          invoiced_usd: 0,
+        }),
       }),
       'reconciled'
     )
-  })
-})
-
-describe('paymentsTotalUSD', () => {
-  const payments: CustomerPayment[] = [
-    { user_id: 7, provider: 'stripe', orders: 2, credited_usd: 100, charged_money: 100 },
-    { user_id: 7, provider: 'epay', orders: 1, credited_usd: 50, charged_money: 360 },
-  ]
-
-  test('sums credited dollars across gateways', () => {
-    assert.equal(paymentsTotalUSD(payments), 150)
-  })
-
-  test('sums credit, not the fiat charged', () => {
-    // epay charges in CNY; adding charged_money would mix currencies into one
-    // dollar figure.
-    assert.notEqual(paymentsTotalUSD(payments), 460)
-  })
-
-  test('no payments is zero, not NaN', () => {
-    assert.equal(paymentsTotalUSD(undefined), 0)
-    assert.equal(paymentsTotalUSD([]), 0)
   })
 })
 
@@ -271,28 +293,14 @@ describe('deriveStatement', () => {
     assert.match(usage.noteKey, /quota actually deducted/)
   })
 
-  test('with receipts it compares the period, and says it is not a balance', () => {
-    const steps = deriveStatement(statement({ amount_usd: 120 }), [
-      { user_id: 7, provider: 'stripe', orders: 3, credited_usd: 200, charged_money: 200 },
-    ])
-    const net = steps.at(-1)
-    assert.ok(net)
-    assert.equal(net.amountUSD, 80)
-    assert.ok(net.noteKey)
-    assert.match(net.noteKey, /Not an account balance/)
-    assert.deepEqual(steps[1].noteParams, {
-      start: '2026-08-01',
-      end: '2026-08-31',
-      count: 3,
-    })
-  })
-
-  test('with no receipts it does not invent a zero payment line', () => {
+  test('never presents wallet top-ups as invoice receipts', () => {
     assert.equal(deriveStatement(statement()).length, 1)
   })
 
   test('a vendor statement is stated as modelled', () => {
-    const [cost] = deriveStatement(statement({ kind: 'vendor', amount_usd: 1000 }))
+    const [cost] = deriveStatement(
+      statement({ kind: 'vendor', amount_usd: 1000 })
+    )
     assert.ok(cost.noteKey)
     assert.match(cost.noteKey, /official price/)
   })
@@ -301,13 +309,73 @@ describe('deriveStatement', () => {
     // Understated, not overstated: the risk on the vendor side is under-paying
     // an invoice, which is the opposite of the customer-side risk.
     const steps = deriveStatement(
-      statement({ kind: 'vendor', unpriced_requests: 12, unpriced_models: ['glm-5.3'] })
+      statement({
+        kind: 'vendor',
+        unpriced_requests: 12,
+        unpriced_models: ['glm-5.3'],
+      })
     )
     const caveat = steps.at(-1)
     assert.ok(caveat)
     assert.ok(caveat.noteKey)
     assert.match(caveat.noteKey, /understated/)
     assert.deepEqual(caveat.noteParams, { count: 12, models: 'glm-5.3' })
+  })
+})
+
+describe('statementIsBalanced', () => {
+  test('model and channel detail add up to the UI total', () => {
+    assert.equal(
+      statementIsBalanced(
+        statement({
+          amount_usd: 3,
+          requests: 3,
+          lines: [
+            {
+              model: 'gpt-4o',
+              channel_id: 1,
+              requests: 1,
+              prompt_tokens: 10,
+              cached_tokens: 0,
+              completion_tokens: 2,
+              amount_usd: 1,
+            },
+            {
+              model: 'gpt-4o',
+              channel_id: 2,
+              requests: 2,
+              prompt_tokens: 20,
+              cached_tokens: 5,
+              completion_tokens: 4,
+              amount_usd: 2,
+            },
+          ],
+        })
+      ),
+      true
+    )
+  })
+
+  test('refuses a UI document whose summary disagrees with its details', () => {
+    assert.equal(
+      statementIsBalanced(
+        statement({
+          amount_usd: 4,
+          requests: 3,
+          lines: [
+            {
+              model: 'gpt-4o',
+              requests: 3,
+              prompt_tokens: 10,
+              cached_tokens: 0,
+              completion_tokens: 2,
+              amount_usd: 3,
+            },
+          ],
+        })
+      ),
+      false
+    )
   })
 })
 
@@ -342,8 +410,14 @@ describe('label records', () => {
     // "Issue statement" is an act with an outward-facing document; "Record
     // settlement" is bookkeeping about money we owe. One button label for both
     // would misdescribe whichever side you are on.
-    assert.notEqual(PRIMARY_ACTION_LABELS.customer, PRIMARY_ACTION_LABELS.vendor)
-    assert.notEqual(PRIMARY_ACTION_LABELS.update, PRIMARY_ACTION_LABELS.customer)
+    assert.notEqual(
+      PRIMARY_ACTION_LABELS.customer,
+      PRIMARY_ACTION_LABELS.vendor
+    )
+    assert.notEqual(
+      PRIMARY_ACTION_LABELS.update,
+      PRIMARY_ACTION_LABELS.customer
+    )
   })
 })
 

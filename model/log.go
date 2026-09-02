@@ -79,10 +79,16 @@ type Log struct {
 	// cache-heavy traffic and makes every margin look negative. Rows written
 	// before this column exists read 0, which is the conservative direction:
 	// cost is overstated, never understated.
-	CachedTokens      int    `json:"cached_tokens" gorm:"default:0"`
-	UseTime           int    `json:"use_time" gorm:"default:0"`
-	IsStream          bool   `json:"is_stream"`
-	ChannelId         int    `json:"channel" gorm:"index"`
+	CachedTokens int  `json:"cached_tokens" gorm:"default:0"`
+	UseTime      int  `json:"use_time" gorm:"default:0"`
+	IsStream     bool `json:"is_stream"`
+	ChannelId    int  `json:"channel" gorm:"index"`
+	// ChannelBaseURL snapshots the upstream endpoint that this request actually
+	// hit. A channel can proxy models from several model authors (OpenRouter is
+	// the common case), so the model catalog cannot identify who we owe. Keeping
+	// the URL on the immutable consume log also prevents a later channel edit
+	// from moving historical cost between suppliers.
+	ChannelBaseURL    string `json:"channel_base_url" gorm:"type:varchar(512);default:''"`
 	ChannelName       string `json:"channel_name" gorm:"->"`
 	TokenId           int    `json:"token_id" gorm:"default:0;index"`
 	Group             string `json:"group" gorm:"index"`
@@ -427,6 +433,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		ModelName:        params.ModelName,
 		Quota:            params.Quota,
 		ChannelId:        params.ChannelId,
+		ChannelBaseURL:   NormalizeChannelBaseURL(common.GetContextKeyString(c, constant.ContextKeyChannelBaseUrl)),
 		TokenId:          params.TokenId,
 		UseTime:          params.UseTimeSeconds,
 		IsStream:         params.IsStream,

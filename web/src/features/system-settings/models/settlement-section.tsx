@@ -32,7 +32,6 @@ import {
   ChevronRight,
   Download,
   FileText,
-  Trash2,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -53,20 +52,14 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import {
-  deleteSettlement,
+  downloadSettlementCSV,
   getSettlements,
   issueSettlement,
   updateSettlement,
 } from '../api'
 import { SettingsSection } from '../components/settings-section'
-import type {
-  CustomerPayment,
-  SettlementRow,
-  SettlementStatus,
-  StatementKind,
-} from '../types'
+import type { SettlementRow, SettlementStatus, StatementKind } from '../types'
 import {
-  type BillingPeriod,
   type SettlementState,
   type VarianceVerdict,
   PRIMARY_ACTION_LABELS,
@@ -78,16 +71,21 @@ import {
   formatTokens,
   formatUSD,
   isPeriodClosed,
-  paymentsTotalUSD,
+  periodFromMonthLabel,
   recentPeriods,
   settlementState,
+  statementIsBalanced,
   varianceVerdict,
 } from './settlement-logic'
 
 /** expansionId scopes "which row is open" to the tab and period it was opened
  *  in, so switching either does not leave a same-named row in another period
  *  expanded. */
-function expansionId(kind: StatementKind, periodLabel: string, counterparty: string) {
+function expansionId(
+  kind: StatementKind,
+  periodLabel: string,
+  counterparty: string
+) {
   return `${kind}:${periodLabel}:${counterparty}`
 }
 
@@ -104,13 +102,17 @@ export function SettlementSection() {
   // so crossing a month boundary refetches rather than serving the old period.
   const today = useMemo(() => new Date(), [])
   const periods = useMemo(() => recentPeriods(today), [today])
-  const [periodLabel, setPeriodLabel] = useState(periods[0].label)
-  const period = periods.find((p) => p.label === periodLabel) ?? periods[0]
+  const [periodLabel, setPeriodLabel] = useState(
+    periods[1]?.label ?? periods[0].label
+  )
+  const period = periodFromMonthLabel(periodLabel) ?? periods[1] ?? periods[0]
   const closed = isPeriodClosed(period, today)
+  const [downloading, setDownloading] = useState(false)
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['settlement', kind, period.start, period.end],
-    queryFn: () => getSettlements({ kind, start: period.start, end: period.end }),
+    queryFn: () =>
+      getSettlements({ kind, start: period.start, end: period.end }),
   })
 
   const invalidate = () =>
@@ -148,24 +150,21 @@ export function SettlementSection() {
     onError: (err: Error) => toast.error(err.message),
   })
 
-  const remove = useMutation({
-    mutationFn: deleteSettlement,
-    onSuccess: (response) => {
-      if (!response.success) {
-        toast.error(response.message ?? t('Failed to save'))
-        return
-      }
-      toast.success(response.message ?? t('Recorded'))
-      invalidate()
-    },
-    onError: (err: Error) => toast.error(err.message),
-  })
-
   const rows = data?.data?.rows ?? []
   const totals = data?.data?.totals
-  const payments = data?.payments ?? {}
   const orphaned = data?.data?.orphaned ?? []
-  const busy = issue.isPending || update.isPending || remove.isPending
+  const busy = issue.isPending || update.isPending
+
+  const download = async (counterparty?: string) => {
+    setDownloading(true)
+    try {
+      await downloadSettlementCSV(csvHref(kind, period, counterparty))
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Failed'))
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   return (
     <SettingsSection title={t('Settlement')}>
@@ -187,6 +186,13 @@ export function SettlementSection() {
               ))}
             </TabsList>
           </Tabs>
+          <Input
+            type='month'
+            className='h-8 w-36 font-mono text-xs'
+            value={period.label}
+            onChange={(event) => setPeriodLabel(event.target.value)}
+            aria-label={t('Month')}
+          />
           <span className='text-muted-foreground font-mono text-xs'>
             {period.start} → {period.end}
           </span>
@@ -194,7 +200,8 @@ export function SettlementSection() {
             variant='outline'
             size='sm'
             className='ml-auto'
-            render={<a href={csvHref(kind, period)} download />}
+            disabled={downloading}
+            onClick={() => download()}
           >
             <Download className='size-4' />
             {t('Export all line items')}
@@ -218,12 +225,15 @@ export function SettlementSection() {
 
         {data?.warning ? (
           <Alert variant='destructive'>
-            <AlertDescription className='text-xs'>{data.warning}</AlertDescription>
+            <AlertDescription className='text-xs'>
+              {data.warning}
+            </AlertDescription>
           </Alert>
         ) : null}
 
         {kind === 'vendor' &&
-        Object.keys(data?.cost_basis?.channel_cost_ratios ?? {}).length === 0 ? (
+        Object.keys(data?.cost_basis?.channel_cost_ratios ?? {}).length ===
+          0 ? (
           <Alert variant='destructive'>
             <AlertTriangle className='size-4' />
             <AlertDescription className='text-xs'>
@@ -237,7 +247,9 @@ export function SettlementSection() {
         {totals ? <SettlementHeadline kind={kind} totals={totals} /> : null}
 
         {isLoading ? (
-          <div className='text-muted-foreground p-6 text-sm'>{t('Loading...')}</div>
+          <div className='text-muted-foreground p-6 text-sm'>
+            {t('Loading...')}
+          </div>
         ) : null}
         {!isLoading && isError ? (
           <Alert variant='destructive'>
@@ -255,15 +267,19 @@ export function SettlementSection() {
                     {kind === 'customer' ? t('Customer') : t('Upstream vendor')}
                   </TableHead>
                   <TableHead className='text-right'>{t('Requests')}</TableHead>
-                  <TableHead className='text-right'>{t('Tokens in/out')}</TableHead>
                   <TableHead className='text-right'>
-                    {kind === 'customer' ? t('Amount due') : t('We owe (modelled)')}
+                    {t('Tokens in/out')}
                   </TableHead>
                   <TableHead className='text-right'>
                     {kind === 'customer'
-                      ? t('Received this period')
-                      : t('Their invoice')}
+                      ? t('Amount due')
+                      : t('We owe (modelled)')}
                   </TableHead>
+                  {kind === 'vendor' ? (
+                    <TableHead className='text-right'>
+                      {t('Their invoice')}
+                    </TableHead>
+                  ) : null}
                   <TableHead>{t('Status')}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -279,9 +295,15 @@ export function SettlementSection() {
                     key={`${kind}:${period.label}:${row.statement.counterparty}`}
                     row={row}
                     kind={kind}
-                    period={period}
-                    payments={payments[row.statement.counterparty]}
-                    open={expanded === expansionId(kind, period.label, row.statement.counterparty)}
+                    closed={closed}
+                    open={
+                      expanded ===
+                      expansionId(
+                        kind,
+                        period.label,
+                        row.statement.counterparty
+                      )
+                    }
                     busy={busy}
                     onToggle={() => {
                       const id = expansionId(
@@ -304,15 +326,13 @@ export function SettlementSection() {
                       row.settlement &&
                       update.mutate({ id: row.settlement.id, ...input })
                     }
-                    onDelete={() =>
-                      row.settlement && remove.mutate(row.settlement.id)
-                    }
+                    onDownload={() => download(row.statement.counterparty)}
                   />
                 ))}
                 {rows.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={kind === 'vendor' ? 7 : 6}
                       className='text-muted-foreground py-8 text-center text-sm'
                     >
                       {t('No usage in this period.')}
@@ -364,13 +384,20 @@ function SettlementHeadline({
   totals,
 }: {
   kind: StatementKind
-  totals: { counterparties: number; requests: number; amount_usd: number; unpriced_requests: number }
+  totals: {
+    counterparties: number
+    requests: number
+    amount_usd: number
+    unpriced_requests: number
+  }
 }) {
   const { t } = useTranslation()
   return (
     <div className='grid gap-3 sm:grid-cols-3'>
       <Stat
-        label={kind === 'customer' ? t('Customers billed') : t('Vendors to settle')}
+        label={
+          kind === 'customer' ? t('Customers billed') : t('Vendors to settle')
+        }
         value={String(totals.counterparties)}
       />
       <Stat label={t('Requests')} value={totals.requests.toLocaleString()} />
@@ -404,9 +431,13 @@ function Stat({
   return (
     <div className='rounded-md border p-3'>
       <div className='text-muted-foreground text-xs'>{label}</div>
-      <div className='font-mono text-xl font-semibold tabular-nums'>{value}</div>
+      <div className='font-mono text-xl font-semibold tabular-nums'>
+        {value}
+      </div>
       {sub ? (
-        <div className={`text-xs ${warn ? 'text-destructive' : 'text-muted-foreground'}`}>
+        <div
+          className={`text-xs ${warn ? 'text-destructive' : 'text-muted-foreground'}`}
+        >
           {sub}
         </div>
       ) : null}
@@ -446,19 +477,17 @@ function varianceClass(verdict: VarianceVerdict): string {
 function SettlementTableRow({
   row,
   kind,
-  period,
-  payments,
+  closed,
   open,
   busy,
   onToggle,
   onIssue,
   onUpdate,
-  onDelete,
+  onDownload,
 }: {
   row: SettlementRow
   kind: StatementKind
-  period: BillingPeriod
-  payments?: CustomerPayment[]
+  closed: boolean
   open: boolean
   busy: boolean
   onToggle: () => void
@@ -474,13 +503,13 @@ function SettlementTableRow({
     status: SettlementStatus
     note: string
   }) => void
-  onDelete: () => void
+  onDownload: () => void
 }) {
   const { t } = useTranslation()
   const statement = row.statement
   const state = settlementState(row)
   const verdict = varianceVerdict(row)
-  const received = paymentsTotalUSD(payments)
+  const displayedStatement = row.issued_statement ?? statement
 
   const [invoiceDraft, setInvoiceDraft] = useState<string>(
     row.settlement?.invoice_recorded ? String(row.settlement.invoiced_usd) : ''
@@ -488,7 +517,8 @@ function SettlementTableRow({
   const [noteDraft, setNoteDraft] = useState(row.settlement?.note ?? '')
 
   const parsedInvoice = Number.parseFloat(invoiceDraft)
-  const invoiceRecorded = invoiceDraft.trim() !== '' && Number.isFinite(parsedInvoice)
+  const invoiceRecorded =
+    invoiceDraft.trim() !== '' && Number.isFinite(parsedInvoice)
 
   const recordInvoice = () => {
     const payload = {
@@ -512,44 +542,48 @@ function SettlementTableRow({
         aria-expanded={open}
       >
         <TableCell className='py-2'>
-          {open ? <ChevronDown className='size-4' /> : <ChevronRight className='size-4' />}
+          {open ? (
+            <ChevronDown className='size-4' />
+          ) : (
+            <ChevronRight className='size-4' />
+          )}
         </TableCell>
         <TableCell className='font-mono text-xs'>
-          {statement.label}
-          {statement.group ? (
+          {displayedStatement.label}
+          {displayedStatement.group ? (
             <Badge variant='outline' className='ml-2 text-[10px]'>
-              {statement.group}
+              {displayedStatement.group}
             </Badge>
           ) : null}
-          {statement.unpriced_requests > 0 ? (
-            <Badge variant='outline' className='text-destructive ml-2 gap-1 text-[10px]'>
+          {displayedStatement.unpriced_requests > 0 ? (
+            <Badge
+              variant='outline'
+              className='text-destructive ml-2 gap-1 text-[10px]'
+            >
               <AlertTriangle className='size-3' />
               {t('not costable')}
             </Badge>
           ) : null}
         </TableCell>
         <TableCell className='text-right font-mono text-xs tabular-nums'>
-          {statement.requests.toLocaleString()}
+          {displayedStatement.requests.toLocaleString()}
         </TableCell>
-        <TableCell className='text-right font-mono text-xs tabular-nums whitespace-nowrap'>
-          {formatTokens(statement.prompt_tokens)} / {formatTokens(statement.completion_tokens)}
+        <TableCell className='text-right font-mono text-xs whitespace-nowrap tabular-nums'>
+          {formatTokens(displayedStatement.prompt_tokens)} /{' '}
+          {formatTokens(displayedStatement.completion_tokens)}
         </TableCell>
         <TableCell className='text-right font-mono text-xs font-semibold tabular-nums'>
-          {formatUSD(statement.amount_usd)}
+          {formatUSD(displayedStatement.amount_usd)}
         </TableCell>
-        <TableCell className='text-right font-mono text-xs tabular-nums'>
-          {kind === 'customer' ? (
-            <span className={received > 0 ? '' : 'text-muted-foreground'}>
-              {formatUSD(received)}
-            </span>
-          ) : (
+        {kind === 'vendor' ? (
+          <TableCell className='text-right font-mono text-xs tabular-nums'>
             <span className={varianceClass(verdict)}>
               {row.settlement?.invoice_recorded
                 ? formatUSD(row.settlement.invoiced_usd)
                 : '—'}
             </span>
-          )}
-        </TableCell>
+          </TableCell>
+        ) : null}
         <TableCell className='text-xs'>
           <span className={stateToneClass(state)}>
             {t(SETTLEMENT_STATE_LABELS[state])}
@@ -567,9 +601,9 @@ function SettlementTableRow({
       {open ? (
         <TableRow className='bg-muted/30 hover:bg-muted/30'>
           <TableCell />
-          <TableCell colSpan={6} className='py-3'>
+          <TableCell colSpan={kind === 'vendor' ? 6 : 5} className='py-3'>
             <div className='flex flex-col gap-4'>
-              <StatementDetail row={row} payments={payments} />
+              <StatementDetail row={row} />
 
               {state === 'drifted' ? (
                 <Alert variant='destructive'>
@@ -607,13 +641,19 @@ function SettlementTableRow({
                   <span className='text-muted-foreground'>{t('Note')}</span>
                   <Input
                     className='h-8 text-xs'
-                    placeholder={t('invoice number, payment reference, anything to find it by')}
+                    placeholder={t(
+                      'invoice number, payment reference, anything to find it by'
+                    )}
                     value={noteDraft}
                     onChange={(e) => setNoteDraft(e.target.value)}
                   />
                 </label>
 
-                <Button size='sm' disabled={busy} onClick={recordInvoice}>
+                <Button
+                  size='sm'
+                  disabled={busy || (!row.settlement && !closed)}
+                  onClick={recordInvoice}
+                >
                   <FileText className='size-4' />
                   {t(
                     row.settlement
@@ -643,28 +683,12 @@ function SettlementTableRow({
                 <Button
                   size='sm'
                   variant='outline'
-                  render={
-                    <a
-                      href={csvHref(kind, period, statement.counterparty)}
-                      download
-                    />
-                  }
+                  disabled={busy}
+                  onClick={onDownload}
                 >
                   <Download className='size-4' />
                   {t('Export CSV')}
                 </Button>
-
-                {row.settlement ? (
-                  <Button
-                    size='sm'
-                    variant='ghost'
-                    disabled={busy}
-                    onClick={onDelete}
-                    aria-label={t('Delete this record')}
-                  >
-                    <Trash2 className='text-destructive size-4' />
-                  </Button>
-                ) : null}
               </div>
 
               {row.settlement ? (
@@ -688,18 +712,21 @@ function SettlementTableRow({
 
 /** StatementDetail is the bill itself: the per-model lines a counterparty can
  *  check, followed by how the total was arrived at. */
-function StatementDetail({
-  row,
-  payments,
-}: {
-  row: SettlementRow
-  payments?: CustomerPayment[]
-}) {
+function StatementDetail({ row }: { row: SettlementRow }) {
   const { t } = useTranslation()
-  const statement = row.statement
+  const statement = row.issued_statement ?? row.statement
+  const vendor = statement.kind === 'vendor'
 
   return (
     <div className='flex flex-col gap-3'>
+      {!statementIsBalanced(statement) ? (
+        <Alert variant='destructive'>
+          <AlertTriangle className='size-4' />
+          <AlertDescription className='text-xs'>
+            {t('Error')}: {t('Line items')} ≠ {t('Total')}
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <div>
         <div className='text-muted-foreground mb-1 text-[10px] font-semibold tracking-wider uppercase'>
           {t('Line items')}
@@ -709,9 +736,32 @@ function StatementDetail({
             <TableHeader>
               <TableRow>
                 <TableHead className='text-xs'>{t('Model')}</TableHead>
-                <TableHead className='text-right text-xs'>{t('Requests')}</TableHead>
-                <TableHead className='text-right text-xs'>{t('Tokens in/out')}</TableHead>
-                <TableHead className='text-right text-xs'>{t('Amount')}</TableHead>
+                {vendor ? (
+                  <TableHead className='text-xs'>{t('Channel')}</TableHead>
+                ) : null}
+                {vendor ? (
+                  <TableHead className='text-xs'>{t('Base URL')}</TableHead>
+                ) : null}
+                {vendor ? (
+                  <TableHead className='text-right text-xs'>
+                    {t('Multiplier')}
+                  </TableHead>
+                ) : null}
+                <TableHead className='text-right text-xs'>
+                  {t('Requests')}
+                </TableHead>
+                <TableHead className='text-right text-xs'>
+                  {t('Input Tokens')}
+                </TableHead>
+                <TableHead className='text-right text-xs'>
+                  {t('Cached')}
+                </TableHead>
+                <TableHead className='text-right text-xs'>
+                  {t('Output Tokens')}
+                </TableHead>
+                <TableHead className='text-right text-xs'>
+                  {t('Amount')}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -728,11 +778,35 @@ function StatementDetail({
                       </Badge>
                     ) : null}
                   </TableCell>
+                  {vendor ? (
+                    <TableCell className='font-mono text-xs'>
+                      {line.channel_name || `#${line.channel_id ?? 0}`}
+                    </TableCell>
+                  ) : null}
+                  {vendor ? (
+                    <TableCell
+                      className='max-w-56 truncate font-mono text-[10px]'
+                      title={line.channel_base_url}
+                    >
+                      {line.channel_base_url || '—'}
+                    </TableCell>
+                  ) : null}
+                  {vendor ? (
+                    <TableCell className='text-right font-mono text-xs tabular-nums'>
+                      {(line.cost_ratio ?? 1).toFixed(4)}×
+                    </TableCell>
+                  ) : null}
                   <TableCell className='text-right font-mono text-xs tabular-nums'>
                     {line.requests.toLocaleString()}
                   </TableCell>
-                  <TableCell className='text-right font-mono text-xs tabular-nums whitespace-nowrap'>
-                    {formatTokens(line.prompt_tokens)} / {formatTokens(line.completion_tokens)}
+                  <TableCell className='text-right font-mono text-xs tabular-nums'>
+                    {formatTokens(line.prompt_tokens)}
+                  </TableCell>
+                  <TableCell className='text-right font-mono text-xs tabular-nums'>
+                    {formatTokens(line.cached_tokens)}
+                  </TableCell>
+                  <TableCell className='text-right font-mono text-xs tabular-nums'>
+                    {formatTokens(line.completion_tokens)}
                   </TableCell>
                   <TableCell className='text-right font-mono text-xs tabular-nums'>
                     {formatUSD(line.amount_usd)}
@@ -748,7 +822,7 @@ function StatementDetail({
         <div className='text-muted-foreground mb-1 text-[10px] font-semibold tracking-wider uppercase'>
           {t('How this amount is derived')}
         </div>
-        {deriveStatement(statement, payments).map((step) => (
+        {deriveStatement(statement).map((step) => (
           <div
             key={step.labelKey}
             className={`flex items-baseline justify-between gap-4 text-xs ${
@@ -764,7 +838,9 @@ function StatementDetail({
               ) : null}
             </div>
             {step.amountUSD !== undefined ? (
-              <span className='font-mono tabular-nums'>{formatUSD(step.amountUSD)}</span>
+              <span className='font-mono tabular-nums'>
+                {formatUSD(step.amountUSD)}
+              </span>
             ) : null}
           </div>
         ))}

@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import { downloadAuthenticatedFile } from '@/lib/authenticated-download'
 
 import type {
   ConfirmPaymentComplianceResponse,
@@ -265,6 +266,14 @@ export async function deleteSettlement(id: number) {
     `/api/pricing/settlement/${id}`
   )
   return res.data
+}
+
+export async function downloadSettlementCSV(path: string) {
+  return downloadAuthenticatedFile(path)
+}
+
+export async function downloadReconciliationCSV(path: string) {
+  return downloadAuthenticatedFile(path)
 }
 
 /*

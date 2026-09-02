@@ -12,9 +12,12 @@ package controller
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -47,6 +50,9 @@ func statementsForWindow(kind service.StatementKind, start, end string) ([]servi
 type settlementRow struct {
 	Statement  service.Statement `json:"statement"`
 	Settlement *model.Settlement `json:"settlement,omitempty"`
+	// IssuedStatement is the immutable document that was actually issued. The
+	// live statement remains beside it solely to expose drift.
+	IssuedStatement *service.Statement `json:"issued_statement,omitempty"`
 
 	// DriftUSD is live minus frozen. Non-zero means the pricing configuration
 	// moved after this was issued.
@@ -87,10 +93,20 @@ func GetSettlements(c *gin.Context) {
 	}
 
 	rows := make([]settlementRow, 0, len(statements))
+	displayedStatements := make([]service.Statement, 0, len(statements))
 	for _, statement := range statements {
 		row := settlementRow{Statement: statement}
 		if settlement, found := byParty[statement.Counterparty]; found {
 			row.Settlement = settlement
+			var issued service.Statement
+			if err := common.Unmarshal([]byte(settlement.StatementJSON), &issued); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"message": "frozen statement is unreadable: " + err.Error(),
+				})
+				return
+			}
+			row.IssuedStatement = &issued
 			row.DriftUSD = statement.AmountUSD - settlement.AmountUSD
 			row.VarianceUSD = settlement.VarianceUSD()
 			if settlement.InvoiceRecorded && settlement.AmountUSD != 0 {
@@ -99,6 +115,11 @@ func GetSettlements(c *gin.Context) {
 			delete(byParty, statement.Counterparty)
 		}
 		rows = append(rows, row)
+		if row.IssuedStatement != nil {
+			displayedStatements = append(displayedStatements, *row.IssuedStatement)
+		} else {
+			displayedStatements = append(displayedStatements, statement)
+		}
 	}
 
 	// A settlement whose counterparty has no traffic left in the period is not
@@ -119,20 +140,12 @@ func GetSettlements(c *gin.Context) {
 			"period_start": start,
 			"period_end":   end,
 			"rows":         rows,
-			"totals":       service.SumStatements(statements),
+			"totals":       service.SumStatements(displayedStatements),
 			"orphaned":     orphaned,
 		},
 	}
 
-	if kind == service.StatementKindCustomer {
-		payments, err := settlementPayments(start, end)
-		if err != nil {
-			// Payments are context on a bill, not the bill. Losing them costs a
-			// panel, so the statement still ships.
-			common.SysError("settlement: failed to load payments: " + err.Error())
-		}
-		response["payments"] = payments
-	} else {
+	if kind == service.StatementKindVendor {
 		response["cost_basis"] = gin.H{
 			"snapshot_date":       ratio_setting.PricingSnapshotDate,
 			"channel_cost_ratios": ratio_setting.GetChannelCostRatioCopy(),
@@ -145,17 +158,6 @@ func GetSettlements(c *gin.Context) {
 			"结果达到 %d 行上限，本期账单不完整，请勿据此开票。请缩短时间范围后重跑。", 200_000)
 	}
 	c.JSON(http.StatusOK, response)
-}
-
-// settlementPayments keys receipts by the customer/company User Group, exactly
-// matching customer statement counterparties. Tenantless/operator payments
-// retain the legacy user-id key.
-func settlementPayments(start, end string) (map[string][]model.CustomerPayment, error) {
-	from, to, err := model.ParseReconcileWindow(start, end)
-	if err != nil {
-		return nil, err
-	}
-	return model.FetchCustomerPaymentsByCustomer(from, to)
 }
 
 // IssueSettlementRequest is what the screen may set. Our own amount is
@@ -191,6 +193,10 @@ func IssueSettlement(c *gin.Context) {
 	}
 	if !validSettlementStatus(req.Status) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "未知的状态：" + req.Status})
+		return
+	}
+	if err := service.ValidateClosedCalendarMonth(req.Start, req.End, time.Now()); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"success": false, "message": err.Error()})
 		return
 	}
 
@@ -245,8 +251,12 @@ func IssueSettlement(c *gin.Context) {
 		StatementJSON:       string(encoded),
 		PricingSnapshotDate: ratio_setting.PricingSnapshotDate,
 	}
-	saved, err := model.SaveSettlement(settlement)
+	saved, err := model.CreateSettlement(settlement)
 	if err != nil {
+		if errors.Is(err, model.ErrSettlementAlreadyIssued) {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "message": err.Error()})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
 	}
@@ -305,7 +315,7 @@ func UpdateSettlement(c *gin.Context) {
 		existing.Status = req.Status
 	}
 
-	saved, err := model.SaveSettlement(existing)
+	saved, err := model.UpdateSettlementCounterparty(existing)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
@@ -313,7 +323,8 @@ func UpdateSettlement(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "已更新", "data": saved})
 }
 
-// DeleteSettlementRecord removes a settlement issued in error.
+// DeleteSettlementRecord is retained for API compatibility but issued records
+// are immutable. Operators void a mistaken record so the audit trail survives.
 func DeleteSettlementRecord(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -321,7 +332,7 @@ func DeleteSettlementRecord(c *gin.Context) {
 		return
 	}
 	if err := model.DeleteSettlement(id); err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusConflict, gin.H{"success": false, "message": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "已删除该结算记录"})
@@ -366,11 +377,54 @@ func ExportSettlementCSV(c *gin.Context) {
 		statements = filtered
 	}
 
+	saved, err := model.ListSettlements(string(kind), start, end, 0)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	byParty := make(map[string]*model.Settlement, len(saved))
+	for _, settlement := range saved {
+		byParty[settlement.Counterparty] = settlement
+	}
+	type exportDocument struct {
+		Statement  service.Statement
+		Settlement *model.Settlement
+	}
+	documents := make([]exportDocument, 0, len(statements)+len(saved))
+	seen := make(map[string]bool, len(statements))
+	for _, live := range statements {
+		document := exportDocument{Statement: live, Settlement: byParty[live.Counterparty]}
+		if document.Settlement != nil {
+			var frozen service.Statement
+			if err := common.Unmarshal([]byte(document.Settlement.StatementJSON), &frozen); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "frozen statement is unreadable: " + err.Error()})
+				return
+			}
+			document.Statement = frozen
+		}
+		documents = append(documents, document)
+		seen[live.Counterparty] = true
+	}
+	// Preserve an issued document even when the live ledger no longer produces
+	// that counterparty. Dropping it from an export would erase the very drift
+	// the settlement table is meant to expose.
+	for _, settlement := range saved {
+		if seen[settlement.Counterparty] || (counterparty != "" && settlement.Counterparty != counterparty) {
+			continue
+		}
+		var frozen service.Statement
+		if err := common.Unmarshal([]byte(settlement.StatementJSON), &frozen); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "frozen statement is unreadable: " + err.Error()})
+			return
+		}
+		documents = append(documents, exportDocument{Statement: frozen, Settlement: settlement})
+	}
+
 	name := counterparty
 	if name == "" {
 		name = "all"
 	}
-	filename := fmt.Sprintf("unifyapi-%s-statement-%s-%s-%s.csv", kind, name, start, end)
+	filename := fmt.Sprintf("unifyapi-%s-statement-%s-%s-%s.csv", kind, safeFilenamePart(name), start, end)
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
 
@@ -380,23 +434,42 @@ func ExportSettlementCSV(c *gin.Context) {
 	if truncated {
 		_ = writer.Write([]string{"# WARNING: row cap reached, this statement is incomplete — do not invoice from it"})
 	}
+	for _, document := range documents {
+		if document.Settlement == nil {
+			_ = writer.Write([]string{"# DRAFT_NOT_ISSUED: preview only; issue the closed month before sending this as an official statement"})
+			break
+		}
+	}
 	if kind == service.StatementKindVendor {
-		_ = writer.Write([]string{"# amounts are MODELLED from token counts x official list price x channel purchasing ratio"})
+		_ = writer.Write([]string{"# amounts are MODELLED from token counts x official list price x the snapshotted channel purchasing ratio"})
 	}
 	_ = writer.Write([]string{
-		string(kind), "label", "group", "period_start", "period_end", "model",
-		"requests", "prompt_tokens", "cached_tokens", "completion_tokens", "amount_usd", "priced",
+		"document_status", "settlement_id", string(kind), "label", "group", "period_start", "period_end", "model",
+		"channel_id", "channel_name", "channel_base_url", "cost_ratio", "requests", "prompt_tokens",
+		"cached_tokens", "completion_tokens", "amount_usd", "priced",
 	})
 
-	for _, statement := range statements {
+	for _, document := range documents {
+		statement := document.Statement
+		status, settlementID := "DRAFT_NOT_ISSUED", ""
+		if document.Settlement != nil {
+			status = document.Settlement.Status
+			settlementID = strconv.Itoa(document.Settlement.Id)
+		}
 		for _, line := range statement.Lines {
 			_ = writer.Write([]string{
+				status,
+				settlementID,
 				statement.Counterparty,
 				statement.Label,
 				statement.Group,
 				statement.PeriodStart,
 				statement.PeriodEnd,
 				line.Model,
+				strconv.Itoa(line.ChannelID),
+				line.ChannelName,
+				line.ChannelBaseURL,
+				strconv.FormatFloat(line.CostRatio, 'f', 4, 64),
 				strconv.FormatInt(line.Requests, 10),
 				strconv.FormatInt(line.PromptTokens, 10),
 				strconv.FormatInt(line.CachedTokens, 10),
@@ -406,12 +479,18 @@ func ExportSettlementCSV(c *gin.Context) {
 			})
 		}
 		_ = writer.Write([]string{
+			status,
+			settlementID,
 			statement.Counterparty,
 			statement.Label,
 			statement.Group,
 			statement.PeriodStart,
 			statement.PeriodEnd,
 			"TOTAL",
+			"",
+			"",
+			"",
+			"",
 			strconv.FormatInt(statement.Requests, 10),
 			strconv.FormatInt(statement.PromptTokens, 10),
 			strconv.FormatInt(statement.CachedTokens, 10),
@@ -420,6 +499,21 @@ func ExportSettlementCSV(c *gin.Context) {
 			boolWord(statement.Complete()),
 		})
 	}
+}
+
+func safeFilenamePart(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "all"
+	}
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+			return r
+		default:
+			return '-'
+		}
+	}, value)
 }
 
 func boolWord(value bool) string {

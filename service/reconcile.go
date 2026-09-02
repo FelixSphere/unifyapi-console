@@ -25,8 +25,10 @@ package service
 
 import (
 	"fmt"
+	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -214,11 +216,7 @@ func reconcileKey(row model.UsageRow, groupBy GroupBy) (key, label string) {
 	case GroupByDay:
 		key, label = row.Day, row.Day
 	case GroupByVendor:
-		key = "unlisted"
-		if entry, ok := ratio_setting.CatalogEntryFor(row.Model); ok && entry.Vendor != "" {
-			key = entry.Vendor
-		}
-		label = key
+		key, label = UpstreamVendor(row)
 	default:
 		key, label = row.Model, row.Model
 	}
@@ -226,6 +224,52 @@ func reconcileKey(row model.UsageRow, groupBy GroupBy) (key, label string) {
 		key, label = "(unset)", "(unset)"
 	}
 	return key, label
+}
+
+// UpstreamVendor identifies the party we actually send money to from the
+// endpoint the request hit. Model authorship is deliberately irrelevant:
+// gpt-4o routed through OpenRouter is payable to OpenRouter, not OpenAI.
+func UpstreamVendor(row model.UsageRow) (key, label string) {
+	raw := model.NormalizeChannelBaseURL(row.ChannelBaseURL)
+	host := ""
+	if parsed, err := url.Parse(raw); err == nil {
+		host = strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	}
+
+	type knownVendor struct {
+		domain string
+		key    string
+		label  string
+	}
+	known := []knownVendor{
+		{domain: "flatkey.ai", key: "flatkey", label: "Flatkey"},
+		{domain: "openrouter.ai", key: "openrouter", label: "OpenRouter"},
+		{domain: "openai.com", key: "openai", label: "OpenAI"},
+		{domain: "anthropic.com", key: "anthropic", label: "Anthropic"},
+		{domain: "googleapis.com", key: "google", label: "Google"},
+		{domain: "amazonaws.com", key: "aws", label: "AWS"},
+	}
+	for _, vendor := range known {
+		if host == vendor.domain || strings.HasSuffix(host, "."+vendor.domain) {
+			return vendor.key, vendor.label
+		}
+	}
+	if host != "" {
+		return host, host
+	}
+	if raw != "" {
+		key = strings.ToLower(strings.TrimRight(raw, "/"))
+		return key, raw
+	}
+	if row.ChannelID != 0 {
+		key = "channel:" + strconv.Itoa(row.ChannelID)
+		label = row.ChannelName
+		if label == "" {
+			label = key
+		}
+		return key, label
+	}
+	return "unattributed", "Unattributed"
 }
 
 func sortedKeys(set map[string]bool) []string {

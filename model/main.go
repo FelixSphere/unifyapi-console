@@ -416,6 +416,16 @@ func migrateClickHouseLogDB() error {
 	if err := LOG_DB.Exec(clickHouseLogCreateTableSQL(ttlDays)).Error; err != nil {
 		return err
 	}
+	// CREATE TABLE IF NOT EXISTS does not add columns to an existing table.
+	// Keep reconciliation facts forward-compatible for ClickHouse deployments.
+	for _, statement := range []string{
+		"ALTER TABLE logs ADD COLUMN IF NOT EXISTS cached_tokens Int32 DEFAULT 0 AFTER prompt_tokens",
+		"ALTER TABLE logs ADD COLUMN IF NOT EXISTS channel_base_url String DEFAULT '' AFTER channel_id",
+	} {
+		if err := LOG_DB.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
 	return syncClickHouseLogTTL(ttlDays)
 }
 
@@ -455,10 +465,12 @@ CREATE TABLE IF NOT EXISTS logs (
 	model_name String DEFAULT '',
 	quota Int32 DEFAULT 0,
 	prompt_tokens Int32 DEFAULT 0,
+	cached_tokens Int32 DEFAULT 0,
 	completion_tokens Int32 DEFAULT 0,
 	use_time Int32 DEFAULT 0,
 	is_stream UInt8 DEFAULT 0,
 	channel_id Int32 DEFAULT 0,
+	channel_base_url String DEFAULT '',
 	token_id Int32 DEFAULT 0,
 	`+"`group`"+` String DEFAULT '',
 	ip String DEFAULT '',
