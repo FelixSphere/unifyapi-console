@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const fixturePath = "testdata/models-dev-2026-08-30.json"
+const fixturePath = "testdata/models-dev-2026-09-02.json"
 
 func loadFixture(t *testing.T) map[string]modelsDevProvider {
 	t.Helper()

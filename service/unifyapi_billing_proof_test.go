@@ -158,6 +158,32 @@ func TestTheDiscountAppliesToOutputAndCacheToo(t *testing.T) {
 		"half off must halve the whole bill -- input, output and cached reads alike")
 }
 
+// TestFable51ChargesThePublishedDollars proves the new catalog row reaches the
+// actual quota formula. Fable 5.1 is unusual because Anthropic cut cache reads
+// to 2.5% of input, so copying Fable 5's old 10% cache ratio would overcharge
+// cache-heavy customers fourfold while every ordinary input/output test passed.
+func TestFable51ChargesThePublishedDollars(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens:     1_000_000,
+		CompletionTokens: 1_000_000,
+		TotalTokens:      2_000_000,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens: 800_000,
+		},
+	}
+
+	// fresh: 200k x $10 = $2.00; cache: 800k x $0.25 = $0.20;
+	// output: 1M x $50 = $50.00; total = $52.20.
+	withDiscount(t, `{}`)
+	require.InDelta(t, 52.20,
+		chargeUSD(t, "claude-fable-5.1", "default", usage), 1e-6)
+
+	withDiscount(t, `{"claude-fable-5.1":0.8}`)
+	require.InDelta(t, 41.76,
+		chargeUSD(t, "claude-fable-5.1", "default", usage), 1e-6,
+		"the 20% discount must scale fresh input, cached input and output exactly once")
+}
+
 // TestTheSlippedDecimalWouldBeCaughtHere. 0.085 on claude-opus-4-8 was a typo
 // that reached production and billed at 8.5% of the vendor's price. A ratio
 // assertion cannot tell that from a deliberate discount; a dollar assertion
