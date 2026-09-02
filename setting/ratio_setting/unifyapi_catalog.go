@@ -34,7 +34,7 @@ package ratio_setting
 
 // PricingSnapshotDate is the day the official prices below were last verified
 // against models.dev. scripts/pricing-drift compares against it.
-const PricingSnapshotDate = "2026-08-30"
+const PricingSnapshotDate = "2026-09-02"
 
 // CatalogEntry is one model's official vendor list price. Prices are USD per
 // 1M tokens, exactly as the vendor publishes them. A zero CacheReadUSD or
@@ -102,6 +102,8 @@ var unifyapiCatalog = []CatalogEntry{
 
 	// ---- Anthropic ----
 	{Model: "claude-fable-5", Vendor: "anthropic", InputUSD: 10, OutputUSD: 50, CacheReadUSD: 1, CacheWriteUSD: 12.5},
+	{Model: "claude-fable-5.1", Vendor: "anthropic", UpstreamModel: "claude-fable-5-1", InputUSD: 10, OutputUSD: 50, CacheReadUSD: 0.25, CacheWriteUSD: 12.5,
+		QuoteSource: "https://www.anthropic.com/claude/fable", QuoteDate: "2026-09-01"},
 	{Model: "claude-haiku-4-5-20251001", Vendor: "anthropic", InputUSD: 1, OutputUSD: 5, CacheReadUSD: 0.1, CacheWriteUSD: 1.25},
 	{Model: "claude-opus-4-5", Vendor: "anthropic", InputUSD: 5, OutputUSD: 25, CacheReadUSD: 0.5, CacheWriteUSD: 6.25},
 	{Model: "claude-opus-4-6", Vendor: "anthropic", InputUSD: 5, OutputUSD: 25, CacheReadUSD: 0.5, CacheWriteUSD: 6.25},

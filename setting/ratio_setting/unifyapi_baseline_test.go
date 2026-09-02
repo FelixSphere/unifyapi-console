@@ -29,6 +29,7 @@ var publishedModels = []string{
 	"MiniMax-M2.5",
 	"MiniMax-M2.7",
 	"claude-fable-5",
+	"claude-fable-5.1",
 	"claude-haiku-4-5-20251001",
 	"claude-opus-4-5",
 	"claude-opus-4-6",
@@ -129,6 +130,9 @@ func TestBaselineRatiosDeriveFromOfficialPrices(t *testing.T) {
 		{"claude-opus-5", 5, 25, 0.5, 6.25, 2.5, 5, 0.1, 1.25},
 		{"claude-sonnet-5", 2, 10, 0.2, 2.5, 1, 5, 0.1, 1.25},
 		{"claude-fable-5", 10, 50, 1, 12.5, 5, 5, 0.1, 1.25},
+		// Fable 5.1 keeps the $10/$50 base price but Anthropic cut cache
+		// reads from $1 to $0.25 per 1M tokens.
+		{"claude-fable-5.1", 10, 50, 0.25, 12.5, 5, 5, 0.025, 1.25},
 		// OpenAI: gpt-4o at $2.50/$10, cached reads at half input.
 		{"gpt-4o", 2.5, 10, 1.25, 0, 1.25, 4, 0.5, 0},
 		{"gpt-5", 1.25, 10, 0.125, 0, 0.625, 8, 0.1, 0},

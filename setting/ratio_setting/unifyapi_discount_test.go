@@ -70,6 +70,24 @@ func TestDiscountAlsoDiscountsOutputAndCache(t *testing.T) {
 	require.InDelta(t, 3.125, price.CacheWriteUSD, 1e-9, "half of $6.25")
 }
 
+// TestFable51CanBeDiscountedFromItsOfficialPrice pins the exact row the admin
+// sees under Official price & discount. The official quote stays read-only;
+// changing the discount must scale input, output and the newly reduced cache
+// price together.
+func TestFable51CanBeDiscountedFromItsOfficialPrice(t *testing.T) {
+	withCleanDiscounts(t)
+	require.NoError(t, UpdateModelDiscountByJSONString(`{"claude-fable-5.1": 0.8}`))
+
+	price, ok := CustomerPriceFor("claude-fable-5.1", "default")
+	require.True(t, ok, "the model must be present in the official-price catalog")
+	require.InDelta(t, 10, price.OfficialInputUSD, 1e-9)
+	require.InDelta(t, 50, price.OfficialOutputUS, 1e-9)
+	require.InDelta(t, 8, price.InputUSD, 1e-9, "$10 official x 0.8 discount")
+	require.InDelta(t, 40, price.OutputUSD, 1e-9, "$50 official x 0.8 discount")
+	require.InDelta(t, 0.20, price.CacheReadUSD, 1e-9, "$0.25 official x 0.8 discount")
+	require.InDelta(t, 10, price.CacheWriteUSD, 1e-9, "$12.50 official x 0.8 discount")
+}
+
 // TestRemovingADiscountRestoresTheOfficialPrice -- the map is rebuilt rather
 // than mutated, so a removed discount cannot leave its last value behind. That
 // failure mode is what makes a hand-edited ratio table impossible to reason
