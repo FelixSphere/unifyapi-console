@@ -30,7 +30,7 @@ func setupSettlementTestDB(t *testing.T) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&Settlement{}, &TopUp{}))
+	require.NoError(t, db.AutoMigrate(&Settlement{}, &User{}, &TopUp{}))
 
 	previous := DB
 	DB = db
@@ -240,4 +240,40 @@ func TestFetchCustomerPaymentsCountsCompletionNotCreation(t *testing.T) {
 
 	require.Len(t, payments[2], 1)
 	assert.InDelta(t, 30, payments[2][0].CreditedUSD, 1e-9)
+}
+
+func TestCustomerPaymentsCombineCompanyUsersAndKeepTheOriginalCompany(t *testing.T) {
+	setupSettlementTestDB(t)
+	previous := common.QuotaPerUnit
+	common.QuotaPerUnit = 500_000
+	t.Cleanup(func() { common.QuotaPerUnit = previous })
+
+	const start, end = 1_754_000_000, 1_756_600_000
+	users := []*User{
+		{Id: 1, Username: "Aaron", Group: "GenAI", AffCode: "aaron-company-payment"},
+		{Id: 2, Username: "Joshua", Group: "GenAI", AffCode: "joshua-company-payment"},
+	}
+	for _, user := range users {
+		require.NoError(t, DB.Create(user).Error)
+	}
+	for _, row := range []*TopUp{
+		{UserId: 1, PaymentProvider: PaymentProviderWaffo, Amount: 100, Money: 100,
+			TradeNo: "company-1", Status: common.TopUpStatusSuccess, CompleteTime: start + 10},
+		{UserId: 2, PaymentProvider: PaymentProviderWaffo, Amount: 30, Money: 30,
+			TradeNo: "company-2", Status: common.TopUpStatusSuccess, CompleteTime: start + 20},
+	} {
+		require.NoError(t, DB.Create(row).Error)
+		require.Equal(t, "GenAI", row.CustomerGroup, "the payment must snapshot its company")
+	}
+
+	// Reassigning a login later must not move historical cash to a new company.
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", 1).Update("group", "UnifyAI").Error)
+
+	payments, err := FetchCustomerPaymentsByCustomer(start, end)
+	require.NoError(t, err)
+	require.Len(t, payments, 1)
+	require.Len(t, payments["GenAI"], 1)
+	assert.EqualValues(t, 2, payments["GenAI"][0].Orders)
+	assert.InDelta(t, 130, payments["GenAI"][0].CreditedUSD, 1e-9)
+	assert.NotContains(t, payments, "UnifyAI")
 }

@@ -77,9 +77,9 @@ type StatementLine struct {
 type Statement struct {
 	Kind StatementKind `json:"kind"`
 
-	// Counterparty is the stable id -- a user id for a customer, a models.dev
-	// vendor id for an upstream. Label is what it was called at build time and
-	// is for humans only: a renamed customer must not become a second account.
+	// Counterparty is the stable id -- a User Group for a customer/company, a
+	// models.dev vendor id for an upstream. Label is what it was called at build
+	// time. A tenant may contain several login users but receives one statement.
 	Counterparty string `json:"counterparty"`
 	Label        string `json:"label"`
 
@@ -202,12 +202,16 @@ func statementAmount(row model.UsageRow, kind StatementKind) (amount float64, pr
 
 func statementParty(row model.UsageRow, kind StatementKind) (key, label, group string) {
 	if kind == StatementKindCustomer {
+		if row.UserGroup != "" {
+			return row.UserGroup, row.UserGroup, row.UserGroup
+		}
+		// Preserve upstream behaviour for the tenantless/root edge case.
 		key = strconv.Itoa(row.UserID)
 		label = row.Username
 		if label == "" {
 			label = "user " + key
 		}
-		return key, label, row.UserGroup
+		return key, label, ""
 	}
 
 	key = "unlisted"

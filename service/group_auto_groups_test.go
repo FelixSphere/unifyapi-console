@@ -70,3 +70,21 @@ func TestGetRequestAutoGroupsDoesNotFallBackAfterPermissionChange(t *testing.T) 
 
 	assert.Empty(t, groups)
 }
+
+func TestCustomerAutoTokenCannotUseAnotherCompanyGroup(t *testing.T) {
+	originalAuto := setting.AutoGroups2JsonString()
+	originalUsable := setting.UserUsableGroups2JSONString()
+	originalRatios := ratio_setting.GroupRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAuto))
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsable))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalRatios))
+	})
+
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["GenAI","UnifyAI","Chinhin"]`))
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"GenAI":1,"UnifyAI":1,"Chinhin":1}`))
+
+	ctx := newRequestAutoGroupsContext()
+	assert.Equal(t, []string{"GenAI"}, GetRequestAutoGroups(ctx, "GenAI"))
+}

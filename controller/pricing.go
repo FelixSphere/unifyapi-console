@@ -56,6 +56,7 @@ func GetPricing(c *gin.Context) {
 			}
 		}
 	}
+	pricing = applyCustomerGroupModelPricing(pricing, group)
 
 	usableGroup = service.GetUserUsableGroups(group)
 	pricing = filterPricingByUsableGroups(pricing, usableGroup)
@@ -76,6 +77,36 @@ func GetPricing(c *gin.Context) {
 		"auto_groups":        service.GetUserAutoGroup(group),
 		"pricing_version":    "a42d372ccf0b5dd13ecf71203521f9d2",
 	})
+}
+
+// applyCustomerGroupModelPricing returns request-owned rows. GetPricing caches
+// its slice globally, so mutating it would leak one customer's contract into
+// the next customer's Model Square response.
+func applyCustomerGroupModelPricing(pricing []model.Pricing, userGroup string) []model.Pricing {
+	if userGroup == "" {
+		return pricing
+	}
+	out := make([]model.Pricing, len(pricing))
+	copy(out, pricing)
+	for i := range out {
+		ratio, ok := ratio_setting.GetGroupModelDiscount(userGroup, out[i].ModelName)
+		if !ok {
+			continue
+		}
+		entry, catalogued := ratio_setting.CatalogEntryFor(out[i].ModelName)
+		if !catalogued {
+			continue
+		}
+		out[i].CustomerGroupModelRatio = &ratio
+		// Model Square multiplies the model base by its displayed group ratio.
+		// Reset the base to official here so a global ModelDiscount cannot be
+		// applied a second time beneath the final customer multiplier.
+		out[i].ModelRatio = entry.ModelRatio()
+		if entry.PerCallUSD > 0 {
+			out[i].ModelPrice = entry.PerCallUSD
+		}
+	}
+	return out
 }
 
 // ResetModelRatio restores the pricing baseline from the catalog.
@@ -105,7 +136,7 @@ func ResetModelRatio(c *gin.Context) {
 	// UpdateOptionsBulk persists every key in one transaction and only then
 	// dispatches them into the in-memory maps, so a failure part-way cannot
 	// leave the process billing on a half-applied baseline.
-	if err := model.UpdateOptionsBulk(values); err != nil {
+	if err := model.UpdateOptionsBulkAs(values, optionChangeActor(c)); err != nil {
 		c.JSON(200, gin.H{
 			"success": false,
 			"message": err.Error(),

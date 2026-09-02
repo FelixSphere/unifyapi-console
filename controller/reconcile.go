@@ -290,7 +290,7 @@ func UpdateChannelCost(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
 	}
-	if err := model.UpdateOption("ChannelCostRatio", string(encoded)); err != nil {
+	if err := model.UpdateOptionAs("ChannelCostRatio", string(encoded), optionChangeActor(c)); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
 	}

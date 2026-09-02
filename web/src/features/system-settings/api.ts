@@ -42,6 +42,8 @@ import type {
   StatementKind,
   UpdateChannelCostResponse,
   UpdatePricingDiscountResponse,
+  GroupModelPricingResponse,
+  UpdateGroupModelPricingResponse,
   UpstreamChannelsResponse,
   UpstreamRatiosResponse,
 } from './types'
@@ -138,6 +140,24 @@ export async function updatePricingDiscount(discounts: Record<string, number>) {
   const res = await api.put<UpdatePricingDiscountResponse>(
     '/api/pricing/discount',
     { discounts }
+  )
+  return res.data
+}
+
+export async function getGroupModelPricing() {
+  const res = await api.get<GroupModelPricingResponse>(
+    '/api/pricing/group_model'
+  )
+  return res.data
+}
+
+export async function updateGroupModelPricing(
+  group: string,
+  discounts: Record<string, number>
+) {
+  const res = await api.put<UpdateGroupModelPricingResponse>(
+    '/api/pricing/group_model',
+    { group, discounts }
   )
   return res.data
 }
@@ -263,9 +283,12 @@ export async function getExtraModels() {
 export async function updateExtraModels(
   models: Record<string, Record<string, number | string>>
 ) {
-  const res = await api.put<UpdateExtraModelsResponse>('/api/pricing/extra_models', {
-    models,
-  })
+  const res = await api.put<UpdateExtraModelsResponse>(
+    '/api/pricing/extra_models',
+    {
+      models,
+    }
+  )
   return res.data
 }
 

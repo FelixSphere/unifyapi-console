@@ -59,6 +59,7 @@ func pricingCacheIsPrimed() bool {
 // objects -- and a wrong shape fails the dispatch for the wrong reason.
 var pricingOptionSamples = map[string]string{
 	"ModelDiscount":        `{"gpt-4o":0.9}`,
+	"GroupModelDiscount":   `{"default":{"gpt-4o":0.8}}`,
 	"ModelRatio":           `{"gpt-4o":1.25}`,
 	"CompletionRatio":      `{"gpt-4o":4}`,
 	"CacheRatio":           `{"gpt-4o":0.5}`,
@@ -83,6 +84,7 @@ func TestSavingAPriceDropsTheCachedPricingPayload(t *testing.T) {
 	ratio_setting.InitRatioSettings()
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdateModelDiscountByJSONString(`{}`))
+		require.NoError(t, ratio_setting.UpdateGroupModelDiscountByJSONString(`{}`))
 		require.NoError(t, ratio_setting.UpdateChannelCostRatioByJSONString(`{}`))
 		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{}`))
 	})

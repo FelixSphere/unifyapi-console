@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/types"
 
@@ -384,6 +385,21 @@ func maxInt(value, floor int) int {
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
 	if !common.LogConsumeEnabled {
 		return
+	}
+	// UNIFYAPI-FORK: logs.group is the customer/company dimension used by
+	// statements and profit reports. Never let a token routing group replace it.
+	// Callers normally attribute this explicitly; the context check is a final
+	// safety net for every legacy and future consume-log path.
+	if customerGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup); customerGroup != "" {
+		if params.Group != "" && params.Group != customerGroup {
+			if params.Other == nil {
+				params.Other = map[string]interface{}{}
+			}
+			if _, exists := params.Other["routing_group"]; !exists {
+				params.Other["routing_group"] = params.Group
+			}
+		}
+		params.Group = customerGroup
 	}
 	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
 	username := c.GetString("username")

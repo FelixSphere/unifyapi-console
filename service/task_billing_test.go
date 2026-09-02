@@ -238,6 +238,33 @@ func TestTaskBillingContextPriceDataFiltersMultiplier(t *testing.T) {
 	}, priceData.OtherRatios())
 }
 
+func TestTaskTokenRecalculationUsesContractSnapshotAndCustomerCompany(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+	const userID, channelID = 41, 41
+	seedUser(t, userID, 10_000)
+	seedChannel(t, channelID)
+
+	task := makeTask(userID, channelID, 1_000, 0, BillingSourceWallet, 0)
+	task.Group = "model--claude-opus-5"
+	task.Properties.OriginModelName = "claude-opus-5"
+	task.PrivateData.BillingContext.ModelRatio = 2
+	task.PrivateData.BillingContext.GroupRatio = 0.8
+	task.PrivateData.BillingContext.UserGroup = "GenAI"
+	task.PrivateData.BillingContext.OriginModelName = "claude-opus-5"
+	require.NoError(t, model.DB.Create(task).Error)
+
+	RecalculateTaskQuotaByTokens(ctx, task, 1_000)
+
+	require.Equal(t, 1_600, task.Quota, "1000 tokens x 2 model ratio x 0.8 final contract")
+	log := getLastLog(t)
+	require.NotNil(t, log)
+	require.Equal(t, "GenAI", log.Group)
+	var other map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(log.Other), &other))
+	require.Equal(t, "model--claude-opus-5", other["routing_group"])
+}
+
 // ---------------------------------------------------------------------------
 // Read-back helpers
 // ---------------------------------------------------------------------------

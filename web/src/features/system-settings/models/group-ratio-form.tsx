@@ -27,12 +27,6 @@ import {
   sideDrawerHeaderClassName,
 } from '@/components/drawer-layout'
 import { JsonCodeEditor } from '@/components/json-code-editor'
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -170,7 +164,6 @@ export const GroupRatioForm = memo(function GroupRatioForm({
               groupRatio={form.watch('GroupRatio')}
               topupGroupRatio={form.watch('TopupGroupRatio')}
               userUsableGroups={form.watch('UserUsableGroups')}
-              groupGroupRatio={form.watch('GroupGroupRatio')}
               autoGroups={form.watch('AutoGroups')}
               maxTokenAutoGroupsField={
                 <FormField
@@ -310,33 +303,6 @@ export const GroupRatioForm = memo(function GroupRatioForm({
                   <FormDescription>
                     {t(
                       'JSON map of group → description exposed when users create API keys.'
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name='GroupGroupRatio'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Inter-group overrides')}</FormLabel>
-                  <FormControl>
-                    <JsonCodeEditor
-                      value={field.value}
-                      onChange={field.onChange}
-                      name={field.name}
-                      onBlur={field.onBlur}
-                      textareaRef={field.ref}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t('Nested JSON: source group →')}{' '}
-                    {`{ targetGroup: ratio }`}{' '}
-                    {t(
-                      'to override billing when a user in one group uses a token of another group.'
                     )}
                   </FormDescription>
                   <FormMessage />
@@ -491,301 +457,84 @@ function GroupPricingGuide({ open, onOpenChange }: GroupPricingGuideProps) {
         <SheetHeader className={sideDrawerHeaderClassName()}>
           <SheetTitle>{t('Group pricing usage guide')}</SheetTitle>
           <SheetDescription>
-            {t(
-              'Understand how user groups, token groups, ratios, and special rules work together.'
-            )}
+            {t('Use one User Group for each customer company.')}
           </SheetDescription>
         </SheetHeader>
 
         <div className={sideDrawerFormClassName('gap-5')}>
-          <section className='space-y-2'>
-            <h3 className='text-sm font-semibold'>
-              {t('The two roles of a group')}
-            </h3>
-            <div className='text-muted-foreground space-y-2 text-sm leading-6'>
-              <p>
-                {t(
-                  'Every group name in the pricing table can be used in two places: on a user (the user group, assigned by admins) and on a token (the token group, chosen when creating the token). Same name pool, two different jobs.'
-                )}
-              </p>
-              <p>
-                <span className='text-foreground font-medium'>
-                  {t('Token group')}
-                </span>
-                {': '}
-                {t(
-                  'decides which channels are used and which base ratio applies.'
-                )}
-              </p>
-              <p>
-                <span className='text-foreground font-medium'>
-                  {t('User group')}
-                </span>
-                {': '}
-                {t(
-                  'decides the top-up ratio, which groups the user can pick for tokens, and whether an override ratio applies.'
-                )}
-              </p>
-            </div>
+          <section className='space-y-3'>
+            <h3 className='text-sm font-semibold'>{t('Customer setup')}</h3>
+            <GuideStepRow chip='1'>
+              {t(
+                'Assign every user from the same company to that group on the Users page. Keep customer groups non-selectable so users cannot switch companies.'
+              )}
+            </GuideStepRow>
+            <GuideStepRow chip='2'>
+              {t(
+                "Use auto for tokens. Auto chooses an available channel but keeps the user's company as the customer for pricing and statements."
+              )}
+            </GuideStepRow>
+            <GuideStepRow chip='3'>
+              {t(
+                'Under Customer model prices, add the models negotiated with that company and enter the final multiplier.'
+              )}
+            </GuideStepRow>
           </section>
 
-          <section className='space-y-2'>
-            <h3 className='text-sm font-semibold'>
-              {t('How a call is priced')}
-            </h3>
-            <ol className='text-muted-foreground list-decimal space-y-2 pl-5 text-sm leading-6'>
-              <li>
-                <span className='text-foreground font-medium'>
-                  {t('Find the billing group.')}
-                </span>{' '}
-                {t(
-                  'Use the group set on the token. If the token has no group, use the user group. The auto group tries the auto assignment order from top to bottom.'
-                )}
-              </li>
-              <li>
-                <span className='text-foreground font-medium'>
-                  {t('Find the ratio.')}
-                </span>{' '}
-                {t(
-                  'Look for a special ratio rule matching this user group and this billing group. If one exists, use its ratio. Otherwise use the billing group base ratio from the pricing table.'
-                )}
-              </li>
-              <li>
-                <span className='text-foreground font-medium'>
-                  {t('Charge.')}
-                </span>{' '}
-                {t(
-                  'Cost = model price × that one ratio. Nothing else from the group settings enters the formula.'
-                )}
-              </li>
-            </ol>
+          <section className='space-y-3'>
+            <h3 className='text-sm font-semibold'>{t('Worked example')}</h3>
+            <GuideCodeBlock>
+              {`Customer: GenAI
+Model: claude-opus-5
+${t('Final multiplier')}: 0.8
+${t('Official in/out')}: $5 / $25
+${t('Customer in/out')}: $4 / $20`}
+            </GuideCodeBlock>
             <p className='text-muted-foreground text-sm leading-6'>
               {t(
-                'Common pitfall: the user group base ratio is NOT a personal discount. It only applies when the user group itself is the billing group.'
+                'Example: GenAI pays 0.8 for claude-opus-5. The official $5 / $25 becomes $4 / $20.'
               )}
             </p>
           </section>
 
           <section className='space-y-3'>
-            <h3 className='text-sm font-semibold'>{t('Worked example')}</h3>
+            <h3 className='text-sm font-semibold'>
+              {t('Two suppliers for one model')}
+            </h3>
             <p className='text-muted-foreground text-sm leading-6'>
               {t(
-                'The admin configured three groups and one special ratio rule:'
+                'Create one channel per supplier and model. Give the preferred supplier a higher priority and the fallback a lower priority.'
               )}
             </p>
-
-            <div className='overflow-hidden rounded-lg border'>
-              <div className='bg-muted/40 border-b px-3 py-1.5 text-xs font-medium'>
-                {t('Pricing groups')}
-              </div>
-              <table className='w-full text-sm'>
-                <thead>
-                  <tr className='text-muted-foreground border-b text-xs'>
-                    <th className='px-3 py-1.5 text-left font-medium'>
-                      {t('Group name')}
-                    </th>
-                    <th className='px-3 py-1.5 text-right font-medium'>
-                      {t('Ratio')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className='border-b'>
-                    <td className='px-3 py-1.5'>default</td>
-                    <td className='px-3 py-1.5 text-right'>1.0</td>
-                  </tr>
-                  <tr className='border-b'>
-                    <td className='px-3 py-1.5'>premium</td>
-                    <td className='px-3 py-1.5 text-right'>0.5</td>
-                  </tr>
-                  <tr>
-                    <td className='px-3 py-1.5'>vip</td>
-                    <td className='px-3 py-1.5 text-right'>0.8</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div className='overflow-hidden rounded-lg border'>
-              <div className='bg-muted/40 border-b px-3 py-1.5 text-xs font-medium'>
-                {t('Special ratio rules')}
-              </div>
-              <div className='p-3 text-sm leading-6'>
-                {t('Users of vip, when billed as premium, pay ratio')}{' '}
-                <span className='bg-primary/10 ring-primary/40 rounded px-1.5 py-0.5 font-semibold ring-1'>
-                  0.3
-                </span>{' '}
-                <span className='text-muted-foreground text-xs'>
-                  {t('(instead of {{ratio}})', { ratio: 0.5 })}
-                </span>
-              </div>
-            </div>
-
+            <GuideCodeBlock>{`Flatkey · claude-opus-5 · priority 4
+OpenRouter · claude-opus-5 · priority 0`}</GuideCodeBlock>
             <p className='text-muted-foreground text-sm leading-6'>
               {t(
-                'Three calls made by the same vip user. Assume the base price of one call is 10.'
+                "The customer price does not change when the fallback supplier is used. Only upstream cost and profit change through each channel's purchasing ratio."
               )}
             </p>
-
-            <div className='space-y-3'>
-              <div className='overflow-hidden rounded-lg border'>
-                <div className='bg-muted/40 border-b px-3 py-2 text-sm font-medium'>
-                  {t('Call 1: the token group is premium')}
-                </div>
-                <div className='space-y-2 p-3'>
-                  <GuideStepRow chip='1'>
-                    {t(
-                      'Billing group = premium (the token has a group, so use it)'
-                    )}
-                  </GuideStepRow>
-                  <GuideStepRow chip='2'>
-                    {t(
-                      'There is a rule for vip billed as premium → use its ratio 0.3'
-                    )}
-                  </GuideStepRow>
-                  <GuideStepRow chip='='>
-                    <span className='text-foreground font-medium'>
-                      {t('Cost = 10 × 0.3 = 3')}
-                    </span>
-                  </GuideStepRow>
-                </div>
-              </div>
-
-              <div className='overflow-hidden rounded-lg border'>
-                <div className='bg-muted/40 border-b px-3 py-2 text-sm font-medium'>
-                  {t('Call 2: the token group is default')}
-                </div>
-                <div className='space-y-2 p-3'>
-                  <GuideStepRow chip='1'>
-                    {t(
-                      'Billing group = default (the token has a group, so use it)'
-                    )}
-                  </GuideStepRow>
-                  <GuideStepRow chip='2'>
-                    {t(
-                      'No rule for vip billed as default → use the base ratio of default, 1.0 (the 0.8 of vip is not used)'
-                    )}
-                  </GuideStepRow>
-                  <GuideStepRow chip='='>
-                    <span className='text-foreground font-medium'>
-                      {t('Cost = 10 × 1.0 = 10')}
-                    </span>
-                  </GuideStepRow>
-                </div>
-              </div>
-
-              <div className='overflow-hidden rounded-lg border'>
-                <div className='bg-muted/40 border-b px-3 py-2 text-sm font-medium'>
-                  {t('Call 3: the token has no group')}
-                </div>
-                <div className='space-y-2 p-3'>
-                  <GuideStepRow chip='1'>
-                    {t(
-                      'Billing group = vip (the token has no group, so use the user group)'
-                    )}
-                  </GuideStepRow>
-                  <GuideStepRow chip='2'>
-                    {t(
-                      'No rule for vip billed as vip → use the base ratio of vip, 0.8'
-                    )}
-                  </GuideStepRow>
-                  <GuideStepRow chip='='>
-                    <span className='text-foreground font-medium'>
-                      {t('Cost = 10 × 0.8 = 8')}
-                    </span>
-                  </GuideStepRow>
-                </div>
-              </div>
-            </div>
           </section>
 
-          <Accordion className='rounded-lg border px-3'>
-            <AccordionItem value='groups'>
-              <AccordionTrigger>{t('Pricing group example')}</AccordionTrigger>
-              <AccordionContent className='space-y-3'>
-                <p className='text-muted-foreground text-sm leading-6'>
-                  {t(
-                    'Use the pricing group table to manage the ratio and whether the group appears in the token creation dropdown.'
-                  )}
-                </p>
-                <GuideCodeBlock>
-                  {`${t('Group name')}   ${t('Ratio')}   ${t('User selectable')}   ${t('Description')}
-standard     1.0     ${t('Yes')}               ${t('Standard price')}
-premium      0.5     ${t('Yes')}               ${t('Premium plan, half price')}
-vip          0.5     ${t('No')}                ${t('Assigned by administrator only')}`}
-                </GuideCodeBlock>
-                <p className='text-muted-foreground text-sm leading-6'>
-                  {t(
-                    'Users only see groups marked as user selectable. Non-selectable groups can still be assigned by administrators.'
-                  )}
-                </p>
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value='auto'>
-              <AccordionTrigger>{t('Auto group behavior')}</AccordionTrigger>
-              <AccordionContent className='space-y-3'>
-                <p className='text-muted-foreground text-sm leading-6'>
-                  {t(
-                    'When a token uses the auto group, the system tries groups from top to bottom until it finds an available group.'
-                  )}
-                </p>
-                <GuideCodeBlock>{`["default", "vip"]`}</GuideCodeBlock>
-                <p className='text-muted-foreground text-sm leading-6'>
-                  {t(
-                    'If default auto group is enabled, newly created tokens start with auto instead of an empty group.'
-                  )}
-                </p>
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value='special-ratio'>
-              <AccordionTrigger>{t('Special ratio rules')}</AccordionTrigger>
-              <AccordionContent className='space-y-3'>
-                <p className='text-muted-foreground text-sm leading-6'>
-                  {t(
-                    'In JSON, the user group is the outer key and the billing group is the inner key. The example below means: vip users pay 0.8 when billed as standard, and 0.3 when billed as premium.'
-                  )}
-                </p>
-                <GuideCodeBlock>{`{
-  "vip": {
-    "standard": 0.8,
-    "premium": 0.3
-  }
-}`}</GuideCodeBlock>
-                <p className='text-muted-foreground text-sm leading-6'>
-                  {t(
-                    'Only configured combinations are overridden. All other calls keep the billing group base ratio.'
-                  )}
-                </p>
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value='usable'>
-              <AccordionTrigger>
-                {t('Special usable group rules')}
-              </AccordionTrigger>
-              <AccordionContent className='space-y-3'>
-                <p className='text-muted-foreground text-sm leading-6'>
-                  {t(
-                    'Special usable group rules make extra token groups visible to, or hide default ones from, users of a specific user group.'
-                  )}
-                </p>
-                <GuideCodeBlock>{`{
-  "vip": {
-    "+:premium": "${t('Premium plan, half price')}",
-    "-:default": "remove",
-    "special": "${t('Special group')}"
-  }
-}`}</GuideCodeBlock>
-                <p className='text-muted-foreground text-sm leading-6'>
-                  {t(
-                    'In the visual editor these appear as Extra visible and Hidden. In JSON, +: (or no prefix) adds a group and -: removes one.'
-                  )}
-                </p>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+          <section className='space-y-3'>
+            <h3 className='text-sm font-semibold'>
+              {t('What each number means')}
+            </h3>
+            <div className='space-y-2'>
+              <GuideStepRow chip='客'>
+                {t(
+                  'Customer charge = official model price x customer-model final multiplier.'
+                )}
+              </GuideStepRow>
+              <GuideStepRow chip='供'>
+                {t(
+                  'Upstream cost = official model price x selected channel purchasing ratio.'
+                )}
+              </GuideStepRow>
+              <GuideStepRow chip='利'>
+                {t('Profit = customer charge - upstream cost.')}
+              </GuideStepRow>
+            </div>
+          </section>
         </div>
       </SheetContent>
     </Sheet>

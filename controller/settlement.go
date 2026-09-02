@@ -147,22 +147,15 @@ func GetSettlements(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// settlementPayments keys receipts by user id as a string, because that is what
-// a JSON object key is and the frontend joins on the statement's counterparty.
+// settlementPayments keys receipts by the customer/company User Group, exactly
+// matching customer statement counterparties. Tenantless/operator payments
+// retain the legacy user-id key.
 func settlementPayments(start, end string) (map[string][]model.CustomerPayment, error) {
 	from, to, err := model.ParseReconcileWindow(start, end)
 	if err != nil {
 		return nil, err
 	}
-	byUser, err := model.FetchCustomerPayments(from, to)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string][]model.CustomerPayment, len(byUser))
-	for userID, payments := range byUser {
-		out[strconv.Itoa(userID)] = payments
-	}
-	return out, nil
+	return model.FetchCustomerPaymentsByCustomer(from, to)
 }
 
 // IssueSettlementRequest is what the screen may set. Our own amount is

@@ -117,9 +117,7 @@ export function BaselinePricingTab() {
 
   const handleSave = useCallback(() => {
     if (invalidModels.length > 0) {
-      toast.error(
-        t('Invalid discount for: ') + invalidModels.join(', ')
-      )
+      toast.error(t('Invalid discount for: ') + invalidModels.join(', '))
       return
     }
     mutation.mutate(discountPayload(drafts))
@@ -144,7 +142,9 @@ export function BaselinePricingTab() {
       {shadowWarning ? (
         <Alert variant='destructive'>
           <ShieldAlert className='size-4' />
-          <AlertTitle>{t('Database is overriding the code baseline')}</AlertTitle>
+          <AlertTitle>
+            {t('Database is overriding the code baseline')}
+          </AlertTitle>
           <AlertDescription>
             <p>{shadowWarning}</p>
             <ul className='mt-2 list-disc pl-4 text-xs'>
@@ -153,7 +153,8 @@ export function BaselinePricingTab() {
                   <code>
                     {shadow.option}[{shadow.model}]
                   </code>{' '}
-                  baseline={shadow.baseline} live={shadow.live} — {shadow.reason}
+                  baseline={shadow.baseline} live={shadow.live} —{' '}
+                  {shadow.reason}
                 </li>
               ))}
             </ul>
@@ -164,7 +165,7 @@ export function BaselinePricingTab() {
       <Alert>
         <AlertDescription className='text-xs'>
           {t(
-            'Official prices come from the code catalog and are verified against models.dev; they are not editable here. Only the discount column is. Customer price = official price x discount x group ratio.'
+            'Official prices are read-only. This discount is the global fallback; a customer-model price configured in Group Pricing takes priority and is not multiplied again.'
           )}{' '}
           <strong>{t('Snapshot:')}</strong> {data?.data?.snapshot_date}
         </AlertDescription>
@@ -216,7 +217,9 @@ export function BaselinePricingTab() {
             <TableRow>
               <TableHead>{t('Model')}</TableHead>
               <TableHead>{t('Vendor')}</TableHead>
-              <TableHead className='text-right'>{t('Official in/out')}</TableHead>
+              <TableHead className='text-right'>
+                {t('Official in/out')}
+              </TableHead>
               <TableHead className='w-40'>{t('Discount')}</TableHead>
               {groups.map((group) => (
                 <TableHead key={group} className='text-right'>
@@ -293,7 +296,8 @@ function BaselineRow({ row, groups, draft, onChange }: BaselineRowProps) {
         ) : null}
       </TableCell>
       <TableCell className='text-right font-mono text-xs whitespace-nowrap'>
-        {formatUSD(row.official_input_usd)} / {formatUSD(row.official_output_usd)}
+        {formatUSD(row.official_input_usd)} /{' '}
+        {formatUSD(row.official_output_usd)}
       </TableCell>
       <TableCell className='w-28'>
         <Input
@@ -313,7 +317,8 @@ function BaselineRow({ row, groups, draft, onChange }: BaselineRowProps) {
       </TableCell>
       {groups.map((group) => {
         const groupRatio = row.group_prices[group]?.group_ratio ?? 1
-        const factor = discount * groupRatio
+        const customerMultiplier = row.group_prices[group]?.customer_multiplier
+        const factor = customerMultiplier ?? discount * groupRatio
         return (
           <TableCell
             key={group}

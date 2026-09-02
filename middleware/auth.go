@@ -457,7 +457,11 @@ func TokenAuth() func(c *gin.Context) {
 
 		userGroup := userCache.Group
 		tokenGroup := token.Group
-		if tokenGroup != "" {
+		// "auto" is a routing instruction, not a real billing group. Keep the
+		// user's own group as ContextKeyUsingGroup so customer pricing remains
+		// attached to the owning company, then let channel selection resolve the
+		// allowed Auto group list for that user.
+		if tokenGroup != "" && tokenGroup != "auto" {
 			// check common.UserUsableGroups[userGroup]
 			if _, ok := service.GetUserUsableGroups(userGroup)[tokenGroup]; !ok {
 				abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("无权访问 %s 分组", tokenGroup))
@@ -465,13 +469,11 @@ func TokenAuth() func(c *gin.Context) {
 			}
 			// check group in common.GroupRatio
 			if !ratio_setting.ContainsGroupRatio(tokenGroup) {
-				if tokenGroup != "auto" {
-					abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("分组 %s 已被弃用", tokenGroup))
-					return
-				}
+				abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("分组 %s 已被弃用", tokenGroup))
+				return
 			}
-			userGroup = tokenGroup
 		}
+		userGroup = effectiveUsingGroup(userGroup, tokenGroup)
 		common.SetContextKey(c, constant.ContextKeyUsingGroup, userGroup)
 
 		err = SetupContextForToken(c, token, parts...)
@@ -480,6 +482,13 @@ func TokenAuth() func(c *gin.Context) {
 		}
 		c.Next()
 	}
+}
+
+func effectiveUsingGroup(userGroup, tokenGroup string) string {
+	if tokenGroup == "" || tokenGroup == "auto" {
+		return userGroup
+	}
+	return tokenGroup
 }
 
 func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) error {
