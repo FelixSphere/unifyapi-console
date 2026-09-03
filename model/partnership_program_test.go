@@ -408,7 +408,14 @@ func TestGroupPricingUpdateAndProgramWriteNeverLeaveDanglingReference(t *testing
 	}()
 	go func() {
 		<-start
-		pricingErr <- UpdateOption("GroupRatio", `{"default":1}`)
+		pricingErr <- DB.Transaction(func(tx *gorm.DB) error {
+			return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
+				if err := validateOptionValueWithDB(tx, "GroupRatio", `{"default":1}`); err != nil {
+					return err
+				}
+				return saveOptionValue(tx, "GroupRatio", `{"default":1}`)
+			})
+		})
 	}()
 	close(start)
 	createErr := <-programErr
