@@ -132,3 +132,34 @@ func TestPartnershipCustomerGetsDedicatedPublicRegistrationOffer(t *testing.T) {
 	assert.Equal(t, "Acme Vietnam", offer.Data.CustomerName)
 	assert.Equal(t, "acme", offer.Data.Group)
 }
+
+func TestRemovePartnershipCustomerEndpointArchivesCustomer(t *testing.T) {
+	setupPartnershipControllerTest(t)
+	require.NoError(t, model.DB.Model(&model.Option{}).
+		Where("key = ?", "GroupRatio").Update("value", `{"partner":0.9,"acme":0.9}`).Error)
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"partner":0.9,"acme":0.9}`))
+	program := &model.PartnershipProgram{
+		Name: "Builder Hub", Code: "builder-remove", Group: "partner", Enabled: true,
+	}
+	require.NoError(t, model.CreatePartnershipProgram(program))
+	customer := &model.PartnershipCustomer{
+		Name: "Acme Vietnam", Code: "acme-remove-api", Group: "acme", Enabled: true,
+	}
+	require.NoError(t, model.CreatePartnershipCustomer(program.Id, customer))
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/partnership-programs/1/customers/2", nil)
+	c.Params = gin.Params{
+		{Key: "id", Value: strconv.Itoa(program.Id)},
+		{Key: "customerId", Value: strconv.Itoa(customer.Id)},
+	}
+	RemovePartnershipCustomer(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Contains(t, recorder.Body.String(), `"success":true`)
+	var archived model.PartnershipCustomer
+	require.NoError(t, model.DB.First(&archived, customer.Id).Error)
+	assert.False(t, archived.Enabled)
+	assert.NotZero(t, archived.RemovedAt)
+}

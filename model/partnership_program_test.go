@@ -315,6 +315,66 @@ func TestPartnershipCustomerLinkAssignsItsOwnBillableGroup(t *testing.T) {
 	assert.Equal(t, "vip", enrollment.CustomerGroup)
 }
 
+func TestRemovePartnershipCustomerArchivesAssociationAndPreservesHistory(t *testing.T) {
+	setupPartnershipTestDB(t)
+	program := &PartnershipProgram{
+		Name: "Regional event", Code: "regional-remove", Group: "partner",
+		GrantQuota: 5000000, GrantLimit: 2, Enabled: true,
+	}
+	require.NoError(t, CreatePartnershipProgram(program))
+	customer := &PartnershipCustomer{
+		Name: "Acme Vietnam", Code: "acme-remove", Group: "vip", Enabled: true,
+	}
+	require.NoError(t, CreatePartnershipCustomer(program.Id, customer))
+	user := &User{Username: "removehistory", Password: "password123", Role: 1, Status: 1}
+	_, err := user.InsertForPartnership(customer.Code)
+	require.NoError(t, err)
+
+	require.NoError(t, RemovePartnershipCustomer(program.Id, customer.Id))
+
+	var archived PartnershipCustomer
+	require.NoError(t, DB.First(&archived, customer.Id).Error)
+	assert.False(t, archived.Enabled)
+	assert.NotZero(t, archived.RemovedAt)
+	_, err = GetActivePartnershipOfferByCode(customer.Code)
+	require.ErrorIs(t, err, ErrPartnershipProgramUnavailable)
+	programs, err := GetPartnershipPrograms()
+	require.NoError(t, err)
+	require.Len(t, programs, 1)
+	require.Len(t, programs[0].Customers, 1)
+	assert.True(t, programs[0].Customers[0].IsDefault)
+	var enrollment PartnershipEnrollment
+	require.NoError(t, DB.Where("user_id = ?", user.Id).First(&enrollment).Error)
+	assert.Equal(t, customer.Id, enrollment.CustomerId)
+	assert.Equal(t, "vip", enrollment.CustomerGroup)
+	assert.Equal(t, "vip", user.Group)
+	assert.NoError(t, ValidateActivePartnershipGroups(map[string]struct{}{"partner": {}}))
+
+	restored := &PartnershipCustomer{
+		Name: "Acme Vietnam restored", Code: "acme-restored", Group: "vip", Enabled: true,
+	}
+	require.NoError(t, CreatePartnershipCustomer(program.Id, restored))
+	assert.Equal(t, customer.Id, restored.Id)
+	assert.Zero(t, restored.RemovedAt)
+	offer, err := GetActivePartnershipOfferByCode(restored.Code)
+	require.NoError(t, err)
+	assert.Equal(t, "vip", offer.CustomerGroup)
+}
+
+func TestDefaultPartnershipCustomerCannotBeRemoved(t *testing.T) {
+	setupPartnershipTestDB(t)
+	program := &PartnershipProgram{
+		Name: "Default owner", Code: "default-owner", Group: "partner", Enabled: true,
+	}
+	require.NoError(t, CreatePartnershipProgram(program))
+	var customer PartnershipCustomer
+	require.NoError(t, DB.Where("program_id = ? AND is_default = ?", program.Id, true).First(&customer).Error)
+
+	err := RemovePartnershipCustomer(program.Id, customer.Id)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "default customer group cannot be removed")
+}
+
 func TestPartnershipCodesShareOnePublicNamespace(t *testing.T) {
 	setupPartnershipTestDB(t)
 	program := &PartnershipProgram{

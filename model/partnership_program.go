@@ -60,6 +60,7 @@ type PartnershipCustomer struct {
 	Group     string `json:"group" gorm:"type:varchar(64);not null;uniqueIndex:idx_partnership_customer_group"`
 	IsDefault bool   `json:"is_default" gorm:"not null;default:false;index"`
 	Enabled   bool   `json:"enabled" gorm:"not null;default:true;index"`
+	RemovedAt int64  `json:"removed_at" gorm:"not null;default:0;index"`
 	CreatedAt int64  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt int64  `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -134,7 +135,7 @@ func IsPartnershipProgramActive(program *PartnershipProgram, now int64) bool {
 func GetPartnershipPrograms() ([]PartnershipProgram, error) {
 	var programs []PartnershipProgram
 	err := DB.Preload("Customers", func(db *gorm.DB) *gorm.DB {
-		return db.Order("is_default DESC, created_at ASC, id ASC")
+		return db.Where("removed_at = ?", 0).Order("is_default DESC, created_at ASC, id ASC")
 	}).Order("created_at DESC, id DESC").Find(&programs).Error
 	return programs, err
 }
@@ -162,7 +163,7 @@ func initializePartnershipCustomers() error {
 		}
 		for _, program := range programs {
 			var customer PartnershipCustomer
-			err := tx.Where("program_id = ? AND is_default = ?", program.Id, true).
+			err := tx.Where("program_id = ? AND is_default = ? AND removed_at = ?", program.Id, true, 0).
 				First(&customer).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				customer = PartnershipCustomer{
@@ -288,6 +289,29 @@ func CreatePartnershipCustomer(programId int, customer *PartnershipCustomer) err
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&program, programId).Error; err != nil {
 				return err
 			}
+			var removed PartnershipCustomer
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("program_id = ? AND `group` = ? AND removed_at <> ?", programId, customer.Group, 0).
+				First(&removed).Error
+			if err == nil {
+				if err := validatePartnershipCodeAvailable(tx, customer.Code, 0, removed.Id); err != nil {
+					return err
+				}
+				removed.Name = customer.Name
+				removed.Code = customer.Code
+				removed.Enabled = customer.Enabled
+				removed.RemovedAt = 0
+				if err := tx.Model(&removed).Updates(map[string]any{
+					"name": removed.Name, "code": removed.Code, "enabled": removed.Enabled, "removed_at": 0,
+				}).Error; err != nil {
+					return err
+				}
+				*customer = removed
+				return nil
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
 			if err := validatePartnershipCodeAvailable(tx, customer.Code, 0, 0); err != nil {
 				return err
 			}
@@ -313,7 +337,7 @@ func UpdatePartnershipCustomer(programId, customerId int, input *PartnershipCust
 				return err
 			}
 			var current PartnershipCustomer
-			if err := tx.Where("id = ? AND program_id = ?", customerId, programId).First(&current).Error; err != nil {
+			if err := tx.Where("id = ? AND program_id = ? AND removed_at = ?", customerId, programId, 0).First(&current).Error; err != nil {
 				return err
 			}
 			if current.IsDefault {
@@ -324,6 +348,32 @@ func UpdatePartnershipCustomer(programId, customerId int, input *PartnershipCust
 			}
 			return tx.Model(&current).Updates(map[string]any{
 				"name": input.Name, "code": input.Code, "group": input.Group, "enabled": input.Enabled,
+			}).Error
+		})
+	})
+}
+
+// RemovePartnershipCustomer archives a Program-to-Group association. It keeps
+// the row and historical enrollments for accounting, while immediately
+// disabling the public registration link. The default customer is the
+// Program's accounting anchor and must be changed through Program settings.
+func RemovePartnershipCustomer(programId, customerId int) error {
+	if programId <= 0 || customerId <= 0 {
+		return errors.New("invalid partnership customer id")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
+			var current PartnershipCustomer
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ? AND program_id = ? AND removed_at = ?", customerId, programId, 0).
+				First(&current).Error; err != nil {
+				return err
+			}
+			if current.IsDefault {
+				return errors.New("the default customer group cannot be removed; change it through Program settings")
+			}
+			return tx.Model(&current).Updates(map[string]any{
+				"enabled": false, "removed_at": time.Now().Unix(),
 			}).Error
 		})
 	})
@@ -407,7 +457,7 @@ func validatePartnershipProgramGroup(tx *gorm.DB, group string) error {
 func getPartnershipOfferByCode(tx *gorm.DB, code string, lock bool) (*PartnershipOffer, error) {
 	normalized := NormalizePartnershipCode(code)
 	var customer PartnershipCustomer
-	err := tx.Where("code = ?", normalized).First(&customer).Error
+	err := tx.Where("code = ? AND removed_at = ?", normalized, 0).First(&customer).Error
 	if err == nil {
 		var program PartnershipProgram
 		programQuery := tx
@@ -527,7 +577,7 @@ func validateActivePartnershipGroups(db *gorm.DB, groups map[string]struct{}) er
 		if err := db.Table("partnership_customers AS pc").
 			Select("pc.*").
 			Joins("JOIN partnership_programs AS pp ON pp.id = pc.program_id").
-			Where("pc.enabled = ? AND pp.enabled = ?", true, true).
+			Where("pc.enabled = ? AND pc.removed_at = ? AND pp.enabled = ?", true, 0, true).
 			Find(&customers).Error; err != nil {
 			return err
 		}
