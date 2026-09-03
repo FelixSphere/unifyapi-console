@@ -216,7 +216,7 @@ func GetTenantPayments(tenantId int, limit int) ([]*TenantPayment, error) {
 			top_ups.status as status,
 			top_ups.create_time as create_time`).
 		Joins("join users on users.id = top_ups.user_id").
-		Where("users.tenant_id = ?", tenantId).
+		Where("top_ups.tenant_id = ? OR (top_ups.tenant_id = 0 AND users.tenant_id = ?)", tenantId, tenantId).
 		Order("top_ups.id desc").
 		Limit(limit).
 		Find(&payments).Error

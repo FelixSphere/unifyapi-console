@@ -85,6 +85,11 @@ func TestPartnershipOAuthKeepsInviterAttributionWithoutRewards(t *testing.T) {
 	var tenant model.Tenant
 	require.NoError(t, model.DB.First(&tenant, stored.TenantId).Error)
 	assert.Equal(t, 5000000, tenant.Quota, "invitee reward must not stack")
+	require.NoError(t, model.TryDecreaseUserQuota(stored.Id, 1000000))
+	require.NoError(t, model.DB.First(&tenant, stored.TenantId).Error)
+	assert.Equal(t, 4000000, tenant.Quota, "partnership grant must be spendable through the tenant wallet")
+	require.NoError(t, model.DB.First(&stored, stored.Id).Error)
+	assert.Zero(t, stored.Quota, "partnership member must not retain a second wallet")
 	var storedInviter model.User
 	require.NoError(t, model.DB.First(&storedInviter, inviter.Id).Error)
 	assert.Equal(t, 99, storedInviter.Quota, "inviter reward must not stack")

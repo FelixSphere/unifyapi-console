@@ -120,6 +120,7 @@ type User struct {
 func (user *User) ToBaseUser() *UserBase {
 	cache := &UserBase{
 		Id:          user.Id,
+		TenantId:    user.TenantId,
 		Group:       user.Group,
 		Quota:       user.Quota,
 		Status:      user.Status,
@@ -529,17 +530,22 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
 		return errors.New("邀请额度不足！")
 	}
 
-	// 更新用户额度
+	// Move the reward into the user's shared billing entity while keeping the
+	// affiliate counters on the individual member.
 	user.AffQuota -= quota
-	user.Quota += quota
-
-	// 保存用户状态
-	if err := tx.Save(user).Error; err != nil {
+	if err := tx.Model(&User{}).Where("id = ?", user.Id).Update("aff_quota", user.AffQuota).Error; err != nil {
+		return err
+	}
+	if _, err := IncreaseUserQuotaWithTx(tx, user.Id, quota); err != nil {
 		return err
 	}
 
 	// 提交事务
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
+	_ = InvalidateBillingQuotaCacheForUser(user.Id)
+	return nil
 }
 
 func (user *User) prepareForInsert(tx *gorm.DB) error {
@@ -1162,6 +1168,22 @@ func ValidateAccessToken(token string) (*User, error) {
 
 // GetUserQuota gets quota from Redis first, falls back to DB if needed
 func GetUserQuota(id int, fromDB bool) (quota int, err error) {
+	entity, err := ResolveBillingEntity(id)
+	if err != nil {
+		return 0, err
+	}
+	if entity.IsTenant() {
+		if !fromDB && common.RedisEnabled {
+			if quota, err = getTenantQuotaCached(entity.TenantId); err == nil {
+				return quota, nil
+			}
+		}
+		quota, err = getBillingQuotaFromDB(DB, entity)
+		if err == nil {
+			_ = cacheTenantQuota(entity.TenantId, quota)
+		}
+		return quota, err
+	}
 	defer func() {
 		// Update Redis cache asynchronously on successful DB read
 		if shouldUpdateRedis(fromDB, err) {
@@ -1268,6 +1290,17 @@ func IncreaseUserQuota(id int, quota int, db bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
 	}
+	entity, err := ResolveBillingEntity(id)
+	if err != nil {
+		return err
+	}
+	if entity.IsTenant() {
+		if _, err := adjustBillingQuotaWithTx(DB, id, quota); err != nil {
+			return err
+		}
+		_ = invalidateBillingQuotaCache(entity)
+		return nil
+	}
 	gopool.Go(func() {
 		err := cacheIncrUserQuota(id, int64(quota))
 		if err != nil {
@@ -1292,6 +1325,17 @@ func increaseUserQuota(id int, quota int) (err error) {
 func DecreaseUserQuota(id int, quota int, db bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
+	}
+	entity, err := ResolveBillingEntity(id)
+	if err != nil {
+		return err
+	}
+	if entity.IsTenant() {
+		if _, err := adjustBillingQuotaWithTx(DB, id, -quota); err != nil {
+			return err
+		}
+		_ = invalidateBillingQuotaCache(entity)
+		return nil
 	}
 	gopool.Go(func() {
 		err := cacheDecrUserQuota(id, int64(quota))
@@ -1342,12 +1386,21 @@ func UpdateUserLastLoginAt(id int) {
 }
 
 func UpdateUserUsedQuotaAndRequestCount(id int, quota int) {
+	entity, entityErr := ResolveBillingEntity(id)
 	if common.BatchUpdateEnabled {
 		addNewRecord(BatchUpdateTypeUsedQuota, id, quota)
 		addNewRecord(BatchUpdateTypeRequestCount, id, 1)
+		if entityErr == nil && entity.IsTenant() {
+			addNewRecord(BatchUpdateTypeTenantUsedQuota, entity.TenantId, quota)
+		}
 		return
 	}
 	updateUserUsedQuotaAndRequestCount(id, quota, 1)
+	if entityErr == nil && entity.IsTenant() {
+		if err := increaseTenantUsedQuota(entity.TenantId, quota); err != nil {
+			common.SysLog("failed to update tenant used quota: " + err.Error())
+		}
+	}
 }
 
 func updateUserUsedQuotaAndRequestCount(id int, quota int, count int) {

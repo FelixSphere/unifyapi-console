@@ -101,8 +101,7 @@ func userCheckinWithTransaction(checkin *Checkin, userId int, quotaAwarded int) 
 		}
 
 		// 步骤2: 在事务中增加用户额度
-		if err := tx.Model(&User{}).Where("id = ?", userId).
-			Update("quota", gorm.Expr("quota + ?", quotaAwarded)).Error; err != nil {
+		if _, err := IncreaseUserQuotaWithTx(tx, userId, quotaAwarded); err != nil {
 			return errors.New("签到失败：更新额度出错")
 		}
 
@@ -112,11 +111,7 @@ func userCheckinWithTransaction(checkin *Checkin, userId int, quotaAwarded int) 
 	if err != nil {
 		return nil, err
 	}
-
-	// 事务成功后，异步更新缓存
-	go func() {
-		_ = cacheIncrUserQuota(userId, int64(quotaAwarded))
-	}()
+	_ = InvalidateBillingQuotaCacheForUser(userId)
 
 	return checkin, nil
 }

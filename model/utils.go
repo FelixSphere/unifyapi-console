@@ -17,6 +17,7 @@ const (
 	BatchUpdateTypeUsedQuota
 	BatchUpdateTypeChannelUsedQuota
 	BatchUpdateTypeRequestCount
+	BatchUpdateTypeTenantUsedQuota
 	BatchUpdateTypeCount // if you add a new type, you need to add a new map and a new lock
 )
 
@@ -88,6 +89,10 @@ func batchUpdate() {
 				}
 			case BatchUpdateTypeChannelUsedQuota:
 				updateChannelUsedQuota(key, value)
+			case BatchUpdateTypeTenantUsedQuota:
+				if err := increaseTenantUsedQuota(key, value); err != nil {
+					common.SysLog("failed to batch update tenant used quota: " + err.Error())
+				}
 			}
 		}
 	}
