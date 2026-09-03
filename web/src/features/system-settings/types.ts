@@ -659,6 +659,10 @@ export type StatementKind = 'customer' | 'vendor'
 
 export type StatementLine = {
   model: string
+  channel_id?: number
+  channel_name?: string
+  channel_base_url?: string
+  cost_ratio?: number
   requests: number
   prompt_tokens: number
   cached_tokens: number
@@ -709,18 +713,12 @@ export type SettlementRecord = {
 export type SettlementRow = {
   statement: Statement
   settlement?: SettlementRecord
+  /** Frozen line items that were actually issued; statement remains the live comparison. */
+  issued_statement?: Statement
   /** Live minus frozen: non-zero means pricing moved after this was issued. */
   drift_usd?: number
   variance_usd?: number
   variance_pct?: number
-}
-
-export type CustomerPayment = {
-  user_id: number
-  provider: string
-  orders: number
-  credited_usd: number
-  charged_money: number
 }
 
 export type SettlementTotals = {
@@ -742,8 +740,6 @@ export type SettlementResponse = {
     totals: SettlementTotals
     orphaned?: SettlementRecord[]
   }
-  /** Customer side only, keyed by company User Group (user id for tenantless accounts). */
-  payments?: Record<string, CustomerPayment[]>
   cost_basis?: {
     description: string
     snapshot_date: string

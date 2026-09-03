@@ -39,16 +39,16 @@ type Settlement struct {
 	Id int `json:"id"`
 
 	// Kind is "customer" (money owed to us) or "vendor" (money we owe).
-	Kind string `json:"kind" gorm:"type:varchar(16);index:idx_settlement_period,priority:1"`
+	Kind string `json:"kind" gorm:"type:varchar(16);index:idx_settlement_period,priority:1;uniqueIndex:uidx_settlement_period,priority:1"`
 
 	// Counterparty is the stable id: a user id for a customer, a vendor id for
 	// an upstream. Label is the display name AT ISSUE TIME, stored rather than
 	// joined so a renamed customer does not retroactively rename their invoices.
-	Counterparty string `json:"counterparty" gorm:"type:varchar(64);index:idx_settlement_period,priority:2"`
+	Counterparty string `json:"counterparty" gorm:"type:varchar(64);index:idx_settlement_period,priority:2;uniqueIndex:uidx_settlement_period,priority:2"`
 	Label        string `json:"label" gorm:"type:varchar(191)"`
 
-	PeriodStart string `json:"period_start" gorm:"type:varchar(16);index:idx_settlement_period,priority:3"`
-	PeriodEnd   string `json:"period_end" gorm:"type:varchar(16);index:idx_settlement_period,priority:4"`
+	PeriodStart string `json:"period_start" gorm:"type:varchar(16);index:idx_settlement_period,priority:3;uniqueIndex:uidx_settlement_period,priority:3"`
+	PeriodEnd   string `json:"period_end" gorm:"type:varchar(16);index:idx_settlement_period,priority:4;uniqueIndex:uidx_settlement_period,priority:4"`
 
 	// AmountUSD is our figure: billed to the customer, or modelled for the
 	// vendor.
@@ -88,19 +88,26 @@ func (s *Settlement) VarianceUSD() float64 {
 	return s.InvoicedUSD - s.AmountUSD
 }
 
-// SaveSettlement inserts or updates the settlement for its (kind, counterparty,
-// period) and returns the stored row.
-//
-// Upsert rather than append: re-issuing a corrected August statement must
-// replace August, not leave two rows for a reader to choose between. The whole
-// thing runs in one transaction so a failure cannot delete the old row without
-// writing the new one.
-func SaveSettlement(settlement *Settlement) (*Settlement, error) {
+var (
+	ErrSettlementAlreadyIssued = errors.New("settlement already issued")
+	ErrSettlementImmutable     = errors.New("issued settlements are immutable; void the record instead")
+)
+
+func validateSettlementKey(settlement *Settlement) error {
 	if settlement.Kind == "" || settlement.Counterparty == "" {
-		return nil, errors.New("settlement requires a kind and a counterparty")
+		return errors.New("settlement requires a kind and a counterparty")
 	}
 	if settlement.PeriodStart == "" || settlement.PeriodEnd == "" {
-		return nil, errors.New("settlement requires a period")
+		return errors.New("settlement requires a period")
+	}
+	return nil
+}
+
+// CreateSettlement freezes a statement exactly once. Corrections belong in a
+// void workflow record, never in a rewrite of what was already sent or paid.
+func CreateSettlement(settlement *Settlement) (*Settlement, error) {
+	if err := validateSettlementKey(settlement); err != nil {
+		return nil, err
 	}
 	if settlement.Status == "" {
 		settlement.Status = SettlementStatusIssued
@@ -108,35 +115,54 @@ func SaveSettlement(settlement *Settlement) (*Settlement, error) {
 
 	now := common.GetTimestamp()
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		var existing Settlement
-		err := tx.Where("kind = ? AND counterparty = ? AND period_start = ? AND period_end = ?",
-			settlement.Kind, settlement.Counterparty, settlement.PeriodStart, settlement.PeriodEnd).
-			First(&existing).Error
-
-		switch {
-		case errors.Is(err, gorm.ErrRecordNotFound):
-			settlement.CreatedAt = now
-			settlement.UpdatedAt = now
-			return tx.Create(settlement).Error
-		case err != nil:
+		var count int64
+		if err := tx.Model(&Settlement{}).
+			Where("kind = ? AND counterparty = ? AND period_start = ? AND period_end = ?",
+				settlement.Kind, settlement.Counterparty, settlement.PeriodStart, settlement.PeriodEnd).
+			Count(&count).Error; err != nil {
 			return err
 		}
-
-		settlement.Id = existing.Id
-		settlement.CreatedAt = existing.CreatedAt
+		if count != 0 {
+			return ErrSettlementAlreadyIssued
+		}
+		settlement.CreatedAt = now
 		settlement.UpdatedAt = now
-		// Select the columns explicitly: GORM's Save skips zero values on a
-		// struct update, which would make "correct the invoice back to 0" and
-		// "clear the note" silently do nothing.
-		return tx.Model(&Settlement{}).Where("id = ?", existing.Id).
-			Select("label", "amount_usd", "invoiced_usd", "invoice_recorded", "status",
-				"note", "statement_json", "pricing_snapshot_date", "updated_at").
-			Updates(settlement).Error
+		return tx.Create(settlement).Error
 	})
 	if err != nil {
 		return nil, err
 	}
 	return settlement, nil
+}
+
+// UpdateSettlementCounterparty changes only workflow metadata and the amount
+// on the counterparty's own invoice. Frozen amount and line items cannot enter
+// this update path.
+func UpdateSettlementCounterparty(settlement *Settlement) (*Settlement, error) {
+	if settlement.Id == 0 {
+		return nil, errors.New("settlement id is required")
+	}
+	settlement.UpdatedAt = common.GetTimestamp()
+	result := DB.Model(&Settlement{}).Where("id = ?", settlement.Id).
+		Select("invoiced_usd", "invoice_recorded", "status", "note", "updated_at").
+		Updates(settlement)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, fmt.Errorf("settlement %d not found", settlement.Id)
+	}
+	return GetSettlement(settlement.Id)
+}
+
+// GetSettlementByPeriod returns the frozen record for one accounting key.
+func GetSettlementByPeriod(kind, counterparty, periodStart, periodEnd string) (*Settlement, error) {
+	var settlement Settlement
+	if err := DB.Where("kind = ? AND counterparty = ? AND period_start = ? AND period_end = ?",
+		kind, counterparty, periodStart, periodEnd).First(&settlement).Error; err != nil {
+		return nil, err
+	}
+	return &settlement, nil
 }
 
 // ListSettlements returns issued settlements for a period, or for a kind across
@@ -166,18 +192,11 @@ func GetSettlement(id int) (*Settlement, error) {
 	return &settlement, nil
 }
 
-// DeleteSettlement removes an issued settlement.
-//
-// Kept because a statement issued for the wrong period is a real mistake with
-// no other remedy -- voiding it leaves a row that still has to be explained to
-// whoever reads the list next month.
+// DeleteSettlement deliberately refuses to erase issued accounting history.
+// The endpoint remains for compatibility and tells callers to void instead.
 func DeleteSettlement(id int) error {
-	result := DB.Where("id = ?", id).Delete(&Settlement{})
-	if result.Error != nil {
-		return result.Error
+	if _, err := GetSettlement(id); err != nil {
+		return err
 	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("settlement %d not found", id)
-	}
-	return nil
+	return ErrSettlementImmutable
 }

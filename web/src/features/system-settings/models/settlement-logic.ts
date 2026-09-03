@@ -15,12 +15,7 @@ Two things here are deliberately NOT like the profit screen:
     round identically, and two copies of a rounding rule eventually stop
     agreeing.
 */
-import type {
-  CustomerPayment,
-  SettlementRow,
-  Statement,
-  StatementKind,
-} from '../types'
+import type { SettlementRow, Statement, StatementKind } from '../types'
 import { formatUSD, toISODate } from './profit-logic'
 
 export { formatTokens, formatUSD } from './profit-logic'
@@ -56,11 +51,28 @@ export function monthPeriod(today: Date, monthsBack: number): BillingPeriod {
 }
 
 /** MONTH_OFFSETS are the choices offered, newest-billable first. */
-export const MONTH_OFFSETS = [1, 0, 2, 3] as const
+export const MONTH_OFFSETS = [0, 1, 2, 3, 4, 5] as const
 
 /** recentPeriods lists the billing periods a user can pick. */
 export function recentPeriods(today: Date): BillingPeriod[] {
   return MONTH_OFFSETS.map((offset) => monthPeriod(today, offset))
+}
+
+/** periodFromMonthLabel lets the month input select any natural month, while
+ * recentPeriods keeps the common six one click away. */
+export function periodFromMonthLabel(label: string): BillingPeriod | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(label)
+  if (!match) return null
+  const year = Number(match[1])
+  const month = Number(match[2])
+  if (month < 1 || month > 12) return null
+  const first = new Date(year, month - 1, 1)
+  const last = new Date(year, month, 0)
+  return {
+    start: toISODate(first),
+    end: toISODate(last),
+    label,
+  }
 }
 
 /** isPeriodClosed reports whether a period has finished accruing.
@@ -136,7 +148,8 @@ export function varianceVerdict(row: SettlementRow): VarianceVerdict {
   const settlement = row.settlement
   if (!settlement?.invoice_recorded) return 'pending'
   const modelled = settlement.amount_usd
-  if (modelled === 0) return settlement.invoiced_usd === 0 ? 'reconciled' : 'over'
+  if (modelled === 0)
+    return settlement.invoiced_usd === 0 ? 'reconciled' : 'over'
   const pct = ((settlement.invoiced_usd - modelled) / modelled) * 100
   if (Math.abs(pct) <= VARIANCE_TOLERANCE_PCT) return 'reconciled'
   return pct > 0 ? 'over' : 'under'
@@ -164,12 +177,6 @@ export const PRIMARY_ACTION_LABELS: Record<'update' | StatementKind, string> = {
   vendor: 'Record settlement',
 }
 
-/** paymentsTotalUSD sums one customer's receipts for the period. */
-export function paymentsTotalUSD(payments: CustomerPayment[] | undefined): number {
-  if (!payments?.length) return 0
-  return payments.reduce((sum, payment) => sum + payment.credited_usd, 0)
-}
-
 /**
  * DerivationStep mirrors the profit screen's, so the expanded row on an invoice
  * reads the same way as the expanded row on the dashboard.
@@ -182,6 +189,21 @@ export type StatementStep = {
   emphasis?: boolean
 }
 
+export function statementIsBalanced(statement: Statement): boolean {
+  const lineAmount = statement.lines.reduce(
+    (sum, line) => sum + line.amount_usd,
+    0
+  )
+  const lineRequests = statement.lines.reduce(
+    (sum, line) => sum + line.requests,
+    0
+  )
+  return (
+    Math.abs(lineAmount - statement.amount_usd) <= 1e-8 &&
+    lineRequests === statement.requests
+  )
+}
+
 /**
  * deriveStatement explains one statement's amount.
  *
@@ -190,13 +212,9 @@ export type StatementStep = {
  * estimate. Collapsing them into a single wording is how a reader ends up
  * treating a modelled cost as a settled fact.
  */
-export function deriveStatement(
-  statement: Statement,
-  payments?: CustomerPayment[]
-): StatementStep[] {
+export function deriveStatement(statement: Statement): StatementStep[] {
   if (statement.kind === 'customer') {
-    const paid = paymentsTotalUSD(payments)
-    const steps: StatementStep[] = [
+    return [
       {
         labelKey: 'Usage this period (from the ledger)',
         amountUSD: statement.amount_usd,
@@ -204,33 +222,14 @@ export function deriveStatement(
           'Sum of quota actually deducted — already includes model discount, group ratio and cache pricing.',
       },
     ]
-    if (payments?.length) {
-      steps.push({
-        labelKey: 'Received this period',
-        amountUSD: paid,
-        noteKey: 'Top-ups credited between {{start}} and {{end}}, across {{count}} orders.',
-        noteParams: {
-          start: statement.period_start,
-          end: statement.period_end,
-          count: payments.reduce((sum, payment) => sum + payment.orders, 0),
-        },
-      })
-      steps.push({
-        labelKey: 'Received minus used',
-        amountUSD: paid - statement.amount_usd,
-        emphasis: true,
-        noteKey:
-          'Not an account balance: it compares this period only, and says nothing about credit carried in or out.',
-      })
-    }
-    return steps
   }
 
   const steps: StatementStep[] = [
     {
       labelKey: 'Modelled upstream cost',
       amountUSD: statement.amount_usd,
-      noteKey: 'Tokens x vendor official price x this channel purchasing ratio.',
+      noteKey:
+        'Tokens x vendor official price x this channel purchasing ratio.',
       emphasis: true,
     },
   ]

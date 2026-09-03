@@ -49,27 +49,24 @@ func augustVendorSettlement() *Settlement {
 	}
 }
 
-// TestReissuingCorrectsAPeriodRatherThanDuplicatingIt. A corrected August has
-// to replace August. Two rows for the same counterparty and period leave a
-// reader to guess which one was paid, which is worse than no record.
-func TestReissuingCorrectsAPeriodRatherThanDuplicatingIt(t *testing.T) {
+// TestReissuingCannotRewriteAFrozenPeriod. Once a statement leaves the
+// building, changing its amount or line items destroys the audit trail.
+func TestReissuingCannotRewriteAFrozenPeriod(t *testing.T) {
 	setupSettlementTestDB(t)
 
-	first, err := SaveSettlement(augustVendorSettlement())
+	first, err := CreateSettlement(augustVendorSettlement())
 	require.NoError(t, err)
 	require.NotZero(t, first.Id)
 
 	corrected := augustVendorSettlement()
 	corrected.AmountUSD = 1300.00
-	second, err := SaveSettlement(corrected)
-	require.NoError(t, err)
-
-	assert.Equal(t, first.Id, second.Id, "the same period must keep the same row")
+	_, err = CreateSettlement(corrected)
+	require.ErrorIs(t, err, ErrSettlementAlreadyIssued)
 
 	all, err := ListSettlements("vendor", "2026-08-01", "2026-08-31", 0)
 	require.NoError(t, err)
 	require.Len(t, all, 1)
-	assert.InDelta(t, 1300.00, all[0].AmountUSD, 1e-9)
+	assert.InDelta(t, 1240.55, all[0].AmountUSD, 1e-9)
 	assert.Equal(t, first.CreatedAt, all[0].CreatedAt, "issue time is when it was first issued")
 }
 
@@ -78,13 +75,13 @@ func TestReissuingCorrectsAPeriodRatherThanDuplicatingIt(t *testing.T) {
 func TestADifferentPeriodIsADifferentSettlement(t *testing.T) {
 	setupSettlementTestDB(t)
 
-	_, err := SaveSettlement(augustVendorSettlement())
+	_, err := CreateSettlement(augustVendorSettlement())
 	require.NoError(t, err)
 
 	september := augustVendorSettlement()
 	september.PeriodStart, september.PeriodEnd = "2026-09-01", "2026-09-30"
 	september.AmountUSD = 990
-	_, err = SaveSettlement(september)
+	_, err = CreateSettlement(september)
 	require.NoError(t, err)
 
 	all, err := ListSettlements("vendor", "", "", 0)
@@ -98,13 +95,13 @@ func TestCustomerAndVendorDoNotCollide(t *testing.T) {
 	setupSettlementTestDB(t)
 
 	vendor := augustVendorSettlement()
-	_, err := SaveSettlement(vendor)
+	_, err := CreateSettlement(vendor)
 	require.NoError(t, err)
 
 	customer := augustVendorSettlement()
 	customer.Kind = "customer"
 	customer.AmountUSD = 42
-	_, err = SaveSettlement(customer)
+	_, err = CreateSettlement(customer)
 	require.NoError(t, err)
 
 	vendors, err := ListSettlements("vendor", "2026-08-01", "2026-08-31", 0)
@@ -129,13 +126,13 @@ func TestClearingAFieldActuallyClearsIt(t *testing.T) {
 	initial.InvoicedUSD = 1250
 	initial.InvoiceRecorded = true
 	initial.Note = "waiting on the credit memo"
-	saved, err := SaveSettlement(initial)
+	saved, err := CreateSettlement(initial)
 	require.NoError(t, err)
 
 	saved.InvoicedUSD = 0
 	saved.Note = ""
 	saved.InvoiceRecorded = false
-	_, err = SaveSettlement(saved)
+	_, err = UpdateSettlementCounterparty(saved)
 	require.NoError(t, err)
 
 	reloaded, err := GetSettlement(saved.Id)
@@ -159,21 +156,22 @@ func TestAnUnrecordedInvoiceIsNotAZeroInvoice(t *testing.T) {
 		"an invoice genuinely at zero IS a finding, once someone says so")
 }
 
-func TestDeleteSettlementReportsAMissingRow(t *testing.T) {
+func TestIssuedSettlementCannotBeDeleted(t *testing.T) {
 	setupSettlementTestDB(t)
-	saved, err := SaveSettlement(augustVendorSettlement())
+	saved, err := CreateSettlement(augustVendorSettlement())
 	require.NoError(t, err)
 
-	require.NoError(t, DeleteSettlement(saved.Id))
-	assert.Error(t, DeleteSettlement(saved.Id), "deleting twice must not report success")
+	require.ErrorIs(t, DeleteSettlement(saved.Id), ErrSettlementImmutable)
+	_, err = GetSettlement(saved.Id)
+	require.NoError(t, err, "the frozen accounting record must remain")
 }
 
-func TestSaveSettlementRejectsAnUnkeyedRecord(t *testing.T) {
+func TestCreateSettlementRejectsAnUnkeyedRecord(t *testing.T) {
 	setupSettlementTestDB(t)
-	_, err := SaveSettlement(&Settlement{Kind: "vendor", PeriodStart: "a", PeriodEnd: "b"})
+	_, err := CreateSettlement(&Settlement{Kind: "vendor", PeriodStart: "a", PeriodEnd: "b"})
 	assert.Error(t, err, "a settlement with no counterparty has nothing to be about")
 
-	_, err = SaveSettlement(&Settlement{Kind: "vendor", Counterparty: "anthropic"})
+	_, err = CreateSettlement(&Settlement{Kind: "vendor", Counterparty: "anthropic"})
 	assert.Error(t, err, "a settlement with no period cannot be reconciled against anything")
 }
 
