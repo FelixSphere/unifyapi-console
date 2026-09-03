@@ -28,7 +28,7 @@ func setupPartnershipTestDB(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&User{}, &Tenant{}, &Log{}, &Option{}, &PartnershipProgram{}, &PartnershipEnrollment{},
+		&User{}, &Tenant{}, &Log{}, &Option{}, &PartnershipProgram{}, &PartnershipCustomer{}, &PartnershipEnrollment{},
 	))
 	previous := DB
 	previousType := common.MainDatabaseType()
@@ -250,13 +250,13 @@ func TestConnectingExistingUserDoesNotChangeGroupOrGrant(t *testing.T) {
 		GrantQuota: 5000000, GrantLimit: 2, Enabled: true,
 	}
 	require.NoError(t, CreatePartnershipProgram(program))
-	user := &User{Username: "existing", DisplayName: "Existing", Group: "vip", Quota: 700, AffCode: "existing-aff"}
+	user := &User{Username: "existing", DisplayName: "Existing", Group: "partner", Quota: 700, AffCode: "existing-aff"}
 	require.NoError(t, DB.Create(user).Error)
 
 	connection, err := ConnectExistingUserToPartnership(user.Id, program.Code)
 	require.NoError(t, err)
 	assert.Equal(t, PartnershipStatusConnectedExisting, connection.Status)
-	assert.Equal(t, "vip", connection.UserGroup)
+	assert.Equal(t, "partner", connection.UserGroup)
 	assert.Equal(t, "partner", connection.ProgramGroup)
 
 	// Reconnecting is idempotent and never consumes a registration grant.
@@ -264,7 +264,7 @@ func TestConnectingExistingUserDoesNotChangeGroupOrGrant(t *testing.T) {
 	require.NoError(t, err)
 	var stored User
 	require.NoError(t, DB.First(&stored, user.Id).Error)
-	assert.Equal(t, "vip", stored.Group)
+	assert.Equal(t, "partner", stored.Group)
 	assert.Equal(t, 700, stored.Quota)
 	var enrollments int64
 	require.NoError(t, DB.Model(&PartnershipEnrollment{}).Count(&enrollments).Error)
@@ -272,6 +272,97 @@ func TestConnectingExistingUserDoesNotChangeGroupOrGrant(t *testing.T) {
 	var reloadedProgram PartnershipProgram
 	require.NoError(t, DB.First(&reloadedProgram, program.Id).Error)
 	assert.Zero(t, reloadedProgram.ClaimedCount)
+}
+
+func TestExistingUserCannotConnectThroughAnotherCustomerLink(t *testing.T) {
+	setupPartnershipTestDB(t)
+	program := &PartnershipProgram{
+		Name: "Customer-safe event", Code: "customer-safe", Group: "partner",
+		GrantLimit: 1, Enabled: true,
+	}
+	require.NoError(t, CreatePartnershipProgram(program))
+	user := &User{Username: "wrongcustomer", DisplayName: "Wrong Customer", Group: "vip"}
+	require.NoError(t, DB.Create(user).Error)
+
+	_, err := ConnectExistingUserToPartnership(user.Id, program.Code)
+	require.ErrorIs(t, err, ErrPartnershipCustomerMismatch)
+	var enrollments int64
+	require.NoError(t, DB.Model(&PartnershipEnrollment{}).Count(&enrollments).Error)
+	assert.Zero(t, enrollments)
+}
+
+func TestPartnershipCustomerLinkAssignsItsOwnBillableGroup(t *testing.T) {
+	setupPartnershipTestDB(t)
+	program := &PartnershipProgram{
+		Name: "Regional event", Code: "regional-event", Group: "partner",
+		GrantQuota: 5000000, GrantLimit: 2, Enabled: true,
+	}
+	require.NoError(t, CreatePartnershipProgram(program))
+	customer := &PartnershipCustomer{
+		Name: "Acme Vietnam", Code: "acme-vietnam", Group: "vip", Enabled: true,
+	}
+	require.NoError(t, CreatePartnershipCustomer(program.Id, customer))
+
+	user := &User{Username: "acmedev", Password: "password123", Role: 1, Status: 1}
+	grant, err := user.InsertForPartnership("acme-vietnam")
+	require.NoError(t, err)
+	assert.Equal(t, 5000000, grant)
+	assert.Equal(t, "vip", user.Group)
+
+	var enrollment PartnershipEnrollment
+	require.NoError(t, DB.Where("user_id = ?", user.Id).First(&enrollment).Error)
+	assert.Equal(t, customer.Id, enrollment.CustomerId)
+	assert.Equal(t, "vip", enrollment.CustomerGroup)
+}
+
+func TestPartnershipCodesShareOnePublicNamespace(t *testing.T) {
+	setupPartnershipTestDB(t)
+	program := &PartnershipProgram{
+		Name: "Regional event", Code: "regional-code", Group: "partner",
+		GrantLimit: 1, Enabled: true,
+	}
+	require.NoError(t, CreatePartnershipProgram(program))
+
+	err := CreatePartnershipCustomer(program.Id, &PartnershipCustomer{
+		Name: "Program collision", Code: program.Code, Group: "vip", Enabled: true,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already in use")
+
+	require.NoError(t, CreatePartnershipCustomer(program.Id, &PartnershipCustomer{
+		Name: "Acme Vietnam", Code: "acme-code", Group: "vip", Enabled: true,
+	}))
+	err = CreatePartnershipProgram(&PartnershipProgram{
+		Name: "Customer collision", Code: "acme-code", Group: "default",
+		GrantLimit: 1, Enabled: true,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already in use")
+}
+
+func TestInitializePartnershipCustomersBackfillsLegacyAccountingOwner(t *testing.T) {
+	setupPartnershipTestDB(t)
+	program := &PartnershipProgram{
+		Name: "Legacy event", Code: "legacy-event", Group: "partner",
+		GrantLimit: 1, Enabled: true,
+	}
+	require.NoError(t, DB.Create(program).Error)
+	enrollment := &PartnershipEnrollment{ProgramId: program.Id, UserId: 42}
+	require.NoError(t, DB.Create(enrollment).Error)
+
+	require.NoError(t, initializePartnershipCustomers())
+	require.NoError(t, initializePartnershipCustomers(), "startup backfill must be idempotent")
+
+	var customer PartnershipCustomer
+	require.NoError(t, DB.Where("program_id = ? AND is_default = ?", program.Id, true).First(&customer).Error)
+	assert.Equal(t, program.Code, customer.Code)
+	assert.Equal(t, program.Group, customer.Group)
+	require.NoError(t, DB.First(&enrollment, enrollment.Id).Error)
+	assert.Equal(t, customer.Id, enrollment.CustomerId)
+	assert.Equal(t, program.Group, enrollment.CustomerGroup)
+	var customerCount int64
+	require.NoError(t, DB.Model(&PartnershipCustomer{}).Where("program_id = ?", program.Id).Count(&customerCount).Error)
+	assert.Equal(t, int64(1), customerCount)
 }
 
 func TestEnabledProgramPreventsDanglingGroupReference(t *testing.T) {
@@ -336,7 +427,7 @@ func TestGroupPricingUpdateAndProgramWriteNeverLeaveDanglingReference(t *testing
 
 	if createErr == nil {
 		require.Error(t, updateErr)
-		assert.Contains(t, updateErr.Error(), "used by an enabled partnership program")
+		assert.Contains(t, updateErr.Error(), "used by an enabled partnership")
 		assert.Equal(t, 0.9, groups["partner"])
 	} else {
 		require.NoError(t, updateErr)

@@ -21,11 +21,29 @@ export type PartnershipProgram = {
   ends_at: number
   created_at: number
   updated_at: number
+  customers: PartnershipCustomer[]
 }
+
+export type PartnershipCustomer = {
+  id: number
+  program_id: number
+  name: string
+  code: string
+  group: string
+  is_default: boolean
+  enabled: boolean
+  created_at: number
+  updated_at: number
+}
+
+export type PartnershipCustomerInput = Pick<
+  PartnershipCustomer,
+  'name' | 'code' | 'group' | 'enabled'
+>
 
 export type PartnershipProgramInput = Omit<
   PartnershipProgram,
-  'id' | 'claimed_count' | 'created_at' | 'updated_at'
+  'id' | 'claimed_count' | 'created_at' | 'updated_at' | 'customers'
 >
 
 type Envelope<T> = { success: boolean; message: string; data: T }
@@ -54,6 +72,24 @@ export async function savePartnershipProgram(input: {
     : await api.post<Envelope<PartnershipProgram>>(
         '/api/partnership/',
         input.program
+      )
+  if (!response.data.success) throw new Error(response.data.message)
+  return response.data
+}
+
+export async function savePartnershipCustomer(input: {
+  programId: number
+  id?: number
+  customer: PartnershipCustomerInput
+}) {
+  const response = input.id
+    ? await api.put<Envelope<PartnershipCustomer>>(
+        `/api/partnership-programs/${input.programId}/customers/${input.id}`,
+        input.customer
+      )
+    : await api.post<Envelope<PartnershipCustomer>>(
+        `/api/partnership-programs/${input.programId}/customers`,
+        input.customer
       )
   if (!response.data.success) throw new Error(response.data.message)
   return response.data
