@@ -263,6 +263,8 @@ func migrateDB() error {
 		&Token{},
 		&User{},
 		&Tenant{}, // UNIFYAPI-BRAND: see model/tenant.go
+		&PartnershipProgram{},
+		&PartnershipEnrollment{},
 		&UserSession{},
 		&AuthFlow{},
 		&ExternalIdentityClaim{},
@@ -333,6 +335,8 @@ func migrateDBFast() error {
 		{&Token{}, "Token"},
 		{&User{}, "User"},
 		{&Tenant{}, "Tenant"}, // UNIFYAPI-BRAND: see model/tenant.go
+		{&PartnershipProgram{}, "PartnershipProgram"},
+		{&PartnershipEnrollment{}, "PartnershipEnrollment"},
 		{&UserSession{}, "UserSession"},
 		{&AuthFlow{}, "AuthFlow"},
 		{&ExternalIdentityClaim{}, "ExternalIdentityClaim"},

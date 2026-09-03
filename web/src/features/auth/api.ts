@@ -140,12 +140,18 @@ export async function githubOAuthStart(clientId: string, state: string) {
 // Get OAuth state for CSRF protection
 export async function createOAuthFlow(
   provider: string,
-  intent: 'login' | 'bind'
+  intent: 'login' | 'bind',
+  partnership?: string
 ): Promise<string> {
   const aff = intent === 'login' ? getAffiliateCode() : ''
   const res = await api.post(
     '/api/oauth/state',
-    { provider, intent, aff: aff || undefined },
+    {
+      provider,
+      intent,
+      aff: aff || undefined,
+      partnership: partnership || undefined,
+    },
     { skipAuthRefresh: intent === 'login' }
   )
   if (res.data?.success) {
@@ -158,8 +164,13 @@ export async function createOAuthFlow(
 }
 
 // WeChat login by authorization code
-export async function wechatLoginByCode(code: string): Promise<ApiResponse> {
-  const res = await api.get('/api/oauth/wechat', { params: { code } })
+export async function wechatLoginByCode(
+  code: string,
+  partnership?: string
+): Promise<ApiResponse> {
+  const res = await api.get('/api/oauth/wechat', {
+    params: { code, partnership },
+  })
   return res.data
 }
 

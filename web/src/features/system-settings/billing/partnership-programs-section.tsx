@@ -1,0 +1,390 @@
+/*
+Copyright (C) 2026 FelixSphere
+
+This file is part of a modified version of new-api, distributed under the
+GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
+Upstream: https://github.com/QuantumNous/new-api
+Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
+*/
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Copy, Pencil, Plus } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+
+import { Dialog } from '@/components/dialog'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { Switch } from '@/components/ui/switch'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+
+import { SettingsSection } from '../components/settings-section'
+import {
+  getPartnershipPrograms,
+  savePartnershipProgram,
+  type PartnershipProgram,
+  type PartnershipProgramInput,
+} from './partnership-api'
+
+type FormState = {
+  name: string
+  code: string
+  group: string
+  grantUSD: string
+  grantLimit: string
+  enabled: boolean
+  startsAt: string
+  endsAt: string
+}
+
+const emptyForm = (group: string): FormState => ({
+  name: '',
+  code: '',
+  group,
+  grantUSD: '0',
+  grantLimit: '0',
+  enabled: false,
+  startsAt: '',
+  endsAt: '',
+})
+
+const dateInput = (timestamp: number) =>
+  timestamp ? new Date(timestamp * 1000).toISOString().slice(0, 16) : ''
+
+const timestamp = (value: string) =>
+  value ? Math.floor(new Date(value).getTime() / 1000) : 0
+
+export function PartnershipProgramsSection({
+  quotaPerUnit,
+}: {
+  quotaPerUnit: number
+}) {
+  const quotaUnit = quotaPerUnit > 0 ? quotaPerUnit : 500000
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const query = useQuery({
+    queryKey: ['partnership-programs'],
+    queryFn: getPartnershipPrograms,
+  })
+  const groups = useMemo(
+    () => Object.keys(query.data?.groups ?? {}).sort(),
+    [query.data?.groups]
+  )
+  const [editing, setEditing] = useState<PartnershipProgram | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [form, setForm] = useState<FormState>(emptyForm('default'))
+
+  useEffect(() => {
+    if (!dialogOpen || editing || groups.length === 0) return
+    setForm((current) => ({
+      ...current,
+      group: groups.includes(current.group) ? current.group : groups[0],
+    }))
+  }, [dialogOpen, editing, groups])
+
+  const mutation = useMutation({
+    mutationFn: savePartnershipProgram,
+    onSuccess: () => {
+      toast.success(t('Partnership program saved'))
+      setDialogOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['partnership-programs'] })
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
+
+  const openCreate = () => {
+    setEditing(null)
+    setForm(emptyForm(groups[0] ?? 'default'))
+    setDialogOpen(true)
+  }
+
+  const openEdit = (program: PartnershipProgram) => {
+    setEditing(program)
+    setForm({
+      name: program.name,
+      code: program.code,
+      group: program.group,
+      grantUSD: String(program.grant_quota / quotaUnit),
+      grantLimit: String(program.grant_limit),
+      enabled: program.enabled,
+      startsAt: dateInput(program.starts_at),
+      endsAt: dateInput(program.ends_at),
+    })
+    setDialogOpen(true)
+  }
+
+  const submit = () => {
+    const grantUSD = Number(form.grantUSD)
+    const grantLimit = Number(form.grantLimit)
+    if (
+      !form.name.trim() ||
+      !/^[a-z0-9][a-z0-9_-]{2,63}$/.test(form.code.trim().toLowerCase()) ||
+      !form.group ||
+      !Number.isFinite(grantUSD) ||
+      grantUSD < 0 ||
+      !Number.isInteger(grantLimit) ||
+      grantLimit < 0
+    ) {
+      toast.error(t('Check the name, code, group, credit, and limit.'))
+      return
+    }
+    const program: PartnershipProgramInput = {
+      name: form.name.trim(),
+      code: form.code.trim().toLowerCase(),
+      group: form.group,
+      grant_quota: Math.round(grantUSD * quotaUnit),
+      grant_limit: grantLimit,
+      enabled: form.enabled,
+      starts_at: timestamp(form.startsAt),
+      ends_at: timestamp(form.endsAt),
+    }
+    mutation.mutate({ id: editing?.id, program })
+  }
+
+  const copyLink = async (code: string) => {
+    const link = `${window.location.origin}/sign-up?partnership=${encodeURIComponent(code)}`
+    await navigator.clipboard.writeText(link)
+    toast.success(t('Registration link copied'))
+  }
+
+  return (
+    <SettingsSection title={t('Partnership Programs')}>
+      <Alert>
+        <AlertDescription className='text-xs'>
+          {t(
+            'Programs affect registration only. The selected group uses the existing Group Pricing multiplier; all later top-ups and usage follow the normal payment and billing flow.'
+          )}
+        </AlertDescription>
+      </Alert>
+
+      <div className='flex justify-end'>
+        <Button type='button' size='sm' onClick={openCreate}>
+          <Plus className='size-4' />
+          {t('New program')}
+        </Button>
+      </div>
+
+      {query.isLoading && (
+        <p className='text-muted-foreground text-sm'>{t('Loading...')}</p>
+      )}
+      {query.isError && (
+        <Alert variant='destructive'>
+          <AlertDescription>{(query.error as Error).message}</AlertDescription>
+        </Alert>
+      )}
+      {!query.isLoading && !query.isError && (
+        <div className='overflow-x-auto rounded-md border'>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('Program')}</TableHead>
+                <TableHead>{t('Identity group')}</TableHead>
+                <TableHead>{t('Registration credit')}</TableHead>
+                <TableHead>{t('Claims')}</TableHead>
+                <TableHead>{t('Status')}</TableHead>
+                <TableHead className='text-right'>{t('Actions')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(query.data?.programs ?? []).map((program) => (
+                <TableRow key={program.id}>
+                  <TableCell>
+                    <div className='font-medium'>{program.name}</div>
+                    <code className='text-muted-foreground text-xs'>
+                      {program.code}
+                    </code>
+                  </TableCell>
+                  <TableCell>
+                    <div>{program.group}</div>
+                    <div className='text-muted-foreground text-xs'>
+                      {t('Billing multiplier')}:{' '}
+                      {query.data?.group_ratios[program.group] ?? 1}×
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    ${(program.grant_quota / quotaUnit).toFixed(2)}
+                  </TableCell>
+                  <TableCell>
+                    {program.claimed_count} / {program.grant_limit}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={program.enabled ? 'default' : 'secondary'}>
+                      {program.enabled ? t('Enabled') : t('Disabled')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className='text-right'>
+                    <Button
+                      type='button'
+                      size='icon-sm'
+                      variant='ghost'
+                      aria-label={t('Copy registration link')}
+                      onClick={() => copyLink(program.code)}
+                    >
+                      <Copy className='size-4' />
+                    </Button>
+                    <Button
+                      type='button'
+                      size='icon-sm'
+                      variant='ghost'
+                      aria-label={t('Edit')}
+                      onClick={() => openEdit(program)}
+                    >
+                      <Pencil className='size-4' />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {(query.data?.programs.length ?? 0) === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={6}
+                    className='text-muted-foreground text-center'
+                  >
+                    {t('No partnership programs yet.')}
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title={
+          editing ? t('Edit partnership program') : t('New partnership program')
+        }
+        description={t(
+          'Create a dedicated registration link without changing normal billing.'
+        )}
+        footer={
+          <>
+            <Button
+              type='button'
+              variant='outline'
+              onClick={() => setDialogOpen(false)}
+            >
+              {t('Cancel')}
+            </Button>
+            <Button
+              type='button'
+              onClick={submit}
+              disabled={mutation.isPending}
+            >
+              {t('Save')}
+            </Button>
+          </>
+        }
+      >
+        <div className='grid gap-4 sm:grid-cols-2'>
+          <Field label={t('Program name')}>
+            <Input
+              value={form.name}
+              onChange={(event) =>
+                setForm({ ...form, name: event.target.value })
+              }
+            />
+          </Field>
+          <Field label={t('Registration code')}>
+            <Input
+              value={form.code}
+              placeholder='partner-event'
+              onChange={(event) =>
+                setForm({ ...form, code: event.target.value })
+              }
+            />
+          </Field>
+          <Field label={t('Identity group')}>
+            <NativeSelect
+              className='w-full'
+              value={form.group}
+              onChange={(event) =>
+                setForm({ ...form, group: event.target.value })
+              }
+            >
+              {groups.map((group) => (
+                <NativeSelectOption key={group} value={group}>
+                  {query.data?.groups[group] || group}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field label={t('Registration credit (USD)')}>
+            <Input
+              type='number'
+              min='0'
+              step='0.01'
+              value={form.grantUSD}
+              onChange={(event) =>
+                setForm({ ...form, grantUSD: event.target.value })
+              }
+            />
+          </Field>
+          <Field label={t('Number of credited sign-ups')}>
+            <Input
+              type='number'
+              min={editing?.claimed_count ?? 0}
+              step='1'
+              value={form.grantLimit}
+              onChange={(event) =>
+                setForm({ ...form, grantLimit: event.target.value })
+              }
+            />
+          </Field>
+          <div className='flex items-end gap-3 pb-2'>
+            <Switch
+              checked={form.enabled}
+              onCheckedChange={(enabled) => setForm({ ...form, enabled })}
+            />
+            <Label>{t('Program enabled')}</Label>
+          </div>
+          <Field label={t('Starts at (optional)')}>
+            <Input
+              type='datetime-local'
+              value={form.startsAt}
+              onChange={(event) =>
+                setForm({ ...form, startsAt: event.target.value })
+              }
+            />
+          </Field>
+          <Field label={t('Ends at (optional)')}>
+            <Input
+              type='datetime-local'
+              value={form.endsAt}
+              onChange={(event) =>
+                setForm({ ...form, endsAt: event.target.value })
+              }
+            />
+          </Field>
+        </div>
+      </Dialog>
+    </SettingsSection>
+  )
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className='grid gap-2'>
+      <Label>{label}</Label>
+      {children}
+    </div>
+  )
+}

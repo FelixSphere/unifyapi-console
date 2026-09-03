@@ -272,12 +272,22 @@ func Register(c *gin.Context) {
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
 	}
-	if err := cleanUser.Insert(inviterId); err != nil {
-		if errors.Is(err, model.ErrEmailAlreadyTaken) {
+	var insertErr error
+	if user.PartnershipCode != "" {
+		_, insertErr = cleanUser.InsertForPartnership(user.PartnershipCode, inviterId)
+	} else {
+		insertErr = cleanUser.Insert(inviterId)
+	}
+	if insertErr != nil {
+		if errors.Is(insertErr, model.ErrEmailAlreadyTaken) {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailAlreadyTaken)
 			return
 		}
-		common.ApiError(c, err)
+		if errors.Is(insertErr, model.ErrPartnershipProgramUnavailable) {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "partnership program is unavailable"})
+			return
+		}
+		common.ApiError(c, insertErr)
 		return
 	}
 

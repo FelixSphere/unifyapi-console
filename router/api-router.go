@@ -32,6 +32,7 @@ func SetApiRouter(router *gin.Engine) {
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
 		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
+		apiRouter.GET("/partnership/:code", middleware.DisableCache(), controller.GetPublicPartnershipProgram)
 		perfMetricsRoute := apiRouter.Group("/perf-metrics")
 		perfMetricsRoute.Use(middleware.HeaderNavModulePublicOrUserAuth("pricing"))
 		{
@@ -213,6 +214,13 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/waffo-pancake/save", controller.SaveWaffoPancake)
 			optionRoute.POST("/waffo-pancake/subscription-product", controller.CreateWaffoPancakeSubscriptionProduct)
 			optionRoute.GET("/waffo-pancake/subscription-product-options", controller.ListWaffoPancakeSubscriptionProductOptions)
+		}
+		partnershipRoute := apiRouter.Group("/partnership")
+		partnershipRoute.Use(middleware.RootAuth())
+		{
+			partnershipRoute.GET("/", controller.GetPartnershipPrograms)
+			partnershipRoute.POST("/", controller.CreatePartnershipProgram)
+			partnershipRoute.PUT("/:id", controller.UpdatePartnershipProgram)
 		}
 
 		// Custom OAuth provider management (root only)

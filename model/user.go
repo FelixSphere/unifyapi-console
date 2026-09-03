@@ -90,7 +90,8 @@ type User struct {
 	OidcId           string                     `json:"oidc_id" gorm:"column:oidc_id;index"`
 	WeChatId         string                     `json:"wechat_id" gorm:"column:wechat_id;index"`
 	TelegramId       string                     `json:"telegram_id" gorm:"column:telegram_id;index"`
-	VerificationCode string                     `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
+	VerificationCode string                     `json:"verification_code" gorm:"-:all"` // this field is only for Email verification, don't save it to database!
+	PartnershipCode  string                     `json:"partnership_code" gorm:"-:all"`
 	AccessToken      *string                    `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
 	Quota            int                        `json:"quota" gorm:"type:int;default:0"`
 	UsedQuota        int                        `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
@@ -619,6 +620,10 @@ func (user *User) Insert(inviterId int) error {
 }
 
 func (user *User) finishInsert(inviterId int) {
+	user.finishInsertWithInitialQuota(inviterId, common.QuotaForNewUser, "新用户注册赠送")
+}
+
+func (user *User) finishInsertWithInitialQuota(inviterId int, initialQuota int, grantLabel string) {
 	// 用户创建成功后，根据角色初始化边栏配置
 	// 需要重新获取用户以确保有正确的ID和Role
 	var createdUser User
@@ -642,8 +647,8 @@ func (user *User) finishInsert(inviterId int) {
 		common.SysLog(fmt.Sprintf("failed to provision tenant for user %d: %s", user.Id, err.Error()))
 	}
 
-	if common.QuotaForNewUser > 0 {
-		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
+	if initialQuota > 0 {
+		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("%s %s", grantLabel, logger.LogQuota(initialQuota)))
 	}
 	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
 		if common.QuotaForInvitee > 0 {
@@ -686,6 +691,14 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 // FinalizeOAuthUserCreation performs post-transaction tasks for OAuth user creation.
 // This should be called after the transaction commits successfully.
 func (user *User) FinalizeOAuthUserCreation(inviterId int) {
+	user.finalizeOAuthUserCreationWithInitialQuota(inviterId, common.QuotaForNewUser, "新用户注册赠送")
+}
+
+func (user *User) FinalizePartnershipOAuthUserCreation(inviterId int, grantedQuota int) {
+	user.finalizeOAuthUserCreationWithInitialQuota(inviterId, grantedQuota, "Partnership registration grant")
+}
+
+func (user *User) finalizeOAuthUserCreationWithInitialQuota(inviterId int, initialQuota int, grantLabel string) {
 	// 用户创建成功后，根据角色初始化边栏配置
 	var createdUser User
 	if err := DB.Where("id = ?", user.Id).First(&createdUser).Error; err == nil {
@@ -707,8 +720,8 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 		common.SysLog(fmt.Sprintf("failed to provision tenant for user %d: %s", user.Id, err.Error()))
 	}
 
-	if common.QuotaForNewUser > 0 {
-		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
+	if initialQuota > 0 {
+		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("%s %s", grantLabel, logger.LogQuota(initialQuota)))
 	}
 	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
 		if common.QuotaForInvitee > 0 {
