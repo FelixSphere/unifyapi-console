@@ -97,3 +97,54 @@ func TestProgramLimitCannotDropBelowClaims(t *testing.T) {
 	assert.Error(t, err)
 	assert.False(t, errors.Is(err, gorm.ErrRecordNotFound))
 }
+
+func TestConnectingExistingUserDoesNotChangeGroupOrGrant(t *testing.T) {
+	setupPartnershipTestDB(t)
+	program := &PartnershipProgram{
+		Name: "Existing account event", Code: "existing-event", Group: "partner",
+		GrantQuota: 5000000, GrantLimit: 2, Enabled: true,
+	}
+	require.NoError(t, CreatePartnershipProgram(program))
+	user := &User{Username: "existing", DisplayName: "Existing", Group: "vip", Quota: 700, AffCode: "existing-aff"}
+	require.NoError(t, DB.Create(user).Error)
+
+	connection, err := ConnectExistingUserToPartnership(user.Id, program.Code)
+	require.NoError(t, err)
+	assert.Equal(t, PartnershipStatusConnectedExisting, connection.Status)
+	assert.Equal(t, "vip", connection.UserGroup)
+	assert.Equal(t, "partner", connection.ProgramGroup)
+
+	// Reconnecting is idempotent and never consumes a registration grant.
+	_, err = ConnectExistingUserToPartnership(user.Id, program.Code)
+	require.NoError(t, err)
+	var stored User
+	require.NoError(t, DB.First(&stored, user.Id).Error)
+	assert.Equal(t, "vip", stored.Group)
+	assert.Equal(t, 700, stored.Quota)
+	var enrollments int64
+	require.NoError(t, DB.Model(&PartnershipEnrollment{}).Count(&enrollments).Error)
+	assert.Equal(t, int64(1), enrollments)
+	var reloadedProgram PartnershipProgram
+	require.NoError(t, DB.First(&reloadedProgram, program.Id).Error)
+	assert.Zero(t, reloadedProgram.ClaimedCount)
+}
+
+func TestEnabledProgramPreventsDanglingGroupReference(t *testing.T) {
+	setupPartnershipTestDB(t)
+	program := &PartnershipProgram{
+		Name: "Protected group event", Code: "protected-group", Group: "partner",
+		GrantLimit: 1, Enabled: true,
+	}
+	require.NoError(t, CreatePartnershipProgram(program))
+	assert.Error(t, ValidateActivePartnershipGroups(map[string]struct{}{"default": {}}))
+	assert.NoError(t, ValidateActivePartnershipGroups(map[string]struct{}{
+		"default": {}, "partner": {},
+	}))
+	assert.Error(t, validateOptionValue("GroupRatio", `{"default":1}`))
+	assert.Error(t, validateOptionValue("UserUsableGroups", `{"default":"Default"}`))
+	assert.NoError(t, validateOptionValue("GroupRatio", `{"default":1,"partner":0.9}`))
+	assert.NoError(t, validateOptionValue("UserUsableGroups", `{"default":"Default","partner":"Partner"}`))
+
+	require.NoError(t, DB.Model(program).Update("enabled", false).Error)
+	assert.NoError(t, ValidateActivePartnershipGroups(map[string]struct{}{"default": {}}))
+}

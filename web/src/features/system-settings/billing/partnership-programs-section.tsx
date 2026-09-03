@@ -163,7 +163,7 @@ export function PartnershipProgramsSection({
       <Alert>
         <AlertDescription className='text-xs'>
           {t(
-            'Programs affect registration only. The selected group uses the existing Group Pricing multiplier; all later top-ups and usage follow the normal payment and billing flow.'
+            'Programs reference an existing Group Pricing group and affect registration only. Existing accounts keep their current group when connected. All later top-ups and usage follow the normal payment and billing flow.'
           )}
         </AlertDescription>
       </Alert>

@@ -87,6 +87,14 @@ func WeChatAuth(c *gin.Context) {
 			})
 			return
 		}
+		if partnershipCode := c.Query("partnership"); partnershipCode != "" {
+			connection, err := model.ConnectExistingUserToPartnership(user.Id, partnershipCode)
+			if err != nil {
+				c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+				return
+			}
+			c.Set("partnership_status", connection.Status)
+		}
 	} else {
 		if common.RegisterEnabled {
 			user.Username = "wechat_" + strconv.Itoa(model.GetMaxUserId()+1)
@@ -106,6 +114,9 @@ func WeChatAuth(c *gin.Context) {
 					"message": insertErr.Error(),
 				})
 				return
+			}
+			if c.Query("partnership") != "" {
+				c.Set("partnership_status", "provisioned_new")
 			}
 		} else {
 			c.JSON(http.StatusOK, gin.H{

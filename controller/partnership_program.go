@@ -53,6 +53,19 @@ func GetPublicPartnershipProgram(c *gin.Context) {
 	}})
 }
 
+func ConnectExistingUserToPartnership(c *gin.Context) {
+	connection, err := model.ConnectExistingUserToPartnership(c.GetInt("id"), c.Param("code"))
+	if err != nil {
+		if errors.Is(err, model.ErrPartnershipProgramUnavailable) {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": connection})
+}
+
 func GetPartnershipPrograms(c *gin.Context) {
 	programs, err := model.GetPartnershipPrograms()
 	if err != nil {

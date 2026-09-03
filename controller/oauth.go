@@ -314,6 +314,13 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		if user.Id == 0 {
 			return nil, &OAuthUserDeletedError{}
 		}
+		if partnershipCode != "" {
+			connection, err := model.ConnectExistingUserToPartnership(user.Id, partnershipCode)
+			if err != nil {
+				return nil, err
+			}
+			c.Set("partnership_status", connection.Status)
+		}
 		return user, nil
 	}
 
@@ -331,6 +338,13 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 				if err := user.UpdateGitHubId(oauthUser.ProviderUserID); err != nil {
 					common.SysError(fmt.Sprintf("[OAuth] Failed to migrate user %d: %s", user.Id, err.Error()))
 					// Continue with login even if migration fails
+				}
+				if partnershipCode != "" {
+					connection, err := model.ConnectExistingUserToPartnership(user.Id, partnershipCode)
+					if err != nil {
+						return nil, err
+					}
+					c.Set("partnership_status", connection.Status)
 				}
 				return user, nil
 			}
@@ -452,6 +466,9 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		} else {
 			user.FinalizeOAuthUserCreation(inviterId)
 		}
+	}
+	if partnershipCode != "" {
+		c.Set("partnership_status", "provisioned_new")
 	}
 
 	return user, nil

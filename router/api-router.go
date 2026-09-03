@@ -33,6 +33,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
 		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
 		apiRouter.GET("/partnership/:code", middleware.DisableCache(), controller.GetPublicPartnershipProgram)
+		apiRouter.POST("/partnership/:code/connect", middleware.UserAuth(), middleware.DisableCache(), controller.ConnectExistingUserToPartnership)
 		perfMetricsRoute := apiRouter.Group("/perf-metrics")
 		perfMetricsRoute.Use(middleware.HeaderNavModulePublicOrUserAuth("pricing"))
 		{

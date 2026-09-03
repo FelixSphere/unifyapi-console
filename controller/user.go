@@ -190,16 +190,20 @@ func setupLoginAtAuthVersion(user *model.User, expectedAuthVersion int64, c *gin
 	service.WriteRefreshCookie(c, bundle.RefreshToken)
 	setAuthNoStore(c)
 	recordLoginAudit(user, c)
+	data := gin.H{
+		"access_token":      bundle.AccessToken,
+		"token_type":        bundle.TokenType,
+		"access_expires_at": bundle.AccessExpiresAt,
+		"session":           bundle.Session,
+		"user":              buildSelfUserData(currentUser),
+	}
+	if status, ok := c.Get("partnership_status"); ok {
+		data["partnership_status"] = status
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"message": "",
 		"success": true,
-		"data": gin.H{
-			"access_token":      bundle.AccessToken,
-			"token_type":        bundle.TokenType,
-			"access_expires_at": bundle.AccessExpiresAt,
-			"session":           bundle.Session,
-			"user":              buildSelfUserData(currentUser),
-		},
+		"data":    data,
 	})
 }
 

@@ -225,6 +225,28 @@ func validateOptionValue(key string, value string) error {
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
 	}
+	if key == "GroupRatio" {
+		var values map[string]float64
+		if err := common.Unmarshal([]byte(value), &values); err != nil {
+			return err
+		}
+		groups := make(map[string]struct{}, len(values))
+		for group := range values {
+			groups[group] = struct{}{}
+		}
+		return ValidateActivePartnershipGroups(groups)
+	}
+	if key == "UserUsableGroups" {
+		var values map[string]string
+		if err := common.Unmarshal([]byte(value), &values); err != nil {
+			return err
+		}
+		groups := make(map[string]struct{}, len(values))
+		for group := range values {
+			groups[group] = struct{}{}
+		}
+		return ValidateActivePartnershipGroups(groups)
+	}
 	return nil
 }
 

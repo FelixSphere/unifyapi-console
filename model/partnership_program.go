@@ -52,6 +52,15 @@ type PartnershipEnrollment struct {
 	CreatedAt    int64 `json:"created_at" gorm:"autoCreateTime"`
 }
 
+const PartnershipStatusConnectedExisting = "connected_existing"
+
+type PartnershipConnectionResult struct {
+	Status       string `json:"status"`
+	ProgramCode  string `json:"program_code"`
+	ProgramGroup string `json:"program_group"`
+	UserGroup    string `json:"user_group"`
+}
+
 func NormalizePartnershipCode(code string) string {
 	return strings.ToLower(strings.TrimSpace(code))
 }
@@ -127,6 +136,66 @@ func UpdatePartnershipProgram(id int, input *PartnershipProgram) error {
 		"starts_at":   input.StartsAt,
 		"ends_at":     input.EndsAt,
 	}).Error
+}
+
+// ConnectExistingUserToPartnership records attribution for an existing
+// account, but deliberately does not change its group or grant registration
+// credit. Group changes for existing customers remain an explicit admin/user
+// decision through the normal group-management flow.
+func ConnectExistingUserToPartnership(userId int, code string) (*PartnershipConnectionResult, error) {
+	var connection PartnershipConnectionResult
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userId).Error; err != nil {
+			return err
+		}
+		var program PartnershipProgram
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("code = ?", NormalizePartnershipCode(code)).First(&program).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrPartnershipProgramUnavailable
+			}
+			return err
+		}
+		if !partnershipProgramActive(&program, time.Now().Unix()) {
+			return ErrPartnershipProgramUnavailable
+		}
+		var enrollment PartnershipEnrollment
+		err := tx.Where("program_id = ? AND user_id = ?", program.Id, user.Id).First(&enrollment).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			err = tx.Create(&PartnershipEnrollment{
+				ProgramId: program.Id, UserId: user.Id, GrantedQuota: 0,
+			}).Error
+		}
+		if err != nil {
+			return err
+		}
+		connection = PartnershipConnectionResult{
+			Status: PartnershipStatusConnectedExisting, ProgramCode: program.Code,
+			ProgramGroup: program.Group, UserGroup: user.Group,
+		}
+		return nil
+	})
+	return &connection, err
+}
+
+// ValidateActivePartnershipGroups prevents Group Pricing updates from
+// removing a group referenced by an enabled program. Groups remain the single
+// source of truth; programs hold only the identifier.
+func ValidateActivePartnershipGroups(groups map[string]struct{}) error {
+	if DB == nil || !DB.Migrator().HasTable(&PartnershipProgram{}) {
+		return nil
+	}
+	var programs []PartnershipProgram
+	if err := DB.Where("enabled = ?", true).Find(&programs).Error; err != nil {
+		return err
+	}
+	for _, program := range programs {
+		if _, ok := groups[program.Group]; !ok {
+			return fmt.Errorf("group %q is used by an enabled partnership program; disable or move the program first", program.Group)
+		}
+	}
+	return nil
 }
 
 // InsertForPartnership applies the program identity and optional registration
