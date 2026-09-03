@@ -17,6 +17,7 @@ import {
   VARIANCE_TOLERANCE_PCT,
   VARIANCE_VERDICT_LABELS,
   csvHref,
+  customerInvoiceUI,
   deriveStatement,
   formatSigned,
   isPeriodClosed,
@@ -204,6 +205,29 @@ describe('settlementState', () => {
       drift_usd: 500,
     }
     assert.equal(settlementState(row), 'void')
+  })
+})
+
+describe('customerInvoiceUI', () => {
+  test('makes issuing the invoice the explicit first step', () => {
+    const ui = customerInvoiceUI('not-issued')
+    assert.equal(ui.heading, 'Create the customer invoice')
+    assert.equal(ui.saveLabel, 'Issue invoice')
+    assert.equal(ui.canOpen, false)
+    assert.match(ui.description, /CSV is supporting line-item detail/)
+  })
+
+  test('makes the PDF the next action after issue', () => {
+    const ui = customerInvoiceUI('issued')
+    assert.equal(ui.heading, 'Invoice ready to send')
+    assert.equal(ui.canOpen, true)
+    assert.match(ui.description, /save it as a PDF/)
+  })
+
+  test('does not offer a void invoice for sending', () => {
+    const ui = customerInvoiceUI('void')
+    assert.equal(ui.heading, 'Invoice voided')
+    assert.equal(ui.canOpen, false)
   })
 })
 
