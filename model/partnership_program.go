@@ -17,6 +17,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -26,6 +27,8 @@ var (
 	ErrPartnershipProgramUnavailable = errors.New("partnership program is unavailable")
 	partnershipCodePattern           = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{2,63}$`)
 )
+
+const partnershipGroupIntegrityLockKey = "unifyapi-partnership-group-integrity"
 
 // PartnershipProgram is an operator-managed registration offer. It only
 // controls account creation: normal top-up and request billing remain unchanged.
@@ -109,7 +112,14 @@ func CreatePartnershipProgram(program *PartnershipProgram) error {
 	}
 	program.Id = 0
 	program.ClaimedCount = 0
-	return DB.Create(program).Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
+			if err := validatePartnershipProgramGroup(tx, program.Group); err != nil {
+				return err
+			}
+			return tx.Create(program).Error
+		})
+	})
 }
 
 func UpdatePartnershipProgram(id int, input *PartnershipProgram) error {
@@ -120,24 +130,73 @@ func UpdatePartnershipProgram(id int, input *PartnershipProgram) error {
 		return err
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		var current PartnershipProgram
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, id).Error; err != nil {
+		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
+			if err := validatePartnershipProgramGroup(tx, input.Group); err != nil {
+				return err
+			}
+			var current PartnershipProgram
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, id).Error; err != nil {
+				return err
+			}
+			if input.GrantLimit < current.ClaimedCount {
+				return fmt.Errorf("grant limit cannot be lower than claimed count %d", current.ClaimedCount)
+			}
+			return tx.Model(&current).Updates(map[string]any{
+				"name":        input.Name,
+				"code":        input.Code,
+				"group":       input.Group,
+				"grant_quota": input.GrantQuota,
+				"grant_limit": input.GrantLimit,
+				"enabled":     input.Enabled,
+				"starts_at":   input.StartsAt,
+				"ends_at":     input.EndsAt,
+			}).Error
+		})
+	})
+}
+
+// withPartnershipGroupIntegrityLock serializes GroupRatio replacement with
+// program creation, enabling, and group moves. Both paths validate while the
+// lock is held, so two concurrent root requests cannot commit a dangling group
+// reference. SQLite's single-writer transaction model supplies the equivalent
+// serialization for local development and tests.
+func withPartnershipGroupIntegrityLock(tx *gorm.DB, fn func(tx *gorm.DB) error) error {
+	switch {
+	case common.UsingMainDatabase(common.DatabaseTypePostgreSQL):
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", partnershipGroupIntegrityLockKey).Error; err != nil {
 			return err
 		}
-		if input.GrantLimit < current.ClaimedCount {
-			return fmt.Errorf("grant limit cannot be lower than claimed count %d", current.ClaimedCount)
+	case common.UsingMainDatabase(common.DatabaseTypeMySQL):
+		var option Option
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("key = ?", "GroupRatio").Find(&option).Error; err != nil {
+			return err
 		}
-		return tx.Model(&current).Updates(map[string]any{
-			"name":        input.Name,
-			"code":        input.Code,
-			"group":       input.Group,
-			"grant_quota": input.GrantQuota,
-			"grant_limit": input.GrantLimit,
-			"enabled":     input.Enabled,
-			"starts_at":   input.StartsAt,
-			"ends_at":     input.EndsAt,
-		}).Error
-	})
+	}
+	return fn(tx)
+}
+
+func validatePartnershipProgramGroup(tx *gorm.DB, group string) error {
+	var option Option
+	err := tx.Where("key = ?", "GroupRatio").First(&option).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Fresh installations may still be using the built-in in-memory
+		// GroupRatio without having saved that option. Materialize it while the
+		// integrity lock is held so Program writes have one durable source.
+		option = Option{Key: "GroupRatio", Value: ratio_setting.GroupRatio2JSONString()}
+		err = tx.Create(&option).Error
+	}
+	if err != nil {
+		return fmt.Errorf("read Group Pricing: %w", err)
+	}
+	var groups map[string]float64
+	if err := common.Unmarshal([]byte(option.Value), &groups); err != nil {
+		return fmt.Errorf("parse Group Pricing: %w", err)
+	}
+	if _, ok := groups[group]; !ok {
+		return fmt.Errorf("group %q does not exist in Group Pricing", group)
+	}
+	return nil
 }
 
 // ConnectExistingUserToPartnership records attribution for an existing
@@ -188,8 +247,12 @@ func ValidateActivePartnershipGroups(groups map[string]struct{}) error {
 	if DB == nil || !DB.Migrator().HasTable(&PartnershipProgram{}) {
 		return nil
 	}
+	return validateActivePartnershipGroups(DB, groups)
+}
+
+func validateActivePartnershipGroups(db *gorm.DB, groups map[string]struct{}) error {
 	var programs []PartnershipProgram
-	if err := DB.Where("enabled = ?", true).Find(&programs).Error; err != nil {
+	if err := db.Where("enabled = ?", true).Find(&programs).Error; err != nil {
 		return err
 	}
 	for _, program := range programs {

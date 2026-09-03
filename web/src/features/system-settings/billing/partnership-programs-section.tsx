@@ -36,6 +36,7 @@ import {
   type PartnershipProgram,
   type PartnershipProgramInput,
 } from './partnership-api'
+import { partnershipGroupLabel } from './partnership-group-label'
 
 type FormState = {
   name: string
@@ -316,7 +317,7 @@ export function PartnershipProgramsSection({
             >
               {groups.map((group) => (
                 <NativeSelectOption key={group} value={group}>
-                  {query.data?.groups[group] || group}
+                  {partnershipGroupLabel(group, query.data?.groups[group])}
                 </NativeSelectOption>
               ))}
             </NativeSelect>

@@ -29,15 +29,23 @@ func setupPartnershipControllerTest(t *testing.T) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.PartnershipProgram{}, &model.PartnershipEnrollment{}))
+	require.NoError(t, db.AutoMigrate(
+		&model.Option{}, &model.PartnershipProgram{}, &model.PartnershipEnrollment{},
+	))
 	previousDB := model.DB
+	previousType := common.MainDatabaseType()
 	previousRatios := ratio_setting.GroupRatio2JSONString()
 	previousUsable := setting.UserUsableGroups2JSONString()
 	model.DB = db
+	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
+	require.NoError(t, model.DB.Create(&model.Option{
+		Key: "GroupRatio", Value: `{"partner":0.9}`,
+	}).Error)
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"partner":0.9}`))
 	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{}`))
 	t.Cleanup(func() {
 		model.DB = previousDB
+		common.SetMainDatabaseType(previousType)
 		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(previousRatios))
 		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(previousUsable))
 	})

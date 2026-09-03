@@ -219,6 +219,10 @@ func SyncOptions(frequency int) {
 }
 
 func validateOptionValue(key string, value string) error {
+	return validateOptionValueWithDB(DB, key, value)
+}
+
+func validateOptionValueWithDB(db *gorm.DB, key string, value string) error {
 	if key == operation_setting.ToolPriceOptionKey {
 		return operation_setting.ValidateToolPricesJSON(value)
 	}
@@ -234,7 +238,10 @@ func validateOptionValue(key string, value string) error {
 		for group := range values {
 			groups[group] = struct{}{}
 		}
-		return ValidateActivePartnershipGroups(groups)
+		if db == nil || !db.Migrator().HasTable(&PartnershipProgram{}) {
+			return nil
+		}
+		return validateActivePartnershipGroups(db, groups)
 	}
 	return nil
 }
@@ -251,23 +258,35 @@ func updateOptionAs(key string, value string, actor string) error {
 	// pricing map here is replace-not-merge, so a save does not edit the old
 	// value -- it destroys it. See model/pricing_config_history.go.
 	snapshotBillingKeyBeforeWrite(key, value, actor, "update-option")
-	// Save to database first
-	option := Option{
-		Key: key,
+	if key == "GroupRatio" {
+		if err := DB.Transaction(func(tx *gorm.DB) error {
+			return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
+				if err := validateOptionValueWithDB(tx, key, value); err != nil {
+					return err
+				}
+				return saveOptionValue(tx, key, value)
+			})
+		}); err != nil {
+			return err
+		}
+	} else if err := saveOptionValue(DB, key, value); err != nil {
+		return err
 	}
+	// Update OptionMap
+	return updateOptionMap(key, value)
+}
+
+func saveOptionValue(db *gorm.DB, key string, value string) error {
+	option := Option{Key: key}
 	// https://gorm.io/docs/update.html#Save-All-Fields
-	if err := DB.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
+	if err := db.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
 		return err
 	}
 	option.Value = value
 	// Save is a combination function.
 	// If save value does not contain primary key, it will execute Create,
 	// otherwise it will execute Update (with all fields).
-	if err := DB.Save(&option).Error; err != nil {
-		return err
-	}
-	// Update OptionMap
-	return updateOptionMap(key, value)
+	return db.Save(&option).Error
 }
 
 // UpdateOptionsBulk persists multiple key/value pairs in a single database
@@ -299,13 +318,15 @@ func UpdateOptionsBulkAs(values map[string]string, actor string) error {
 		snapshotBillingKeyBeforeWrite(key, value, actor, "update-options-bulk")
 	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		for k, v := range values {
-			option := Option{Key: k}
-			if err := tx.FirstOrCreate(&option, Option{Key: k}).Error; err != nil {
+		if groupRatio, ok := values["GroupRatio"]; ok {
+			if err := withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
+				return validateOptionValueWithDB(tx, "GroupRatio", groupRatio)
+			}); err != nil {
 				return err
 			}
-			option.Value = v
-			if err := tx.Save(&option).Error; err != nil {
+		}
+		for k, v := range values {
+			if err := saveOptionValue(tx, k, v); err != nil {
 				return err
 			}
 		}

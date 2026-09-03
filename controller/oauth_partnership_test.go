@@ -28,7 +28,7 @@ func TestPartnershipOAuthKeepsInviterAttributionWithoutRewards(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&model.User{}, &model.Tenant{}, &model.Log{},
-		&model.PartnershipProgram{}, &model.PartnershipEnrollment{},
+		&model.Option{}, &model.PartnershipProgram{}, &model.PartnershipEnrollment{},
 	))
 	previousDB := model.DB
 	previousLogDB := model.LOG_DB
@@ -46,6 +46,9 @@ func TestPartnershipOAuthKeepsInviterAttributionWithoutRewards(t *testing.T) {
 	common.RegisterEnabled = true
 	common.QuotaForInvitee = 1234
 	common.QuotaForInviter = 5678
+	require.NoError(t, model.DB.Create(&model.Option{
+		Key: "GroupRatio", Value: `{"partner":0.9}`,
+	}).Error)
 	payment.ComplianceConfirmed = true
 	payment.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
 	t.Cleanup(func() {

@@ -16,6 +16,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,11 +28,19 @@ func setupPartnershipTestDB(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&User{}, &Tenant{}, &Log{}, &PartnershipProgram{}, &PartnershipEnrollment{},
+		&User{}, &Tenant{}, &Log{}, &Option{}, &PartnershipProgram{}, &PartnershipEnrollment{},
 	))
 	previous := DB
+	previousType := common.MainDatabaseType()
 	DB = db
-	t.Cleanup(func() { DB = previous })
+	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
+	require.NoError(t, DB.Create(&Option{
+		Key: "GroupRatio", Value: `{"default":1,"partner":0.9,"vip":0.8}`,
+	}).Error)
+	t.Cleanup(func() {
+		DB = previous
+		common.SetMainDatabaseType(previousType)
+	})
 }
 
 func TestPartnershipGrantStopsAtConfiguredLimit(t *testing.T) {
@@ -282,4 +291,57 @@ func TestEnabledProgramPreventsDanglingGroupReference(t *testing.T) {
 
 	require.NoError(t, DB.Model(program).Update("enabled", false).Error)
 	assert.NoError(t, ValidateActivePartnershipGroups(map[string]struct{}{"default": {}}))
+}
+
+func TestGroupPricingUpdateAndProgramWriteNeverLeaveDanglingReference(t *testing.T) {
+	setupPartnershipTestDB(t)
+	previousRatios := ratio_setting.GroupRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(previousRatios))
+	})
+	sqlDB, err := DB.DB()
+	require.NoError(t, err)
+	// One shared connection gives SQLite the same transaction ordering that the
+	// production PostgreSQL advisory lock enforces between the two root writes.
+	sqlDB.SetMaxOpenConns(1)
+
+	start := make(chan struct{})
+	programErr := make(chan error, 1)
+	pricingErr := make(chan error, 1)
+	go func() {
+		<-start
+		programErr <- CreatePartnershipProgram(&PartnershipProgram{
+			Name: "Concurrent group program", Code: "concurrent-group", Group: "partner",
+			GrantLimit: 1, Enabled: true,
+		})
+	}()
+	go func() {
+		<-start
+		pricingErr <- UpdateOption("GroupRatio", `{"default":1}`)
+	}()
+	close(start)
+	createErr := <-programErr
+	updateErr := <-pricingErr
+
+	var option Option
+	require.NoError(t, DB.Where("key = ?", "GroupRatio").First(&option).Error)
+	var groups map[string]float64
+	require.NoError(t, common.Unmarshal([]byte(option.Value), &groups))
+	var activeCount int64
+	require.NoError(t, DB.Model(&PartnershipProgram{}).
+		Where("enabled = ? AND `group` = ?", true, "partner").Count(&activeCount).Error)
+	_, groupExists := groups["partner"]
+	assert.False(t, activeCount > 0 && !groupExists,
+		"committed state must not contain an enabled program whose group was removed")
+
+	if createErr == nil {
+		require.Error(t, updateErr)
+		assert.Contains(t, updateErr.Error(), "used by an enabled partnership program")
+		assert.Equal(t, 0.9, groups["partner"])
+	} else {
+		require.NoError(t, updateErr)
+		assert.Contains(t, createErr.Error(), "does not exist in Group Pricing")
+		_, exists := groups["partner"]
+		assert.False(t, exists)
+	}
 }
