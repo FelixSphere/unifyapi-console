@@ -170,3 +170,21 @@ func UpdatePartnershipCustomer(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }
+
+func RemovePartnershipCustomer(c *gin.Context) {
+	programId, programErr := strconv.Atoi(c.Param("id"))
+	customerId, customerErr := strconv.Atoi(c.Param("customerId"))
+	if programErr != nil || customerErr != nil || programId <= 0 || customerId <= 0 {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid partnership customer id"})
+		return
+	}
+	if err := model.RemovePartnershipCustomer(programId, customerId); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "partnership customer not found"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+}

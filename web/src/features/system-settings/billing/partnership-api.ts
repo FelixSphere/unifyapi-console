@@ -94,3 +94,14 @@ export async function savePartnershipCustomer(input: {
   if (!response.data.success) throw new Error(response.data.message)
   return response.data
 }
+
+export async function removePartnershipCustomer(input: {
+  programId: number
+  customerId: number
+}) {
+  const response = await api.delete<Envelope<never>>(
+    `/api/partnership-programs/${input.programId}/customers/${input.customerId}`
+  )
+  if (!response.data.success) throw new Error(response.data.message)
+  return response.data
+}

@@ -228,6 +228,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			partnershipProgramRoute.POST("/:id/customers", controller.CreatePartnershipCustomer)
 			partnershipProgramRoute.PUT("/:id/customers/:customerId", controller.UpdatePartnershipCustomer)
+			partnershipProgramRoute.DELETE("/:id/customers/:customerId", controller.RemovePartnershipCustomer)
 		}
 
 		// Custom OAuth provider management (root only)

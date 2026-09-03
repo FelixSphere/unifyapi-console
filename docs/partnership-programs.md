@@ -7,10 +7,18 @@ Operators manage them in **System Settings → Billing → Partnership Programs*
 
 - A user group is an independent resource managed by Group Pricing. Its group
   multiplier and model pricing remain the only pricing source of truth.
-- A partnership program stores only the identifier of an existing group. It
-  does not copy a multiplier or model price.
-- An enabled program prevents its referenced group from being removed. Disable
-  the program or move it to another existing group first.
+- A partnership program has one default customer group and may link additional
+  customer groups. It does not copy a multiplier or model price.
+- Each linked customer group is one company and invoice owner. Each gets a
+  dedicated registration code while sharing the Program grant, cap, and active
+  schedule.
+- An enabled program prevents its active customer groups from being removed
+  from Group Pricing. Remove the customer association, disable it, or move it
+  to another existing group first.
+- Removing a non-default customer group archives only the Program association
+  and disables its registration link. Existing users, tenant balances,
+  enrollments, usage, and invoice history remain unchanged. Change the default
+  customer group through the Program settings instead of removing it.
 
 ## Registration and connection
 
@@ -40,6 +48,10 @@ Use the existing explicit group-management flow if a group change is desired.
   user without changing their group or granting registration credit.
 - `GET /api/partnership/`, `POST /api/partnership/`,
   `PUT /api/partnership/:id` — root-only management endpoints.
+- `POST /api/partnership-programs/:id/customers`,
+  `PUT /api/partnership-programs/:id/customers/:customerId`, and
+  `DELETE /api/partnership-programs/:id/customers/:customerId` — root-only
+  customer-group association management.
 
 Partnership programs do not modify Stripe checkout, wallet/top-up behavior,
 request billing, or relay accounting.

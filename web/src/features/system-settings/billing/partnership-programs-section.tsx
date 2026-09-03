@@ -7,13 +7,23 @@ Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, Pencil, Plus, Users } from 'lucide-react'
+import { Copy, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -32,6 +42,7 @@ import {
 import { SettingsSection } from '../components/settings-section'
 import {
   getPartnershipPrograms,
+  removePartnershipCustomer,
   savePartnershipCustomer,
   savePartnershipProgram,
   type PartnershipCustomer,
@@ -100,6 +111,10 @@ export function PartnershipProgramsSection({
     useState<PartnershipProgram | null>(null)
   const [editingCustomer, setEditingCustomer] =
     useState<PartnershipCustomer | null>(null)
+  const [removingCustomer, setRemovingCustomer] = useState<{
+    program: PartnershipProgram
+    customer: PartnershipCustomer
+  } | null>(null)
   const [customerForm, setCustomerForm] = useState<CustomerFormState>({
     name: '',
     code: '',
@@ -130,6 +145,16 @@ export function PartnershipProgramsSection({
     onSuccess: () => {
       toast.success(t('Partnership customer saved'))
       setCustomerDialogOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['partnership-programs'] })
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
+
+  const removeCustomerMutation = useMutation({
+    mutationFn: removePartnershipCustomer,
+    onSuccess: () => {
+      toast.success(t('Customer group removed from program'))
+      setRemovingCustomer(null)
       queryClient.invalidateQueries({ queryKey: ['partnership-programs'] })
     },
     onError: (error: Error) => toast.error(error.message),
@@ -310,15 +335,30 @@ export function PartnershipProgramsSection({
                               <Copy className='size-4' />
                             </Button>
                             {!customer.is_default ? (
-                              <Button
-                                type='button'
-                                size='icon-sm'
-                                variant='ghost'
-                                aria-label={t('Edit customer')}
-                                onClick={() => openCustomer(program, customer)}
-                              >
-                                <Pencil className='size-4' />
-                              </Button>
+                              <>
+                                <Button
+                                  type='button'
+                                  size='icon-sm'
+                                  variant='ghost'
+                                  aria-label={t('Edit customer')}
+                                  onClick={() =>
+                                    openCustomer(program, customer)
+                                  }
+                                >
+                                  <Pencil className='size-4' />
+                                </Button>
+                                <Button
+                                  type='button'
+                                  size='icon-sm'
+                                  variant='ghost'
+                                  aria-label={t('Remove customer group')}
+                                  onClick={() =>
+                                    setRemovingCustomer({ program, customer })
+                                  }
+                                >
+                                  <Trash2 className='size-4' />
+                                </Button>
+                              </>
                             ) : null}
                           </div>
                         </div>
@@ -562,6 +602,48 @@ export function PartnershipProgramsSection({
           </div>
         </div>
       </Dialog>
+
+      <AlertDialog
+        open={removingCustomer !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemovingCustomer(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('Remove customer group?')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                'This removes {{group}} from {{program}} and disables its registration link. Existing users, balances, usage, and invoice history are not deleted.',
+                {
+                  group: removingCustomer?.customer.group ?? '',
+                  program: removingCustomer?.program.name ?? '',
+                }
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeCustomerMutation.isPending}>
+              {t('Cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant='destructive'
+              disabled={
+                removeCustomerMutation.isPending || removingCustomer === null
+              }
+              onClick={() => {
+                if (!removingCustomer) return
+                removeCustomerMutation.mutate({
+                  programId: removingCustomer.program.id,
+                  customerId: removingCustomer.customer.id,
+                })
+              }}
+            >
+              {t('Remove')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SettingsSection>
   )
 }
