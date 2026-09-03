@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -32,8 +31,7 @@ func partnershipProgramPayload(c *gin.Context) (*model.PartnershipProgram, bool)
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return nil, false
 	}
-	groups := setting.GetUserUsableGroupsCopy()
-	if _, ok := groups[program.Group]; !ok || !ratio_setting.ContainsGroupRatio(program.Group) {
+	if !ratio_setting.ContainsGroupRatio(program.Group) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "group must exist in Group Pricing"})
 		return nil, false
 	}
@@ -75,7 +73,7 @@ func GetPartnershipPrograms(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
 		"programs":     programs,
 		"group_ratios": ratio_setting.GetGroupRatioCopy(),
-		"groups":       setting.GetUserUsableGroupsCopy(),
+		"groups":       ratio_setting.GetGroupRatioCopy(),
 	}})
 }
 

@@ -392,6 +392,12 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	if affiliateCode != "" {
 		inviterId, _ = model.GetUserIdByAffCode(affiliateCode)
 	}
+	if partnershipCode != "" && inviterId != 0 {
+		// Partnership signup keeps the inviter relationship for attribution,
+		// while its finalize path deliberately suppresses ordinary rewards.
+		// Preserve the existing semantics of non-Partnership OAuth signup.
+		user.InviterId = inviterId
+	}
 
 	// Use transaction to ensure user creation and OAuth binding are atomic
 	grantedQuota := 0

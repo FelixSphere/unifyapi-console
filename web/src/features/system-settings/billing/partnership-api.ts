@@ -35,7 +35,7 @@ export async function getPartnershipPrograms() {
     Envelope<{
       programs: PartnershipProgram[]
       group_ratios: Record<string, number>
-      groups: Record<string, string>
+      groups: Record<string, number>
     }>
   >('/api/partnership/')
   if (!response.data.success) throw new Error(response.data.message)

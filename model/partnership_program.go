@@ -119,23 +119,25 @@ func UpdatePartnershipProgram(id int, input *PartnershipProgram) error {
 	if err := ValidatePartnershipProgram(input); err != nil {
 		return err
 	}
-	var current PartnershipProgram
-	if err := DB.First(&current, id).Error; err != nil {
-		return err
-	}
-	if input.GrantLimit < current.ClaimedCount {
-		return fmt.Errorf("grant limit cannot be lower than claimed count %d", current.ClaimedCount)
-	}
-	return DB.Model(&current).Updates(map[string]any{
-		"name":        input.Name,
-		"code":        input.Code,
-		"group":       input.Group,
-		"grant_quota": input.GrantQuota,
-		"grant_limit": input.GrantLimit,
-		"enabled":     input.Enabled,
-		"starts_at":   input.StartsAt,
-		"ends_at":     input.EndsAt,
-	}).Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var current PartnershipProgram
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, id).Error; err != nil {
+			return err
+		}
+		if input.GrantLimit < current.ClaimedCount {
+			return fmt.Errorf("grant limit cannot be lower than claimed count %d", current.ClaimedCount)
+		}
+		return tx.Model(&current).Updates(map[string]any{
+			"name":        input.Name,
+			"code":        input.Code,
+			"group":       input.Group,
+			"grant_quota": input.GrantQuota,
+			"grant_limit": input.GrantLimit,
+			"enabled":     input.Enabled,
+			"starts_at":   input.StartsAt,
+			"ends_at":     input.EndsAt,
+		}).Error
+	})
 }
 
 // ConnectExistingUserToPartnership records attribution for an existing
