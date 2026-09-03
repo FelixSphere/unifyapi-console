@@ -190,16 +190,20 @@ func setupLoginAtAuthVersion(user *model.User, expectedAuthVersion int64, c *gin
 	service.WriteRefreshCookie(c, bundle.RefreshToken)
 	setAuthNoStore(c)
 	recordLoginAudit(user, c)
+	data := gin.H{
+		"access_token":      bundle.AccessToken,
+		"token_type":        bundle.TokenType,
+		"access_expires_at": bundle.AccessExpiresAt,
+		"session":           bundle.Session,
+		"user":              buildSelfUserData(currentUser),
+	}
+	if status, ok := c.Get("partnership_status"); ok {
+		data["partnership_status"] = status
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"message": "",
 		"success": true,
-		"data": gin.H{
-			"access_token":      bundle.AccessToken,
-			"token_type":        bundle.TokenType,
-			"access_expires_at": bundle.AccessExpiresAt,
-			"session":           bundle.Session,
-			"user":              buildSelfUserData(currentUser),
-		},
+		"data":    data,
 	})
 }
 
@@ -272,12 +276,22 @@ func Register(c *gin.Context) {
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
 	}
-	if err := cleanUser.Insert(inviterId); err != nil {
-		if errors.Is(err, model.ErrEmailAlreadyTaken) {
+	var insertErr error
+	if user.PartnershipCode != "" {
+		_, insertErr = cleanUser.InsertForPartnership(user.PartnershipCode)
+	} else {
+		insertErr = cleanUser.Insert(inviterId)
+	}
+	if insertErr != nil {
+		if errors.Is(insertErr, model.ErrEmailAlreadyTaken) {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailAlreadyTaken)
 			return
 		}
-		common.ApiError(c, err)
+		if errors.Is(insertErr, model.ErrPartnershipProgramUnavailable) {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "partnership program is unavailable"})
+			return
+		}
+		common.ApiError(c, insertErr)
 		return
 	}
 

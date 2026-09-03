@@ -27,6 +27,7 @@ import type { z } from 'zod'
 import { Dialog } from '@/components/dialog'
 import { PasswordInput } from '@/components/password-input'
 import { Turnstile } from '@/components/turnstile'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -50,9 +51,16 @@ import {
   saveAffiliateCode,
 } from '@/features/auth/lib/storage'
 import { useStatus } from '@/hooks/use-status'
-import { isAuthBundle } from '@/lib/api'
+import { api, isAuthBundle } from '@/lib/api'
 import { getServerErrorMessageKey } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
+
+type PartnershipOffer = {
+  name: string
+  code: string
+  grant_quota: number
+  grant_available: boolean
+}
 
 export function SignUpForm({
   className,
@@ -66,6 +74,15 @@ export function SignUpForm({
   const [isWeChatDialogOpen, setIsWeChatDialogOpen] = useState(false)
   const [isWeChatSubmitting, setIsWeChatSubmitting] = useState(false)
   const [turnstileWidgetKey, setTurnstileWidgetKey] = useState(0)
+  const partnershipCode = useMemo(
+    () =>
+      new URLSearchParams(window.location.search).get('partnership')?.trim() ??
+      '',
+    []
+  )
+  const [partnershipOffer, setPartnershipOffer] =
+    useState<PartnershipOffer | null>(null)
+  const [partnershipInvalid, setPartnershipInvalid] = useState(false)
   const legalConsentErrorMessage = t('Please agree to the legal terms first')
 
   const { status } = useStatus()
@@ -106,6 +123,8 @@ export function SignUpForm({
     status?.oauth_register_enabled ??
     status?.data?.oauth_register_enabled ??
     true
+  const quotaPerUnit =
+    status?.quota_per_unit ?? status?.data?.quota_per_unit ?? 500000
   const hasWeChatLogin = Boolean(status?.wechat_login)
   const turnstileReady = !isTurnstileEnabled || Boolean(turnstileToken)
 
@@ -138,6 +157,20 @@ export function SignUpForm({
     }
   }, [])
 
+  useEffect(() => {
+    if (!partnershipCode) return
+    api
+      .get(`/api/partnership/${encodeURIComponent(partnershipCode)}`, {
+        skipAuthRefresh: true,
+        skipErrorHandler: true,
+      })
+      .then((response) => {
+        if (response.data?.success) setPartnershipOffer(response.data.data)
+        else setPartnershipInvalid(true)
+      })
+      .catch(() => setPartnershipInvalid(true))
+  }, [partnershipCode])
+
   async function onSubmit(data: z.infer<typeof registerFormSchema>) {
     if (requiresLegalConsent && !agreedToLegal) {
       toast.error(legalConsentErrorMessage)
@@ -166,6 +199,7 @@ export function SignUpForm({
         email: data.email || undefined,
         verification_code: verificationCode || undefined,
         aff_code: getAffiliateCode(),
+        partnership_code: partnershipCode || undefined,
         turnstile: turnstileToken,
       })
 
@@ -214,7 +248,10 @@ export function SignUpForm({
 
     setIsWeChatSubmitting(true)
     try {
-      const res = await wechatLoginByCode(wechatCode)
+      const res = await wechatLoginByCode(
+        wechatCode,
+        partnershipCode || undefined
+      )
       if (res?.success && isAuthBundle(res.data)) {
         await handleLoginSuccess(res.data)
         toast.success(t('Signed in via WeChat'))
@@ -240,6 +277,36 @@ export function SignUpForm({
     verificationCodeAction = <Loader2 className='h-4 w-4 animate-spin' />
   }
 
+  let partnershipBanner: ReactNode = null
+  if (partnershipOffer) {
+    const grantUSD = partnershipOffer.grant_quota / quotaPerUnit
+    partnershipBanner = (
+      <Alert>
+        <AlertDescription>
+          {partnershipOffer.name}:{' '}
+          {partnershipOffer.grant_available
+            ? t(
+                'Up to ${{amount}} registration credit, subject to remaining capacity.',
+                {
+                  amount: grantUSD.toFixed(2),
+                }
+              )
+            : t(
+                'The free registration credit has been fully claimed. You can still register and add funds normally.'
+              )}
+        </AlertDescription>
+      </Alert>
+    )
+  } else if (partnershipInvalid) {
+    partnershipBanner = (
+      <Alert variant='destructive'>
+        <AlertDescription>
+          {t('This partnership registration link is unavailable.')}
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
   return (
     <Form {...form}>
       <form
@@ -247,6 +314,7 @@ export function SignUpForm({
         className={cn('grid gap-4', className)}
         {...props}
       >
+        {partnershipBanner}
         {/* Username Field */}
         <FormField
           control={form.control}
@@ -370,6 +438,7 @@ export function SignUpForm({
           className='mt-2 w-full justify-center gap-2'
           disabled={
             isLoading ||
+            partnershipInvalid ||
             (requiresLegalConsent && !agreedToLegal) ||
             !turnstileReady
           }
@@ -381,9 +450,14 @@ export function SignUpForm({
         {oauthRegisterEnabled && (
           <OAuthProviders
             status={status}
-            disabled={isLoading || (requiresLegalConsent && !agreedToLegal)}
+            disabled={
+              isLoading ||
+              partnershipInvalid ||
+              (requiresLegalConsent && !agreedToLegal)
+            }
             onWeChatLogin={hasWeChatLogin ? handleOpenWeChatDialog : undefined}
             isWeChatLoading={isWeChatSubmitting}
+            partnership={partnershipCode || undefined}
             className='pt-2'
           />
         )}

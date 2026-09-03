@@ -23,10 +23,11 @@ import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
 import { ProfitSection } from '../models/profit-section'
-import { SettlementSection } from '../models/settlement-section'
 import { RatioSettingsCard } from '../models/ratio-settings-card'
+import { SettlementSection } from '../models/settlement-section'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { PartnershipProgramsSection } from './partnership-programs-section'
 
 const getModelDefaults = (settings: BillingSettings) => ({
   ModelPrice: settings.ModelPrice,
@@ -226,6 +227,13 @@ const BILLING_SECTIONS = [
           confirmedBy: settings['payment_setting.compliance_confirmed_by'] ?? 0,
         }}
       />
+    ),
+  },
+  {
+    id: 'partnerships',
+    titleKey: 'Partnership Programs',
+    build: (settings: BillingSettings) => (
+      <PartnershipProgramsSection quotaPerUnit={settings.QuotaPerUnit} />
     ),
   },
   {

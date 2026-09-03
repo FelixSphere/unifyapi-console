@@ -20,13 +20,15 @@ import (
 const oauthAuthFlowTTL = 10 * time.Minute
 
 type oauthStateRequest struct {
-	Provider string `json:"provider"`
-	Intent   string `json:"intent"`
-	Aff      string `json:"aff,omitempty"`
+	Provider    string `json:"provider"`
+	Intent      string `json:"intent"`
+	Aff         string `json:"aff,omitempty"`
+	Partnership string `json:"partnership,omitempty"`
 }
 
 type oauthFlowPayload struct {
-	AffiliateCode string `json:"affiliate_code,omitempty"`
+	AffiliateCode   string `json:"affiliate_code,omitempty"`
+	PartnershipCode string `json:"partnership_code,omitempty"`
 }
 
 // providerParams returns map with Provider key for i18n templates
@@ -44,10 +46,11 @@ func GenerateOAuthCode(c *gin.Context) {
 	request.Provider = strings.TrimSpace(request.Provider)
 	request.Intent = strings.TrimSpace(request.Intent)
 	request.Aff = strings.TrimSpace(request.Aff)
+	request.Partnership = model.NormalizePartnershipCode(request.Partnership)
 	if oauth.GetProvider(request.Provider) == nil ||
 		(request.Intent != model.AuthFlowIntentLogin && request.Intent != model.AuthFlowIntentBind) ||
-		len(request.Aff) > 32 ||
-		(request.Intent == model.AuthFlowIntentBind && request.Aff != "") {
+		len(request.Aff) > 32 || len(request.Partnership) > 64 ||
+		(request.Intent == model.AuthFlowIntentBind && (request.Aff != "" || request.Partnership != "")) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
@@ -62,7 +65,7 @@ func GenerateOAuthCode(c *gin.Context) {
 		userID = identity.UserID
 		sessionID = identity.SessionID
 	}
-	payload, err := common.Marshal(oauthFlowPayload{AffiliateCode: request.Aff})
+	payload, err := common.Marshal(oauthFlowPayload{AffiliateCode: request.Aff, PartnershipCode: request.Partnership})
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -193,10 +196,14 @@ func HandleOAuth(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	user, err := findOrCreateOAuthUser(c, provider, oauthUser, payload.AffiliateCode)
+	user, err := findOrCreateOAuthUser(c, provider, oauthUser, payload.AffiliateCode, payload.PartnershipCode)
 	if err != nil {
 		if errors.Is(err, model.ErrEmailAlreadyTaken) {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailAlreadyTaken)
+			return
+		}
+		if errors.Is(err, model.ErrPartnershipProgramUnavailable) {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "partnership program is unavailable"})
 			return
 		}
 		switch err.(type) {
@@ -294,7 +301,7 @@ func handleOAuthBind(c *gin.Context, provider oauth.Provider, pendingFlow *model
 }
 
 // findOrCreateOAuthUser finds existing user or creates new user
-func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *oauth.OAuthUser, affiliateCode string) (*model.User, error) {
+func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *oauth.OAuthUser, affiliateCode string, partnershipCode string) (*model.User, error) {
 	user := &model.User{}
 
 	// Check if user already exists with new ID
@@ -306,6 +313,13 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		// Check if user has been deleted
 		if user.Id == 0 {
 			return nil, &OAuthUserDeletedError{}
+		}
+		if partnershipCode != "" {
+			connection, err := model.ConnectExistingUserToPartnership(user.Id, partnershipCode)
+			if err != nil {
+				return nil, err
+			}
+			c.Set("partnership_status", connection.Status)
 		}
 		return user, nil
 	}
@@ -324,6 +338,13 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 				if err := user.UpdateGitHubId(oauthUser.ProviderUserID); err != nil {
 					common.SysError(fmt.Sprintf("[OAuth] Failed to migrate user %d: %s", user.Id, err.Error()))
 					// Continue with login even if migration fails
+				}
+				if partnershipCode != "" {
+					connection, err := model.ConnectExistingUserToPartnership(user.Id, partnershipCode)
+					if err != nil {
+						return nil, err
+					}
+					c.Set("partnership_status", connection.Status)
 				}
 				return user, nil
 			}
@@ -371,13 +392,28 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	if affiliateCode != "" {
 		inviterId, _ = model.GetUserIdByAffCode(affiliateCode)
 	}
+	if partnershipCode != "" && inviterId != 0 {
+		// Partnership signup keeps the inviter relationship for attribution,
+		// while its finalize path deliberately suppresses ordinary rewards.
+		// Preserve the existing semantics of non-Partnership OAuth signup.
+		user.InviterId = inviterId
+	}
 
 	// Use transaction to ensure user creation and OAuth binding are atomic
+	grantedQuota := 0
+	insertUser := func(tx *gorm.DB) error {
+		if partnershipCode != "" {
+			var err error
+			grantedQuota, err = user.InsertForPartnershipWithTx(tx, partnershipCode)
+			return err
+		}
+		return user.InsertWithTx(tx, inviterId)
+	}
 	if genericProvider, ok := provider.(*oauth.GenericOAuthProvider); ok {
 		// Custom provider: create user and binding in a transaction
 		err := model.DB.Transaction(func(tx *gorm.DB) error {
 			// Create user
-			if err := user.InsertWithTx(tx, inviterId); err != nil {
+			if err := insertUser(tx); err != nil {
 				return err
 			}
 
@@ -398,12 +434,16 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		}
 
 		// Perform post-transaction tasks (logs, sidebar config, inviter rewards)
-		user.FinalizeOAuthUserCreation(inviterId)
+		if partnershipCode != "" {
+			user.FinalizePartnershipOAuthUserCreation(grantedQuota)
+		} else {
+			user.FinalizeOAuthUserCreation(inviterId)
+		}
 	} else {
 		// Built-in provider: create user and update provider ID in a transaction
 		err := model.DB.Transaction(func(tx *gorm.DB) error {
 			// Create user
-			if err := user.InsertWithTx(tx, inviterId); err != nil {
+			if err := insertUser(tx); err != nil {
 				return err
 			}
 
@@ -427,7 +467,14 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		}
 
 		// Perform post-transaction tasks
-		user.FinalizeOAuthUserCreation(inviterId)
+		if partnershipCode != "" {
+			user.FinalizePartnershipOAuthUserCreation(grantedQuota)
+		} else {
+			user.FinalizeOAuthUserCreation(inviterId)
+		}
+	}
+	if partnershipCode != "" {
+		c.Set("partnership_status", "provisioned_new")
 	}
 
 	return user, nil
