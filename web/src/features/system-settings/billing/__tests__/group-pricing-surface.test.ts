@@ -13,6 +13,14 @@ const form = readFileSync(
   join(HERE, '../../models/group-ratio-form.tsx'),
   'utf8'
 )
+const customerPricingEditor = readFileSync(
+  join(HERE, '../../models/group-model-pricing-editor.tsx'),
+  'utf8'
+)
+const ratioSettingsCard = readFileSync(
+  join(HERE, '../../models/ratio-settings-card.tsx'),
+  'utf8'
+)
 
 describe('group pricing operator surface', () => {
   test('Group Pricing remains the only section for customer model contracts', () => {
@@ -28,5 +36,18 @@ describe('group pricing operator surface', () => {
     assert.match(editor, /<GroupModelPricingEditor/)
     assert.doesNotMatch(form, /name='GroupGroupRatio'/)
     assert.doesNotMatch(form, /Inter-group overrides/)
+  })
+
+  test('draft groups flow into customer pricing and saved groups refresh it', () => {
+    assert.match(editor, /draftGroupRatios=/)
+    assert.match(customerPricingEditor, /visibleCustomerPricingGroups/)
+    assert.match(ratioSettingsCard, /queryKey: \['group-model-pricing'\]/)
+  })
+
+  test('customer pricing starts with every model instead of an add-one picker', () => {
+    assert.match(customerPricingEditor, /visibleCustomerModelNames/)
+    assert.match(customerPricingEditor, /fallbackCustomerMultiplier/)
+    assert.doesNotMatch(customerPricingEditor, /<Select/)
+    assert.doesNotMatch(customerPricingEditor, /Add model/)
   })
 })

@@ -15,6 +15,43 @@ export function fallbackCustomerMultiplier(
   return (modelDiscounts[model] ?? 1) * (groupRatios[group] ?? 1)
 }
 
+export function visibleCustomerPricingGroups(
+  savedGroups: string[],
+  draftGroupRatios?: Record<string, number>
+): string[] {
+  const source = draftGroupRatios ? Object.keys(draftGroupRatios) : savedGroups
+  return [...new Set(source.map((group) => group.trim()).filter(Boolean))].sort(
+    (left, right) => left.localeCompare(right)
+  )
+}
+
+export function visibleCustomerModelNames(
+  models: string[],
+  filter: string
+): string[] {
+  const normalizedFilter = filter.trim().toLowerCase()
+  return [...models]
+    .sort((left, right) => left.localeCompare(right))
+    .filter((model) => model.toLowerCase().includes(normalizedFilter))
+}
+
+export function effectiveCustomerMultiplier(
+  model: string,
+  group: string,
+  overrides: Record<string, string>,
+  modelDiscounts: Record<string, number>,
+  groupRatios: Record<string, number>
+): number | null {
+  if (Object.hasOwn(overrides, model)) {
+    return parseCustomerMultiplier(overrides[model] ?? '')
+  }
+  return fallbackCustomerMultiplier(model, group, modelDiscounts, groupRatios)
+}
+
+export function formatCustomerMultiplier(value: number): string {
+  return String(Number(value.toPrecision(12)))
+}
+
 export function priceAtMultiplier(
   officialInput: number,
   officialOutput: number,

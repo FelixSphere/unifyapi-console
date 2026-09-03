@@ -476,7 +476,7 @@ function GroupPricingGuide({ open, onOpenChange }: GroupPricingGuideProps) {
             </GuideStepRow>
             <GuideStepRow chip='3'>
               {t(
-                'Under Customer model prices, add the models negotiated with that company and enter the final multiplier.'
+                'Under Customer model prices, every model starts at the inherited default. Change only the models negotiated with that company.'
               )}
             </GuideStepRow>
           </section>
