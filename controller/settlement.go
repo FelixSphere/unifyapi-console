@@ -338,6 +338,42 @@ func DeleteSettlementRecord(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "已删除该结算记录"})
 }
 
+// GetCustomerInvoice renders the immutable customer statement as the formal
+// outgoing invoice. Vendor settlements are incoming invoices and deliberately
+// cannot use this endpoint.
+func GetCustomerInvoice(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid invoice id"})
+		return
+	}
+	settlement, err := model.GetSettlement(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "invoice not found"})
+		return
+	}
+	if settlement.Kind != string(service.StatementKindCustomer) {
+		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "vendor settlements are incoming invoices, not customer invoices"})
+		return
+	}
+	var statement service.Statement
+	if err := common.Unmarshal([]byte(settlement.StatementJSON), &statement); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "frozen statement is unreadable: " + err.Error()})
+		return
+	}
+	document, err := service.RenderCustomerInvoiceHTML(settlement, statement)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	filename := strings.ToLower(service.CustomerInvoiceNumber(settlement)) + ".html"
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'")
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.Header("Content-Disposition", `inline; filename="`+filename+`"`)
+	c.Data(http.StatusOK, "text/html; charset=utf-8", document)
+}
+
 func validSettlementStatus(status string) bool {
 	switch status {
 	case "", model.SettlementStatusIssued, model.SettlementStatusSettled, model.SettlementStatusVoid:

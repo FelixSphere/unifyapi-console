@@ -244,3 +244,58 @@ func TestSettlementAPITotalsEqualSupplierModelChannelDetails(t *testing.T) {
 	require.Equal(t, statement.Requests, lineRequests)
 	require.InDelta(t, statement.AmountUSD, response.Data.Totals.AmountUSD, 1e-9)
 }
+
+func TestCustomerInvoiceUsesFrozenIssuedStatement(t *testing.T) {
+	setupSettlementControllerDB(t)
+	frozen := service.Statement{
+		Kind: service.StatementKindCustomer, Counterparty: "GenAI", Label: "ACME & Partners",
+		Group: "GenAI", PeriodStart: "2026-08-01", PeriodEnd: "2026-08-31",
+		Requests: 2, AmountUSD: 7.6543,
+		Lines: []service.StatementLine{{
+			Model: "gpt-5", Requests: 2, PromptTokens: 100, CachedTokens: 20,
+			CompletionTokens: 30, AmountUSD: 7.6543,
+		}},
+	}
+	encoded, err := common.Marshal(frozen)
+	require.NoError(t, err)
+	settlement, err := model.CreateSettlement(&model.Settlement{
+		Kind: "customer", Counterparty: "GenAI", Label: "ACME & Partners",
+		PeriodStart: "2026-08-01", PeriodEnd: "2026-08-31", AmountUSD: 7.6543,
+		StatementJSON: string(encoded), CreatedAt: 1_756_684_800,
+	})
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(settlement.Id)}}
+	ctx.Request = httptest.NewRequest(http.MethodGet,
+		"/api/pricing/settlement/"+strconv.Itoa(settlement.Id)+"/invoice", nil)
+	GetCustomerInvoice(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, "text/html; charset=utf-8", recorder.Header().Get("Content-Type"))
+	require.Contains(t, recorder.Header().Get("Content-Disposition"), "uai-202608-")
+	require.Contains(t, recorder.Body.String(), "ACME &amp; Partners")
+	require.Contains(t, recorder.Body.String(), "USD 7.6543")
+	require.Contains(t, recorder.Body.String(), "UnifyAPI usage - gpt-5")
+	require.NotContains(t, recorder.Body.String(), "channel_base_url")
+}
+
+func TestVendorSettlementCannotBecomeOutgoingInvoice(t *testing.T) {
+	setupSettlementControllerDB(t)
+	settlement, err := model.CreateSettlement(&model.Settlement{
+		Kind: "vendor", Counterparty: "flatkey", Label: "Flatkey",
+		PeriodStart: "2026-08-01", PeriodEnd: "2026-08-31", StatementJSON: `{}`,
+	})
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(settlement.Id)}}
+	ctx.Request = httptest.NewRequest(http.MethodGet,
+		"/api/pricing/settlement/"+strconv.Itoa(settlement.Id)+"/invoice", nil)
+	GetCustomerInvoice(ctx)
+
+	require.Equal(t, http.StatusConflict, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "incoming invoices")
+}
