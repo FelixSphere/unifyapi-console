@@ -41,8 +41,8 @@ type Settlement struct {
 	// Kind is "customer" (money owed to us) or "vendor" (money we owe).
 	Kind string `json:"kind" gorm:"type:varchar(16);index:idx_settlement_period,priority:1;uniqueIndex:uidx_settlement_period,priority:1"`
 
-	// Counterparty is the stable id: a user id for a customer, a vendor id for
-	// an upstream. Label is the display name AT ISSUE TIME, stored rather than
+	// Counterparty is the stable id: a namespaced Pricing Group key for a
+	// customer, a vendor id for an upstream. Label is the display name AT ISSUE TIME, stored rather than
 	// joined so a renamed customer does not retroactively rename their invoices.
 	Counterparty string `json:"counterparty" gorm:"type:varchar(64);index:idx_settlement_period,priority:2;uniqueIndex:uidx_settlement_period,priority:2"`
 	Label        string `json:"label" gorm:"type:varchar(191)"`

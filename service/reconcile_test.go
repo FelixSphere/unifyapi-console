@@ -214,9 +214,9 @@ func TestCustomerGroupingCombinesSeveralUsersInTheSameCompany(t *testing.T) {
 	for _, line := range report.Lines {
 		byCustomer[line.Key] = line
 	}
-	require.EqualValues(t, 6, byCustomer["GenAI"].Requests)
-	require.InDelta(t, 10, byCustomer["GenAI"].RevenueUSD, 1e-9)
-	require.EqualValues(t, 1, byCustomer["UnifyAI"].Requests)
+	require.EqualValues(t, 6, byCustomer[model.CustomerPricingGroupKey("GenAI")].Requests)
+	require.InDelta(t, 10, byCustomer[model.CustomerPricingGroupKey("GenAI")].RevenueUSD, 1e-9)
+	require.EqualValues(t, 1, byCustomer[model.CustomerPricingGroupKey("UnifyAI")].Requests)
 }
 
 func TestGroupByVendorUsesTheActualChannelEndpoint(t *testing.T) {

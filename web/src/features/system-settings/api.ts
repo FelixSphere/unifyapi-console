@@ -273,6 +273,12 @@ export async function downloadSettlementCSV(path: string) {
   return downloadAuthenticatedFile(path)
 }
 
+export async function downloadFrozenSettlementCSV(settlementId: number) {
+  return downloadAuthenticatedFile(
+    `/api/pricing/settlement/${settlementId}/statement.csv`
+  )
+}
+
 export async function downloadReconciliationCSV(path: string) {
   return downloadAuthenticatedFile(path)
 }

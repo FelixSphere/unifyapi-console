@@ -27,9 +27,12 @@ const maxReconcileRows = 200_000
 // UsageRow is one pre-aggregated slice of consumption. It is whatever the log
 // query grouped by, so several rows can share a model or a channel.
 type UsageRow struct {
-	Day              string
-	Model            string
+	Day   string
+	Model string
+	// UserGroup is the immutable request-time group. BillingGroup is the
+	// account's current Pricing Group, used as the customer invoice owner.
 	UserGroup        string
+	BillingGroup     string
 	Username         string
 	UserID           int
 	ChannelID        int
@@ -150,6 +153,14 @@ func FetchReconcileUsage(query ReconcileQuery) ([]UsageRow, bool, error) {
 	}
 
 	channelDetails := reconcileChannelDetails(scanned)
+	userIDs := make([]int, 0, len(scanned))
+	for _, row := range scanned {
+		userIDs = append(userIDs, row.UserID)
+	}
+	currentGroups, err := ResolveCurrentCustomerPricingGroups(userIDs)
+	if err != nil {
+		return nil, false, err
+	}
 
 	rows := make([]UsageRow, 0, len(scanned))
 	for _, row := range scanned {
@@ -165,6 +176,7 @@ func FetchReconcileUsage(query ReconcileQuery) ([]UsageRow, bool, error) {
 			Day:              row.Day,
 			Model:            row.ModelName,
 			UserGroup:        row.UserGroup,
+			BillingGroup:     currentGroups[row.UserID],
 			Username:         row.Username,
 			UserID:           row.UserID,
 			ChannelID:        row.ChannelID,

@@ -184,6 +184,125 @@ func TestCustomerSettlementResponseNeverTreatsTopUpsAsInvoicePayments(t *testing
 	require.NotContains(t, strings.ToLower(response), "topup")
 }
 
+func TestCustomerSettlementConsolidatesCurrentPricingGroupAndBlocksLegacyInvoice(t *testing.T) {
+	db := setupSettlementControllerDB(t)
+	for _, user := range []*model.User{
+		{Id: 3, Username: "abelsaw", Group: "Chinhin", AffCode: "abelsaw-settlement"},
+		{Id: 4, Username: "Chris", Group: "Chinhin", AffCode: "chris-settlement"},
+	} {
+		require.NoError(t, db.Create(user).Error)
+	}
+	startTime := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.Local).Unix()
+	for _, log := range []*model.Log{
+		{UserId: 3, Username: "abelsaw", Group: "Standard User", CreatedAt: startTime + 10,
+			Type: model.LogTypeConsume, ModelName: "gpt-4o", Quota: 500_000},
+		{UserId: 4, Username: "Chris", Group: "Vip User", CreatedAt: startTime + 20,
+			Type: model.LogTypeConsume, ModelName: "gpt-4o", Quota: 1_000_000},
+	} {
+		require.NoError(t, db.Create(log).Error)
+	}
+
+	legacyStatement := service.Statement{
+		Kind: service.StatementKindCustomer, Counterparty: "4", Label: "Chris", Group: "Vip User",
+		PeriodStart: "2026-07-01", PeriodEnd: "2026-07-31", Requests: 1, AmountUSD: 2,
+	}
+	encoded, err := common.Marshal(legacyStatement)
+	require.NoError(t, err)
+	legacy, err := model.CreateSettlement(&model.Settlement{
+		Kind: "customer", Counterparty: "4", Label: "Chris", PeriodStart: "2026-07-01",
+		PeriodEnd: "2026-07-31", AmountUSD: 2, StatementJSON: string(encoded),
+	})
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet,
+		"/api/pricing/settlement?kind=customer&start=2026-07-01&end=2026-07-31", nil)
+	GetSettlements(ctx)
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var response struct {
+		Data struct {
+			Rows []settlementRow `json:"rows"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Len(t, response.Data.Rows, 1)
+	row := response.Data.Rows[0]
+	require.Equal(t, model.CustomerPricingGroupKey("Chinhin"), row.Statement.Counterparty)
+	require.Equal(t, "Chinhin", row.Statement.Label)
+	require.EqualValues(t, 2, row.Statement.Requests)
+	require.InDelta(t, 3, row.Statement.AmountUSD, 1e-9)
+	require.True(t, row.IssuanceBlocked)
+	require.Len(t, row.LegacySettlements, 1)
+	require.Equal(t, legacy.Id, row.LegacySettlements[0].Id)
+
+	csvRecorder := httptest.NewRecorder()
+	csvContext, _ := gin.CreateTestContext(csvRecorder)
+	csvContext.Request = httptest.NewRequest(http.MethodGet,
+		"/api/pricing/settlement.csv?kind=customer&start=2026-07-01&end=2026-07-31", nil)
+	ExportSettlementCSV(csvContext)
+	require.Equal(t, http.StatusOK, csvRecorder.Code)
+	require.Equal(t, 1, strings.Count(csvRecorder.Body.String(), ",TOTAL,"),
+		"the current export must contain one consolidated document, not append the legacy invoice")
+	require.Contains(t, csvRecorder.Body.String(), model.CustomerPricingGroupKey("Chinhin")+",Chinhin,Chinhin")
+
+	requestBody, err := json.Marshal(IssueSettlementRequest{
+		Kind: "customer", Counterparty: model.CustomerPricingGroupKey("Chinhin"),
+		Start: "2026-07-01", End: "2026-07-31", Status: model.SettlementStatusIssued,
+	})
+	require.NoError(t, err)
+	recorder = httptest.NewRecorder()
+	ctx, _ = gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/pricing/settlement", bytes.NewReader(requestBody))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	IssueSettlement(ctx)
+	require.Equal(t, http.StatusConflict, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "Void them first")
+
+	legacy.Status = model.SettlementStatusVoid
+	_, err = model.UpdateSettlementCounterparty(legacy)
+	require.NoError(t, err)
+	recorder = httptest.NewRecorder()
+	ctx, _ = gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/pricing/settlement", bytes.NewReader(requestBody))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	IssueSettlement(ctx)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Contains(t, recorder.Body.String(), `"success":true`)
+
+	grouped, err := model.GetSettlementByPeriod("customer", model.CustomerPricingGroupKey("Chinhin"), "2026-07-01", "2026-07-31")
+	require.NoError(t, err)
+	require.Equal(t, "Chinhin", grouped.Label)
+}
+
+func TestFrozenSettlementCSVRemainsAvailableByInvoiceID(t *testing.T) {
+	setupSettlementControllerDB(t)
+	frozen := service.Statement{
+		Kind: service.StatementKindCustomer, Counterparty: "4", Label: "Chris", Group: "Vip User",
+		PeriodStart: "2026-07-01", PeriodEnd: "2026-07-31", Requests: 1, AmountUSD: 2,
+		Lines: []service.StatementLine{{Model: "gpt-4o", Requests: 1, AmountUSD: 2}},
+	}
+	encoded, err := common.Marshal(frozen)
+	require.NoError(t, err)
+	legacy, err := model.CreateSettlement(&model.Settlement{
+		Kind: "customer", Counterparty: "4", Label: "Chris", PeriodStart: "2026-07-01",
+		PeriodEnd: "2026-07-31", AmountUSD: 2, StatementJSON: string(encoded),
+	})
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(legacy.Id)}}
+	ctx.Request = httptest.NewRequest(http.MethodGet,
+		"/api/pricing/settlement/"+strconv.Itoa(legacy.Id)+"/statement.csv", nil)
+	ExportFrozenSettlementCSV(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Contains(t, recorder.Header().Get("Content-Disposition"), "statement-"+strconv.Itoa(legacy.Id))
+	require.Contains(t, recorder.Body.String(), "issued,"+strconv.Itoa(legacy.Id)+",4,Chris,Vip User")
+}
+
 func TestUnissuedSettlementCSVIsMarkedAsDraft(t *testing.T) {
 	db := setupSettlementControllerDB(t)
 	startTime := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.Local).Unix()
@@ -195,12 +314,13 @@ func TestUnissuedSettlementCSVIsMarkedAsDraft(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodGet,
-		"/api/pricing/settlement.csv?kind=customer&start=2026-07-01&end=2026-07-31&counterparty=GenAI", nil)
+		"/api/pricing/settlement.csv?kind=customer&start=2026-07-01&end=2026-07-31&counterparty="+
+			url.QueryEscape(model.CustomerPricingGroupKey("GenAI")), nil)
 	ExportSettlementCSV(ctx)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Contains(t, recorder.Body.String(), "# DRAFT_NOT_ISSUED")
-	require.Contains(t, recorder.Body.String(), "DRAFT_NOT_ISSUED,,GenAI")
+	require.Contains(t, recorder.Body.String(), "DRAFT_NOT_ISSUED,,"+model.CustomerPricingGroupKey("GenAI"))
 }
 
 func TestSettlementAPITotalsEqualSupplierModelChannelDetails(t *testing.T) {

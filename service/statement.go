@@ -245,8 +245,14 @@ func statementAmount(row model.UsageRow, kind StatementKind) (amount float64, pr
 
 func statementParty(row model.UsageRow, kind StatementKind) (key, label, group string) {
 	if kind == StatementKindCustomer {
-		if row.UserGroup != "" {
-			return row.UserGroup, row.UserGroup, row.UserGroup
+		billingGroup := row.BillingGroup
+		if billingGroup == "" {
+			// Deleted/missing users cannot be resolved against today's account
+			// table. Their historical usage must still be billed somewhere.
+			billingGroup = row.UserGroup
+		}
+		if billingGroup != "" {
+			return model.CustomerPricingGroupKey(billingGroup), billingGroup, billingGroup
 		}
 		// Preserve upstream behaviour for the tenantless/root edge case.
 		key = strconv.Itoa(row.UserID)

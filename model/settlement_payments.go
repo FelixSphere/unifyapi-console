@@ -140,6 +140,8 @@ func FetchCustomerPaymentsByCustomer(startTimestamp, endTimestamp int64) (map[st
 		}
 		if customer == "" {
 			customer = strconv.Itoa(row.UserId)
+		} else {
+			customer = CustomerPricingGroupKey(customer)
 		}
 		provider := row.PaymentProvider
 		if provider == "" {
