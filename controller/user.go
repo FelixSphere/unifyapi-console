@@ -528,6 +528,10 @@ func GetSelf(c *gin.Context) {
 // administrator-only remarks.
 func buildSelfUserData(user *model.User) map[string]interface{} {
 	userSetting := user.GetSetting()
+	quota := user.Quota
+	if effectiveQuota, err := model.GetUserQuota(user.Id, false); err == nil {
+		quota = effectiveQuota
+	}
 	permissions := calculateUserPermissions(user.Role)
 	permissions["admin_permissions"] = authz.Capabilities(user.Id, user.Role)
 	return map[string]interface{}{
@@ -543,7 +547,7 @@ func buildSelfUserData(user *model.User) map[string]interface{} {
 		"wechat_id":         user.WeChatId,
 		"telegram_id":       user.TelegramId,
 		"group":             user.Group,
-		"quota":             user.Quota,
+		"quota":             quota,
 		"used_quota":        user.UsedQuota,
 		"request_count":     user.RequestCount,
 		"aff_code":          user.AffCode,
@@ -1208,8 +1212,12 @@ func ManageUser(c *gin.Context) {
 				"quota": logger.LogQuota(req.Value),
 			})
 		case "override":
-			oldQuota := user.Quota
-			if err := model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("quota", req.Value).Error; err != nil {
+			oldQuota, err := model.GetUserQuota(user.Id, true)
+			if err != nil {
+				common.ApiError(c, err)
+				return
+			}
+			if err := model.SetUserQuota(user.Id, req.Value); err != nil {
 				common.ApiError(c, err)
 				return
 			}

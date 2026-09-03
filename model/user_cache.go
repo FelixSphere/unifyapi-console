@@ -11,10 +11,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const userCacheSchemaVersion = 2
+const userCacheSchemaVersion = 3
 
 type UserBase struct {
 	Id          int    `json:"id"`
+	TenantId    int    `json:"tenant_id"`
 	Group       string `json:"group"`
 	Email       string `json:"email"`
 	Quota       int    `json:"quota"`
@@ -95,6 +96,13 @@ func GetUserCache(userId int) (*UserBase, error) {
 	// Try getting from Redis first
 	userCache, err := cacheGetUserBase(userId)
 	if err == nil {
+		if userCache.TenantId > 0 {
+			quota, quotaErr := GetUserQuota(userId, false)
+			if quotaErr != nil {
+				return nil, quotaErr
+			}
+			userCache.Quota = quota
+		}
 		return userCache, nil
 	}
 
@@ -117,7 +125,15 @@ func GetUserCache(userId int) (*UserBase, error) {
 			common.SysLog("failed to synchronously populate user cache: " + err.Error())
 		}
 	}
-	return user.ToBaseUser(), nil
+	base := user.ToBaseUser()
+	if base.TenantId > 0 {
+		quota, quotaErr := GetUserQuota(userId, false)
+		if quotaErr != nil {
+			return nil, quotaErr
+		}
+		base.Quota = quota
+	}
+	return base, nil
 }
 
 func cacheGetUserBase(userId int) (*UserBase, error) {

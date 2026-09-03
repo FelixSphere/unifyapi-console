@@ -237,6 +237,10 @@ func EnsureTenantForUser(userId int) (*Tenant, error) {
 	if err != nil {
 		return nil, err
 	}
+	_ = invalidateUserCache(userId)
+	if tenant != nil {
+		_ = invalidateBillingQuotaCache(BillingEntity{UserId: userId, TenantId: tenant.Id})
+	}
 	return tenant, nil
 }
 
@@ -247,7 +251,7 @@ func AddUserToTenant(userId int, tenantId int) error {
 	if userId == 0 || tenantId == 0 {
 		return errors.New("user id and tenant id are required")
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		var user User
 		if err := tx.First(&user, "id = ?", userId).Error; err != nil {
 			return err
@@ -274,6 +278,12 @@ func AddUserToTenant(userId int, tenantId int) error {
 		return tx.Model(&User{}).Where("id = ?", userId).
 			Updates(map[string]any{"tenant_id": tenantId, "quota": 0}).Error
 	})
+	if err != nil {
+		return err
+	}
+	_ = invalidateUserCache(userId)
+	_ = invalidateBillingQuotaCache(BillingEntity{UserId: userId, TenantId: tenantId})
+	return nil
 }
 
 func GetTenantMembers(tenantId int) ([]*User, error) {
