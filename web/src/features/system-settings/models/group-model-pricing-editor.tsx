@@ -38,6 +38,7 @@ import {
   formatCustomerMultiplier,
   invalidCustomerModelPrices,
   mergeCustomerModelDrafts,
+  normalizeCustomerPricingGroupRatios,
   priceAtMultiplier,
   visibleCustomerModelNames,
   visibleCustomerPricingGroups,
@@ -117,16 +118,23 @@ export function GroupModelPricingEditor({
     [data?.data?.groups]
   )
   const savedGroupSet = useMemo(() => new Set(savedGroups), [savedGroups])
+  const normalizedDraftGroupRatios = useMemo(
+    () =>
+      draftGroupRatios
+        ? normalizeCustomerPricingGroupRatios(draftGroupRatios)
+        : undefined,
+    [draftGroupRatios]
+  )
   const groups = useMemo(
-    () => visibleCustomerPricingGroups(savedGroups, draftGroupRatios),
-    [draftGroupRatios, savedGroups]
+    () => visibleCustomerPricingGroups(savedGroups, normalizedDraftGroupRatios),
+    [normalizedDraftGroupRatios, savedGroups]
   )
   const effectiveGroupRatios = useMemo(
     () => ({
       ...data?.data?.group_ratios,
-      ...draftGroupRatios,
+      ...normalizedDraftGroupRatios,
     }),
-    [data?.data?.group_ratios, draftGroupRatios]
+    [data?.data?.group_ratios, normalizedDraftGroupRatios]
   )
 
   if (isLoading) return <div className='p-4 text-sm'>{t('Loading...')}</div>

@@ -8,6 +8,7 @@ import {
   formatCustomerMultiplier,
   invalidCustomerModelPrices,
   mergeCustomerModelDrafts,
+  normalizeCustomerPricingGroupRatios,
   priceAtMultiplier,
   visibleCustomerModelNames,
   visibleCustomerPricingGroups,
@@ -40,6 +41,27 @@ describe('customer model pricing', () => {
         GenAI: 0.9,
       }),
       ['GenAI', 'UnifyAI']
+    )
+  })
+
+  it('normalizes draft group names before both listing and default pricing', () => {
+    const normalized = normalizeCustomerPricingGroupRatios({
+      ' Acme ': 0.8,
+      '': 0.5,
+      'Not a number': Number.NaN,
+    })
+    assert.deepEqual(normalized, { Acme: 0.8 })
+    assert.deepEqual(visibleCustomerPricingGroups([], normalized), ['Acme'])
+    assert.equal(
+      fallbackCustomerMultiplier('claude-opus-5', 'Acme', {}, normalized),
+      0.8
+    )
+  })
+
+  it('uses the later ratio when two draft names trim to the same group', () => {
+    assert.deepEqual(
+      normalizeCustomerPricingGroupRatios({ ' Acme': 0.8, 'Acme ': 0.7 }),
+      { Acme: 0.7 }
     )
   })
 
