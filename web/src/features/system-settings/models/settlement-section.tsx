@@ -55,6 +55,7 @@ import {
   downloadSettlementCSV,
   getSettlements,
   issueSettlement,
+  printCustomerInvoice,
   updateSettlement,
 } from '../api'
 import { SettingsSection } from '../components/settings-section'
@@ -108,6 +109,17 @@ export function SettlementSection() {
   const period = periodFromMonthLabel(periodLabel) ?? periods[1] ?? periods[0]
   const closed = isPeriodClosed(period, today)
   const [downloading, setDownloading] = useState(false)
+
+  const printInvoice = async (settlementId: number) => {
+    setDownloading(true)
+    try {
+      await printCustomerInvoice(settlementId)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Failed'))
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['settlement', kind, period.start, period.end],
@@ -327,6 +339,9 @@ export function SettlementSection() {
                       update.mutate({ id: row.settlement.id, ...input })
                     }
                     onDownload={() => download(row.statement.counterparty)}
+                    onPrintInvoice={() =>
+                      row.settlement && printInvoice(row.settlement.id)
+                    }
                   />
                 ))}
                 {rows.length === 0 ? (
@@ -484,6 +499,7 @@ function SettlementTableRow({
   onIssue,
   onUpdate,
   onDownload,
+  onPrintInvoice,
 }: {
   row: SettlementRow
   kind: StatementKind
@@ -504,6 +520,7 @@ function SettlementTableRow({
     note: string
   }) => void
   onDownload: () => void
+  onPrintInvoice: () => void
 }) {
   const { t } = useTranslation()
   const statement = row.statement
@@ -689,6 +706,18 @@ function SettlementTableRow({
                   <Download className='size-4' />
                   {t('Export CSV')}
                 </Button>
+
+                {kind === 'customer' && row.settlement ? (
+                  <Button
+                    size='sm'
+                    variant='outline'
+                    disabled={busy || row.settlement.status === 'void'}
+                    onClick={onPrintInvoice}
+                  >
+                    <FileText className='size-4' />
+                    Print / Save Invoice PDF
+                  </Button>
+                ) : null}
               </div>
 
               {row.settlement ? (

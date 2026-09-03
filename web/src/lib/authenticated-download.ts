@@ -19,8 +19,13 @@ export async function downloadAuthenticatedFile(path: string): Promise<string> {
   const anchor = document.createElement('a')
   anchor.href = objectURL
   anchor.download = filename
+  anchor.style.display = 'none'
+  document.body.appendChild(anchor)
   anchor.click()
-  URL.revokeObjectURL(objectURL)
+  anchor.remove()
+  // Safari can cancel a download when its object URL is revoked in the same
+  // task as click(). Release it on the next task after navigation has begun.
+  window.setTimeout(() => URL.revokeObjectURL(objectURL), 0)
   return filename
 }
 

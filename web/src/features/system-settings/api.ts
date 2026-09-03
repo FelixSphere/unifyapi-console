@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 import { downloadAuthenticatedFile } from '@/lib/authenticated-download'
+import { printAuthenticatedDocument } from '@/lib/print-authenticated-document'
 
 import type {
   ConfirmPaymentComplianceResponse,
@@ -274,6 +275,12 @@ export async function downloadSettlementCSV(path: string) {
 
 export async function downloadReconciliationCSV(path: string) {
   return downloadAuthenticatedFile(path)
+}
+
+export async function printCustomerInvoice(settlementId: number) {
+  return printAuthenticatedDocument(
+    `/api/pricing/settlement/${settlementId}/invoice`
+  )
 }
 
 /*
