@@ -202,21 +202,24 @@ func ValidateActivePartnershipGroups(groups map[string]struct{}) error {
 // grant atomically with user creation. Capacity exhaustion is not an error: the
 // user keeps the configured group and starts with zero quota, then uses the
 // ordinary payment flow.
-func (user *User) InsertForPartnership(code string, inviterId int) (int, error) {
+func (user *User) InsertForPartnership(code string) (int, error) {
 	grantedQuota := 0
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var err error
-		grantedQuota, err = user.InsertForPartnershipWithTx(tx, code, inviterId)
+		grantedQuota, err = user.InsertForPartnershipWithTx(tx, code)
 		return err
 	})
 	if err != nil {
 		return 0, err
 	}
-	user.finishInsertWithInitialQuota(inviterId, grantedQuota, "Partnership registration grant")
+	// Partnership grants are the only signup credit on this path. Keep the
+	// ordinary affiliate relationship for attribution, but do not stack the
+	// generic invitee/inviter rewards on top of a capped Program offer.
+	user.finishInsertWithInitialQuota(0, grantedQuota, "Partnership registration grant")
 	return grantedQuota, nil
 }
 
-func (user *User) InsertForPartnershipWithTx(tx *gorm.DB, code string, inviterId int) (int, error) {
+func (user *User) InsertForPartnershipWithTx(tx *gorm.DB, code string) (int, error) {
 	var grantedQuota int
 	err := withNormalizedEmailLock(tx, user.Email, func(tx *gorm.DB) error {
 		var program PartnershipProgram

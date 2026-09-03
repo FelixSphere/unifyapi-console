@@ -285,9 +285,12 @@ export function SignUpForm({
         <AlertDescription>
           {partnershipOffer.name}:{' '}
           {partnershipOffer.grant_available
-            ? t('${{amount}} registration credit is available.', {
-                amount: grantUSD.toFixed(2),
-              })
+            ? t(
+                'Up to ${{amount}} registration credit, subject to remaining capacity.',
+                {
+                  amount: grantUSD.toFixed(2),
+                }
+              )
             : t(
                 'The free registration credit has been fully claimed. You can still register and add funds normally.'
               )}

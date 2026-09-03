@@ -398,7 +398,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	insertUser := func(tx *gorm.DB) error {
 		if partnershipCode != "" {
 			var err error
-			grantedQuota, err = user.InsertForPartnershipWithTx(tx, partnershipCode, inviterId)
+			grantedQuota, err = user.InsertForPartnershipWithTx(tx, partnershipCode)
 			return err
 		}
 		return user.InsertWithTx(tx, inviterId)
@@ -429,7 +429,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 
 		// Perform post-transaction tasks (logs, sidebar config, inviter rewards)
 		if partnershipCode != "" {
-			user.FinalizePartnershipOAuthUserCreation(inviterId, grantedQuota)
+			user.FinalizePartnershipOAuthUserCreation(grantedQuota)
 		} else {
 			user.FinalizeOAuthUserCreation(inviterId)
 		}
@@ -462,7 +462,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 
 		// Perform post-transaction tasks
 		if partnershipCode != "" {
-			user.FinalizePartnershipOAuthUserCreation(inviterId, grantedQuota)
+			user.FinalizePartnershipOAuthUserCreation(grantedQuota)
 		} else {
 			user.FinalizeOAuthUserCreation(inviterId)
 		}

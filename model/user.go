@@ -694,8 +694,10 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 	user.finalizeOAuthUserCreationWithInitialQuota(inviterId, common.QuotaForNewUser, "新用户注册赠送")
 }
 
-func (user *User) FinalizePartnershipOAuthUserCreation(inviterId int, grantedQuota int) {
-	user.finalizeOAuthUserCreationWithInitialQuota(inviterId, grantedQuota, "Partnership registration grant")
+func (user *User) FinalizePartnershipOAuthUserCreation(grantedQuota int) {
+	// Program grants are capped and must not stack with ordinary affiliate
+	// signup rewards. The caller may still retain InviterId for attribution.
+	user.finalizeOAuthUserCreationWithInitialQuota(0, grantedQuota, "Partnership registration grant")
 }
 
 func (user *User) finalizeOAuthUserCreationWithInitialQuota(inviterId int, initialQuota int, grantLabel string) {

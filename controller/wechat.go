@@ -104,7 +104,7 @@ func WeChatAuth(c *gin.Context) {
 
 			var insertErr error
 			if partnershipCode := c.Query("partnership"); partnershipCode != "" {
-				_, insertErr = user.InsertForPartnership(partnershipCode, 0)
+				_, insertErr = user.InsertForPartnership(partnershipCode)
 			} else {
 				insertErr = user.Insert(0)
 			}

@@ -11,8 +11,11 @@ package model
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,7 +46,7 @@ func TestPartnershipGrantStopsAtConfiguredLimit(t *testing.T) {
 			Username: fmt.Sprintf("partner%d", i), Password: "password123",
 			DisplayName: fmt.Sprintf("Partner %d", i), Role: 1, Status: 1,
 		}
-		grant, err := user.InsertForPartnership("DEV-EVENT", 0)
+		grant, err := user.InsertForPartnership("DEV-EVENT")
 		require.NoError(t, err)
 		assert.Equal(t, wantGrant, grant)
 
@@ -68,6 +71,96 @@ func TestPartnershipGrantStopsAtConfiguredLimit(t *testing.T) {
 	})
 }
 
+func TestConcurrentPartnershipRegistrationsClaimLastGrantOnce(t *testing.T) {
+	setupPartnershipTestDB(t)
+	sqlDB, err := DB.DB()
+	require.NoError(t, err)
+	// A single shared SQLite connection serializes the two transactions while
+	// still exercising the conditional claimed_count update from two callers.
+	sqlDB.SetMaxOpenConns(1)
+	require.NoError(t, CreatePartnershipProgram(&PartnershipProgram{
+		Name: "Last grant", Code: "last-grant", Group: "partner",
+		GrantQuota: 5000000, GrantLimit: 1, Enabled: true,
+	}))
+
+	start := make(chan struct{})
+	grants := make(chan int, 2)
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			<-start
+			user := &User{
+				Username: fmt.Sprintf("lastgrant%d", index), Password: "password123",
+				DisplayName: fmt.Sprintf("Last Grant %d", index), Role: 1, Status: 1,
+			}
+			grant, insertErr := user.InsertForPartnership("last-grant")
+			grants <- grant
+			errs <- insertErr
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	close(grants)
+	close(errs)
+	for insertErr := range errs {
+		require.NoError(t, insertErr)
+	}
+	grantedCount := 0
+	for grant := range grants {
+		if grant > 0 {
+			grantedCount++
+		}
+	}
+	assert.Equal(t, 1, grantedCount)
+	program, err := GetPartnershipProgramByCode("last-grant")
+	require.NoError(t, err)
+	assert.Equal(t, 1, program.ClaimedCount)
+}
+
+func TestPartnershipRegistrationDoesNotStackAffiliateRewards(t *testing.T) {
+	setupPartnershipTestDB(t)
+	previousInviteeQuota := common.QuotaForInvitee
+	previousInviterQuota := common.QuotaForInviter
+	payment := operation_setting.GetPaymentSetting()
+	previousPayment := *payment
+	t.Cleanup(func() {
+		common.QuotaForInvitee = previousInviteeQuota
+		common.QuotaForInviter = previousInviterQuota
+		*payment = previousPayment
+	})
+	common.QuotaForInvitee = 1234
+	common.QuotaForInviter = 5678
+	payment.ComplianceConfirmed = true
+	payment.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
+
+	require.NoError(t, CreatePartnershipProgram(&PartnershipProgram{
+		Name: "Exhausted program", Code: "exhausted-program", Group: "partner",
+		GrantQuota: 5000000, GrantLimit: 0, Enabled: true,
+	}))
+	inviter := &User{Username: "inviter", DisplayName: "Inviter", AffCode: "invite", Quota: 99}
+	require.NoError(t, DB.Create(inviter).Error)
+	user := &User{
+		Username: "partnerinvitee", Password: "password123", DisplayName: "Partner Invitee",
+		Role: 1, Status: 1, InviterId: inviter.Id,
+	}
+	grant, err := user.InsertForPartnership("exhausted-program")
+	require.NoError(t, err)
+	assert.Zero(t, grant)
+
+	var storedUser User
+	require.NoError(t, DB.First(&storedUser, user.Id).Error)
+	var tenant Tenant
+	require.NoError(t, DB.First(&tenant, storedUser.TenantId).Error)
+	assert.Zero(t, tenant.Quota, "an exhausted Program must not gain invitee credit")
+	var storedInviter User
+	require.NoError(t, DB.First(&storedInviter, inviter.Id).Error)
+	assert.Equal(t, 99, storedInviter.Quota)
+	assert.Equal(t, inviter.Id, storedUser.InviterId, "the relationship remains available for attribution")
+}
+
 func TestUnavailablePartnershipDoesNotCreateUser(t *testing.T) {
 	setupPartnershipTestDB(t)
 	require.NoError(t, CreatePartnershipProgram(&PartnershipProgram{
@@ -76,7 +169,7 @@ func TestUnavailablePartnershipDoesNotCreateUser(t *testing.T) {
 	}))
 
 	user := &User{Username: "blocked", Password: "password123", Role: 1, Status: 1}
-	_, err := user.InsertForPartnership("paused-event", 0)
+	_, err := user.InsertForPartnership("paused-event")
 	require.ErrorIs(t, err, ErrPartnershipProgramUnavailable)
 	var count int64
 	require.NoError(t, DB.Model(&User{}).Count(&count).Error)

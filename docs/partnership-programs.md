@@ -20,6 +20,15 @@ atomically records an enrollment and applies the configured starting quota.
 After the cap, registration still succeeds with the group and zero program
 grant; normal top-up and usage billing apply from then on.
 
+The public `grant_available` field and signup banner are informational only.
+They describe capacity at lookup time and never reserve a grant. The registration
+transaction is authoritative, so concurrent users competing for the final slot
+receive at most one grant.
+
+Partnership signup does not stack the ordinary affiliate invitee/inviter rewards
+on top of the Program grant. An inviter relationship may still be retained for
+attribution, but the capped Program grant is the only signup credit on this path.
+
 Connecting an existing account records a zero-grant enrollment and returns
 `connected_existing`. It never silently changes that account's current group.
 Use the existing explicit group-management flow if a group change is desired.

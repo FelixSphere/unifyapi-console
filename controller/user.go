@@ -278,7 +278,7 @@ func Register(c *gin.Context) {
 	}
 	var insertErr error
 	if user.PartnershipCode != "" {
-		_, insertErr = cleanUser.InsertForPartnership(user.PartnershipCode, inviterId)
+		_, insertErr = cleanUser.InsertForPartnership(user.PartnershipCode)
 	} else {
 		insertErr = cleanUser.Insert(inviterId)
 	}
