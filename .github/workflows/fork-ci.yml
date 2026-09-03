@@ -89,6 +89,12 @@ jobs:
         env:
           GOWORK: off
 
+      # The inherited application is not close to 90% repository-wide. Keep a
+      # hard, honest floor on the pure engine that decides tiered customer
+      # charges; expand this package list as other billing layers are isolated.
+      - name: Enforce billing-expression coverage
+        run: scripts/check-billing-coverage.sh
+
   perf-tools:
     # Gates scripts/perf/ -- the benchmark harness. Nothing here ships in the
     # console image, so this protects a measurement tool rather than the

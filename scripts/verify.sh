@@ -19,6 +19,9 @@ go vet ./...
 echo "--> go test"
 go test ./model/ -count=1
 
+echo "--> billing coverage"
+scripts/check-billing-coverage.sh
+
 echo "--> web typecheck"
 (cd web && bun run typecheck)
 
