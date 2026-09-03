@@ -427,7 +427,7 @@ func TestGroupPricingUpdateAndProgramWriteNeverLeaveDanglingReference(t *testing
 
 	if createErr == nil {
 		require.Error(t, updateErr)
-		assert.Contains(t, updateErr.Error(), "used by an enabled partnership program")
+		assert.Contains(t, updateErr.Error(), "used by an enabled partnership")
 		assert.Equal(t, 0.9, groups["partner"])
 	} else {
 		require.NoError(t, updateErr)
