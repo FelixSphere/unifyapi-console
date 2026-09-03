@@ -66,6 +66,7 @@ import {
   PRIMARY_ACTION_LABELS,
   SETTLEMENT_STATE_LABELS,
   VARIANCE_VERDICT_LABELS,
+  customerInvoiceUI,
   csvHref,
   deriveStatement,
   formatSigned,
@@ -526,6 +527,7 @@ function SettlementTableRow({
   const statement = row.statement
   const state = settlementState(row)
   const verdict = varianceVerdict(row)
+  const customerInvoice = customerInvoiceUI(state)
   const displayedStatement = row.issued_statement ?? statement
 
   const [invoiceDraft, setInvoiceDraft] = useState<string>(
@@ -638,6 +640,17 @@ function SettlementTableRow({
                 </Alert>
               ) : null}
 
+              {kind === 'customer' ? (
+                <div className='bg-background rounded-md border px-3 py-2'>
+                  <div className='text-xs font-medium'>
+                    {customerInvoice.heading}
+                  </div>
+                  <p className='text-muted-foreground mt-0.5 text-xs'>
+                    {customerInvoice.description}
+                  </p>
+                </div>
+              ) : null}
+
               <div className='flex flex-wrap items-end gap-2'>
                 {kind === 'vendor' ? (
                   <label className='flex flex-col gap-1 text-xs'>
@@ -655,12 +668,20 @@ function SettlementTableRow({
                 ) : null}
 
                 <label className='flex flex-1 flex-col gap-1 text-xs'>
-                  <span className='text-muted-foreground'>{t('Note')}</span>
+                  <span className='text-muted-foreground'>
+                    {kind === 'customer'
+                      ? 'Internal note (optional)'
+                      : t('Note')}
+                  </span>
                   <Input
                     className='h-8 text-xs'
-                    placeholder={t(
-                      'invoice number, payment reference, anything to find it by'
-                    )}
+                    placeholder={
+                      kind === 'customer'
+                        ? 'Payment reference or follow-up note — not shown on the invoice'
+                        : t(
+                            'invoice number, payment reference, anything to find it by'
+                          )
+                    }
                     value={noteDraft}
                     onChange={(e) => setNoteDraft(e.target.value)}
                   />
@@ -668,16 +689,41 @@ function SettlementTableRow({
 
                 <Button
                   size='sm'
+                  variant={
+                    kind === 'customer' && row.settlement
+                      ? 'outline'
+                      : 'default'
+                  }
                   disabled={busy || (!row.settlement && !closed)}
                   onClick={recordInvoice}
                 >
                   <FileText className='size-4' />
-                  {t(
-                    row.settlement
-                      ? PRIMARY_ACTION_LABELS.update
-                      : PRIMARY_ACTION_LABELS[kind]
-                  )}
+                  {kind === 'customer'
+                    ? customerInvoice.saveLabel
+                    : t(
+                        row.settlement
+                          ? PRIMARY_ACTION_LABELS.update
+                          : PRIMARY_ACTION_LABELS[kind]
+                      )}
                 </Button>
+
+                {kind === 'customer' ? (
+                  <Button
+                    size='sm'
+                    disabled={
+                      busy || !row.settlement || !customerInvoice.canOpen
+                    }
+                    onClick={onPrintInvoice}
+                    title={
+                      row.settlement
+                        ? 'Open a print-ready invoice'
+                        : 'Issue the invoice first'
+                    }
+                  >
+                    <FileText className='size-4' />
+                    Open / save invoice PDF
+                  </Button>
+                ) : null}
 
                 {row.settlement && row.settlement.status !== 'settled' ? (
                   <Button
@@ -704,20 +750,10 @@ function SettlementTableRow({
                   onClick={onDownload}
                 >
                   <Download className='size-4' />
-                  {t('Export CSV')}
+                  {kind === 'customer'
+                    ? 'Export line items CSV'
+                    : t('Export CSV')}
                 </Button>
-
-                {kind === 'customer' && row.settlement ? (
-                  <Button
-                    size='sm'
-                    variant='outline'
-                    disabled={busy || row.settlement.status === 'void'}
-                    onClick={onPrintInvoice}
-                  >
-                    <FileText className='size-4' />
-                    Print / Save Invoice PDF
-                  </Button>
-                ) : null}
               </div>
 
               {row.settlement ? (

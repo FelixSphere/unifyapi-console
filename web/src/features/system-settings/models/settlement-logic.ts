@@ -28,6 +28,43 @@ export type BillingPeriod = {
   label: string
 }
 
+export type CustomerInvoiceUI = {
+  heading: string
+  description: string
+  saveLabel: string
+  canOpen: boolean
+}
+
+/** customerInvoiceUI keeps the customer path explicit without changing the
+ * vendor reconciliation vocabulary on the other tab. */
+export function customerInvoiceUI(state: SettlementState): CustomerInvoiceUI {
+  if (state === 'not-issued') {
+    return {
+      heading: 'Create the customer invoice',
+      description:
+        'Issue the invoice to freeze this period and create its PDF. The CSV is supporting line-item detail.',
+      saveLabel: 'Issue invoice',
+      canOpen: false,
+    }
+  }
+  if (state === 'void') {
+    return {
+      heading: 'Invoice voided',
+      description:
+        'This invoice is void and cannot be sent. Create a replacement record before billing the customer.',
+      saveLabel: 'Save internal note',
+      canOpen: false,
+    }
+  }
+  return {
+    heading: 'Invoice ready to send',
+    description:
+      'Open the invoice, then print or save it as a PDF to send to the customer.',
+    saveLabel: 'Save internal note',
+    canOpen: true,
+  }
+}
+
 /**
  * monthPeriod resolves a calendar month relative to `today`.
  *
