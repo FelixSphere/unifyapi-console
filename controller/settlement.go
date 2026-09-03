@@ -27,20 +27,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// statementsForWindow builds every statement of one kind for a period.
-func statementsForWindow(kind service.StatementKind, start, end string) ([]service.Statement, bool, error) {
+// statementRowsForWindow builds every statement and retains the source rows so
+// legacy customer invoices can be mapped to today's Pricing Group owner.
+func statementRowsForWindow(kind service.StatementKind, start, end string) ([]service.Statement, []model.UsageRow, bool, error) {
 	from, to, err := model.ParseReconcileWindow(start, end)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	rows, truncated, err := model.FetchReconcileUsage(model.ReconcileQuery{
 		StartTimestamp: from,
 		EndTimestamp:   to,
 	})
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
-	return service.BuildStatements(rows, kind, start, end), truncated, nil
+	return service.BuildStatements(rows, kind, start, end), rows, truncated, nil
 }
 
 // settlementRow pairs what the period looks like NOW with what was frozen when
@@ -61,6 +62,96 @@ type settlementRow struct {
 	// VarianceUSD is the counterparty's invoice minus ours. Vendor side only.
 	VarianceUSD float64 `json:"variance_usd,omitempty"`
 	VariancePct float64 `json:"variance_pct,omitempty"`
+
+	// LegacySettlements are older per-user or bare-group invoices whose frozen
+	// usage now belongs to this Pricing Group. Non-void records block a second
+	// invoice for the same usage until the operator explicitly voids them.
+	LegacySettlements []*model.Settlement `json:"legacy_settlements,omitempty"`
+	IssuanceBlocked   bool                `json:"issuance_blocked,omitempty"`
+}
+
+type customerSettlementHistory struct {
+	primary  map[string]*model.Settlement
+	legacy   map[string][]*model.Settlement
+	consumed map[int]bool
+}
+
+func indexCustomerSettlementHistory(statements []service.Statement, rows []model.UsageRow, saved []*model.Settlement) (customerSettlementHistory, error) {
+	history := customerSettlementHistory{
+		primary:  map[string]*model.Settlement{},
+		legacy:   map[string][]*model.Settlement{},
+		consumed: map[int]bool{},
+	}
+	currentKeys := map[string]bool{}
+	for _, statement := range statements {
+		currentKeys[statement.Counterparty] = true
+	}
+	userKeys := map[int]string{}
+	recordedGroupKeys := map[string]map[string]bool{}
+	for _, row := range rows {
+		group := row.BillingGroup
+		if group == "" {
+			group = row.UserGroup
+		}
+		key := model.CustomerPricingGroupKey(group)
+		if key == "" {
+			key = strconv.Itoa(row.UserID)
+		}
+		userKeys[row.UserID] = key
+		if row.UserGroup != "" {
+			if recordedGroupKeys[row.UserGroup] == nil {
+				recordedGroupKeys[row.UserGroup] = map[string]bool{}
+			}
+			recordedGroupKeys[row.UserGroup][key] = true
+		}
+	}
+
+	for _, settlement := range saved {
+		if settlement.Kind != string(service.StatementKindCustomer) {
+			continue
+		}
+		if currentKeys[settlement.Counterparty] {
+			history.primary[settlement.Counterparty] = settlement
+			history.consumed[settlement.Id] = true
+			continue
+		}
+
+		var issued service.Statement
+		if err := common.Unmarshal([]byte(settlement.StatementJSON), &issued); err != nil {
+			return history, fmt.Errorf("frozen statement is unreadable: %w", err)
+		}
+		issuedGroupKey := model.CustomerPricingGroupKey(issued.Group)
+		if settlement.Status != model.SettlementStatusVoid &&
+			settlement.Counterparty == issued.Group && currentKeys[issuedGroupKey] &&
+			history.primary[issuedGroupKey] == nil {
+			// Before Pricing Group keys were namespaced, the raw group name was
+			// the key. It is still the same frozen company invoice.
+			history.primary[issuedGroupKey] = settlement
+			history.consumed[settlement.Id] = true
+			continue
+		}
+
+		affected := map[string]bool{}
+		if userID, err := strconv.Atoi(settlement.Counterparty); err == nil {
+			if key := userKeys[userID]; key != "" {
+				affected[key] = true
+			}
+		} else {
+			for key := range recordedGroupKeys[issued.Group] {
+				affected[key] = true
+			}
+			for key := range recordedGroupKeys[settlement.Counterparty] {
+				affected[key] = true
+			}
+		}
+		for key := range affected {
+			if currentKeys[key] {
+				history.legacy[key] = append(history.legacy[key], settlement)
+				history.consumed[settlement.Id] = true
+			}
+		}
+	}
+	return history, nil
 }
 
 // GetSettlements serves one period's statements for one side of the business,
@@ -76,7 +167,7 @@ func GetSettlements(c *gin.Context) {
 	}
 
 	start, end := c.Query("start"), c.Query("end")
-	statements, truncated, err := statementsForWindow(kind, start, end)
+	statements, usageRows, truncated, err := statementRowsForWindow(kind, start, end)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
 		return
@@ -91,12 +182,30 @@ func GetSettlements(c *gin.Context) {
 	for _, settlement := range saved {
 		byParty[settlement.Counterparty] = settlement
 	}
+	var customerHistory customerSettlementHistory
+	if kind == service.StatementKindCustomer {
+		customerHistory, err = indexCustomerSettlementHistory(statements, usageRows, saved)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+	}
 
 	rows := make([]settlementRow, 0, len(statements))
 	displayedStatements := make([]service.Statement, 0, len(statements))
 	for _, statement := range statements {
 		row := settlementRow{Statement: statement}
-		if settlement, found := byParty[statement.Counterparty]; found {
+		settlement, found := byParty[statement.Counterparty]
+		if kind == service.StatementKindCustomer {
+			settlement, found = customerHistory.primary[statement.Counterparty]
+			row.LegacySettlements = customerHistory.legacy[statement.Counterparty]
+			for _, legacy := range row.LegacySettlements {
+				if legacy.Status != model.SettlementStatusVoid {
+					row.IssuanceBlocked = true
+				}
+			}
+		}
+		if found {
 			row.Settlement = settlement
 			var issued service.Statement
 			if err := common.Unmarshal([]byte(settlement.StatementJSON), &issued); err != nil {
@@ -112,7 +221,7 @@ func GetSettlements(c *gin.Context) {
 			if settlement.InvoiceRecorded && settlement.AmountUSD != 0 {
 				row.VariancePct = row.VarianceUSD / settlement.AmountUSD * 100
 			}
-			delete(byParty, statement.Counterparty)
+			delete(byParty, settlement.Counterparty)
 		}
 		rows = append(rows, row)
 		if row.IssuedStatement != nil {
@@ -128,6 +237,9 @@ func GetSettlements(c *gin.Context) {
 	// period that has since been re-scoped.
 	orphaned := make([]*model.Settlement, 0, len(byParty))
 	for _, settlement := range saved {
+		if kind == service.StatementKindCustomer && customerHistory.consumed[settlement.Id] {
+			continue
+		}
 		if _, still := byParty[settlement.Counterparty]; still {
 			orphaned = append(orphaned, settlement)
 		}
@@ -200,7 +312,7 @@ func IssueSettlement(c *gin.Context) {
 		return
 	}
 
-	statements, truncated, err := statementsForWindow(kind, req.Start, req.End)
+	statements, usageRows, truncated, err := statementRowsForWindow(kind, req.Start, req.End)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
 		return
@@ -229,6 +341,35 @@ func IssueSettlement(c *gin.Context) {
 				req.Start, req.End, req.Counterparty),
 		})
 		return
+	}
+	if kind == service.StatementKindCustomer {
+		saved, err := model.ListSettlements(string(kind), req.Start, req.End, 0)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		history, err := indexCustomerSettlementHistory(statements, usageRows, saved)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		if history.primary[found.Counterparty] != nil {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "message": "this Pricing Group already has an issued invoice for the period"})
+			return
+		}
+		blocking := make([]string, 0)
+		for _, legacy := range history.legacy[found.Counterparty] {
+			if legacy.Status != model.SettlementStatusVoid {
+				blocking = append(blocking, fmt.Sprintf("#%d %s", legacy.Id, legacy.Label))
+			}
+		}
+		if len(blocking) > 0 {
+			c.JSON(http.StatusConflict, gin.H{
+				"success": false,
+				"message": "cannot issue a grouped invoice while legacy invoices remain active: " + strings.Join(blocking, ", ") + ". Void them first to prevent duplicate billing.",
+			})
+			return
+		}
 	}
 
 	encoded, err := common.Marshal(found)
@@ -374,6 +515,34 @@ func GetCustomerInvoice(c *gin.Context) {
 	c.Data(http.StatusOK, "text/html; charset=utf-8", document)
 }
 
+// ExportFrozenSettlementCSV returns the immutable line items for one issued
+// document. Operators use this to retain/export a legacy individual invoice
+// after customers move to Pricing Group billing.
+func ExportFrozenSettlementCSV(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid settlement id"})
+		return
+	}
+	settlement, err := model.GetSettlement(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "settlement not found"})
+		return
+	}
+	var statement service.Statement
+	if err := common.Unmarshal([]byte(settlement.StatementJSON), &statement); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "frozen statement is unreadable: " + err.Error()})
+		return
+	}
+	kind, ok := service.ParseStatementKind(settlement.Kind)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "stored settlement kind is invalid"})
+		return
+	}
+	filename := fmt.Sprintf("unifyapi-%s-statement-%d-%s-%s.csv", kind, settlement.Id, settlement.PeriodStart, settlement.PeriodEnd)
+	writeSettlementCSV(c, filename, kind, []exportDocument{{Statement: statement, Settlement: settlement}}, false)
+}
+
 func validSettlementStatus(status string) bool {
 	switch status {
 	case "", model.SettlementStatusIssued, model.SettlementStatusSettled, model.SettlementStatusVoid:
@@ -389,6 +558,11 @@ func validSettlementStatus(status string) bool {
 // Money is written at four decimal places, matching the reconciliation export:
 // per-model amounts on cheap models are fractions of a cent, and rounding to
 // cents at export time turns real usage into 0.00.
+type exportDocument struct {
+	Statement  service.Statement
+	Settlement *model.Settlement
+}
+
 func ExportSettlementCSV(c *gin.Context) {
 	kind, ok := service.ParseStatementKind(c.Query("kind"))
 	if !ok {
@@ -398,7 +572,7 @@ func ExportSettlementCSV(c *gin.Context) {
 	start, end := c.Query("start"), c.Query("end")
 	counterparty := c.Query("counterparty")
 
-	statements, truncated, err := statementsForWindow(kind, start, end)
+	statements, usageRows, truncated, err := statementRowsForWindow(kind, start, end)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
 		return
@@ -422,14 +596,22 @@ func ExportSettlementCSV(c *gin.Context) {
 	for _, settlement := range saved {
 		byParty[settlement.Counterparty] = settlement
 	}
-	type exportDocument struct {
-		Statement  service.Statement
-		Settlement *model.Settlement
-	}
 	documents := make([]exportDocument, 0, len(statements)+len(saved))
 	seen := make(map[string]bool, len(statements))
+	var customerHistory customerSettlementHistory
+	if kind == service.StatementKindCustomer {
+		customerHistory, err = indexCustomerSettlementHistory(statements, usageRows, saved)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+	}
 	for _, live := range statements {
-		document := exportDocument{Statement: live, Settlement: byParty[live.Counterparty]}
+		settlement := byParty[live.Counterparty]
+		if kind == service.StatementKindCustomer {
+			settlement = customerHistory.primary[live.Counterparty]
+		}
+		document := exportDocument{Statement: live, Settlement: settlement}
 		if document.Settlement != nil {
 			var frozen service.Statement
 			if err := common.Unmarshal([]byte(document.Settlement.StatementJSON), &frozen); err != nil {
@@ -445,6 +627,12 @@ func ExportSettlementCSV(c *gin.Context) {
 	// that counterparty. Dropping it from an export would erase the very drift
 	// the settlement table is meant to expose.
 	for _, settlement := range saved {
+		if kind == service.StatementKindCustomer {
+			// The current customer export is one document per Pricing Group.
+			// Legacy invoices remain available through the immutable-id route,
+			// without duplicating the same usage in this export.
+			continue
+		}
 		if seen[settlement.Counterparty] || (counterparty != "" && settlement.Counterparty != counterparty) {
 			continue
 		}
@@ -461,6 +649,10 @@ func ExportSettlementCSV(c *gin.Context) {
 		name = "all"
 	}
 	filename := fmt.Sprintf("unifyapi-%s-statement-%s-%s-%s.csv", kind, safeFilenamePart(name), start, end)
+	writeSettlementCSV(c, filename, kind, documents, truncated)
+}
+
+func writeSettlementCSV(c *gin.Context, filename string, kind service.StatementKind, documents []exportDocument, truncated bool) {
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
 

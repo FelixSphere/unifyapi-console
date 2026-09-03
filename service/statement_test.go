@@ -45,7 +45,7 @@ func TestCustomerStatementIsTheLedgerNotARecalculation(t *testing.T) {
 	require.Len(t, statements, 1)
 
 	statement := statements[0]
-	require.Equal(t, "vip", statement.Counterparty)
+	require.Equal(t, model.CustomerPricingGroupKey("vip"), statement.Counterparty)
 	require.Equal(t, "vip", statement.Label)
 	require.Equal(t, "vip", statement.Group, "the tier is half the explanation of the amount")
 	require.InDelta(t, 1.00, statement.AmountUSD, 1e-9)
@@ -89,10 +89,36 @@ func TestCustomerStatementCombinesEveryUserInTheCompany(t *testing.T) {
 	statements := BuildStatements(rows, StatementKindCustomer, "2026-08-01", "2026-08-31")
 	require.Len(t, statements, 2)
 
-	require.Equal(t, "GenAI", statements[0].Counterparty)
+	require.Equal(t, model.CustomerPricingGroupKey("GenAI"), statements[0].Counterparty)
 	require.InDelta(t, 14, statements[0].AmountUSD, 1e-9)
 	require.EqualValues(t, 2, statements[0].Requests)
-	require.Equal(t, "UnifyAI", statements[1].Counterparty)
+	require.Equal(t, model.CustomerPricingGroupKey("UnifyAI"), statements[1].Counterparty)
+}
+
+func TestCustomerStatementUsesCurrentPricingGroupAcrossHistoricalLogs(t *testing.T) {
+	rows := []model.UsageRow{
+		{Model: "gpt-4o", UserID: 3, Username: "abelsaw", UserGroup: "Vip User", BillingGroup: "Chinhin", Requests: 2, Quota: usdToQuota(3)},
+		{Model: "gpt-4o", UserID: 4, Username: "Chris", UserGroup: "Premium User", BillingGroup: "Chinhin", Requests: 5, Quota: usdToQuota(7)},
+		{Model: "gpt-4o", UserID: 5, Username: "other", UserGroup: "Standard User", BillingGroup: "GenAI", Requests: 1, Quota: usdToQuota(2)},
+	}
+
+	statements := BuildStatements(rows, StatementKindCustomer, "2026-08-01", "2026-08-31")
+	require.Len(t, statements, 2)
+	chinhin, found := statementFor(statements, model.CustomerPricingGroupKey("Chinhin"))
+	require.True(t, found)
+	require.Equal(t, "Chinhin", chinhin.Label)
+	require.EqualValues(t, 7, chinhin.Requests)
+	require.InDelta(t, 10, chinhin.AmountUSD, 1e-9)
+}
+
+func TestCustomerStatementKeepsHistoricalGroupForMissingUser(t *testing.T) {
+	rows := []model.UsageRow{{
+		Model: "gpt-4o", UserID: 99, Username: "deleted", UserGroup: "Legacy Co",
+		Requests: 1, Quota: usdToQuota(4),
+	}}
+	statements := BuildStatements(rows, StatementKindCustomer, "2026-08-01", "2026-08-31")
+	require.Len(t, statements, 1)
+	require.Equal(t, model.CustomerPricingGroupKey("Legacy Co"), statements[0].Counterparty)
 }
 
 // TestVendorStatementIsModelledAndTracksTheChannelRatio. The vendor side is the

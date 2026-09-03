@@ -713,6 +713,10 @@ export type SettlementRecord = {
 export type SettlementRow = {
   statement: Statement
   settlement?: SettlementRecord
+  /** Older per-user/group invoices whose usage now belongs to this Pricing Group. */
+  legacy_settlements?: SettlementRecord[]
+  /** Active legacy invoices must be voided before issuing the grouped replacement. */
+  issuance_blocked?: boolean
   /** Frozen line items that were actually issued; statement remains the live comparison. */
   issued_statement?: Statement
   /** Live minus frozen: non-zero means pricing moved after this was issued. */

@@ -270,8 +270,9 @@ func TestCustomerPaymentsCombineCompanyUsersAndKeepTheOriginalCompany(t *testing
 	payments, err := FetchCustomerPaymentsByCustomer(start, end)
 	require.NoError(t, err)
 	require.Len(t, payments, 1)
-	require.Len(t, payments["GenAI"], 1)
-	assert.EqualValues(t, 2, payments["GenAI"][0].Orders)
-	assert.InDelta(t, 130, payments["GenAI"][0].CreditedUSD, 1e-9)
-	assert.NotContains(t, payments, "UnifyAI")
+	key := CustomerPricingGroupKey("GenAI")
+	require.Len(t, payments[key], 1)
+	assert.EqualValues(t, 2, payments[key][0].Orders)
+	assert.InDelta(t, 130, payments[key][0].CreditedUSD, 1e-9)
+	assert.NotContains(t, payments, CustomerPricingGroupKey("UnifyAI"))
 }

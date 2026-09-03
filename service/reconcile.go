@@ -203,7 +203,11 @@ func reconcileKey(row model.UsageRow, groupBy GroupBy) (key, label string) {
 		// UNIFYAPI-FORK: User Group is the customer/company boundary. Several
 		// login accounts can belong to GenAI, and a customer report must fold
 		// all of them into one line rather than emit one pseudo-customer each.
-		key, label = row.UserGroup, row.UserGroup
+		label = row.BillingGroup
+		if label == "" {
+			label = row.UserGroup
+		}
+		key = model.CustomerPricingGroupKey(label)
 		if key == "" {
 			key = strconv.Itoa(row.UserID)
 			label = row.Username

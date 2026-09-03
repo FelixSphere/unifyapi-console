@@ -52,6 +52,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import {
+  downloadFrozenSettlementCSV,
   downloadSettlementCSV,
   getSettlements,
   issueSettlement,
@@ -59,7 +60,12 @@ import {
   updateSettlement,
 } from '../api'
 import { SettingsSection } from '../components/settings-section'
-import type { SettlementRow, SettlementStatus, StatementKind } from '../types'
+import type {
+  SettlementRecord,
+  SettlementRow,
+  SettlementStatus,
+  StatementKind,
+} from '../types'
 import {
   type SettlementState,
   type VarianceVerdict,
@@ -115,6 +121,17 @@ export function SettlementSection() {
     setDownloading(true)
     try {
       await printCustomerInvoice(settlementId)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Failed'))
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  const downloadFrozenCSV = async (settlementId: number) => {
+    setDownloading(true)
+    try {
+      await downloadFrozenSettlementCSV(settlementId)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('Failed'))
     } finally {
@@ -339,10 +356,18 @@ export function SettlementSection() {
                       row.settlement &&
                       update.mutate({ id: row.settlement.id, ...input })
                     }
-                    onDownload={() => download(row.statement.counterparty)}
-                    onPrintInvoice={() =>
-                      row.settlement && printInvoice(row.settlement.id)
+                    onVoidLegacy={(legacy) =>
+                      update.mutate({
+                        id: legacy.id,
+                        invoiced_usd: legacy.invoiced_usd,
+                        invoice_recorded: legacy.invoice_recorded,
+                        status: 'void',
+                        note: legacy.note,
+                      })
                     }
+                    onDownload={() => download(row.statement.counterparty)}
+                    onPrintInvoice={printInvoice}
+                    onDownloadFrozenCSV={downloadFrozenCSV}
                   />
                 ))}
                 {rows.length === 0 ? (
@@ -501,6 +526,8 @@ function SettlementTableRow({
   onUpdate,
   onDownload,
   onPrintInvoice,
+  onDownloadFrozenCSV,
+  onVoidLegacy,
 }: {
   row: SettlementRow
   kind: StatementKind
@@ -521,7 +548,9 @@ function SettlementTableRow({
     note: string
   }) => void
   onDownload: () => void
-  onPrintInvoice: () => void
+  onPrintInvoice: (id: number) => void
+  onDownloadFrozenCSV: (id: number) => void
+  onVoidLegacy: (legacy: SettlementRecord) => void
 }) {
   const { t } = useTranslation()
   const statement = row.statement
@@ -640,6 +669,67 @@ function SettlementTableRow({
                 </Alert>
               ) : null}
 
+              {(row.legacy_settlements?.length ?? 0) > 0 ? (
+                <Alert
+                  variant={row.issuance_blocked ? 'destructive' : 'default'}
+                >
+                  <AlertTriangle className='size-4' />
+                  <AlertDescription className='flex flex-col gap-2 text-xs'>
+                    <span>
+                      {row.issuance_blocked
+                        ? 'This Pricing Group contains usage covered by an older individual or group invoice. Void every active legacy invoice below before issuing the consolidated invoice; this prevents billing the same usage twice.'
+                        : 'The older invoices below are void. You may now issue the consolidated Pricing Group invoice.'}
+                    </span>
+                    <div className='flex flex-wrap gap-2'>
+                      {row.legacy_settlements?.map((legacy) => (
+                        <span
+                          key={legacy.id}
+                          className='bg-background inline-flex items-center gap-1 rounded-md border p-1'
+                        >
+                          <span className='px-1 font-mono'>
+                            #{legacy.id} {legacy.label} ·{' '}
+                            {formatUSD(legacy.amount_usd)} · {legacy.status}
+                          </span>
+                          <Button
+                            size='sm'
+                            variant='outline'
+                            onClick={() => onPrintInvoice(legacy.id)}
+                          >
+                            Open frozen invoice
+                          </Button>
+                          <Button
+                            size='sm'
+                            variant='outline'
+                            disabled={busy}
+                            onClick={() => onDownloadFrozenCSV(legacy.id)}
+                          >
+                            Export frozen CSV
+                          </Button>
+                          {legacy.status !== 'void' ? (
+                            <Button
+                              size='sm'
+                              variant='destructive'
+                              disabled={busy}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    `Void legacy invoice #${legacy.id}? Its frozen document and audit history will be preserved.`
+                                  )
+                                ) {
+                                  onVoidLegacy(legacy)
+                                }
+                              }}
+                            >
+                              Void legacy invoice
+                            </Button>
+                          ) : null}
+                        </span>
+                      ))}
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
               {kind === 'customer' ? (
                 <div className='bg-background rounded-md border px-3 py-2'>
                   <div className='text-xs font-medium'>
@@ -694,7 +784,10 @@ function SettlementTableRow({
                       ? 'outline'
                       : 'default'
                   }
-                  disabled={busy || (!row.settlement && !closed)}
+                  disabled={
+                    busy ||
+                    (!row.settlement && (!closed || row.issuance_blocked))
+                  }
                   onClick={recordInvoice}
                 >
                   <FileText className='size-4' />
@@ -713,7 +806,9 @@ function SettlementTableRow({
                     disabled={
                       busy || !row.settlement || !customerInvoice.canOpen
                     }
-                    onClick={onPrintInvoice}
+                    onClick={() =>
+                      row.settlement && onPrintInvoice(row.settlement.id)
+                    }
                     title={
                       row.settlement
                         ? 'Open a print-ready invoice'

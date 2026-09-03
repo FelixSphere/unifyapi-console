@@ -277,6 +277,7 @@ func SetApiRouter(router *gin.Engine) {
 			pricingAdminRoute.PUT("/settlement/:id", controller.UpdateSettlement)
 			pricingAdminRoute.DELETE("/settlement/:id", controller.DeleteSettlementRecord)
 			pricingAdminRoute.GET("/settlement/:id/invoice", controller.GetCustomerInvoice)
+			pricingAdminRoute.GET("/settlement/:id/statement.csv", controller.ExportFrozenSettlementCSV)
 			pricingAdminRoute.GET("/settlement.csv", controller.ExportSettlementCSV)
 			pricingAdminRoute.GET("/channel_cost", controller.GetChannelCost)
 			pricingAdminRoute.PUT("/channel_cost", controller.UpdateChannelCost)
