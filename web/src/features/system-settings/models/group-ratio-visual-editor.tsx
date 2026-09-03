@@ -317,7 +317,11 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
         onShowDetail={setDetailGroup}
       />
 
-      <GroupModelPricingEditor />
+      <GroupModelPricingEditor
+        draftGroupRatios={Object.fromEntries(
+          registry.map((entry) => [entry.name, entry.ratio])
+        )}
+      />
       {/* Auto Groups */}
       <Card className={sectionCardClassName}>
         <CardHeader className={sectionHeaderClassName}>

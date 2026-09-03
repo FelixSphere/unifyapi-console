@@ -3,10 +3,15 @@ import { describe, it } from 'node:test'
 
 import {
   customerModelPricePayload,
+  effectiveCustomerMultiplier,
   fallbackCustomerMultiplier,
+  formatCustomerMultiplier,
   invalidCustomerModelPrices,
   mergeCustomerModelDrafts,
+  normalizeCustomerPricingGroupRatios,
   priceAtMultiplier,
+  visibleCustomerModelNames,
+  visibleCustomerPricingGroups,
 } from '../group-model-pricing-logic'
 
 describe('customer model pricing', () => {
@@ -27,6 +32,88 @@ describe('customer model pricing', () => {
       input: 4,
       output: 20,
     })
+  })
+
+  it('shows draft pricing groups immediately without reviving deleted groups', () => {
+    assert.deepEqual(
+      visibleCustomerPricingGroups(['Deleted', 'GenAI'], {
+        UnifyAI: 1,
+        GenAI: 0.9,
+      }),
+      ['GenAI', 'UnifyAI']
+    )
+  })
+
+  it('normalizes draft group names before both listing and default pricing', () => {
+    const normalized = normalizeCustomerPricingGroupRatios({
+      ' Acme ': 0.8,
+      '': 0.5,
+      'Not a number': Number.NaN,
+    })
+    assert.deepEqual(normalized, { Acme: 0.8 })
+    assert.deepEqual(visibleCustomerPricingGroups([], normalized), ['Acme'])
+    assert.equal(
+      fallbackCustomerMultiplier('claude-opus-5', 'Acme', {}, normalized),
+      0.8
+    )
+  })
+
+  it('uses the later ratio when two draft names trim to the same group', () => {
+    assert.deepEqual(
+      normalizeCustomerPricingGroupRatios({ ' Acme': 0.8, 'Acme ': 0.7 }),
+      { Acme: 0.7 }
+    )
+  })
+
+  it('falls back to saved groups when no pricing-group draft is supplied', () => {
+    assert.deepEqual(
+      visibleCustomerPricingGroups(['UnifyAI', 'GenAI', 'GenAI']),
+      ['GenAI', 'UnifyAI']
+    )
+  })
+
+  it('shows every model at its inherited default until an override is typed', () => {
+    assert.ok(
+      Math.abs(
+        Number(
+          effectiveCustomerMultiplier(
+            'claude-opus-5',
+            'GenAI',
+            {},
+            { 'claude-opus-5': 0.9 },
+            { GenAI: 0.8 }
+          )
+        ) - 0.72
+      ) < 1e-12
+    )
+    assert.equal(
+      effectiveCustomerMultiplier(
+        'claude-opus-5',
+        'GenAI',
+        { 'claude-opus-5': '0.65' },
+        { 'claude-opus-5': 0.9 },
+        { GenAI: 0.8 }
+      ),
+      0.65
+    )
+    assert.equal(formatCustomerMultiplier(0.9 * 0.8), '0.72')
+  })
+
+  it('lists every catalog model by default and filters without mutating it', () => {
+    const models = ['qwen3.5-flash', 'claude-opus-5', 'gemini-3.1-pro']
+    assert.deepEqual(visibleCustomerModelNames(models, ''), [
+      'claude-opus-5',
+      'gemini-3.1-pro',
+      'qwen3.5-flash',
+    ])
+    assert.deepEqual(visibleCustomerModelNames(models, 'OPUS'), [
+      'claude-opus-5',
+    ])
+    assert.deepEqual(models, [
+      'qwen3.5-flash',
+      'claude-opus-5',
+      'gemini-3.1-pro',
+    ])
   })
 
   it('rejects zero, negative, non-numeric and implausibly large values', () => {

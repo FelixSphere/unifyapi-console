@@ -27,15 +27,14 @@ import * as z from 'zod'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-import { BaselinePricingTab } from './baseline-pricing-tab'
-import { ChannelCostTab } from './channel-cost-tab'
-import { ExtraModelsTab } from './extra-models-tab'
-
 import { resetModelRatios } from '../api'
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 import { positiveIntegerSchema } from '../utils/numeric-field'
+import { BaselinePricingTab } from './baseline-pricing-tab'
+import { ChannelCostTab } from './channel-cost-tab'
+import { ExtraModelsTab } from './extra-models-tab'
 import { GroupRatioForm } from './group-ratio-form'
 import { ModelRatioForm } from './model-ratio-form'
 import { ToolPriceSettings } from './tool-price-settings'
@@ -401,8 +400,11 @@ export function RatioSettingsCard({
       }
 
       groupNormalizedDefaults.current = normalized
+      await queryClient.invalidateQueries({
+        queryKey: ['group-model-pricing'],
+      })
     },
-    [updateOption]
+    [queryClient, updateOption]
   )
 
   const handleResetRatios = useCallback(() => {

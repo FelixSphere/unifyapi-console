@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, Plus, Save, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, RotateCcw, Save } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -20,13 +20,6 @@ import {
 } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   Table,
   TableBody,
   TableCell,
@@ -40,16 +33,26 @@ import type { GroupModelPricingModel } from '../types'
 import { formatUSD } from './baseline-pricing-logic'
 import {
   customerModelPricePayload,
+  effectiveCustomerMultiplier,
   fallbackCustomerMultiplier,
+  formatCustomerMultiplier,
   invalidCustomerModelPrices,
   mergeCustomerModelDrafts,
-  parseCustomerMultiplier,
+  normalizeCustomerPricingGroupRatios,
   priceAtMultiplier,
+  visibleCustomerModelNames,
+  visibleCustomerPricingGroups,
 } from './group-model-pricing-logic'
 
 type DraftsByGroup = Record<string, Record<string, string>>
 
-export function GroupModelPricingEditor() {
+type GroupModelPricingEditorProps = {
+  draftGroupRatios?: Record<string, number>
+}
+
+export function GroupModelPricingEditor({
+  draftGroupRatios,
+}: GroupModelPricingEditorProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { data, isLoading, isError } = useQuery({
@@ -58,9 +61,7 @@ export function GroupModelPricingEditor() {
   })
   const [drafts, setDrafts] = useState<DraftsByGroup>({})
   const dirtyGroups = useRef(new Set<string>())
-  const [selectedModels, setSelectedModels] = useState<Record<string, string>>(
-    {}
-  )
+  const [modelFilters, setModelFilters] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (!data?.data?.discounts) return
@@ -107,29 +108,33 @@ export function GroupModelPricingEditor() {
   })
 
   const models = useMemo(() => data?.data?.models ?? [], [data?.data?.models])
+  const modelNames = useMemo(() => models.map((model) => model.model), [models])
   const byName = useMemo(
     () => new Map(models.map((model) => [model.model, model])),
     [models]
   )
-
-  const addModel = useCallback(
-    (group: string) => {
-      const model = selectedModels[group]
-      if (!model) return
-      const initial = fallbackCustomerMultiplier(
-        model,
-        group,
-        data?.data?.fallback_discounts ?? {},
-        data?.data?.group_ratios ?? {}
-      )
-      setDrafts((previous) => ({
-        ...previous,
-        [group]: { ...previous[group], [model]: String(initial) },
-      }))
-      dirtyGroups.current.add(group)
-      setSelectedModels((previous) => ({ ...previous, [group]: '' }))
-    },
-    [data?.data?.fallback_discounts, data?.data?.group_ratios, selectedModels]
+  const savedGroups = useMemo(
+    () => data?.data?.groups ?? [],
+    [data?.data?.groups]
+  )
+  const savedGroupSet = useMemo(() => new Set(savedGroups), [savedGroups])
+  const normalizedDraftGroupRatios = useMemo(
+    () =>
+      draftGroupRatios
+        ? normalizeCustomerPricingGroupRatios(draftGroupRatios)
+        : undefined,
+    [draftGroupRatios]
+  )
+  const groups = useMemo(
+    () => visibleCustomerPricingGroups(savedGroups, normalizedDraftGroupRatios),
+    [normalizedDraftGroupRatios, savedGroups]
+  )
+  const effectiveGroupRatios = useMemo(
+    () => ({
+      ...data?.data?.group_ratios,
+      ...normalizedDraftGroupRatios,
+    }),
+    [data?.data?.group_ratios, normalizedDraftGroupRatios]
   )
 
   if (isLoading) return <div className='p-4 text-sm'>{t('Loading...')}</div>
@@ -147,22 +152,24 @@ export function GroupModelPricingEditor() {
         <CardTitle>{t('Customer model prices')}</CardTitle>
         <CardDescription>
           {t(
-            'Set each customer group model price as a final multiplier over the official price. It replaces global model discount and group ratio for that model.'
+            'Every available model starts at its inherited default multiplier. Edit only customer-specific exceptions; each override is a final multiplier over the official price.'
           )}
         </CardDescription>
       </CardHeader>
       <CardContent className='space-y-3 pt-4'>
-        {(data?.data?.groups ?? []).map((group) => {
+        {groups.map((group) => {
           const groupDrafts = drafts[group] ?? {}
-          const configuredNames = Object.keys(groupDrafts).sort()
-          const candidates = models.filter(
-            (model) => !Object.hasOwn(groupDrafts, model.model)
+          const overrideCount = Object.keys(groupDrafts).length
+          const isSaved = savedGroupSet.has(group)
+          const visibleModelNames = visibleCustomerModelNames(
+            modelNames,
+            modelFilters[group] ?? ''
           )
           const invalid = invalidCustomerModelPrices(groupDrafts)
           return (
             <Collapsible
               key={group}
-              defaultOpen={configuredNames.length > 0}
+              defaultOpen={!isSaved || overrideCount > 0}
               className='rounded-lg border'
             >
               <div className='flex items-center gap-3 px-4 py-3'>
@@ -173,55 +180,48 @@ export function GroupModelPricingEditor() {
                 </CollapsibleTrigger>
                 <strong>{group}</strong>
                 <Badge variant='secondary'>
-                  {configuredNames.length} {t('model prices')}
+                  {modelNames.length} {t('models')}
                 </Badge>
+                <Badge variant={overrideCount > 0 ? 'default' : 'outline'}>
+                  {overrideCount} {t('Override')}
+                </Badge>
+                {!isSaved && (
+                  <Badge variant='warning'>{t('Save group ratios')}</Badge>
+                )}
                 <div className='ml-auto flex min-w-0 items-center gap-2'>
-                  <Select
-                    value={selectedModels[group] || null}
-                    onValueChange={(value) =>
-                      typeof value === 'string' &&
-                      setSelectedModels((previous) => ({
+                  <Input
+                    value={modelFilters[group] ?? ''}
+                    onChange={(event) =>
+                      setModelFilters((previous) => ({
                         ...previous,
-                        [group]: value,
+                        [group]: event.target.value,
                       }))
                     }
-                  >
-                    <SelectTrigger className='w-64'>
-                      <SelectValue placeholder={t('Select a model')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {candidates.map((model) => (
-                        <SelectItem key={model.model} value={model.model}>
-                          {model.model}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    type='button'
-                    variant='outline'
-                    size='sm'
-                    onClick={() => addModel(group)}
-                    disabled={!selectedModels[group]}
-                  >
-                    <Plus className='size-4' />
-                    {t('Add model')}
-                  </Button>
+                    placeholder={t('Search models')}
+                    className='h-8 w-64'
+                  />
                 </div>
               </div>
               <CollapsibleContent>
-                {configuredNames.length === 0 ? (
-                  <p className='text-muted-foreground border-t p-6 text-center text-sm'>
+                {!isSaved && (
+                  <p className='text-muted-foreground border-t px-4 py-3 text-sm'>
                     {t(
-                      'No customer-specific model prices. Global pricing is used.'
+                      'This pricing group is not saved yet. Save group ratios above before saving customer model overrides.'
                     )}
+                  </p>
+                )}
+                {visibleModelNames.length === 0 ? (
+                  <p className='text-muted-foreground border-t p-6 text-center text-sm'>
+                    {t('No models found')}
                   </p>
                 ) : (
                   <CustomerPriceTable
                     group={group}
-                    modelNames={configuredNames}
+                    modelNames={visibleModelNames}
                     byName={byName}
                     drafts={groupDrafts}
+                    modelDiscounts={data?.data?.fallback_discounts ?? {}}
+                    groupRatios={effectiveGroupRatios}
                     onChange={(model, value) =>
                       setDrafts((previous) => {
                         dirtyGroups.current.add(group)
@@ -231,7 +231,7 @@ export function GroupModelPricingEditor() {
                         }
                       })
                     }
-                    onDelete={(model) =>
+                    onReset={(model) =>
                       setDrafts((previous) => {
                         dirtyGroups.current.add(group)
                         const nextGroup = { ...previous[group] }
@@ -245,7 +245,9 @@ export function GroupModelPricingEditor() {
                   <Button
                     type='button'
                     size='sm'
-                    disabled={mutation.isPending || invalid.length > 0}
+                    disabled={
+                      !isSaved || mutation.isPending || invalid.length > 0
+                    }
                     onClick={() =>
                       mutation.mutate({
                         group,
@@ -271,16 +273,21 @@ type CustomerPriceTableProps = {
   modelNames: string[]
   byName: Map<string, GroupModelPricingModel>
   drafts: Record<string, string>
+  modelDiscounts: Record<string, number>
+  groupRatios: Record<string, number>
   onChange: (model: string, value: string) => void
-  onDelete: (model: string) => void
+  onReset: (model: string) => void
 }
 
-function CustomerPriceTable({
+export function CustomerPriceTable({
+  group,
   modelNames,
   byName,
   drafts,
+  modelDiscounts,
+  groupRatios,
   onChange,
-  onDelete,
+  onReset,
 }: CustomerPriceTableProps) {
   const { t } = useTranslation()
   return (
@@ -300,12 +307,33 @@ function CustomerPriceTable({
           {modelNames.map((modelName) => {
             const model = byName.get(modelName)
             if (!model) return null
-            const parsed = parseCustomerMultiplier(drafts[modelName] ?? '')
-            const invalid = Number.isNaN(parsed)
+            const overridden = Object.hasOwn(drafts, modelName)
+            const effective = effectiveCustomerMultiplier(
+              modelName,
+              group,
+              drafts,
+              modelDiscounts,
+              groupRatios
+            )
+            const effectiveForPrice =
+              typeof effective === 'number' && !Number.isNaN(effective)
+                ? effective
+                : 1
+            const invalid = effectiveForPrice !== effective
+            const displayedMultiplier = overridden
+              ? (drafts[modelName] ?? '')
+              : formatCustomerMultiplier(
+                  fallbackCustomerMultiplier(
+                    modelName,
+                    group,
+                    modelDiscounts,
+                    groupRatios
+                  )
+                )
             const price = priceAtMultiplier(
               model.official_input_usd,
               model.official_output_usd,
-              invalid || parsed === null ? 1 : parsed
+              effectiveForPrice
             )
             return (
               <TableRow key={modelName}>
@@ -319,7 +347,7 @@ function CustomerPriceTable({
                 </TableCell>
                 <TableCell>
                   <Input
-                    value={drafts[modelName] ?? ''}
+                    value={displayedMultiplier}
                     onChange={(event) =>
                       onChange(modelName, event.target.value)
                     }
@@ -327,7 +355,7 @@ function CustomerPriceTable({
                     className='h-8 font-mono text-xs'
                   />
                   <span className='text-muted-foreground text-[10px]'>
-                    {t('1 = official price')}
+                    {overridden ? t('Override') : t('default')}
                   </span>
                 </TableCell>
                 <TableCell className='text-right font-mono text-xs'>
@@ -338,10 +366,11 @@ function CustomerPriceTable({
                     type='button'
                     variant='ghost'
                     size='icon-sm'
-                    onClick={() => onDelete(modelName)}
-                    aria-label={t('Delete')}
+                    onClick={() => onReset(modelName)}
+                    disabled={!overridden}
+                    aria-label={t('Reset to default')}
                   >
-                    <Trash2 className='size-4' />
+                    <RotateCcw className='size-4' />
                   </Button>
                 </TableCell>
               </TableRow>

@@ -1,12 +1,43 @@
 package controller
 
 import (
+	"encoding/json"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGroupModelPricingListsCurrentGroupsAndEveryCatalogModel(t *testing.T) {
+	previousGroups := ratio_setting.GroupRatio2JSONString()
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"Customer B":0.9,"Customer A":1}`))
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(previousGroups))
+	})
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	GetGroupModelPricing(ctx)
+
+	require.Equal(t, 200, recorder.Code)
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Groups []string                 `json:"groups"`
+			Models []groupModelPricingModel `json:"models"`
+			Ratios map[string]float64       `json:"group_ratios"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	require.Equal(t, []string{"Customer A", "Customer B"}, response.Data.Groups)
+	require.Len(t, response.Data.Models, len(ratio_setting.Catalog()))
+	require.Equal(t, map[string]float64{"Customer A": 1, "Customer B": 0.9}, response.Data.Ratios)
+}
 
 func TestCustomerPricingDecoratesACopyWithoutLeakingAcrossCustomers(t *testing.T) {
 	require.NoError(t, ratio_setting.UpdateGroupModelDiscountByJSONString(`{

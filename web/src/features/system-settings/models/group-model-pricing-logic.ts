@@ -15,6 +15,59 @@ export function fallbackCustomerMultiplier(
   return (modelDiscounts[model] ?? 1) * (groupRatios[group] ?? 1)
 }
 
+export function visibleCustomerPricingGroups(
+  savedGroups: string[],
+  draftGroupRatios?: Record<string, number>
+): string[] {
+  const source = draftGroupRatios
+    ? Object.keys(normalizeCustomerPricingGroupRatios(draftGroupRatios))
+    : savedGroups
+  return [...new Set(source.map((group) => group.trim()).filter(Boolean))].sort(
+    (left, right) => left.localeCompare(right)
+  )
+}
+
+export function normalizeCustomerPricingGroupRatios(
+  groupRatios: Record<string, number>
+): Record<string, number> {
+  const normalized: Record<string, number> = {}
+  for (const [rawGroup, ratio] of Object.entries(groupRatios)) {
+    const group = rawGroup.trim()
+    if (!group || !Number.isFinite(ratio)) continue
+    // Group Pricing serializes rows in order after trimming each name. When
+    // two draft names collapse to one key, the later row wins there and here.
+    normalized[group] = ratio
+  }
+  return normalized
+}
+
+export function visibleCustomerModelNames(
+  models: string[],
+  filter: string
+): string[] {
+  const normalizedFilter = filter.trim().toLowerCase()
+  return [...models]
+    .sort((left, right) => left.localeCompare(right))
+    .filter((model) => model.toLowerCase().includes(normalizedFilter))
+}
+
+export function effectiveCustomerMultiplier(
+  model: string,
+  group: string,
+  overrides: Record<string, string>,
+  modelDiscounts: Record<string, number>,
+  groupRatios: Record<string, number>
+): number | null {
+  if (Object.hasOwn(overrides, model)) {
+    return parseCustomerMultiplier(overrides[model] ?? '')
+  }
+  return fallbackCustomerMultiplier(model, group, modelDiscounts, groupRatios)
+}
+
+export function formatCustomerMultiplier(value: number): string {
+  return String(Number(value.toPrecision(12)))
+}
+
 export function priceAtMultiplier(
   officialInput: number,
   officialOutput: number,
