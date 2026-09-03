@@ -63,3 +63,20 @@ func TestRenderCustomerInvoiceHTMLRejectsTotalsThatDoNotMatchFrozenLines(t *test
 func TestCustomerInvoiceNumberIsStableForMalformedLegacyPeriod(t *testing.T) {
 	require.Equal(t, "UAI-UNKNOWN-000007", CustomerInvoiceNumber(&model.Settlement{Id: 7, PeriodStart: strings.Repeat("x", 2)}))
 }
+
+func TestReplacementInvoiceReferencesPreservedInvoiceNumbers(t *testing.T) {
+	statement := Statement{
+		Kind: StatementKindCustomer, Label: "Chinhin", Group: "Chinhin",
+		PeriodStart: "2026-08-01", PeriodEnd: "2026-08-31", Requests: 1, AmountUSD: 2,
+		Lines: []StatementLine{{Model: "gpt-5", Requests: 1, AmountUSD: 2}},
+	}
+	html, err := RenderCustomerInvoiceHTML(&model.Settlement{
+		Id: 6, Kind: "customer", Status: model.SettlementStatusIssued,
+		PeriodStart: statement.PeriodStart, PeriodEnd: statement.PeriodEnd, AmountUSD: 2,
+		SupersedesIDs: []int{1, 4}, ReplacementReason: "Correct customer membership", CreatedAt: 1_756_684_800,
+	}, statement)
+	require.NoError(t, err)
+	require.Contains(t, string(html), "Replaces")
+	require.Contains(t, string(html), "UAI-202608-000001, UAI-202608-000004")
+	require.Contains(t, string(html), "Correct customer membership")
+}

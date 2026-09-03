@@ -205,6 +205,7 @@ func TestCustomerSettlementConsolidatesCurrentPricingGroupAndBlocksLegacyInvoice
 	legacyStatement := service.Statement{
 		Kind: service.StatementKindCustomer, Counterparty: "4", Label: "Chris", Group: "Vip User",
 		PeriodStart: "2026-07-01", PeriodEnd: "2026-07-31", Requests: 1, AmountUSD: 2,
+		Lines: []service.StatementLine{{Model: "gpt-4o", Requests: 1, AmountUSD: 2}},
 	}
 	encoded, err := common.Marshal(legacyStatement)
 	require.NoError(t, err)
@@ -258,22 +259,61 @@ func TestCustomerSettlementConsolidatesCurrentPricingGroupAndBlocksLegacyInvoice
 	ctx.Request.Header.Set("Content-Type", "application/json")
 	IssueSettlement(ctx)
 	require.Equal(t, http.StatusConflict, recorder.Code)
-	require.Contains(t, recorder.Body.String(), "Void them first")
+	require.Contains(t, recorder.Body.String(), "Replace")
 
-	legacy.Status = model.SettlementStatusVoid
-	_, err = model.UpdateSettlementCounterparty(legacy)
+	replacementBody, err := json.Marshal(IssueSettlementRequest{
+		Kind: "customer", Counterparty: model.CustomerPricingGroupKey("Chinhin"),
+		Start: "2026-07-01", End: "2026-07-31", Status: model.SettlementStatusIssued,
+		ReplaceExisting: true, ReplacementReason: "Consolidate Chris into Chinhin",
+		ReplacementComplianceConfirmed: true,
+	})
 	require.NoError(t, err)
 	recorder = httptest.NewRecorder()
 	ctx, _ = gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/pricing/settlement", bytes.NewReader(requestBody))
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/pricing/settlement", bytes.NewReader(replacementBody))
 	ctx.Request.Header.Set("Content-Type", "application/json")
 	IssueSettlement(ctx)
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Contains(t, recorder.Body.String(), `"success":true`)
 
+	replacedLegacy, err := model.GetSettlement(legacy.Id)
+	require.NoError(t, err)
+	require.Equal(t, model.SettlementStatusSuperseded, replacedLegacy.Status)
+	require.NotZero(t, replacedLegacy.SupersededByID)
+
 	grouped, err := model.GetSettlementByPeriod("customer", model.CustomerPricingGroupKey("Chinhin"), "2026-07-01", "2026-07-31")
 	require.NoError(t, err)
 	require.Equal(t, "Chinhin", grouped.Label)
+	require.Equal(t, []int{legacy.Id}, grouped.SupersedesIDs)
+	require.Equal(t, grouped.Id, replacedLegacy.SupersededByID)
+
+	// The old frozen document remains discoverable from the current invoice;
+	// retaining the endpoint alone is insufficient if operators lose its ID.
+	recorder = httptest.NewRecorder()
+	ctx, _ = gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet,
+		"/api/pricing/settlement?kind=customer&start=2026-07-01&end=2026-07-31", nil)
+	GetSettlements(ctx)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	response = struct {
+		Data struct {
+			Rows []settlementRow `json:"rows"`
+		} `json:"data"`
+	}{}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Len(t, response.Data.Rows, 1)
+	require.Len(t, response.Data.Rows[0].SupersededSettlements, 1)
+	require.Equal(t, legacy.Id, response.Data.Rows[0].SupersededSettlements[0].Id)
+	require.Equal(t, model.SettlementStatusSuperseded, response.Data.Rows[0].SupersededSettlements[0].Status)
+
+	oldInvoiceRecorder := httptest.NewRecorder()
+	oldInvoiceContext, _ := gin.CreateTestContext(oldInvoiceRecorder)
+	oldInvoiceContext.Params = gin.Params{{Key: "id", Value: strconv.Itoa(legacy.Id)}}
+	oldInvoiceContext.Request = httptest.NewRequest(http.MethodGet, "/api/pricing/settlement/1/invoice", nil)
+	GetCustomerInvoice(oldInvoiceContext)
+	require.Equal(t, http.StatusOK, oldInvoiceRecorder.Code)
+	require.Contains(t, oldInvoiceRecorder.Body.String(), "SUPERSEDED")
+	require.Contains(t, oldInvoiceRecorder.Body.String(), service.CustomerInvoiceNumber(grouped))
 }
 
 func TestFrozenSettlementCSVRemainsAvailableByInvoiceID(t *testing.T) {

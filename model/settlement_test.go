@@ -166,6 +166,123 @@ func TestIssuedSettlementCannotBeDeleted(t *testing.T) {
 	require.NoError(t, err, "the frozen accounting record must remain")
 }
 
+func TestReplacingCustomerInvoicePreservesBothSidesOfAuditChain(t *testing.T) {
+	setupSettlementTestDB(t)
+	old, err := CreateSettlement(&Settlement{
+		Kind: "customer", Counterparty: "4", Label: "Chris",
+		PeriodStart: "2026-08-01", PeriodEnd: "2026-08-31",
+		AmountUSD: 51.5709, StatementJSON: `{"amount_usd":51.5709}`,
+	})
+	require.NoError(t, err)
+
+	replacement := &Settlement{
+		Kind: "customer", Counterparty: "pricing-group:Chinhin", Label: "Chinhin",
+		PeriodStart: "2026-08-01", PeriodEnd: "2026-08-31",
+		AmountUSD: 52, StatementJSON: `{"amount_usd":52}`,
+		ReplacementReason:              "Consolidate current Pricing Group",
+		ReplacementComplianceConfirmed: true,
+	}
+	replacement, err = ReplaceCustomerSettlements(replacement, []int{old.Id})
+	require.NoError(t, err)
+	require.Equal(t, 1, replacement.Revision)
+	require.Equal(t, []int{old.Id}, replacement.SupersedesIDs)
+
+	reloadedOld, err := GetSettlement(old.Id)
+	require.NoError(t, err)
+	require.Equal(t, SettlementStatusSuperseded, reloadedOld.Status)
+	require.Equal(t, replacement.Id, reloadedOld.SupersededByID)
+	require.Equal(t, `{"amount_usd":51.5709}`, reloadedOld.StatementJSON)
+}
+
+func TestReplacingCurrentCustomerInvoiceCreatesNextRevision(t *testing.T) {
+	setupSettlementTestDB(t)
+	first, err := CreateSettlement(&Settlement{
+		Kind: "customer", Counterparty: "pricing-group:Chinhin", Label: "Chinhin",
+		PeriodStart: "2026-08-01", PeriodEnd: "2026-08-31",
+		AmountUSD: 51, StatementJSON: `{"amount_usd":51}`,
+	})
+	require.NoError(t, err)
+	second, err := ReplaceCustomerSettlements(&Settlement{
+		Kind: "customer", Counterparty: first.Counterparty, Label: first.Label,
+		PeriodStart: first.PeriodStart, PeriodEnd: first.PeriodEnd,
+		AmountUSD: 52, StatementJSON: `{"amount_usd":52}`,
+		ReplacementReason: "Correct customer membership", ReplacementComplianceConfirmed: true,
+	}, []int{first.Id})
+	require.NoError(t, err)
+	require.Equal(t, 2, second.Revision)
+	require.NotEqual(t, first.Id, second.Id)
+}
+
+func TestReplacementRequiresReasonAndComplianceConfirmation(t *testing.T) {
+	setupSettlementTestDB(t)
+	old, err := CreateSettlement(&Settlement{
+		Kind: "customer", Counterparty: "4", PeriodStart: "2026-08-01", PeriodEnd: "2026-08-31",
+		StatementJSON: `{}`,
+	})
+	require.NoError(t, err)
+	_, err = ReplaceCustomerSettlements(&Settlement{
+		Kind: "customer", Counterparty: "pricing-group:Chinhin",
+		PeriodStart: old.PeriodStart, PeriodEnd: old.PeriodEnd, StatementJSON: `{}`,
+	}, []int{old.Id})
+	require.ErrorIs(t, err, ErrSettlementReplacementConflict)
+
+	reloaded, reloadErr := GetSettlement(old.Id)
+	require.NoError(t, reloadErr)
+	require.Equal(t, SettlementStatusIssued, reloaded.Status, "a rejected replacement must not alter the old invoice")
+}
+
+func TestVoidedCustomerInvoiceCanReceiveANewRevision(t *testing.T) {
+	setupSettlementTestDB(t)
+	first, err := CreateNextSettlementRevision(&Settlement{
+		Kind: "customer", Counterparty: "pricing-group:Chinhin", Label: "Chinhin",
+		PeriodStart: "2026-08-01", PeriodEnd: "2026-08-31", StatementJSON: `{}`,
+	})
+	require.NoError(t, err)
+	first.Status = SettlementStatusVoid
+	_, err = UpdateSettlementCounterparty(first)
+	require.NoError(t, err)
+
+	second, err := CreateNextSettlementRevision(&Settlement{
+		Kind: first.Kind, Counterparty: first.Counterparty, Label: first.Label,
+		PeriodStart: first.PeriodStart, PeriodEnd: first.PeriodEnd, StatementJSON: `{}`,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, second.Revision)
+	latest, err := GetSettlementByPeriod(first.Kind, first.Counterparty, first.PeriodStart, first.PeriodEnd)
+	require.NoError(t, err)
+	assert.Equal(t, second.Id, latest.Id)
+}
+
+func TestSupersededInvoiceCannotBeReactivated(t *testing.T) {
+	setupSettlementTestDB(t)
+	old, err := CreateSettlement(&Settlement{
+		Kind: "customer", Counterparty: "4", PeriodStart: "2026-08-01", PeriodEnd: "2026-08-31", StatementJSON: `{}`,
+	})
+	require.NoError(t, err)
+	_, err = ReplaceCustomerSettlements(&Settlement{
+		Kind: "customer", Counterparty: "pricing-group:Chinhin", PeriodStart: old.PeriodStart, PeriodEnd: old.PeriodEnd,
+		StatementJSON: `{}`, ReplacementReason: "Consolidate company invoice", ReplacementComplianceConfirmed: true,
+	}, []int{old.Id})
+	require.NoError(t, err)
+
+	old.Status = SettlementStatusIssued
+	_, err = UpdateSettlementCounterparty(old)
+	require.ErrorIs(t, err, ErrSettlementImmutable)
+	reloaded, reloadErr := GetSettlement(old.Id)
+	require.NoError(t, reloadErr)
+	assert.Equal(t, SettlementStatusSuperseded, reloaded.Status)
+}
+
+func TestRevisionMigrationDropsTheOldPeriodUniqueness(t *testing.T) {
+	setupSettlementTestDB(t)
+	require.NoError(t, DB.Exec(`CREATE UNIQUE INDEX uidx_settlement_period ON settlements(kind, counterparty, period_start, period_end)`).Error)
+	require.True(t, DB.Migrator().HasIndex(&Settlement{}, "uidx_settlement_period"))
+
+	require.NoError(t, EnsureSettlementRevisionIndex())
+	assert.False(t, DB.Migrator().HasIndex(&Settlement{}, "uidx_settlement_period"))
+	assert.True(t, DB.Migrator().HasIndex(&Settlement{}, "uidx_settlement_revision"))
+}
+
 func TestCreateSettlementRejectsAnUnkeyedRecord(t *testing.T) {
 	setupSettlementTestDB(t)
 	_, err := CreateSettlement(&Settlement{Kind: "vendor", PeriodStart: "a", PeriodEnd: "b"})

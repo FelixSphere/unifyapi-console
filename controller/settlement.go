@@ -68,6 +68,35 @@ type settlementRow struct {
 	// invoice for the same usage until the operator explicitly voids them.
 	LegacySettlements []*model.Settlement `json:"legacy_settlements,omitempty"`
 	IssuanceBlocked   bool                `json:"issuance_blocked,omitempty"`
+
+	// SupersededSettlements keeps every replaced frozen document reachable
+	// from the current invoice, including earlier revisions in a longer chain.
+	SupersededSettlements []*model.Settlement `json:"superseded_settlements,omitempty"`
+}
+
+func settlementPredecessors(current *model.Settlement, byID map[int]*model.Settlement) []*model.Settlement {
+	if current == nil {
+		return nil
+	}
+	seen := map[int]bool{}
+	result := make([]*model.Settlement, 0)
+	var visit func([]int)
+	visit = func(ids []int) {
+		for _, id := range ids {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			prior := byID[id]
+			if prior == nil {
+				continue
+			}
+			result = append(result, prior)
+			visit(prior.SupersedesIDs)
+		}
+	}
+	visit(current.SupersedesIDs)
+	return result
 }
 
 type customerSettlementHistory struct {
@@ -111,8 +140,11 @@ func indexCustomerSettlementHistory(statements []service.Statement, rows []model
 			continue
 		}
 		if currentKeys[settlement.Counterparty] {
-			history.primary[settlement.Counterparty] = settlement
 			history.consumed[settlement.Id] = true
+			current := history.primary[settlement.Counterparty]
+			if model.SettlementIsActive(settlement) && (current == nil || settlement.Revision > current.Revision) {
+				history.primary[settlement.Counterparty] = settlement
+			}
 			continue
 		}
 
@@ -121,7 +153,7 @@ func indexCustomerSettlementHistory(statements []service.Statement, rows []model
 			return history, fmt.Errorf("frozen statement is unreadable: %w", err)
 		}
 		issuedGroupKey := model.CustomerPricingGroupKey(issued.Group)
-		if settlement.Status != model.SettlementStatusVoid &&
+		if model.SettlementIsActive(settlement) &&
 			settlement.Counterparty == issued.Group && currentKeys[issuedGroupKey] &&
 			history.primary[issuedGroupKey] == nil {
 			// Before Pricing Group keys were namespaced, the raw group name was
@@ -146,8 +178,10 @@ func indexCustomerSettlementHistory(statements []service.Statement, rows []model
 		}
 		for key := range affected {
 			if currentKeys[key] {
-				history.legacy[key] = append(history.legacy[key], settlement)
 				history.consumed[settlement.Id] = true
+				if model.SettlementIsActive(settlement) {
+					history.legacy[key] = append(history.legacy[key], settlement)
+				}
 			}
 		}
 	}
@@ -179,8 +213,10 @@ func GetSettlements(c *gin.Context) {
 		return
 	}
 	byParty := make(map[string]*model.Settlement, len(saved))
+	byID := make(map[int]*model.Settlement, len(saved))
 	for _, settlement := range saved {
 		byParty[settlement.Counterparty] = settlement
+		byID[settlement.Id] = settlement
 	}
 	var customerHistory customerSettlementHistory
 	if kind == service.StatementKindCustomer {
@@ -207,6 +243,7 @@ func GetSettlements(c *gin.Context) {
 		}
 		if found {
 			row.Settlement = settlement
+			row.SupersededSettlements = settlementPredecessors(settlement, byID)
 			var issued service.Statement
 			if err := common.Unmarshal([]byte(settlement.StatementJSON), &issued); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -284,6 +321,10 @@ type IssueSettlementRequest struct {
 	InvoiceRecorded bool    `json:"invoice_recorded"`
 	Status          string  `json:"status"`
 	Note            string  `json:"note"`
+
+	ReplaceExisting                bool   `json:"replace_existing"`
+	ReplacementReason              string `json:"replacement_reason"`
+	ReplacementComplianceConfirmed bool   `json:"replacement_compliance_confirmed"`
 }
 
 // IssueSettlement freezes one counterparty's statement for a period.
@@ -342,6 +383,7 @@ func IssueSettlement(c *gin.Context) {
 		})
 		return
 	}
+	var replacementIDs []int
 	if kind == service.StatementKindCustomer {
 		saved, err := model.ListSettlements(string(kind), req.Start, req.End, 0)
 		if err != nil {
@@ -353,22 +395,40 @@ func IssueSettlement(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
 			return
 		}
-		if history.primary[found.Counterparty] != nil {
-			c.JSON(http.StatusConflict, gin.H{"success": false, "message": "this Pricing Group already has an issued invoice for the period"})
-			return
+		if primary := history.primary[found.Counterparty]; primary != nil {
+			replacementIDs = append(replacementIDs, primary.Id)
 		}
-		blocking := make([]string, 0)
 		for _, legacy := range history.legacy[found.Counterparty] {
-			if legacy.Status != model.SettlementStatusVoid {
-				blocking = append(blocking, fmt.Sprintf("#%d %s", legacy.Id, legacy.Label))
+			if model.SettlementIsActive(legacy) {
+				replacementIDs = append(replacementIDs, legacy.Id)
 			}
 		}
-		if len(blocking) > 0 {
-			c.JSON(http.StatusConflict, gin.H{
-				"success": false,
-				"message": "cannot issue a grouped invoice while legacy invoices remain active: " + strings.Join(blocking, ", ") + ". Void them first to prevent duplicate billing.",
-			})
+		if req.ReplaceExisting {
+			if len(replacementIDs) == 0 {
+				c.JSON(http.StatusConflict, gin.H{"success": false, "message": "there is no active invoice to replace for this Pricing Group and period"})
+				return
+			}
+			if strings.TrimSpace(req.ReplacementReason) == "" || !req.ReplacementComplianceConfirmed {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "a replacement reason and compliance confirmation are required"})
+				return
+			}
+		} else if history.primary[found.Counterparty] != nil {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "message": "this Pricing Group already has an issued invoice for the period"})
 			return
+		} else {
+			blocking := make([]string, 0)
+			for _, legacy := range history.legacy[found.Counterparty] {
+				if model.SettlementIsActive(legacy) {
+					blocking = append(blocking, fmt.Sprintf("#%d %s", legacy.Id, legacy.Label))
+				}
+			}
+			if len(blocking) > 0 {
+				c.JSON(http.StatusConflict, gin.H{
+					"success": false,
+					"message": "active invoices already cover this period: " + strings.Join(blocking, ", ") + ". Use Replace & reissue to supersede them atomically.",
+				})
+				return
+			}
 		}
 	}
 
@@ -379,22 +439,31 @@ func IssueSettlement(c *gin.Context) {
 	}
 
 	settlement := &model.Settlement{
-		Kind:                string(kind),
-		Counterparty:        found.Counterparty,
-		Label:               found.Label,
-		PeriodStart:         req.Start,
-		PeriodEnd:           req.End,
-		AmountUSD:           found.AmountUSD,
-		InvoicedUSD:         req.InvoicedUSD,
-		InvoiceRecorded:     req.InvoiceRecorded,
-		Status:              req.Status,
-		Note:                req.Note,
-		StatementJSON:       string(encoded),
-		PricingSnapshotDate: ratio_setting.PricingSnapshotDate,
+		Kind:                           string(kind),
+		Counterparty:                   found.Counterparty,
+		Label:                          found.Label,
+		PeriodStart:                    req.Start,
+		PeriodEnd:                      req.End,
+		AmountUSD:                      found.AmountUSD,
+		InvoicedUSD:                    req.InvoicedUSD,
+		InvoiceRecorded:                req.InvoiceRecorded,
+		Status:                         req.Status,
+		Note:                           req.Note,
+		ReplacementReason:              req.ReplacementReason,
+		ReplacementComplianceConfirmed: req.ReplacementComplianceConfirmed,
+		StatementJSON:                  string(encoded),
+		PricingSnapshotDate:            ratio_setting.PricingSnapshotDate,
 	}
-	saved, err := model.CreateSettlement(settlement)
+	var saved *model.Settlement
+	if kind == service.StatementKindCustomer && req.ReplaceExisting {
+		saved, err = model.ReplaceCustomerSettlements(settlement, replacementIDs)
+	} else if kind == service.StatementKindCustomer {
+		saved, err = model.CreateNextSettlementRevision(settlement)
+	} else {
+		saved, err = model.CreateSettlement(settlement)
+	}
 	if err != nil {
-		if errors.Is(err, model.ErrSettlementAlreadyIssued) {
+		if errors.Is(err, model.ErrSettlementAlreadyIssued) || errors.Is(err, model.ErrSettlementReplacementConflict) {
 			c.JSON(http.StatusConflict, gin.H{"success": false, "message": err.Error()})
 			return
 		}
@@ -404,6 +473,9 @@ func IssueSettlement(c *gin.Context) {
 
 	message := fmt.Sprintf("已记录 %s 在 %s 至 %s 的结算：$%.4f",
 		saved.Label, saved.PeriodStart, saved.PeriodEnd, saved.AmountUSD)
+	if req.ReplaceExisting {
+		message = fmt.Sprintf("已用新 Invoice #%d 替代旧 Invoice，并保留完整审计记录。", saved.Id)
+	}
 	if !found.Complete() {
 		// Said on the way out, not buried in the row: a vendor statement with
 		// unpriced traffic understates what we owe, and paying from it

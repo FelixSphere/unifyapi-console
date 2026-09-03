@@ -65,6 +65,7 @@ function record(over: Partial<SettlementRecord> = {}): SettlementRecord {
     pricing_snapshot_date: '2026-08-30',
     created_at: 0,
     updated_at: 0,
+    revision: 1,
     ...over,
   }
 }

@@ -689,7 +689,7 @@ export type Statement = {
   unpriced_models?: string[]
 }
 
-export type SettlementStatus = 'issued' | 'settled' | 'void'
+export type SettlementStatus = 'issued' | 'settled' | 'void' | 'superseded'
 
 export type SettlementRecord = {
   id: number
@@ -708,6 +708,11 @@ export type SettlementRecord = {
   pricing_snapshot_date: string
   created_at: number
   updated_at: number
+  revision: number
+  supersedes_ids?: number[]
+  superseded_by_id?: number
+  replacement_reason?: string
+  replacement_compliance_confirmed?: boolean
 }
 
 export type SettlementRow = {
@@ -715,6 +720,8 @@ export type SettlementRow = {
   settlement?: SettlementRecord
   /** Older per-user/group invoices whose usage now belongs to this Pricing Group. */
   legacy_settlements?: SettlementRecord[]
+  /** Replaced frozen documents retained in the current invoice's audit chain. */
+  superseded_settlements?: SettlementRecord[]
   /** Active legacy invoices must be voided before issuing the grouped replacement. */
   issuance_blocked?: boolean
   /** Frozen line items that were actually issued; statement remains the live comparison. */
@@ -760,6 +767,9 @@ export type IssueSettlementParams = {
   invoice_recorded?: boolean
   status?: SettlementStatus
   note?: string
+  replace_existing?: boolean
+  replacement_reason?: string
+  replacement_compliance_confirmed?: boolean
 }
 
 /*

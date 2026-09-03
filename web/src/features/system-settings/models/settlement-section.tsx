@@ -60,12 +60,7 @@ import {
   updateSettlement,
 } from '../api'
 import { SettingsSection } from '../components/settings-section'
-import type {
-  SettlementRecord,
-  SettlementRow,
-  SettlementStatus,
-  StatementKind,
-} from '../types'
+import type { SettlementRow, SettlementStatus, StatementKind } from '../types'
 import {
   type SettlementState,
   type VarianceVerdict,
@@ -356,13 +351,13 @@ export function SettlementSection() {
                       row.settlement &&
                       update.mutate({ id: row.settlement.id, ...input })
                     }
-                    onVoidLegacy={(legacy) =>
-                      update.mutate({
-                        id: legacy.id,
-                        invoiced_usd: legacy.invoiced_usd,
-                        invoice_recorded: legacy.invoice_recorded,
-                        status: 'void',
-                        note: legacy.note,
+                    onReplace={(input) =>
+                      issue.mutate({
+                        kind,
+                        counterparty: row.statement.counterparty,
+                        start: period.start,
+                        end: period.end,
+                        ...input,
                       })
                     }
                     onDownload={() => download(row.statement.counterparty)}
@@ -527,7 +522,7 @@ function SettlementTableRow({
   onDownload,
   onPrintInvoice,
   onDownloadFrozenCSV,
-  onVoidLegacy,
+  onReplace,
 }: {
   row: SettlementRow
   kind: StatementKind
@@ -550,7 +545,13 @@ function SettlementTableRow({
   onDownload: () => void
   onPrintInvoice: (id: number) => void
   onDownloadFrozenCSV: (id: number) => void
-  onVoidLegacy: (legacy: SettlementRecord) => void
+  onReplace: (input: {
+    status: SettlementStatus
+    note: string
+    replace_existing: true
+    replacement_reason: string
+    replacement_compliance_confirmed: true
+  }) => void
 }) {
   const { t } = useTranslation()
   const statement = row.statement
@@ -580,6 +581,28 @@ function SettlementTableRow({
       return
     }
     onIssue(payload)
+  }
+
+  const replaceInvoice = () => {
+    const defaultReason = row.issuance_blocked
+      ? 'Consolidated into the current Pricing Group invoice'
+      : ''
+    const reason = window.prompt(
+      'Reason for replacing the existing invoice (required)',
+      defaultReason
+    )
+    if (!reason?.trim()) return
+    const confirmed = window.confirm(
+      'The previous invoice will remain in the audit trail as SUPERSEDED and a new invoice number will be created. If it was submitted to MyInvois, cancel it within the permitted window or complete the required credit/debit/refund note first. Continue?'
+    )
+    if (!confirmed) return
+    onReplace({
+      status: 'issued',
+      note: noteDraft,
+      replace_existing: true,
+      replacement_reason: reason.trim(),
+      replacement_compliance_confirmed: true,
+    })
   }
 
   return (
@@ -676,9 +699,10 @@ function SettlementTableRow({
                   <AlertTriangle className='size-4' />
                   <AlertDescription className='flex flex-col gap-2 text-xs'>
                     <span>
-                      {row.issuance_blocked
-                        ? 'This Pricing Group contains usage covered by an older individual or group invoice. Void every active legacy invoice below before issuing the consolidated invoice; this prevents billing the same usage twice.'
-                        : 'The older invoices below are void. You may now issue the consolidated Pricing Group invoice.'}
+                      This Pricing Group contains usage covered by an older
+                      individual or group invoice. Replace and reissue creates
+                      one consolidated invoice number and marks the documents
+                      below as superseded in the same transaction.
                     </span>
                     <div className='flex flex-wrap gap-2'>
                       {row.legacy_settlements?.map((legacy) => (
@@ -705,24 +729,56 @@ function SettlementTableRow({
                           >
                             Export frozen CSV
                           </Button>
-                          {legacy.status !== 'void' ? (
-                            <Button
-                              size='sm'
-                              variant='destructive'
-                              disabled={busy}
-                              onClick={() => {
-                                if (
-                                  window.confirm(
-                                    `Void legacy invoice #${legacy.id}? Its frozen document and audit history will be preserved.`
-                                  )
-                                ) {
-                                  onVoidLegacy(legacy)
-                                }
-                              }}
-                            >
-                              Void legacy invoice
-                            </Button>
-                          ) : null}
+                        </span>
+                      ))}
+                    </div>
+                    <Button size='sm' disabled={busy} onClick={replaceInvoice}>
+                      Replace &amp; issue consolidated invoice
+                    </Button>
+                    <span className='text-muted-foreground'>
+                      Malaysian e-Invoices validated in MyInvois can only be
+                      cancelled within its permitted window. After that, record
+                      the applicable credit, debit, or refund note before
+                      replacing the invoice here.
+                    </span>
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              {(row.superseded_settlements?.length ?? 0) > 0 ? (
+                <Alert>
+                  <FileText className='size-4' />
+                  <AlertDescription className='flex flex-col gap-2 text-xs'>
+                    <span>
+                      Superseded invoice history — these frozen documents remain
+                      available for audit and must not be sent as the current
+                      invoice.
+                    </span>
+                    <div className='flex flex-wrap gap-2'>
+                      {row.superseded_settlements?.map((prior) => (
+                        <span
+                          key={prior.id}
+                          className='bg-background inline-flex items-center gap-1 rounded-md border p-1'
+                        >
+                          <span className='px-1 font-mono'>
+                            #{prior.id} {prior.label} ·{' '}
+                            {formatUSD(prior.amount_usd)} · {prior.status}
+                          </span>
+                          <Button
+                            size='sm'
+                            variant='outline'
+                            onClick={() => onPrintInvoice(prior.id)}
+                          >
+                            Open frozen invoice
+                          </Button>
+                          <Button
+                            size='sm'
+                            variant='outline'
+                            disabled={busy}
+                            onClick={() => onDownloadFrozenCSV(prior.id)}
+                          >
+                            Export frozen CSV
+                          </Button>
                         </span>
                       ))}
                     </div>
@@ -817,6 +873,17 @@ function SettlementTableRow({
                   >
                     <FileText className='size-4' />
                     Open / save invoice PDF
+                  </Button>
+                ) : null}
+
+                {kind === 'customer' && row.settlement ? (
+                  <Button
+                    size='sm'
+                    variant='outline'
+                    disabled={busy}
+                    onClick={replaceInvoice}
+                  >
+                    Replace &amp; reissue invoice
                   </Button>
                 ) : null}
 

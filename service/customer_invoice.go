@@ -31,16 +31,19 @@ func CustomerInvoiceNumber(settlement *model.Settlement) string {
 }
 
 type customerInvoiceView struct {
-	Number        string
-	Status        string
-	IssueDate     string
-	PeriodStart   string
-	PeriodEnd     string
-	BillTo        string
-	CustomerGroup string
-	Lines         []StatementLine
-	TotalUSD      float64
-	Requests      int64
+	Number           string
+	Status           string
+	IssueDate        string
+	PeriodStart      string
+	PeriodEnd        string
+	BillTo           string
+	CustomerGroup    string
+	Lines            []StatementLine
+	TotalUSD         float64
+	Requests         int64
+	Replaces         []string
+	SupersededBy     string
+	CorrectionReason string
 }
 
 // RenderCustomerInvoiceHTML builds the document a browser prints or saves as
@@ -75,16 +78,23 @@ func RenderCustomerInvoiceHTML(settlement *model.Settlement, statement Statement
 		status = "PAID"
 	}
 	view := customerInvoiceView{
-		Number:        CustomerInvoiceNumber(settlement),
-		Status:        status,
-		IssueDate:     time.Unix(settlement.CreatedAt, 0).UTC().Format("2006-01-02"),
-		PeriodStart:   statement.PeriodStart,
-		PeriodEnd:     statement.PeriodEnd,
-		BillTo:        statement.Label,
-		CustomerGroup: statement.Group,
-		Lines:         statement.Lines,
-		TotalUSD:      statement.AmountUSD,
-		Requests:      statement.Requests,
+		Number:           CustomerInvoiceNumber(settlement),
+		Status:           status,
+		IssueDate:        time.Unix(settlement.CreatedAt, 0).UTC().Format("2006-01-02"),
+		PeriodStart:      statement.PeriodStart,
+		PeriodEnd:        statement.PeriodEnd,
+		BillTo:           statement.Label,
+		CustomerGroup:    statement.Group,
+		Lines:            statement.Lines,
+		TotalUSD:         statement.AmountUSD,
+		Requests:         statement.Requests,
+		CorrectionReason: settlement.ReplacementReason,
+	}
+	for _, id := range settlement.SupersedesIDs {
+		view.Replaces = append(view.Replaces, CustomerInvoiceNumber(&model.Settlement{Id: id, PeriodStart: settlement.PeriodStart}))
+	}
+	if settlement.SupersededByID != 0 {
+		view.SupersededBy = CustomerInvoiceNumber(&model.Settlement{Id: settlement.SupersededByID, PeriodStart: settlement.PeriodStart})
 	}
 	var output bytes.Buffer
 	if err := customerInvoiceTemplate.Execute(&output, view); err != nil {
@@ -144,7 +154,7 @@ var customerInvoiceTemplate = template.Must(template.New("customer-invoice").Fun
   <main class="sheet">
     <header class="top">
       <div><div class="brand">UnifyAI</div><div class="product">UnifyAPI services</div></div>
-      <div><h1>INVOICE</h1><div class="status {{if eq .Status "VOID"}}void{{end}}">{{.Status}}</div></div>
+      <div><h1>INVOICE</h1><div class="status {{if or (eq .Status "VOID") (eq .Status "SUPERSEDED")}}void{{end}}">{{.Status}}</div></div>
     </header>
     <section class="meta">
       <div>
@@ -158,6 +168,9 @@ var customerInvoiceTemplate = template.Must(template.New("customer-invoice").Fun
         <dt>Service period</dt><dd>{{.PeriodStart}} to {{.PeriodEnd}}</dd>
         <dt>Currency</dt><dd>USD</dd>
         <dt>Payment terms</dt><dd>Due upon receipt</dd>
+		{{if .Replaces}}<dt>Replaces</dt><dd>{{range $index, $number := .Replaces}}{{if $index}}, {{end}}{{$number}}{{end}}</dd>{{end}}
+		{{if .CorrectionReason}}<dt>Correction reason</dt><dd>{{.CorrectionReason}}</dd>{{end}}
+		{{if .SupersededBy}}<dt>Superseded by</dt><dd>{{.SupersededBy}}</dd>{{end}}
       </dl>
     </section>
     <table aria-label="Invoice line items">

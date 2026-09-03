@@ -306,6 +306,9 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
+	if err := EnsureSettlementRevisionIndex(); err != nil {
+		return err
+	}
 	if err := initializePartnershipCustomers(); err != nil {
 		return err
 	}
