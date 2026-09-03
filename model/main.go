@@ -264,6 +264,7 @@ func migrateDB() error {
 		&User{},
 		&Tenant{}, // UNIFYAPI-BRAND: see model/tenant.go
 		&PartnershipProgram{},
+		&PartnershipCustomer{},
 		&PartnershipEnrollment{},
 		&UserSession{},
 		&AuthFlow{},
@@ -305,6 +306,9 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
+	if err := initializePartnershipCustomers(); err != nil {
+		return err
+	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err
 	}
@@ -336,6 +340,7 @@ func migrateDBFast() error {
 		{&User{}, "User"},
 		{&Tenant{}, "Tenant"}, // UNIFYAPI-BRAND: see model/tenant.go
 		{&PartnershipProgram{}, "PartnershipProgram"},
+		{&PartnershipCustomer{}, "PartnershipCustomer"},
 		{&PartnershipEnrollment{}, "PartnershipEnrollment"},
 		{&UserSession{}, "UserSession"},
 		{&AuthFlow{}, "AuthFlow"},
@@ -388,6 +393,9 @@ func migrateDBFast() error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := initializePartnershipCustomers(); err != nil {
+		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err

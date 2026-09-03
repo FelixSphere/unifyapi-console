@@ -223,6 +223,12 @@ func SetApiRouter(router *gin.Engine) {
 			partnershipRoute.POST("/", controller.CreatePartnershipProgram)
 			partnershipRoute.PUT("/:id", controller.UpdatePartnershipProgram)
 		}
+		partnershipProgramRoute := apiRouter.Group("/partnership-programs")
+		partnershipProgramRoute.Use(middleware.RootAuth())
+		{
+			partnershipProgramRoute.POST("/:id/customers", controller.CreatePartnershipCustomer)
+			partnershipProgramRoute.PUT("/:id/customers/:customerId", controller.UpdatePartnershipCustomer)
+		}
 
 		// Custom OAuth provider management (root only)
 		customOAuthRoute := apiRouter.Group("/custom-oauth-provider")

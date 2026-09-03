@@ -12,7 +12,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -39,16 +38,35 @@ func partnershipProgramPayload(c *gin.Context) (*model.PartnershipProgram, bool)
 }
 
 func GetPublicPartnershipProgram(c *gin.Context) {
-	program, err := model.GetPartnershipProgramByCode(c.Param("code"))
-	if err != nil || !model.IsPartnershipProgramActive(program, time.Now().Unix()) {
+	offer, err := model.GetActivePartnershipOfferByCode(c.Param("code"))
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "partnership program is unavailable"})
 		return
 	}
+	program := offer.Program
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
-		"name": program.Name, "code": program.Code, "group": program.Group,
+		"name": program.Name, "code": offer.CustomerCode, "group": offer.CustomerGroup,
+		"customer_name":   offer.CustomerName,
 		"grant_quota":     program.GrantQuota,
 		"grant_available": program.GrantQuota > 0 && program.ClaimedCount < program.GrantLimit,
 	}})
+}
+
+func partnershipCustomerPayload(c *gin.Context) (*model.PartnershipCustomer, bool) {
+	var customer model.PartnershipCustomer
+	if err := c.ShouldBindJSON(&customer); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid request body"})
+		return nil, false
+	}
+	if err := model.ValidatePartnershipCustomer(&customer); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return nil, false
+	}
+	if !ratio_setting.ContainsGroupRatio(customer.Group) {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "group must exist in Group Pricing"})
+		return nil, false
+	}
+	return &customer, true
 }
 
 func ConnectExistingUserToPartnership(c *gin.Context) {
@@ -102,6 +120,49 @@ func UpdatePartnershipProgram(c *gin.Context) {
 	if err := model.UpdatePartnershipProgram(id, program); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "partnership program not found"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+}
+
+func CreatePartnershipCustomer(c *gin.Context) {
+	programId, err := strconv.Atoi(c.Param("id"))
+	if err != nil || programId <= 0 {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid partnership program id"})
+		return
+	}
+	customer, ok := partnershipCustomerPayload(c)
+	if !ok {
+		return
+	}
+	if err := model.CreatePartnershipCustomer(programId, customer); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "partnership program not found"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": customer})
+}
+
+func UpdatePartnershipCustomer(c *gin.Context) {
+	programId, programErr := strconv.Atoi(c.Param("id"))
+	customerId, customerErr := strconv.Atoi(c.Param("customerId"))
+	if programErr != nil || customerErr != nil || programId <= 0 || customerId <= 0 {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid partnership customer id"})
+		return
+	}
+	customer, ok := partnershipCustomerPayload(c)
+	if !ok {
+		return
+	}
+	if err := model.UpdatePartnershipCustomer(programId, customerId, customer); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "partnership customer not found"})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})

@@ -28,7 +28,7 @@ func TestPartnershipOAuthKeepsInviterAttributionWithoutRewards(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&model.User{}, &model.Tenant{}, &model.Log{},
-		&model.Option{}, &model.PartnershipProgram{}, &model.PartnershipEnrollment{},
+		&model.Option{}, &model.PartnershipProgram{}, &model.PartnershipCustomer{}, &model.PartnershipEnrollment{},
 	))
 	previousDB := model.DB
 	previousLogDB := model.LOG_DB

@@ -7,7 +7,7 @@ Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, Pencil, Plus } from 'lucide-react'
+import { Copy, Pencil, Plus, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -32,7 +32,10 @@ import {
 import { SettingsSection } from '../components/settings-section'
 import {
   getPartnershipPrograms,
+  savePartnershipCustomer,
   savePartnershipProgram,
+  type PartnershipCustomer,
+  type PartnershipCustomerInput,
   type PartnershipProgram,
   type PartnershipProgramInput,
 } from './partnership-api'
@@ -47,6 +50,13 @@ type FormState = {
   enabled: boolean
   startsAt: string
   endsAt: string
+}
+
+type CustomerFormState = {
+  name: string
+  code: string
+  group: string
+  enabled: boolean
 }
 
 const emptyForm = (group: string): FormState => ({
@@ -85,6 +95,17 @@ export function PartnershipProgramsSection({
   const [editing, setEditing] = useState<PartnershipProgram | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState<FormState>(emptyForm('default'))
+  const [customerDialogOpen, setCustomerDialogOpen] = useState(false)
+  const [customerProgram, setCustomerProgram] =
+    useState<PartnershipProgram | null>(null)
+  const [editingCustomer, setEditingCustomer] =
+    useState<PartnershipCustomer | null>(null)
+  const [customerForm, setCustomerForm] = useState<CustomerFormState>({
+    name: '',
+    code: '',
+    group: 'default',
+    enabled: true,
+  })
 
   useEffect(() => {
     if (!dialogOpen || editing || groups.length === 0) return
@@ -99,6 +120,16 @@ export function PartnershipProgramsSection({
     onSuccess: () => {
       toast.success(t('Partnership program saved'))
       setDialogOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['partnership-programs'] })
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
+
+  const customerMutation = useMutation({
+    mutationFn: savePartnershipCustomer,
+    onSuccess: () => {
+      toast.success(t('Partnership customer saved'))
+      setCustomerDialogOpen(false)
       queryClient.invalidateQueries({ queryKey: ['partnership-programs'] })
     },
     onError: (error: Error) => toast.error(error.message),
@@ -153,6 +184,46 @@ export function PartnershipProgramsSection({
     mutation.mutate({ id: editing?.id, program })
   }
 
+  const openCustomer = (
+    program: PartnershipProgram,
+    customer: PartnershipCustomer | null = null
+  ) => {
+    setCustomerProgram(program)
+    setEditingCustomer(customer)
+    setCustomerForm({
+      name: customer?.name ?? '',
+      code: customer?.code ?? '',
+      group: customer?.group ?? groups[0] ?? 'default',
+      enabled: customer?.enabled ?? true,
+    })
+    setCustomerDialogOpen(true)
+  }
+
+  const submitCustomer = () => {
+    if (
+      !customerProgram ||
+      !customerForm.name.trim() ||
+      !/^[a-z0-9][a-z0-9_-]{2,63}$/.test(
+        customerForm.code.trim().toLowerCase()
+      ) ||
+      !customerForm.group
+    ) {
+      toast.error(t('Check the customer name, registration code, and group.'))
+      return
+    }
+    const customer: PartnershipCustomerInput = {
+      name: customerForm.name.trim(),
+      code: customerForm.code.trim().toLowerCase(),
+      group: customerForm.group,
+      enabled: customerForm.enabled,
+    }
+    customerMutation.mutate({
+      programId: customerProgram.id,
+      id: editingCustomer?.id,
+      customer,
+    })
+  }
+
   const copyLink = async (code: string) => {
     const link = `${window.location.origin}/sign-up?partnership=${encodeURIComponent(code)}`
     await navigator.clipboard.writeText(link)
@@ -164,7 +235,7 @@ export function PartnershipProgramsSection({
       <Alert>
         <AlertDescription className='text-xs'>
           {t(
-            'Programs reference an existing Group Pricing group and affect registration only. Existing accounts keep their current group when connected. All later top-ups and usage follow the normal payment and billing flow.'
+            'A Program holds the shared registration credit, limit, and schedule. Each linked User Group is one customer and invoice owner; users are members of that customer. Each customer gets a dedicated registration link. All later top-ups and usage follow the normal payment and billing flow.'
           )}
         </AlertDescription>
       </Alert>
@@ -190,7 +261,7 @@ export function PartnershipProgramsSection({
             <TableHeader>
               <TableRow>
                 <TableHead>{t('Program')}</TableHead>
-                <TableHead>{t('Identity group')}</TableHead>
+                <TableHead>{t('Customer groups')}</TableHead>
                 <TableHead>{t('Registration credit')}</TableHead>
                 <TableHead>{t('Claims')}</TableHead>
                 <TableHead>{t('Status')}</TableHead>
@@ -206,11 +277,61 @@ export function PartnershipProgramsSection({
                       {program.code}
                     </code>
                   </TableCell>
-                  <TableCell>
-                    <div>{program.group}</div>
-                    <div className='text-muted-foreground text-xs'>
-                      {t('Billing multiplier')}:{' '}
-                      {query.data?.group_ratios[program.group] ?? 1}×
+                  <TableCell className='min-w-72'>
+                    <div className='grid gap-2'>
+                      {(program.customers ?? []).map((customer) => (
+                        <div
+                          key={customer.id}
+                          className='flex items-center justify-between gap-2 rounded border px-2 py-1'
+                        >
+                          <div>
+                            <div className='text-sm font-medium'>
+                              {customer.name}
+                              {customer.is_default ? (
+                                <span className='text-muted-foreground ml-1 text-xs'>
+                                  ({t('default')})
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className='text-muted-foreground text-xs'>
+                              {customer.group} ·{' '}
+                              {query.data?.group_ratios[customer.group] ?? 1}×
+                            </div>
+                          </div>
+                          <div className='flex'>
+                            <Button
+                              type='button'
+                              size='icon-sm'
+                              variant='ghost'
+                              disabled={!customer.enabled || !program.enabled}
+                              aria-label={t('Copy customer registration link')}
+                              onClick={() => copyLink(customer.code)}
+                            >
+                              <Copy className='size-4' />
+                            </Button>
+                            {!customer.is_default ? (
+                              <Button
+                                type='button'
+                                size='icon-sm'
+                                variant='ghost'
+                                aria-label={t('Edit customer')}
+                                onClick={() => openCustomer(program, customer)}
+                              >
+                                <Pencil className='size-4' />
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                      <Button
+                        type='button'
+                        size='sm'
+                        variant='outline'
+                        onClick={() => openCustomer(program)}
+                      >
+                        <Users className='size-4' />
+                        {t('Add customer group')}
+                      </Button>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -225,15 +346,6 @@ export function PartnershipProgramsSection({
                     </Badge>
                   </TableCell>
                   <TableCell className='text-right'>
-                    <Button
-                      type='button'
-                      size='icon-sm'
-                      variant='ghost'
-                      aria-label={t('Copy registration link')}
-                      onClick={() => copyLink(program.code)}
-                    >
-                      <Copy className='size-4' />
-                    </Button>
                     <Button
                       type='button'
                       size='icon-sm'
@@ -307,7 +419,7 @@ export function PartnershipProgramsSection({
               }
             />
           </Field>
-          <Field label={t('Identity group')}>
+          <Field label={t('Default customer group')}>
             <NativeSelect
               className='w-full'
               value={form.group}
@@ -369,6 +481,85 @@ export function PartnershipProgramsSection({
               }
             />
           </Field>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={customerDialogOpen}
+        onOpenChange={setCustomerDialogOpen}
+        title={
+          editingCustomer
+            ? t('Edit partnership customer')
+            : t('Add partnership customer')
+        }
+        description={t(
+          'Choose the existing User Group that owns this customer’s usage and invoice, then share its dedicated registration link.'
+        )}
+        footer={
+          <>
+            <Button
+              type='button'
+              variant='outline'
+              onClick={() => setCustomerDialogOpen(false)}
+            >
+              {t('Cancel')}
+            </Button>
+            <Button
+              type='button'
+              onClick={submitCustomer}
+              disabled={customerMutation.isPending}
+            >
+              {t('Save')}
+            </Button>
+          </>
+        }
+      >
+        <div className='grid gap-4 sm:grid-cols-2'>
+          <Field label={t('Customer name')}>
+            <Input
+              value={customerForm.name}
+              placeholder='Acme Vietnam'
+              onChange={(event) =>
+                setCustomerForm({ ...customerForm, name: event.target.value })
+              }
+            />
+          </Field>
+          <Field label={t('Registration code')}>
+            <Input
+              value={customerForm.code}
+              placeholder='acme-vietnam'
+              onChange={(event) =>
+                setCustomerForm({ ...customerForm, code: event.target.value })
+              }
+            />
+          </Field>
+          <Field label={t('Customer User Group')}>
+            <NativeSelect
+              className='w-full'
+              value={customerForm.group}
+              onChange={(event) =>
+                setCustomerForm({
+                  ...customerForm,
+                  group: event.target.value,
+                })
+              }
+            >
+              {groups.map((group) => (
+                <NativeSelectOption key={group} value={group}>
+                  {partnershipGroupLabel(group, query.data?.groups[group])}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </Field>
+          <div className='flex items-end gap-3 pb-2'>
+            <Switch
+              checked={customerForm.enabled}
+              onCheckedChange={(enabled) =>
+                setCustomerForm({ ...customerForm, enabled })
+              }
+            />
+            <Label>{t('Customer link enabled')}</Label>
+          </div>
         </div>
       </Dialog>
     </SettingsSection>

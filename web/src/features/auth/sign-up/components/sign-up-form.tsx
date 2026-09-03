@@ -58,6 +58,7 @@ import { cn } from '@/lib/utils'
 type PartnershipOffer = {
   name: string
   code: string
+  customer_name: string
   grant_quota: number
   grant_available: boolean
 }
@@ -283,7 +284,7 @@ export function SignUpForm({
     partnershipBanner = (
       <Alert>
         <AlertDescription>
-          {partnershipOffer.name}:{' '}
+          {partnershipOffer.name} · {partnershipOffer.customer_name}:{' '}
           {partnershipOffer.grant_available
             ? t(
                 'Up to ${{amount}} registration credit, subject to remaining capacity.',
