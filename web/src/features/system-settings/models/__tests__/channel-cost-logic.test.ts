@@ -7,8 +7,8 @@ a zero cost (which would make every margin look infinite and hide real spend), a
 cost above list slipping through unremarked, and a cleared field being persisted
 as 1.0 forever.
 */
+import { describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
 
 import {
   MAX_CHANNEL_COST_RATIO,

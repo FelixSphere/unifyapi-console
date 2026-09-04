@@ -6,8 +6,8 @@ rules here are the difference between the two. The one that matters most is that
 a catalogued model cannot be entered — that is what keeps this table additive
 rather than another way to shadow a vetted price.
 */
+import { describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
 
 import {
   MAX_PRICE_USD,

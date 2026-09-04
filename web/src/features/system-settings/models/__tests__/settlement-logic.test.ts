@@ -6,8 +6,8 @@ real money: a billing period whose boundary is off by a day (so a month of
 usage is billed twice or not at all), and a settled row that quietly stops
 reflecting the basis it was settled on.
 */
+import { describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
 
 import type { SettlementRecord, SettlementRow, Statement } from '../../types'
 import {

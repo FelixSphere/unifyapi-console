@@ -1,7 +1,7 @@
+import { describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, test } from 'node:test'
 
 const HERE = new URL('.', import.meta.url).pathname
 const registry = readFileSync(join(HERE, '../section-registry.tsx'), 'utf8')
