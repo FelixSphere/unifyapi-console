@@ -1,12 +1,11 @@
 # Fork-owned CI. Deliberately a separate file from upstream's ci.yml so their
 # edits to that file never conflict with ours.
 #
-# Gate design note: at upstream tag v1.0.0-rc.23, three of upstream's own
+# Gate design note: at upstream tag v1.0.0-rc.23, two of upstream's own
 # quality scripts already fail on a clean checkout:
 #   copyright:check  2 files (cosmetic blank line after the licence header)
 #   format:check     3 files
-#   bun test         9 fail / 6 errors (node:test vs `bun test` incompatibility)
-# Only typecheck and build are green. So those three run as advisory here --
+# Those two run as advisory here --
 # blocking on them would mean a permanently red pipeline that everyone learns to
 # ignore, which is worse than no gate. Re-evaluate at each upstream bump; when a
 # tag lands with them green, promote them to hard gates.
@@ -40,6 +39,9 @@ jobs:
       - name: Check brand and attribution invariants
         run: node scripts/check-brand-invariants.mjs
 
+      - name: Check Bun test-runner imports
+        run: node scripts/check-test-runner.mjs
+
       - run: bun run typecheck
 
       - run: bun run build
@@ -52,8 +54,7 @@ jobs:
         continue-on-error: true
         run: bun run format:check
 
-      - name: bun test (advisory - red upstream at rc.23)
-        continue-on-error: true
+      - name: Test
         run: bun test
 
   backend:

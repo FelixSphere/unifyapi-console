@@ -1,5 +1,3 @@
-// @ts-expect-error Bun exposes this runtime module, while the application
-// tsconfig intentionally includes Node types only.
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 

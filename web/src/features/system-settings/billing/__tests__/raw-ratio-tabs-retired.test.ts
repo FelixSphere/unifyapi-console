@@ -10,10 +10,10 @@ keys.
 
 So the decision is pinned here rather than left to the comment beside it.
 */
+import { describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, test } from 'node:test'
 
 const REGISTRY = join(
   new URL('.', import.meta.url).pathname,

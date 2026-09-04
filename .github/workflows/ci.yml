@@ -84,5 +84,8 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Check Bun test-runner imports
+        run: node scripts/check-test-runner.mjs
+
       - name: Test
         run: bun test

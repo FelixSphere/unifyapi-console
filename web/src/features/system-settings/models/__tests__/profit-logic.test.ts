@@ -5,8 +5,8 @@ This screen answers "am I making money, and how". Two classes of bug matter:
 showing a healthy margin on a line that is losing money, and showing a confident
 margin when there is no cost basis to compute one from. Both are here.
 */
+import { describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
 
 import {
   PERIOD_PRESETS,

@@ -12,10 +12,10 @@ Both of these shipped wrong once and were only caught by eye:
 An untranslated key falls back to the English key itself, silently and without
 any console warning, so nothing but a test catches it.
 */
+import { describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, test } from 'node:test'
 
 const HERE = new URL('.', import.meta.url).pathname
 const MODELS_DIR = join(HERE, '..')

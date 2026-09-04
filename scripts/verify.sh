@@ -10,6 +10,9 @@ export GOWORK=off
 echo "--> brand invariants (licence-critical)"
 node web/scripts/check-brand-invariants.mjs
 
+echo "--> Bun test-runner imports"
+node web/scripts/check-test-runner.mjs
+
 echo "--> go vet"
 go vet ./...
 
@@ -18,6 +21,9 @@ go test ./model/ -count=1
 
 echo "--> web typecheck"
 (cd web && bun run typecheck)
+
+echo "--> web tests"
+(cd web && bun test)
 
 echo "--> web build (also regenerates the TanStack route tree)"
 (cd web && bun run build >/dev/null)
