@@ -1,15 +1,8 @@
 # Fork-owned CI. Deliberately a separate file from upstream's ci.yml so their
 # edits to that file never conflict with ours.
 #
-# Gate design note: at upstream tag v1.0.0-rc.23, three of upstream's own
-# quality scripts already fail on a clean checkout:
-#   copyright:check  2 files (cosmetic blank line after the licence header)
-#   format:check     3 files
-#   bun test         9 fail / 6 errors (node:test vs `bun test` incompatibility)
-# Only typecheck and build are green. So those three run as advisory here --
-# blocking on them would mean a permanently red pipeline that everyone learns to
-# ignore, which is worse than no gate. Re-evaluate at each upstream bump; when a
-# tag lands with them green, promote them to hard gates.
+# Every step in this workflow is a hard gate. Fork-owned fixes keep the pinned
+# upstream baseline green instead of hiding failures behind continue-on-error.
 name: Fork CI
 
 on:
@@ -44,16 +37,13 @@ jobs:
 
       - run: bun run build
 
-      - name: copyright:check (advisory - red upstream at rc.23)
-        continue-on-error: true
+      - name: Check copyright headers
         run: bun run copyright:check
 
-      - name: format:check (advisory - red upstream at rc.23)
-        continue-on-error: true
+      - name: Check formatting
         run: bun run format:check
 
-      - name: bun test (advisory - red upstream at rc.23)
-        continue-on-error: true
+      - name: Test frontend
         run: bun test
 
   backend:

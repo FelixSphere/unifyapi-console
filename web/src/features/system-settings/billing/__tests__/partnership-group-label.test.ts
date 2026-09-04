@@ -7,10 +7,10 @@ Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
 
+import { describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, test } from 'node:test'
 
 import { partnershipGroupLabel } from '../partnership-group-label'
 

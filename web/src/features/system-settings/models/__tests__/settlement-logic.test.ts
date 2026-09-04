@@ -1,4 +1,13 @@
 /*
+Copyright (C) 2026 FelixSphere
+
+This file is part of a modified version of new-api, distributed under the
+GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
+Upstream: https://github.com/QuantumNous/new-api
+Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
+*/
+import { describe, test } from 'bun:test'
+/*
 UNIFYAPI-FORK: tests for the settlement screen's logic.
 
 These decide what a period is, and what a row's state is. Two failures cost
@@ -7,7 +16,6 @@ usage is billed twice or not at all), and a settled row that quietly stops
 reflecting the basis it was settled on.
 */
 import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
 
 import type { SettlementRecord, SettlementRow, Statement } from '../../types'
 import {

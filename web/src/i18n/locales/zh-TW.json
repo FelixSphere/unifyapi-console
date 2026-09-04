@@ -1,7 +1,7 @@
 {
-    "Approx. to pay:": "預計支付：",
-    "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "僅為估算。最終貨幣與金額由 Stripe 在支付頁按其即時匯率決定。",
-    "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe 會在支付頁按其即時匯率換算，以該頁顯示的金額為準。",
+  "Approx. to pay:": "預計支付：",
+  "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "僅為估算。最終貨幣與金額由 Stripe 在支付頁按其即時匯率決定。",
+  "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe 會在支付頁按其即時匯率換算，以該頁顯示的金額為準。",
   "translation": {
     "Edit this price": "修改這個價格",
     "Looking up...": "查詢中…",

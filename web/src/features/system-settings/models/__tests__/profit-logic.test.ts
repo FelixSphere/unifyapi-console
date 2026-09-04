@@ -1,4 +1,13 @@
 /*
+Copyright (C) 2026 FelixSphere
+
+This file is part of a modified version of new-api, distributed under the
+GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
+Upstream: https://github.com/QuantumNous/new-api
+Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
+*/
+import { describe, test } from 'bun:test'
+/*
 UNIFYAPI-FORK: tests for the profit view's logic.
 
 This screen answers "am I making money, and how". Two classes of bug matter:
@@ -6,8 +15,8 @@ showing a healthy margin on a line that is losing money, and showing a confident
 margin when there is no cost basis to compute one from. Both are here.
 */
 import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
 
+import type { ReconcileLine } from '../../types'
 import {
   PERIOD_PRESETS,
   THIN_MARGIN_PCT,
@@ -20,7 +29,6 @@ import {
   resolvePeriod,
   toISODate,
 } from '../profit-logic'
-import type { ReconcileLine } from '../../types'
 
 function line(over: Partial<ReconcileLine> = {}): ReconcileLine {
   return {
@@ -99,12 +107,21 @@ describe('resolvePeriod', () => {
 
 describe('marginHealth', () => {
   test('a negative margin is a loss', () => {
-    assert.equal(marginHealth(line({ margin_usd: -1, margin_pct: -20 }), true), 'loss')
+    assert.equal(
+      marginHealth(line({ margin_usd: -1, margin_pct: -20 }), true),
+      'loss'
+    )
   })
 
   test('below the floor is thin, at the floor is healthy', () => {
-    assert.equal(marginHealth(line({ margin_pct: THIN_MARGIN_PCT - 0.1 }), true), 'thin')
-    assert.equal(marginHealth(line({ margin_pct: THIN_MARGIN_PCT }), true), 'healthy')
+    assert.equal(
+      marginHealth(line({ margin_pct: THIN_MARGIN_PCT - 0.1 }), true),
+      'thin'
+    )
+    assert.equal(
+      marginHealth(line({ margin_pct: THIN_MARGIN_PCT }), true),
+      'healthy'
+    )
   })
 
   test('the floor matches the server alert rule', () => {
@@ -116,19 +133,28 @@ describe('marginHealth', () => {
   test('without a cost basis every line is unmeasured, never a loss', () => {
     // Costed at list price, margin is zero or negative by construction. Painting
     // the whole table red would be precise and useless.
-    assert.equal(marginHealth(line({ margin_usd: -3, margin_pct: -30 }), false), 'unmeasured')
+    assert.equal(
+      marginHealth(line({ margin_usd: -3, margin_pct: -30 }), false),
+      'unmeasured'
+    )
     assert.equal(marginHealth(line(), false), 'unmeasured')
   })
 })
 
 describe('deriveMargin', () => {
   test('states revenue as read and cost as modelled, then the difference', () => {
-    const steps = deriveMargin(line({ revenue_usd: 10, cost_usd: 4, margin_usd: 6 }))
+    const steps = deriveMargin(
+      line({ revenue_usd: 10, cost_usd: 4, margin_usd: 6 })
+    )
     const [billed, cost, margin] = steps
     assert.equal(billed.amountUSD, 10)
     assert.ok(billed.noteKey, 'the ledger step must explain itself')
     assert.match(billed.noteKey, /quota actually deducted/)
-    assert.equal(cost.amountUSD, -4, 'cost is shown as a subtraction, not a bare number')
+    assert.equal(
+      cost.amountUSD,
+      -4,
+      'cost is shown as a subtraction, not a bare number'
+    )
     assert.ok(cost.noteKey)
     assert.match(cost.noteKey, /official price/)
     assert.equal(margin.amountUSD, 6)
@@ -202,10 +228,16 @@ describe('formatTokens', () => {
 
 describe('cacheHitRate', () => {
   test('is the cached share of prompt tokens', () => {
-    assert.equal(cacheHitRate(line({ prompt_tokens: 1000, cached_tokens: 800 })), 0.8)
+    assert.equal(
+      cacheHitRate(line({ prompt_tokens: 1000, cached_tokens: 800 })),
+      0.8
+    )
   })
 
   test('is undefined with no prompt tokens rather than dividing by zero', () => {
-    assert.equal(cacheHitRate(line({ prompt_tokens: 0, cached_tokens: 0 })), null)
+    assert.equal(
+      cacheHitRate(line({ prompt_tokens: 0, cached_tokens: 0 })),
+      null
+    )
   })
 })

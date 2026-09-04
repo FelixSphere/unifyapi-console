@@ -11,16 +11,9 @@ test, just a page that renders wrong or a licence term that quietly disappears.
 
 ## 1. Know the baseline before you start
 
-**`copyright:check` fails on two files at the pristine `v1.0.0-rc.23` tag**, in
-upstream's own code:
-
-```
-src/features/auth/lib/oauth-callback-mode.ts
-src/features/channels/lib/channel-field-update.ts
-```
-
-Do not "fix" these and do not treat them as your regression. Record the baseline
-before you change anything, so you can tell inherited red from red you caused:
+The fork carries the small compatibility and formatting fixes needed to make
+every CI gate green on top of the pinned upstream tag. Record the baseline
+before you change anything so a regression is attributable:
 
 ```bash
 scripts/baseline.sh > /tmp/baseline.txt   # run before your first edit
@@ -29,8 +22,8 @@ scripts/baseline.sh > /tmp/after.txt
 diff /tmp/baseline.txt /tmp/after.txt      # this diff is your blast radius
 ```
 
-A gate that is already red cannot tell you anything. That is why `fork-ci.yml`
-runs `copyright:check` as a warning, not a blocker.
+Red is never an accepted baseline. `fork-ci.yml` blocks on typecheck, build,
+copyright, formatting and the full frontend test suite.
 
 ## 1b. Where this repo lives
 

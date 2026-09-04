@@ -1,4 +1,13 @@
 /*
+Copyright (C) 2026 FelixSphere
+
+This file is part of a modified version of new-api, distributed under the
+GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
+Upstream: https://github.com/QuantumNous/new-api
+Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
+*/
+import { describe, test } from 'bun:test'
+/*
 UNIFYAPI-FORK: tests for the extra-models form.
 
 This form replaced one whose save discarded the entire code catalog, so the
@@ -7,8 +16,8 @@ a catalogued model cannot be entered — that is what keeps this table additive
 rather than another way to shadow a vetted price.
 */
 import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
 
+import type { ExtraModelDraft } from '../../types'
 import {
   MAX_PRICE_USD,
   USD_PER_MILLION_PER_RATIO_UNIT,
@@ -19,10 +28,15 @@ import {
   ratioFromUSD,
   validateDraft,
 } from '../extra-models-logic'
-import type { ExtraModelDraft } from '../../types'
 
 function draft(over: Partial<ExtraModelDraft> = {}): ExtraModelDraft {
-  return { ...emptyDraft(), model: 'new-model', input_usd: '1.4', output_usd: '4.4', ...over }
+  return {
+    ...emptyDraft(),
+    model: 'new-model',
+    input_usd: '1.4',
+    output_usd: '4.4',
+    ...over,
+  }
 }
 
 const CATALOGUED = ['claude-opus-4-8', 'gpt-4o']
@@ -45,7 +59,9 @@ describe('validateDraft', () => {
   })
 
   test('a duplicate in this table is refused', () => {
-    assert.deepEqual(fieldsWithErrors(draft({ model: 'dup' }), ['dup']), ['model'])
+    assert.deepEqual(fieldsWithErrors(draft({ model: 'dup' }), ['dup']), [
+      'model',
+    ])
   })
 
   test('an untrimmed name is refused rather than silently trimmed', () => {
@@ -56,8 +72,12 @@ describe('validateDraft', () => {
 
   test('prices must be positive', () => {
     assert.deepEqual(fieldsWithErrors(draft({ input_usd: '0' })), ['input_usd'])
-    assert.deepEqual(fieldsWithErrors(draft({ output_usd: '-1' })), ['output_usd'])
-    assert.deepEqual(fieldsWithErrors(draft({ input_usd: 'abc' })), ['input_usd'])
+    assert.deepEqual(fieldsWithErrors(draft({ output_usd: '-1' })), [
+      'output_usd',
+    ])
+    assert.deepEqual(fieldsWithErrors(draft({ input_usd: 'abc' })), [
+      'input_usd',
+    ])
   })
 
   test('an absurd price is caught as a misplaced decimal', () => {
@@ -80,7 +100,10 @@ describe('validateDraft', () => {
   })
 
   test('an empty cache field is allowed — unset is not zero', () => {
-    assert.deepEqual(validateDraft(draft({ cache_read_usd: '' }), CATALOGUED, []), [])
+    assert.deepEqual(
+      validateDraft(draft({ cache_read_usd: '' }), CATALOGUED, []),
+      []
+    )
   })
 
   test('every bad field is reported, not just the first', () => {
@@ -108,13 +131,18 @@ describe('draftToPayload', () => {
   })
 
   test('includes optional fields when given', () => {
-    const payload = draftToPayload(draft({ cache_read_usd: '0.26', note: 'from the vendor page' }))
+    const payload = draftToPayload(
+      draft({ cache_read_usd: '0.26', note: 'from the vendor page' })
+    )
     assert.equal(payload.cache_read_usd, 0.26)
     assert.equal(payload.note, 'from the vendor page')
   })
 
   test('trims free text', () => {
-    assert.equal(draftToPayload(draft({ vendor: '  zhipuai ' })).vendor, 'zhipuai')
+    assert.equal(
+      draftToPayload(draft({ vendor: '  zhipuai ' })).vendor,
+      'zhipuai'
+    )
   })
 })
 
@@ -128,7 +156,11 @@ describe('ratio derivation', () => {
 
   test('the completion ratio is output over input', () => {
     assert.equal(completionRatioFromUSD(1.4, 4.4), 4.4 / 1.4)
-    assert.equal(completionRatioFromUSD(0, 5), 1, 'no input price means no multiplier, not Infinity')
+    assert.equal(
+      completionRatioFromUSD(0, 5),
+      1,
+      'no input price means no multiplier, not Infinity'
+    )
   })
 })
 

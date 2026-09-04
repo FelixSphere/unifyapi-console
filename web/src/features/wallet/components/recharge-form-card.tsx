@@ -47,7 +47,6 @@ import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { STRIPE_BASE_CURRENCY } from '../constants'
-
 import {
   formatCurrency,
   getDiscountLabel,
@@ -152,7 +151,8 @@ export function RechargeFormCard({
     paymentCurrency && paymentCurrency !== STRIPE_BASE_CURRENCY
   )
   const currencyChoices = stripeCurrencies ?? []
-  const showCurrencySelector = Boolean(onCurrencyChange) && currencyChoices.length > 1
+  const showCurrencySelector =
+    Boolean(onCurrencyChange) && currencyChoices.length > 1
 
   useEffect(() => {
     // Empty string must survive, otherwise the field can never be cleared

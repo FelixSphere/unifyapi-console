@@ -6,8 +6,8 @@ GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
 Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
+import { describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
 
 import {
   downloadFilename,

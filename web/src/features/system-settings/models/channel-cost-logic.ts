@@ -1,4 +1,12 @@
 /*
+Copyright (C) 2026 FelixSphere
+
+This file is part of a modified version of new-api, distributed under the
+GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
+Upstream: https://github.com/QuantumNous/new-api
+Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
+*/
+/*
 UNIFYAPI-FORK: pure logic for the upstream purchasing-cost tab.
 
 Same reason as baseline-pricing-logic.ts: this decides a number that ends up in
@@ -65,9 +73,7 @@ export function maxSafeDiscount(costRatio: number): number {
   return costRatio
 }
 
-export function invalidCostChannels(
-  drafts: Record<string, string>
-): string[] {
+export function invalidCostChannels(drafts: Record<string, string>): string[] {
   return Object.entries(drafts)
     .filter(([, raw]) => Number.isNaN(parseCostRatio(raw)))
     .map(([id]) => id)
