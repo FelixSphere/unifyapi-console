@@ -3,6 +3,9 @@
   "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "概算です。最終的な通貨と金額は、Stripe が決済ページでその時のレートに基づいて決定します。",
   "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe が決済ページでその時のレートに換算します。実際の請求額はそちらの金額です。",
   "translation": {
+    "A new version of the console is available.": "コンソールの新しいバージョンが利用可能です。",
+    "Reload the page to continue with the latest version.": "最新バージョンを使用するにはページを再読み込みしてください。",
+    "Reload": "再読み込み",
     "Edit this price": "Edit this price",
     "Looking up...": "Looking up...",
     "Not found on models.dev": "Not found on models.dev",

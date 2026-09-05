@@ -3,6 +3,9 @@
   "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Estimation seulement. Stripe fixe la devise et le montant définitifs au paiement, à son taux en direct.",
   "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe convertit à son taux en direct sur la page de paiement ; c'est ce montant qui vous est débité.",
   "translation": {
+    "A new version of the console is available.": "Une nouvelle version de la console est disponible.",
+    "Reload the page to continue with the latest version.": "Rechargez la page pour continuer avec la dernière version.",
+    "Reload": "Recharger",
     "Edit this price": "Edit this price",
     "Looking up...": "Looking up...",
     "Not found on models.dev": "Not found on models.dev",

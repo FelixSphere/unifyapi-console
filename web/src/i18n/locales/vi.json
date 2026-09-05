@@ -3,6 +3,9 @@
   "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Chỉ là ước tính. Stripe quyết định loại tiền và số tiền cuối cùng khi thanh toán, theo tỷ giá của họ.",
   "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe quy đổi theo tỷ giá của họ trên trang thanh toán; số tiền ở đó là số bạn bị trừ.",
   "translation": {
+    "A new version of the console is available.": "Đã có phiên bản mới của bảng điều khiển.",
+    "Reload the page to continue with the latest version.": "Tải lại trang để tiếp tục với phiên bản mới nhất.",
+    "Reload": "Tải lại",
     "Edit this price": "Edit this price",
     "Looking up...": "Looking up...",
     "Not found on models.dev": "Not found on models.dev",

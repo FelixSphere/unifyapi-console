@@ -28,12 +28,17 @@ import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { toast } from 'sonner'
 
-import { getStatus } from '@/lib/api'
+import { api, getStatus } from '@/lib/api'
 import { installBuildMetadata } from '@/lib/build-metadata'
 import { applyFaviconToDom } from '@/lib/dom-utils'
 import '@/lib/dayjs'
 import { initializeFrontendCache } from '@/lib/frontend-cache'
 import { handleServerError } from '@/lib/handle-server-error'
+import {
+  getStaleBundleReason,
+  isServerFailure,
+  subscribeStaleBundle,
+} from '@/lib/stale-bundle'
 
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
@@ -73,6 +78,8 @@ const queryClient = new QueryClient({
     },
     mutations: {
       onError: (error) => {
+        // A stale bundle is not a server fault; the reload prompt covers it.
+        if (getStaleBundleReason(error)) return
         handleServerError(error)
 
         if (error instanceof AxiosError) {
@@ -85,11 +92,12 @@ const queryClient = new QueryClient({
   },
   queryCache: new QueryCache({
     onError: (error) => {
-      if (error instanceof AxiosError) {
-        if (error.response?.status === 500) {
-          toast.error(i18next.t('Internal Server Error!'))
-          router.navigate({ to: '/500' })
-        }
+      // /500 is for genuine server failures (status >= 500) only. A tab still
+      // running the bundle from before a release gets 404s for endpoints that
+      // no longer exist; those raise the reload prompt below instead.
+      if (isServerFailure(error)) {
+        toast.error(i18next.t('Internal Server Error!'))
+        router.navigate({ to: '/500' })
       }
     },
   }),
@@ -102,6 +110,43 @@ const router = createRouter({
   defaultPreload: 'intent',
   defaultPreloadStaleTime: 0,
 })
+
+// Stale-bundle handling: prompt once, never reload on the user's behalf (a
+// form half filled in must survive). See lib/stale-bundle.ts.
+subscribeStaleBundle(() => {
+  toast.info(i18next.t('A new version of the console is available.'), {
+    id: 'stale-bundle',
+    duration: Number.POSITIVE_INFINITY,
+    description: i18next.t(
+      'Reload the page to continue with the latest version.'
+    ),
+    action: {
+      label: i18next.t('Reload'),
+      onClick: () => window.location.reload(),
+    },
+  })
+})
+// Besides comparing the build id on every API response, probe the server on
+// an interval and when the tab comes back to the foreground: a tab left open
+// across a release would otherwise only learn of it from its next failure.
+;(function watchServerBuild() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  const PROBE_INTERVAL_MS = 5 * 60 * 1000
+  const PROBE_MIN_GAP_MS = 60 * 1000
+  let lastProbeAt = Date.now()
+  const probe = () => {
+    if (Date.now() - lastProbeAt < PROBE_MIN_GAP_MS) return
+    lastProbeAt = Date.now()
+    // The response interceptor reads X-UnifyAPI-Build; the body is not needed.
+    api.get('/api/status', { skipErrorHandler: true }).catch(() => {
+      /* offline or rate limited: the next probe tries again */
+    })
+  }
+  window.setInterval(probe, PROBE_INTERVAL_MS)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') probe()
+  })
+})()
 
 // Register the router instance for type safety
 declare module '@tanstack/react-router' {
