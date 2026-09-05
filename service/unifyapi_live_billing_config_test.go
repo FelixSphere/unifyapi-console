@@ -175,3 +175,101 @@ func TestWorstCaseMarginDoesNotGetWorse(t *testing.T) {
 	t.Logf("worst-case margin %.2f%% (%s) against channel %s at %g x list",
 		thinnest, thinnestAt, worstChannel, worstCost)
 }
+
+// --- purchasing cost coverage -------------------------------------------
+
+type liveChannels struct {
+	Channels []struct {
+		ID     string `json:"id"`
+		Name   string `json:"name"`
+		Models int    `json:"models"`
+	} `json:"channels"`
+}
+
+func loadLiveChannels(t *testing.T) liveChannels {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Clean(
+		"../setting/ratio_setting/testdata/production-channels-2026-09-05.json"))
+	require.NoError(t, err)
+	var c liveChannels
+	require.NoError(t, json.Unmarshal(raw, &c))
+	require.NotEmpty(t, c.Channels)
+	return c
+}
+
+// uncostedChannelsAsOf20260905 are enabled channels with no purchasing ratio.
+//
+// Every one is an OpenRouter channel, and every Flatkey channel has one -- so
+// this is a category that was missed wholesale, not a scatter of oversights.
+//
+// Pinned rather than fixed here because the real cost of an OpenRouter route is
+// a commercial fact only the operator knows. The list exists so the number
+// cannot grow unnoticed, and so that shrinking it is visible progress.
+var uncostedChannelsAsOf20260905 = 29
+
+// TestEveryServingChannelHasAPurchasingCost.
+//
+// An unconfigured channel is costed at the vendor's LIST price, which is not a
+// neutral default once anything is discounted: at the current 0.9 it renders as
+// a steady 11% loss on every request that routes there.
+//
+// That is the failure worth naming. The gap does not look like missing data on
+// the profit or settlement screens -- it looks like a model losing money, which
+// is a conclusion someone will act on. Reconciliation cannot tell the two apart,
+// because "cost equals list" is exactly what an unpriced channel produces.
+//
+// Routing is load balanced, so a model on both a costed and an uncosted channel
+// has a margin that depends on which one answered -- and the same request bills
+// the customer identically either way.
+func TestEveryServingChannelHasAPurchasingCost(t *testing.T) {
+	cfg := loadLiveConfig(t)
+	channels := loadLiveChannels(t)
+
+	var uncosted []string
+	for _, ch := range channels.Channels {
+		if _, ok := cfg.ChannelCostRatio[ch.ID]; !ok {
+			uncosted = append(uncosted, ch.ID+" "+ch.Name)
+		}
+	}
+
+	assert.LessOrEqual(t, len(uncosted), uncostedChannelsAsOf20260905,
+		"%d enabled channels have no purchasing cost, up from %d. Each one is costed at the "+
+			"vendor's list price, so its traffic reports as an 11%% loss at today's 0.9 sale "+
+			"price rather than as missing configuration:\n  %v",
+		len(uncosted), uncostedChannelsAsOf20260905, uncosted)
+
+	if len(uncosted) < uncostedChannelsAsOf20260905 {
+		t.Logf("purchasing cost coverage improved: %d uncosted, was %d. Lower the constant.",
+			len(uncosted), uncostedChannelsAsOf20260905)
+	}
+}
+
+// TestMarginIsUnmeasuredNotNegativeOnUncostedChannels states the distinction in
+// the one place someone will look after reading a red number on the profit
+// screen.
+//
+// With the sale at 0.9 and an uncosted channel at 1.0, reconciliation reports
+// -11.1%. The true margin is unknown, not negative, and the difference decides
+// whether the right response is "raise the price" or "fill in the ratio".
+func TestMarginIsUnmeasuredNotNegativeOnUncostedChannels(t *testing.T) {
+	cfg := loadLiveConfig(t)
+
+	const uncostedRatio = 1.0 // what GetChannelCostRatio returns when unset
+	sale := 0.0
+	for _, models := range cfg.GroupModelDiscount {
+		for _, discount := range models {
+			if discount > sale {
+				sale = discount
+			}
+		}
+	}
+	require.Greater(t, sale, 0.0)
+
+	apparent := (sale - uncostedRatio) / sale * 100
+	assert.Less(t, apparent, 0.0,
+		"an uncosted channel must look like a loss for this test to be about anything")
+	assert.InDelta(t, -11.11, apparent, 0.01,
+		"at a %g sale price an uncosted channel reports %.2f%%. If this number moves, the "+
+			"reconciliation screens are telling operators something different and the docs "+
+			"explaining it need to change too.", sale, apparent)
+}
