@@ -58,6 +58,7 @@ type CreditPool struct {
 type CreditPoolLot struct {
 	Id                  int     `json:"id"`
 	PoolId              int     `json:"pool_id" gorm:"index;not null"`
+	ContributionId      int     `json:"contribution_id" gorm:"index;default:0"`
 	ChannelId           int     `json:"channel_id" gorm:"index;default:0"`
 	SourceType          string  `json:"source_type" gorm:"type:varchar(24);index;not null"`
 	ContributorTenantId int     `json:"contributor_tenant_id" gorm:"index;default:0"`
@@ -157,6 +158,10 @@ func CreateCreditPool(pool *CreditPool) error {
 }
 
 func AddCreditPoolLot(lot *CreditPoolLot) error {
+	return addCreditPoolLot(DB, lot)
+}
+
+func addCreditPoolLot(tx *gorm.DB, lot *CreditPoolLot) error {
 	if lot.PoolId <= 0 || lot.OriginalQuota <= 0 {
 		return errors.New("pool and positive quota are required")
 	}
@@ -166,7 +171,7 @@ func AddCreditPoolLot(lot *CreditPoolLot) error {
 	}
 	lot.SourceType = source
 	var pool CreditPool
-	if err := DB.Where("id = ? AND status = ?", lot.PoolId, CreditPoolStatusEnabled).First(&pool).Error; err != nil {
+	if err := tx.Where("id = ? AND status = ?", lot.PoolId, CreditPoolStatusEnabled).First(&pool).Error; err != nil {
 		return errors.New("active credit pool not found")
 	}
 	if source == CreditPoolSourceContributed && lot.ContributorTenantId <= 0 {
@@ -186,13 +191,13 @@ func AddCreditPoolLot(lot *CreditPoolLot) error {
 	}
 	if lot.ChannelId > 0 {
 		var count int64
-		if err := DB.Model(&Channel{}).Where("id = ?", lot.ChannelId).Count(&count).Error; err != nil || count != 1 {
+		if err := tx.Model(&Channel{}).Where("id = ?", lot.ChannelId).Count(&count).Error; err != nil || count != 1 {
 			return errors.New("channel not found")
 		}
 	}
 	if lot.ContributorTenantId > 0 {
 		var count int64
-		if err := DB.Model(&Tenant{}).Where("id = ?", lot.ContributorTenantId).Count(&count).Error; err != nil || count != 1 {
+		if err := tx.Model(&Tenant{}).Where("id = ?", lot.ContributorTenantId).Count(&count).Error; err != nil || count != 1 {
 			return errors.New("contributor tenant not found")
 		}
 	}
@@ -205,7 +210,7 @@ func AddCreditPoolLot(lot *CreditPoolLot) error {
 	if lot.Status == 0 {
 		lot.Status = CreditPoolStatusEnabled
 	}
-	return DB.Create(lot).Error
+	return tx.Create(lot).Error
 }
 
 func CreateTenantCreditGrant(grant *TenantCreditGrant) error {
