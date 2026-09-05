@@ -230,6 +230,21 @@ func SetApiRouter(router *gin.Engine) {
 			partnershipProgramRoute.PUT("/:id/customers/:customerId", controller.UpdatePartnershipCustomer)
 			partnershipProgramRoute.DELETE("/:id/customers/:customerId", controller.RemovePartnershipCustomer)
 		}
+		// UNIFYAPI-FORK: supplier credit supply. See docs/credit-supply.md.
+		creditSupplyRoute := apiRouter.Group("/credit-supply")
+		creditSupplyRoute.Use(middleware.RootAuth())
+		{
+			creditSupplyRoute.GET("/overview", controller.GetCreditSupplyOverview)
+			creditSupplyRoute.GET("/suppliers", controller.GetCreditSuppliers)
+			creditSupplyRoute.POST("/suppliers", controller.CreateCreditSupplier)
+			creditSupplyRoute.PUT("/suppliers/:id", controller.UpdateCreditSupplier)
+			creditSupplyRoute.GET("/lots", controller.GetCreditLots)
+			creditSupplyRoute.POST("/lots", controller.CreateCreditLot)
+			creditSupplyRoute.PUT("/lots/:id", controller.UpdateCreditLot)
+			creditSupplyRoute.POST("/lots/:id/transition", controller.TransitionCreditLot)
+			creditSupplyRoute.GET("/lots/:id/usage", controller.GetCreditLotUsage)
+			creditSupplyRoute.GET("/lots/:id/events", controller.GetCreditLotEvents)
+		}
 
 		// Custom OAuth provider management (root only)
 		customOAuthRoute := apiRouter.Group("/custom-oauth-provider")
