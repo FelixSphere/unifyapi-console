@@ -40,6 +40,7 @@ func setupCreditPoolControllerDB(t *testing.T) *gorm.DB {
 	require.NoError(t, db.AutoMigrate(
 		&model.User{}, &model.Tenant{}, &model.CreditPool{}, &model.CreditPoolLot{},
 		&model.TenantCreditGrant{}, &model.CreditPoolReservation{}, &model.CreditPoolReservationLot{},
+		&model.CreditContribution{}, &model.CreditContributionEvent{}, &model.CreditContributionPayout{},
 	))
 	t.Cleanup(func() {
 		model.DB, model.LOG_DB = previousDB, previousLogDB
