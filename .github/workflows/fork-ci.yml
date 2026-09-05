@@ -33,6 +33,9 @@ jobs:
       - name: Check brand and attribution invariants
         run: node scripts/check-brand-invariants.mjs
 
+      - name: Check Bun test-runner imports
+        run: node scripts/check-test-runner.mjs
+
       - run: bun run typecheck
 
       - run: bun run build
@@ -77,6 +80,12 @@ jobs:
       - run: go test ./...
         env:
           GOWORK: off
+
+      # The inherited application is not close to 90% repository-wide. Keep a
+      # hard, honest floor on the pure engine that decides tiered customer
+      # charges; expand this package list as other billing layers are isolated.
+      - name: Enforce billing-expression coverage
+        run: scripts/check-billing-coverage.sh
 
   perf-tools:
     # Gates scripts/perf/ -- the benchmark harness. Nothing here ships in the

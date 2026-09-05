@@ -6,7 +6,6 @@ GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
 Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
-import { describe, test } from 'bun:test'
 /*
 UNIFYAPI-FORK: the raw-ratio tabs must stay out of the billing section.
 
@@ -19,6 +18,7 @@ keys.
 
 So the decision is pinned here rather than left to the comment beside it.
 */
+import { describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'

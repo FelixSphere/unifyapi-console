@@ -6,7 +6,6 @@ GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
 Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
-import { describe, test } from 'bun:test'
 /*
 UNIFYAPI-FORK: tests for the extra-models form.
 
@@ -15,6 +14,7 @@ rules here are the difference between the two. The one that matters most is that
 a catalogued model cannot be entered — that is what keeps this table additive
 rather than another way to shadow a vetted price.
 */
+import { describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
 
 import type { ExtraModelDraft } from '../../types'

@@ -6,7 +6,6 @@ GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
 Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
-import { describe, test } from 'bun:test'
 /*
 UNIFYAPI-FORK: tests for the upstream purchasing-cost field.
 
@@ -16,6 +15,7 @@ a zero cost (which would make every margin look infinite and hide real spend), a
 cost above list slipping through unremarked, and a cleared field being persisted
 as 1.0 forever.
 */
+import { describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
 
 import {

@@ -6,7 +6,6 @@ GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
 Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
-import { describe, test } from 'bun:test'
 /*
 UNIFYAPI-FORK: tests for the profit view's logic.
 
@@ -14,6 +13,7 @@ This screen answers "am I making money, and how". Two classes of bug matter:
 showing a healthy margin on a line that is losing money, and showing a confident
 margin when there is no cost basis to compute one from. Both are here.
 */
+import { describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
 
 import type { ReconcileLine } from '../../types'

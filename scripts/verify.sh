@@ -8,11 +8,17 @@ export GOWORK=off
 echo "--> brand invariants (licence-critical)"
 node web/scripts/check-brand-invariants.mjs
 
+echo "--> Bun test-runner imports"
+node web/scripts/check-test-runner.mjs
+
 echo "--> go vet"
 go vet ./...
 
 echo "--> go test"
 go test ./model/ -count=1
+
+echo "--> billing coverage"
+scripts/check-billing-coverage.sh
 
 echo "--> web typecheck"
 (cd web && bun run typecheck)

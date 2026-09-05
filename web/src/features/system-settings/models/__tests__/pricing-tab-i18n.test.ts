@@ -6,7 +6,6 @@ GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
 Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
-import { describe, test } from 'bun:test'
 /*
 UNIFYAPI-FORK: the pricing tabs must not leak English into a Chinese console.
 
@@ -21,6 +20,7 @@ Both of these shipped wrong once and were only caught by eye:
 An untranslated key falls back to the English key itself, silently and without
 any console warning, so nothing but a test catches it.
 */
+import { describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
