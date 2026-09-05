@@ -101,7 +101,8 @@ finds the whole delta without consulting git history.
 - `.github/workflows/fork-ci.yml` — fork-owned CI.
 - `BRANDING.md` — this file.
 - `model/credit_supplier.go`, `model/credit_lot.go`, `model/credit_supply_consume.go`,
-  `service/credit_supply.go`, `controller/credit_supply.go`, `docs/credit-supply.md` —
+  `model/credit_supplier_portal.go`, `service/credit_supply.go`, `controller/credit_supply.go`,
+  `controller/credit_supplier_portal.go`, `docs/credit-supply.md` —
   the supplier credit supply: third-party vendor credits routed through a channel,
   drawn down at list price, settled to the supplier at an acquisition rate that
   doubles as the channel's `ChannelCostRatio`.

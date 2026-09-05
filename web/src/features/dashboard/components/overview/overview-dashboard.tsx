@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
+  Coins,
   ArrowRight,
   BookOpen,
   Check,
@@ -49,6 +50,7 @@ import { Button } from '@/components/ui/button'
 import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { fetchTokenKey, getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
+import { isSupplierLogin } from '@/features/supplier-portal/api'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getUserModels } from '@/lib/api'
 import { MOTION_TRANSITION } from '@/lib/motion'
@@ -84,6 +86,7 @@ const SETUP_GUIDE_CODE_PATTERN = [
 type DashboardActionPath =
   | '/keys'
   | '/wallet'
+  | '/supplier'
   | '/playground'
   | '/channels'
   | '/usage-logs'
@@ -103,6 +106,8 @@ interface QuickAction {
   to: DashboardActionPath
   icon: LucideIcon
   adminOnly?: boolean
+  // UNIFYAPI-FORK: shown only to logins linked to a credit supplier.
+  supplierOnly?: boolean
 }
 
 interface RequestExample {
@@ -474,6 +479,14 @@ export function OverviewDashboard() {
   const usedQuota = Number(user?.used_quota ?? 0)
   const isAdmin = Boolean(user?.role && user.role >= ROLE.ADMIN)
 
+  const supplierQuery = useQuery({
+    queryKey: ['supplier', 'me', 'status'],
+    queryFn: isSupplierLogin,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  })
+  const isSupplier = supplierQuery.data === true
+
   const apiKeysQuery = useQuery({
     queryKey: ['dashboard', 'overview', 'api-keys'],
     queryFn: async () => {
@@ -551,13 +564,24 @@ export function OverviewDashboard() {
         to: '/pricing',
         icon: BookOpen,
       },
+      {
+        title: t('Supplier portal'),
+        description: t('Your credit lots, draw-down and statements'),
+        to: '/supplier',
+        icon: Coins,
+        supplierOnly: true,
+      },
     ],
     [t]
   )
 
   const visibleQuickActions = useMemo(
-    () => quickActions.filter((action) => !action.adminOnly || isAdmin),
-    [isAdmin, quickActions]
+    () =>
+      quickActions.filter(
+        (action) =>
+          (!action.adminOnly || isAdmin) && (!action.supplierOnly || isSupplier)
+      ),
+    [isAdmin, isSupplier, quickActions]
   )
 
   const heroSignals = useMemo<HeroSignal[]>(

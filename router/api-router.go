@@ -245,6 +245,16 @@ func SetApiRouter(router *gin.Engine) {
 			creditSupplyRoute.GET("/lots/:id/usage", controller.GetCreditLotUsage)
 			creditSupplyRoute.GET("/lots/:id/events", controller.GetCreditLotEvents)
 		}
+		// UNIFYAPI-FORK: supplier portal -- an ordinary login mapped to a
+		// supplier by CreditSupplier.UserId. See controller/credit_supplier_portal.go.
+		supplierRoute := apiRouter.Group("/supplier")
+		supplierRoute.Use(middleware.UserAuth(), middleware.DisableCache())
+		{
+			supplierRoute.GET("/me", controller.GetSupplierPortal)
+			supplierRoute.POST("/lots", middleware.CriticalRateLimit(), controller.SubmitSupplierLot)
+			supplierRoute.GET("/usage", controller.GetSupplierUsage)
+			supplierRoute.GET("/statements", controller.GetSupplierStatements)
+		}
 
 		// Custom OAuth provider management (root only)
 		customOAuthRoute := apiRouter.Group("/custom-oauth-provider")
