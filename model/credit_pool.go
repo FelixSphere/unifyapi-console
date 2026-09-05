@@ -53,7 +53,12 @@ type CreditPool struct {
 	UpdatedAt    int64  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-// CreditPoolLot records where capacity came from. Quota is provider face-value
+// CreditPoolLot records where capacity came from.
+//
+// Ratios are plain float64 columns. They were decimal(10,6)/decimal(12,8)
+// until the SQLite migrator proved unable to re-parse that DDL on a restart
+// ("invalid DDL, unbalanced brackets"), which killed the process on its
+// second start. See TestMigrationIsIdempotentOnSQLite. Quota is provider face-value
 // quota, not what a discounted customer would have paid.
 type CreditPoolLot struct {
 	Id                  int     `json:"id"`
@@ -64,7 +69,7 @@ type CreditPoolLot struct {
 	Label               string  `json:"label" gorm:"type:varchar(160)"`
 	OriginalQuota       int64   `json:"original_quota" gorm:"not null"`
 	RemainingQuota      int64   `json:"remaining_quota" gorm:"index;not null"`
-	AcquisitionRatio    float64 `json:"acquisition_ratio" gorm:"type:decimal(10,6);default:0"`
+	AcquisitionRatio    float64 `json:"acquisition_ratio" gorm:"default:0"`
 	ExpiresAt           int64   `json:"expires_at" gorm:"index;default:0"`
 	Status              int     `json:"status" gorm:"type:int;default:1;index"`
 	CreatedAt           int64   `json:"created_at" gorm:"autoCreateTime"`
@@ -100,8 +105,8 @@ type CreditPoolReservation struct {
 	ChannelId        int     `json:"channel_id" gorm:"index;default:0"`
 	CustomerQuota    int64   `json:"customer_quota" gorm:"not null"`
 	PoolQuota        int64   `json:"pool_quota" gorm:"not null"`
-	CustomerRatio    float64 `json:"customer_ratio" gorm:"type:decimal(12,8);not null"`
-	ChannelCostRatio float64 `json:"channel_cost_ratio" gorm:"type:decimal(12,8);not null"`
+	CustomerRatio    float64 `json:"customer_ratio" gorm:"not null"`
+	ChannelCostRatio float64 `json:"channel_cost_ratio" gorm:"not null"`
 	Status           string  `json:"status" gorm:"type:varchar(16);index;not null"`
 	CreatedAt        int64   `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt        int64   `json:"updated_at" gorm:"autoUpdateTime"`
