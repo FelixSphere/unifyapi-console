@@ -389,6 +389,11 @@ func maxInt(value, floor int) int {
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
+	// UNIFYAPI-FORK: draw the supplier credit lot down before anything can
+	// return early. Pool accounting protects the supplier's balance and must
+	// run even when consume logging itself is switched off.
+	RecordCreditSupplyConsumption(params.ChannelId, params.ModelName,
+		params.PromptTokens, cachedTokensFromOther(params.Other), params.CompletionTokens)
 	if !common.LogConsumeEnabled {
 		return
 	}

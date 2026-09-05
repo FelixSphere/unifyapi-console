@@ -234,6 +234,12 @@ func reconcileKey(row model.UsageRow, groupBy GroupBy) (key, label string) {
 // endpoint the request hit. Model authorship is deliberately irrelevant:
 // gpt-4o routed through OpenRouter is payable to OpenRouter, not OpenAI.
 func UpstreamVendor(row model.UsageRow) (key, label string) {
+	// UNIFYAPI-FORK: a channel backed by a credit-supply lot is settled with the
+	// supplier who sold us the credits, not with the vendor whose host it talks
+	// to. See model/credit_supplier.go.
+	if supplierKey, supplierLabel, ok := model.LookupChannelSupplier(row.ChannelID); ok {
+		return supplierKey, supplierLabel
+	}
 	raw := model.NormalizeChannelBaseURL(row.ChannelBaseURL)
 	host := ""
 	if parsed, err := url.Parse(raw); err == nil {
