@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
@@ -46,6 +48,12 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	}
 	delta := actualQuota - s.preConsumedQuota
 	if delta == 0 {
+		// Promotional funding must finalize its reservation even when the
+		// estimate was exact; wallet/subscription Settle(0) are harmless no-ops.
+		if err := s.funding.Settle(0); err != nil {
+			return err
+		}
+		s.fundingSettled = true
 		s.settled = true
 		return nil
 	}
@@ -141,6 +149,9 @@ func (s *BillingSession) needsRefundLocked() bool {
 	if sub, ok := s.funding.(*SubscriptionFunding); ok && sub.preConsumed > 0 {
 		return true
 	}
+	if promo, ok := s.funding.(*PromoFunding); ok && promo.preConsumed > 0 {
+		return true
+	}
 	return false
 }
 
@@ -213,6 +224,15 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 			}
 			s.tokenConsumed = 0
 		}
+		if errors.Is(err, model.ErrCreditGrantInsufficient) || errors.Is(err, model.ErrCreditPoolInventoryShortage) || errors.Is(err, model.ErrCreditPoolUnavailable) {
+			return types.NewErrorWithStatusCode(
+				fmt.Errorf("promotional credits are no longer available: %w", err),
+				types.ErrorCodeInsufficientUserQuota,
+				http.StatusConflict,
+				types.ErrOptionWithSkipRetry(),
+				types.ErrOptionWithNoRecordErrorLog(),
+			)
+		}
 		// TODO: model 层应定义哨兵错误（如 ErrNoActiveSubscription），用 errors.Is 替代字符串匹配
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "no active subscription") || strings.Contains(errMsg, "subscription quota insufficient") {
@@ -252,6 +272,14 @@ func (s *BillingSession) reserveFunding(delta int) error {
 			)
 		}
 		return nil
+	case *PromoFunding:
+		if err := funding.Reserve(delta); err != nil {
+			if errors.Is(err, model.ErrCreditGrantInsufficient) || errors.Is(err, model.ErrCreditPoolInventoryShortage) {
+				return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusConflict, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+			}
+			return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+		}
+		return nil
 	default:
 		return types.NewError(fmt.Errorf("unsupported funding source: %s", s.funding.Source()), types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 	}
@@ -268,6 +296,10 @@ func (s *BillingSession) rollbackFundingReserve(delta int) {
 	case *SubscriptionFunding:
 		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, -int64(delta)); err != nil {
 			common.SysLog("error rolling back subscription funding reserve: " + err.Error())
+		}
+	case *PromoFunding:
+		if err := funding.RollbackReserve(delta); err != nil {
+			common.SysLog("error rolling back promotional funding reserve: " + err.Error())
 		}
 	}
 }
@@ -313,6 +345,8 @@ func (s *BillingSession) shouldTrust(c *gin.Context) bool {
 		// 2. SubscriptionFunding.PreConsume 忽略参数，始终用 s.amount 预扣
 		// 3. 若信任旁路将 effectiveQuota 设为 0，会导致 preConsumedQuota 与实际订阅预扣不一致
 		return false
+	case BillingSourcePromotional:
+		return false
 	default:
 		return false
 	}
@@ -336,6 +370,9 @@ func (s *BillingSession) syncRelayInfo() {
 		info.SubscriptionId = 0
 		info.SubscriptionPreConsumed = 0
 	}
+	if promo, ok := s.funding.(*PromoFunding); ok {
+		info.CreditReservationId = promo.reservationId
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +383,22 @@ func (s *BillingSession) syncRelayInfo() {
 func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preConsumedQuota int) (*BillingSession, *types.NewAPIError) {
 	if relayInfo == nil {
 		return nil, types.NewError(fmt.Errorf("relayInfo is nil"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
+	}
+
+	if relayInfo.CreditPoolId > 0 && relayInfo.CreditGrantId > 0 {
+		customerRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
+		costRatio := ratio_setting.GetChannelCostRatio(relayInfo.ChannelId)
+		session := &BillingSession{
+			relayInfo: relayInfo,
+			funding: &PromoFunding{
+				relayInfo: relayInfo, grantId: relayInfo.CreditGrantId, poolId: relayInfo.CreditPoolId,
+				customerRatio: customerRatio, costRatio: costRatio,
+			},
+		}
+		if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {
+			return nil, apiErr
+		}
+		return session, nil
 	}
 
 	pref := common.NormalizeBillingPreference(relayInfo.UserSetting.BillingPreference)

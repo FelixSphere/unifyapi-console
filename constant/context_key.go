@@ -52,6 +52,11 @@ const (
 	ContextKeyUserGroup   ContextKey = "user_group"
 	ContextKeyUsingGroup  ContextKey = "group"
 	ContextKeyUserName    ContextKey = "username"
+	// UNIFYAPI-FORK: promotional credits route through an existing channel
+	// group while retaining an independent funding source and inventory meter.
+	ContextKeyCreditPoolId       ContextKey = "credit_pool_id"
+	ContextKeyCreditGrantId      ContextKey = "credit_grant_id"
+	ContextKeyCreditPricingGroup ContextKey = "credit_pricing_group"
 
 	ContextKeyLocalCountTokens ContextKey = "local_count_tokens"
 

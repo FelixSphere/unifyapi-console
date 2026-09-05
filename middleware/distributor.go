@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -101,6 +102,26 @@ func Distribute() func(c *gin.Context) {
 						common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 					}
 				}
+				// UNIFYAPI-FORK: promotional grants choose an existing dedicated
+				// routing group. If the pool has no usable channel/inventory we clear
+				// the grant context and fall back to the caller's normal paid group.
+				normalUsingGroup := usingGroup
+				var creditRoute *model.CreditPoolRoute
+				userId := common.GetContextKeyInt(c, constant.ContextKeyUserId)
+				if route, routeErr := model.ResolveCreditPoolRoute(userId, modelRequest.Model); routeErr != nil {
+					logger.LogWarn(c, "credit pool route lookup failed: "+routeErr.Error())
+				} else if route != nil {
+					creditRoute = route
+					usingGroup = route.RoutingGroup
+					pricingGroup := normalUsingGroup
+					if pricingGroup == "auto" {
+						pricingGroup = common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+					}
+					common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
+					common.SetContextKey(c, constant.ContextKeyCreditPoolId, route.PoolId)
+					common.SetContextKey(c, constant.ContextKeyCreditGrantId, route.GrantId)
+					common.SetContextKey(c, constant.ContextKeyCreditPricingGroup, pricingGroup)
+				}
 
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 					affinityUsable := false
@@ -140,24 +161,50 @@ func Distribute() func(c *gin.Context) {
 						RequestPath: c.Request.URL.Path,
 						Retry:       common.GetPointer(0),
 					})
-					if err != nil {
-						showGroup := usingGroup
-						if usingGroup == "auto" {
-							showGroup = fmt.Sprintf("auto(%s)", selectGroup)
-						}
-						message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Group": showGroup, "Model": modelRequest.Model, "Error": err.Error()})
-						// 如果错误，但是渠道不为空，说明是数据库一致性问题
-						//if channel != nil {
-						//	common.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
-						//	message = "数据库一致性已被破坏，请联系管理员"
-						//}
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, types.ErrorCodeModelNotFound)
-						return
+				}
+
+				poolChannelUsable := false
+				if creditRoute != nil && channel != nil && err == nil {
+					poolChannelUsable, err = model.CreditPoolChannelHasInventory(creditRoute.PoolId, channel.Id)
+				}
+				if creditRoute != nil && (!poolChannelUsable || err != nil || channel == nil) {
+					// A missing/depleted promotional route must never silently consume a
+					// grant on an unrelated channel. Continue through the normal paid path.
+					creditRoute = nil
+					channel = nil
+					err = nil
+					usingGroup = normalUsingGroup
+					selectGroup = ""
+					common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
+					common.SetContextKey(c, constant.ContextKeyCreditPoolId, 0)
+					common.SetContextKey(c, constant.ContextKeyCreditGrantId, 0)
+					common.SetContextKey(c, constant.ContextKeyCreditPricingGroup, "")
+					channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
+						Ctx:         c,
+						ModelName:   modelRequest.Model,
+						TokenGroup:  usingGroup,
+						RequestPath: c.Request.URL.Path,
+						Retry:       common.GetPointer(0),
+					})
+				}
+
+				if err != nil {
+					showGroup := usingGroup
+					if usingGroup == "auto" {
+						showGroup = fmt.Sprintf("auto(%s)", selectGroup)
 					}
-					if channel == nil {
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
-						return
-					}
+					message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Group": showGroup, "Model": modelRequest.Model, "Error": err.Error()})
+					// 如果错误，但是渠道不为空，说明是数据库一致性问题
+					//if channel != nil {
+					//	common.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
+					//	message = "数据库一致性已被破坏，请联系管理员"
+					//}
+					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, types.ErrorCodeModelNotFound)
+					return
+				}
+				if channel == nil {
+					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+					return
 				}
 			}
 		}

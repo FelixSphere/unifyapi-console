@@ -127,6 +127,12 @@ type RelayInfo struct {
 	// BillingSource indicates whether this request is billed from wallet quota or subscription.
 	// "" or "wallet" => wallet; "subscription" => subscription
 	BillingSource string
+	// CreditPoolId/CreditGrantId are populated by the distributor only when the
+	// selected channel can be funded by an active tenant promotional grant.
+	CreditPoolId        int
+	CreditGrantId       int
+	CreditReservationId int
+	CreditPricingGroup  string
 	// SubscriptionId is the user_subscriptions.id used when BillingSource == "subscription"
 	SubscriptionId int
 	// SubscriptionPreConsumed is the amount pre-consumed on subscription item (quota units or 1)
@@ -475,12 +481,15 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 	info := &RelayInfo{
 		Request: request,
 
-		RequestId:  reqId,
-		UserId:     common.GetContextKeyInt(c, constant.ContextKeyUserId),
-		UsingGroup: common.GetContextKeyString(c, constant.ContextKeyUsingGroup),
-		UserGroup:  common.GetContextKeyString(c, constant.ContextKeyUserGroup),
-		UserQuota:  common.GetContextKeyInt(c, constant.ContextKeyUserQuota),
-		UserEmail:  common.GetContextKeyString(c, constant.ContextKeyUserEmail),
+		RequestId:          reqId,
+		UserId:             common.GetContextKeyInt(c, constant.ContextKeyUserId),
+		UsingGroup:         common.GetContextKeyString(c, constant.ContextKeyUsingGroup),
+		UserGroup:          common.GetContextKeyString(c, constant.ContextKeyUserGroup),
+		UserQuota:          common.GetContextKeyInt(c, constant.ContextKeyUserQuota),
+		UserEmail:          common.GetContextKeyString(c, constant.ContextKeyUserEmail),
+		CreditPoolId:       common.GetContextKeyInt(c, constant.ContextKeyCreditPoolId),
+		CreditGrantId:      common.GetContextKeyInt(c, constant.ContextKeyCreditGrantId),
+		CreditPricingGroup: common.GetContextKeyString(c, constant.ContextKeyCreditPricingGroup),
 
 		OriginModelName: common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
 
@@ -506,6 +515,11 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 			estimatePromptTokens: common.GetContextKeyInt(c, constant.ContextKeyEstimatedTokens),
 		},
 	}
+	if info.CreditPoolId > 0 {
+		// Retries must stay inside the same logical pool. Customer attribution is
+		// carried separately in UserGroup and is never replaced by this value.
+		info.TokenGroup = info.UsingGroup
+	}
 
 	if info.RelayMode == relayconstant.RelayModeUnknown {
 		info.RelayMode = c.GetInt("relay_mode")
@@ -523,6 +537,19 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 	}
 
 	return info
+}
+
+// PricingGroup returns the customer contract group. Promotional requests route
+// through a pool group without allowing that infrastructure choice to reprice
+// the customer-facing grant.
+func (info *RelayInfo) PricingGroup() string {
+	if info != nil && info.CreditPoolId > 0 && info.CreditPricingGroup != "" {
+		return info.CreditPricingGroup
+	}
+	if info == nil {
+		return ""
+	}
+	return info.UsingGroup
 }
 
 func cloneRequestHeaders(c *gin.Context) map[string]string {
