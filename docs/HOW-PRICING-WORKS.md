@@ -65,7 +65,12 @@
 
 ⚠️ **一个分组的倍率如果是 1，那个组的客户就在付全价**，而页面上写着他有折扣。这种不一致从外部完全看不出来——两种情况的价目页长得一模一样。
 
-`TestEveryCustomerGetsAtLeastTenPercentOff` 就是守这条的：逐个客户组断言实付不高于官方价的 90%。
+`TestGroupRatioCanDeliverAPerCustomerDiscount` 证明**机制可行**——模型折扣为 1 时，
+单靠分组倍率就能把折扣送到实际扣费上。
+
+⚠️ **它不证明生产上真的配了。** 它自己设定倍率再断言，所以生产上五个分组全是 1.0
+（每个客户付全价）时它照样绿灯。要让它变成真守卫，得改成从生产快照读 `group_ratio`，
+像 `TestServedButUnsellableModelsAreDeclaredAndRefused` 读模型列表那样。
 
 ### 折扣怎么落到账上
 
