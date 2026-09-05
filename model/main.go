@@ -263,6 +263,11 @@ func migrateDB() error {
 		&Token{},
 		&User{},
 		&Tenant{}, // UNIFYAPI-BRAND: see model/tenant.go
+		&CreditPool{},
+		&CreditPoolLot{},
+		&TenantCreditGrant{},
+		&CreditPoolReservation{},
+		&CreditPoolReservationLot{},
 		&PartnershipProgram{},
 		&PartnershipCustomer{},
 		&PartnershipEnrollment{},
