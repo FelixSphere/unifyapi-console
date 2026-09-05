@@ -1,0 +1,197 @@
+{
+ "captured": "2026-08-31",
+ "source": "GET /api/pricing on app.unifyapi.ai",
+ "group_ratio": {
+  "Builder_hub_2026": 1,
+  "Chinhin": 1,
+  "GenAI": 1,
+  "UnifyAI": 1,
+  "Vip User": 1
+ },
+ "data": [
+  {
+   "model_name": "claude-fable-5",
+   "model_ratio": 4.5
+  },
+  {
+   "model_name": "claude-fable-5.1",
+   "model_ratio": 4.5
+  },
+  {
+   "model_name": "claude-opus-4-5",
+   "model_ratio": 2.25
+  },
+  {
+   "model_name": "claude-opus-4-6",
+   "model_ratio": 2.25
+  },
+  {
+   "model_name": "claude-opus-4-7",
+   "model_ratio": 2.25
+  },
+  {
+   "model_name": "claude-opus-4-8",
+   "model_ratio": 2.25
+  },
+  {
+   "model_name": "claude-opus-5",
+   "model_ratio": 2.25
+  },
+  {
+   "model_name": "claude-sonnet-4-5",
+   "model_ratio": 1.35
+  },
+  {
+   "model_name": "claude-sonnet-4-6",
+   "model_ratio": 1.35
+  },
+  {
+   "model_name": "claude-sonnet-5",
+   "model_ratio": 0.9
+  },
+  {
+   "model_name": "deepseek-v3",
+   "model_ratio": 0.12915
+  },
+  {
+   "model_name": "deepseek-v3.2",
+   "model_ratio": 0.081
+  },
+  {
+   "model_name": "deepseek-v3.2-thinking",
+   "model_ratio": 0.1305
+  },
+  {
+   "model_name": "deepseek-v4-flash",
+   "model_ratio": 0.198
+  },
+  {
+   "model_name": "deepseek-v4-pro",
+   "model_ratio": 0.5940000000000001
+  },
+  {
+   "model_name": "gemini-2.5-flash",
+   "model_ratio": 0.135
+  },
+  {
+   "model_name": "gemini-2.5-flash-image",
+   "model_ratio": 0.135
+  },
+  {
+   "model_name": "gemini-2.5-flash-lite",
+   "model_ratio": 0.045000000000000005
+  },
+  {
+   "model_name": "gemini-2.5-pro",
+   "model_ratio": 0.5625
+  },
+  {
+   "model_name": "gemini-3-flash-preview",
+   "model_ratio": 0.225
+  },
+  {
+   "model_name": "gemini-3-pro-image",
+   "model_ratio": 0.9
+  },
+  {
+   "model_name": "gemini-3.1-flash-image",
+   "model_ratio": 0.225
+  },
+  {
+   "model_name": "gemini-3.1-flash-lite-preview",
+   "model_ratio": 0.1125
+  },
+  {
+   "model_name": "gemini-3.1-pro-preview",
+   "model_ratio": 0.9
+  },
+  {
+   "model_name": "gemini-flash-latest",
+   "model_ratio": 0.3375
+  },
+  {
+   "model_name": "gemini-flash-lite-latest",
+   "model_ratio": 0.135
+  },
+  {
+   "model_name": "gemini-pro-latest",
+   "model_ratio": 0.9
+  },
+  {
+   "model_name": "glm-5-turbo",
+   "model_ratio": 0.324
+  },
+  {
+   "model_name": "glm-5.1",
+   "model_ratio": 0.63
+  },
+  {
+   "model_name": "glm-5.2",
+   "model_ratio": 0.63
+  },
+  {
+   "model_name": "glm-5.3",
+   "model_ratio": 0.63
+  },
+  {
+   "model_name": "gpt-4o",
+   "model_ratio": 1.125
+  },
+  {
+   "model_name": "gpt-4o-mini",
+   "model_ratio": 0.0675
+  },
+  {
+   "model_name": "gpt-5",
+   "model_ratio": 0.5625
+  },
+  {
+   "model_name": "gpt-5-mini",
+   "model_ratio": 0.1125
+  },
+  {
+   "model_name": "gpt-5.4",
+   "model_ratio": 1.125
+  },
+  {
+   "model_name": "kimi-k2.5",
+   "model_ratio": 0.27
+  },
+  {
+   "model_name": "kimi-k2.6",
+   "model_ratio": 0.4275
+  },
+  {
+   "model_name": "kimi-k3",
+   "model_ratio": 1.35
+  },
+  {
+   "model_name": "nano-banana-pro-preview",
+   "model_ratio": 0.9
+  },
+  {
+   "model_name": "qwen3.5-flash",
+   "model_ratio": 0.045000000000000005
+  },
+  {
+   "model_name": "qwen3.5-plus",
+   "model_ratio": 0.18000000000000002
+  },
+  {
+   "model_name": "qwen3.6-plus",
+   "model_ratio": 0.225
+  },
+  {
+   "model_name": "qwen3.7-max",
+   "model_ratio": 1.125
+  },
+  {
+   "model_name": "qwen3.7-plus",
+   "model_ratio": 0.225
+  },
+  {
+   "model_name": "qwen3.8-max",
+   "model_ratio": 0.9
+  }
+ ]
+}
