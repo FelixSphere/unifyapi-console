@@ -58,7 +58,6 @@ type CreditPool struct {
 type CreditPoolLot struct {
 	Id                  int     `json:"id"`
 	PoolId              int     `json:"pool_id" gorm:"index;not null"`
-	ContributionId      int     `json:"contribution_id" gorm:"index;default:0"`
 	ChannelId           int     `json:"channel_id" gorm:"index;default:0"`
 	SourceType          string  `json:"source_type" gorm:"type:varchar(24);index;not null"`
 	ContributorTenantId int     `json:"contributor_tenant_id" gorm:"index;default:0"`

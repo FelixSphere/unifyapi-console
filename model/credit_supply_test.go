@@ -447,3 +447,48 @@ func TestRetirementLeavesAnAuditEvent(t *testing.T) {
 	assert.Equal(t, "system", events[0].Actor)
 	assert.Equal(t, CreditLotStatusExhausted, events[0].ToStatus)
 }
+
+func TestSupplierApplicationBecomesPendingAndCannotSubmitUntilApproved(t *testing.T) {
+	setupCreditSupplyTestDB(t)
+	_, err := ApplyForCreditSupplier(9, CreditSupplierApplication{Name: "Acme Labs", ContactEmail: "ops@acme.example"})
+	require.Error(t, err, "attestation is required")
+	_, err = ApplyForCreditSupplier(9, CreditSupplierApplication{Name: "Acme Labs", Attested: true})
+	require.Error(t, err, "contact email is required")
+
+	applied, err := ApplyForCreditSupplier(9, CreditSupplierApplication{
+		Name: "Acme Labs (Tel Aviv)!", ContactEmail: "ops@acme.example", Note: "~$5k Anthropic startup credits", Attested: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, CreditSupplierStatusPending, applied.Status)
+	assert.Equal(t, "acme-labs-tel-aviv", applied.Code)
+	assert.Equal(t, CreditLotAttestationVersion, applied.AttestationVersion)
+	assert.NotZero(t, applied.AttestedAt)
+
+	_, err = ApplyForCreditSupplier(9, CreditSupplierApplication{Name: "Again", ContactEmail: "x@y.z", Attested: true})
+	require.Error(t, err, "one application per login")
+	second, err := ApplyForCreditSupplier(10, CreditSupplierApplication{Name: "Acme Labs (Tel Aviv)", ContactEmail: "b@acme.example", Attested: true})
+	require.NoError(t, err)
+	assert.Equal(t, "acme-labs-tel-aviv-2", second.Code, "codes stay unique")
+
+	seedSupplierChannel(t, 7)
+	channel := &Channel{Type: 14, Key: "sk-pending", Name: "pending", Models: "claude-sonnet-5", Group: "default"}
+	lot := &CreditLot{Vendor: "anthropic", FaceValueUSD: 100, AcquisitionRate: 0.5}
+	err = SubmitSupplierCreditLot(applied, channel, lot, "user:9")
+	require.ErrorIs(t, err, ErrCreditSupplierSuspended, "pending suppliers cannot submit lots")
+
+	// Rejecting needs a reason; approving clears it.
+	patch := *applied
+	patch.Status = CreditSupplierStatusRejected
+	require.Error(t, UpdateCreditSupplier(applied.Id, &patch))
+	patch.StatusReason = "could not verify the account"
+	require.NoError(t, UpdateCreditSupplier(applied.Id, &patch))
+	rejected, _ := GetCreditSupplierById(applied.Id)
+	assert.Equal(t, "could not verify the account", rejected.StatusReason)
+	patch.Status = CreditSupplierStatusActive
+	require.NoError(t, UpdateCreditSupplier(applied.Id, &patch))
+	approved, _ := GetCreditSupplierById(applied.Id)
+	assert.Equal(t, CreditSupplierStatusActive, approved.Status)
+	assert.Empty(t, approved.StatusReason)
+	require.NoError(t, SubmitSupplierCreditLot(approved, channel, lot, "user:9"))
+	assert.Equal(t, CreditLotStatusPending, lot.Status)
+}

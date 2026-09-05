@@ -41,6 +41,18 @@ describe('credit supply operator surface', () => {
     assert.match(section, /transfer_rights_confirmed: true/)
   })
 
+  test('supplier applications can be approved or rejected with a reason', () => {
+    const suppliers = readFileSync(
+      join(HERE, '../credit-supply-suppliers.tsx'),
+      'utf8'
+    )
+    assert.match(suppliers, /decide\(supplier, 'active'\)/)
+    assert.match(
+      suppliers,
+      /decide\(rejecting, 'rejected', rejectReason\.trim\(\)\)/
+    )
+  })
+
   test('rejection and suspension carry a reason the supplier will read', () => {
     assert.match(section, /ReasonDialog/)
     assert.match(section, /reason: reason\.trim\(\)/)

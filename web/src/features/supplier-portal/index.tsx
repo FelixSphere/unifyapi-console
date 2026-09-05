@@ -13,11 +13,10 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 // operator. See docs/credit-pool.md.
 
 import { useQuery } from '@tanstack/react-query'
-import { Coins, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { EmptyState } from '@/components/empty-state'
 import { SectionPageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -49,6 +48,7 @@ import {
   getSupplierStatements,
   getSupplierUsage,
 } from './api'
+import { SellCreditsCard } from './components/sell-credits-card'
 import { SubmitLotDialog } from './components/submit-lot-dialog'
 
 const STATEMENT_STATUS_LABELS = {
@@ -86,20 +86,23 @@ export function SupplierPortal() {
     }
   }, [usage.data])
 
-  if (me.isError) {
+  // Not a supplier yet, or an application still in flight: the page is the
+  // invitation and the application status, nothing else.
+  if (
+    me.isError ||
+    (me.data &&
+      (me.data.supplier.status === 'pending' ||
+        me.data.supplier.status === 'rejected'))
+  ) {
     return (
       <SectionPageLayout>
         <SectionPageLayout.Title>
           {t('Supplier portal')}
         </SectionPageLayout.Title>
         <SectionPageLayout.Content>
-          <EmptyState
-            icon={Coins}
-            title={t('This account is not a credit supplier')}
-            description={t(
-              'If you hold vendor credits you would like to sell to us, contact the operator. Once your login is linked to a supplier record, your lots, draw-down and statements appear here.'
-            )}
-          />
+          <div className='mx-auto max-w-3xl'>
+            <SellCreditsCard />
+          </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>
     )
@@ -142,6 +145,11 @@ export function SupplierPortal() {
                   ? t('Active')
                   : t('Suspended')}
               </Badge>
+              {data.supplier.status_reason ? (
+                <span className='text-muted-foreground text-xs'>
+                  {data.supplier.status_reason}
+                </span>
+              ) : null}
             </div>
 
             <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>

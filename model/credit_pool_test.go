@@ -25,7 +25,6 @@ func setupCreditPoolTest(t *testing.T) (*User, *User, *Tenant, *CreditPool) {
 		&Channel{},
 		&CreditPool{}, &CreditPoolLot{}, &TenantCreditGrant{},
 		&CreditPoolReservation{}, &CreditPoolReservationLot{},
-		&CreditContribution{}, &CreditContributionEvent{}, &CreditContributionPayout{},
 	))
 	require.NoError(t, DB.Create(&Channel{Id: 7, Name: "pool-channel-7", Key: "test", Status: 1}).Error)
 	require.NoError(t, DB.Create(&Channel{Id: 8, Name: "pool-channel-8", Key: "test", Status: 1}).Error)

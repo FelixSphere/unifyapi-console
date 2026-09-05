@@ -104,7 +104,27 @@ type portalSupplierView struct {
 	Code         string `json:"code"`
 	ContactEmail string `json:"contact_email"`
 	Status       string `json:"status"`
+	StatusReason string `json:"status_reason"`
 	Counterparty string `json:"counterparty"`
+}
+
+// ApplyForSupplier turns an ordinary login into a pending supplier. It carries
+// no credentials by design; those arrive per lot after approval.
+func ApplyForSupplier(c *gin.Context) {
+	var input model.CreditSupplierApplication
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid request body"})
+		return
+	}
+	supplier, err := model.ApplyForCreditSupplier(c.GetInt("id"), input)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	common.SysLog("credit supply: new supplier application #" + strconv.Itoa(supplier.Id) + " (" + supplier.Code + ")")
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
+		"id": supplier.Id, "code": supplier.Code, "status": supplier.Status,
+	}})
 }
 
 // portalLotView is a lot without the operator's note.
@@ -179,7 +199,7 @@ func GetSupplierPortal(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
 		"supplier": portalSupplierView{
 			Id: supplier.Id, Name: supplier.Name, Code: supplier.Code, ContactEmail: supplier.ContactEmail,
-			Status: supplier.Status, Counterparty: supplier.CounterpartyKey(),
+			Status: supplier.Status, StatusReason: supplier.StatusReason, Counterparty: supplier.CounterpartyKey(),
 		},
 		"lots":    views,
 		"totals":  totals,
@@ -270,7 +290,7 @@ func SubmitSupplierLot(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
 	}
-	common.SysLog("credit pool: supplier " + supplier.Code + " submitted lot #" + strconv.Itoa(lot.Id) + " on channel #" + strconv.Itoa(channel.Id))
+	common.SysLog("credit supply: supplier " + supplier.Code + " submitted lot #" + strconv.Itoa(lot.Id) + " on channel #" + strconv.Itoa(channel.Id))
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
 		"lot_id": lot.Id, "channel_id": channel.Id, "status": lot.Status,
 	}})

@@ -86,6 +86,23 @@ Supplier portal (authenticated user linked to a supplier), under
   tagged `supplier:<code>` and a `pending` lot.
 - `GET /usage?days=30`, `GET /statements`.
 
+## Becoming a supplier
+
+Any signed-in user can apply from **Wallet → Sell your unused vendor credits**
+or from `/supplier`. An application carries a name, a contact email, a free-text
+description of what they hold and an attestation that they own or control the
+vendor accounts — **no credentials**. It creates a `pending` supplier linked to
+the login. The operator approves or rejects it (with a reason the applicant
+reads) in Billing → Credit Supply → Suppliers. Only an `active` supplier can
+submit lots; a lot submission is where the upstream key arrives, into a
+disabled channel, per lot.
+
+```
+apply ──▶ pending ──approve──▶ active ◀──reinstate── suspended
+             │                   │
+             └──reject──▶ rejected └──suspend──▶ suspended
+```
+
 ## Audit trail and attestations
 
 Every lot carries an append-only history (`credit_lot_events`): created,
@@ -105,6 +122,15 @@ Two attestations are recorded on the lot itself:
 Rejecting or suspending requires a `reason`, stored as `status_reason` and
 shown to the supplier. Free-text fields (notes, payout terms, reasons) refuse
 anything that looks like a vendor API key — keys belong on the channel.
+
+## Superseded: the credit-contribution module
+
+PRs #56/#59 (`credit_contribution.go`, `/api/credit-contribution/*`, the Wallet
+"supplier offer" card and the `/ops` review screen) implemented the same supply
+side against promotional-pool inventory. They were consolidated into the
+credit supply so there is one supplier record, one lot ledger and one payable.
+What carried over: the no-credential application step, per-lot audit events,
+versioned attestations, reasons on every decision, and the secret-marker guard.
 
 ## Relationship to promotional credit pools
 
