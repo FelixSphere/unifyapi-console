@@ -27,6 +27,7 @@ import { RatioSettingsCard } from '../models/ratio-settings-card'
 import { SettlementSection } from '../models/settlement-section'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { CreditSupplySection } from './credit-supply-section'
 import { PartnershipProgramsSection } from './partnership-programs-section'
 
 const getModelDefaults = (settings: BillingSettings) => ({
@@ -166,6 +167,13 @@ const BILLING_SECTIONS = [
     id: 'settlement',
     titleKey: 'Settlement',
     build: () => <SettlementSection />,
+  },
+  {
+    // UNIFYAPI-FORK: after Settlement because it is the supply side of the
+    // same question -- what we owe the people whose credits we resold.
+    id: 'credit-supply',
+    titleKey: 'Credit Supply',
+    build: () => <CreditSupplySection />,
   },
   {
     id: 'payment',
