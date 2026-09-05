@@ -154,7 +154,7 @@ func TestSupplierSubmissionCreatesDisabledChannelAndPendingLot(t *testing.T) {
 
 func TestSuspendedSupplierCannotSubmit(t *testing.T) {
 	setupSupplierPortalTest(t)
-	supplier := &model.CreditSupplier{Name: "Acme Labs", Code: "acme", UserId: 42, Status: model.CreditSupplierStatusSuspended}
+	supplier := &model.CreditSupplier{Name: "Acme Labs", Code: "acme", UserId: 42, Status: model.CreditSupplierStatusSuspended, StatusReason: "verification pending"}
 	require.NoError(t, model.CreateCreditSupplier(supplier))
 	c, recorder := portalContext(t, 42, http.MethodPost, "/api/supplier/lots", `{
 		"vendor":"openai","face_value_usd":100,"acquisition_rate":0.4,"upstream_key":"sk-x","transfer_rights_confirmed":true
@@ -162,7 +162,7 @@ func TestSuspendedSupplierCannotSubmit(t *testing.T) {
 	SubmitSupplierLot(c)
 	payload := decode(t, recorder)
 	assert.Equal(t, false, payload["success"])
-	assert.Contains(t, payload["message"], "suspended")
+	assert.Contains(t, payload["message"], "not active")
 	var channelCount int64
 	require.NoError(t, model.DB.Model(&model.Channel{}).Count(&channelCount).Error)
 	assert.Zero(t, channelCount)
@@ -215,4 +215,28 @@ func TestSupplierSeesOnlyTheirOwnStatementsAndUsage(t *testing.T) {
 	assert.EqualValues(t, 2, days[0].(map[string]any)["requests"])
 	list, _ := ratio_setting.ListPriceUSD("claude-sonnet-5", 1_000_000, 0, 0)
 	assert.InDelta(t, 2*list, days[0].(map[string]any)["face_usd"], 1e-9)
+}
+
+func TestAnyLoginCanApplyAndSeesItsApplicationState(t *testing.T) {
+	setupSupplierPortalTest(t)
+	c, recorder := portalContext(t, 42, http.MethodPost, "/api/supplier/apply", `{"name":"Acme Labs","contact_email":"ops@acme.example","note":"OpenAI startup credits","attested":true}`)
+	ApplyForSupplier(c)
+	payload := decode(t, recorder)
+	require.Equal(t, true, payload["success"], recorder.Body.String())
+	assert.Equal(t, "pending", payload["data"].(map[string]any)["status"])
+
+	c, recorder = portalContext(t, 42, http.MethodGet, "/api/supplier/me", "")
+	GetSupplierPortal(c)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), `"status":"pending"`)
+
+	c, recorder = portalContext(t, 42, http.MethodPost, "/api/supplier/lots", `{"vendor":"openai","face_value_usd":100,"acquisition_rate":0.4,"upstream_key":"sk-x","transfer_rights_confirmed":true}`)
+	SubmitSupplierLot(c)
+	payload = decode(t, recorder)
+	assert.Equal(t, false, payload["success"])
+	assert.Contains(t, payload["message"], "not active")
+
+	c, recorder = portalContext(t, 42, http.MethodPost, "/api/supplier/apply", `{"name":"Twice","contact_email":"a@b.c","attested":true}`)
+	ApplyForSupplier(c)
+	assert.Equal(t, false, decode(t, recorder)["success"])
 }

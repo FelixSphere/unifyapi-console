@@ -251,6 +251,7 @@ func SetApiRouter(router *gin.Engine) {
 		supplierRoute.Use(middleware.UserAuth(), middleware.DisableCache())
 		{
 			supplierRoute.GET("/me", controller.GetSupplierPortal)
+			supplierRoute.POST("/apply", middleware.CriticalRateLimit(), controller.ApplyForSupplier)
 			supplierRoute.POST("/lots", middleware.CriticalRateLimit(), controller.SubmitSupplierLot)
 			supplierRoute.GET("/usage", controller.GetSupplierUsage)
 			supplierRoute.GET("/statements", controller.GetSupplierStatements)

@@ -42,7 +42,8 @@ export type SupplierPortalData = {
     name: string
     code: string
     contact_email: string
-    status: 'active' | 'suspended'
+    status: 'pending' | 'active' | 'suspended' | 'rejected'
+    status_reason: string
     counterparty: string
   }
   lots: SupplierLot[]
@@ -82,6 +83,13 @@ export type SupplierStatement = {
   created_at: number
   requests: number
   lines?: SupplierStatementLine[]
+}
+
+export type SupplierApplication = {
+  name: string
+  contact_email: string
+  note: string
+  attested: boolean
 }
 
 export type SupplierLotSubmission = {
@@ -133,6 +141,15 @@ export async function getSupplierUsage(days = 30) {
 export async function getSupplierStatements() {
   return unwrap(
     await api.get<Envelope<SupplierStatement[]>>('/api/supplier/statements')
+  )
+}
+
+export async function applyForSupplier(application: SupplierApplication) {
+  return unwrap(
+    await api.post<Envelope<{ id: number; code: string; status: string }>>(
+      '/api/supplier/apply',
+      application
+    )
   )
 }
 

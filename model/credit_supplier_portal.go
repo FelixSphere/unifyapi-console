@@ -18,7 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
-var ErrCreditSupplierSuspended = errors.New("this supplier account is suspended; contact the operator")
+var ErrCreditSupplierSuspended = errors.New("this supplier account is not active; lots can be submitted once the operator has approved it")
 
 // SubmitSupplierCreditLot records a supplier's own submission: a new channel
 // carrying their upstream key, born disabled, and a pending lot bound to it.

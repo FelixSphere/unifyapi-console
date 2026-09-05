@@ -16,7 +16,6 @@ import {
   suspendTenant,
   type TenantOverview,
 } from './api'
-import { CreditContributions } from './credit-contributions'
 import { CreditPools } from './credit-pools'
 import { compact, day, daysUntil, money, when } from './format'
 import { TenantDetail } from './tenant-detail'
@@ -232,8 +231,6 @@ export function OpsDashboard() {
       </div>
 
       <CreditPools />
-
-      <CreditContributions />
 
       {error ? (
         <div className='border-destructive/40 bg-destructive/5 text-destructive mb-4 rounded-lg border p-4 text-sm'>

@@ -106,8 +106,6 @@ interface QuickAction {
   to: DashboardActionPath
   icon: LucideIcon
   adminOnly?: boolean
-  // UNIFYAPI-FORK: shown only to logins linked to a credit supplier.
-  supplierOnly?: boolean
 }
 
 interface RequestExample {
@@ -565,23 +563,20 @@ export function OverviewDashboard() {
         icon: BookOpen,
       },
       {
-        title: t('Supplier portal'),
-        description: t('Your credit lots, draw-down and statements'),
+        title: isSupplier ? t('Supplier portal') : t('Sell unused credits'),
+        description: isSupplier
+          ? t('Your credit lots, draw-down and statements')
+          : t('Offer us vendor credits you will not use'),
         to: '/supplier',
         icon: Coins,
-        supplierOnly: true,
       },
     ],
-    [t]
+    [isSupplier, t]
   )
 
   const visibleQuickActions = useMemo(
-    () =>
-      quickActions.filter(
-        (action) =>
-          (!action.adminOnly || isAdmin) && (!action.supplierOnly || isSupplier)
-      ),
-    [isAdmin, isSupplier, quickActions]
+    () => quickActions.filter((action) => !action.adminOnly || isAdmin),
+    [isAdmin, quickActions]
   )
 
   const heroSignals = useMemo<HeroSignal[]>(

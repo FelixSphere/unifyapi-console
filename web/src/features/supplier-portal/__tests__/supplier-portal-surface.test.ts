@@ -42,11 +42,29 @@ describe('supplier portal surface', () => {
 
   test('a non-supplier login gets an explanation, not an error toast', () => {
     assert.match(api, /skipErrorHandler: true/)
-    assert.match(page, /This account is not a credit supplier/)
+    // A non-supplier is shown the invitation card instead of a dead end.
+    assert.match(page, /me\.isError \|\|/)
+    assert.match(page, /<SellCreditsCard \/>/)
   })
 
-  test('the dashboard offers the portal only to supplier logins', () => {
-    assert.match(dashboard, /supplierOnly: true/)
-    assert.match(dashboard, /isSupplierLogin/)
+  test('every customer is offered the way in', () => {
+    // The Wallet card and the dashboard action are for all logins; only the
+    // wording changes once the login is an approved supplier.
+    assert.match(dashboard, /Sell unused credits/)
+    assert.doesNotMatch(dashboard, /supplierOnly/)
+    const wallet = readFileSync(join(HERE, '../../wallet/index.tsx'), 'utf8')
+    assert.match(wallet, /<SellCreditsCard compact \/>/)
+    assert.doesNotMatch(wallet, /credit-contributions/)
+    const card = readFileSync(
+      join(HERE, '../components/sell-credits-card.tsx'),
+      'utf8'
+    )
+    assert.match(card, /applyForSupplier/)
+    assert.doesNotMatch(card, /upstream_key/)
+  })
+
+  test('the duplicate contribution module is gone', () => {
+    const ops = readFileSync(join(HERE, '../../ops/index.tsx'), 'utf8')
+    assert.doesNotMatch(ops, /CreditContributions/)
   })
 })

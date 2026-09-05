@@ -8,7 +8,11 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
 import { api } from '@/lib/api'
 
-export type CreditSupplierStatus = 'active' | 'suspended'
+export type CreditSupplierStatus =
+  | 'pending'
+  | 'active'
+  | 'suspended'
+  | 'rejected'
 
 export type CreditSupplier = {
   id: number
@@ -17,6 +21,9 @@ export type CreditSupplier = {
   contact_email: string
   user_id: number
   status: CreditSupplierStatus
+  status_reason: string
+  attestation_version: string
+  attested_at: number
   payout_terms: string
   note: string
   created_at: number
@@ -25,7 +32,7 @@ export type CreditSupplier = {
 
 export type CreditSupplierInput = Omit<
   CreditSupplier,
-  'id' | 'created_at' | 'updated_at'
+  'id' | 'created_at' | 'updated_at' | 'attestation_version' | 'attested_at'
 >
 
 export type CreditLotStatus =

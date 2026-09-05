@@ -29,8 +29,11 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/QuantumNous/new-api/common"
 
 	"gorm.io/gorm"
 )
@@ -41,8 +44,12 @@ var (
 )
 
 const (
+	// A supplier applies (pending), is approved (active) or turned down
+	// (rejected); an active supplier can be suspended and reinstated.
+	CreditSupplierStatusPending   = "pending"
 	CreditSupplierStatusActive    = "active"
 	CreditSupplierStatusSuspended = "suspended"
+	CreditSupplierStatusRejected  = "rejected"
 
 	// creditSupplierCounterpartyPrefix namespaces supplier settlement keys so
 	// they can never collide with the host-derived vendor keys in
@@ -62,6 +69,12 @@ type CreditSupplier struct {
 	// zeros.
 	UserId int    `json:"user_id" gorm:"not null;default:0;index"`
 	Status string `json:"status" gorm:"type:varchar(16);not null;default:'active';index"`
+	// StatusReason is what the applicant reads when rejected or suspended.
+	StatusReason string `json:"status_reason" gorm:"type:varchar(500)"`
+	// Attestation made by the applicant in the portal: they own or control the
+	// vendor accounts they intend to offer. Empty on operator-created suppliers.
+	AttestationVersion string `json:"attestation_version" gorm:"type:varchar(64)"`
+	AttestedAt         int64  `json:"attested_at" gorm:"not null;default:0"`
 	// PayoutTerms is how this supplier gets paid, in words ("monthly wire, net
 	// 15", "USDC on request"). It is operator memory, not payment credentials:
 	// account numbers do not belong here and the portal never shows it.
@@ -100,13 +113,94 @@ func ValidateCreditSupplier(s *CreditSupplier) error {
 	if s.UserId < 0 {
 		return errors.New("user id cannot be negative")
 	}
-	if s.Status != CreditSupplierStatusActive && s.Status != CreditSupplierStatusSuspended {
-		return errors.New("status must be active or suspended")
+	switch s.Status {
+	case CreditSupplierStatusPending, CreditSupplierStatusActive, CreditSupplierStatusSuspended, CreditSupplierStatusRejected:
+	default:
+		return errors.New("status must be pending, active, suspended or rejected")
 	}
-	if textLooksLikeProviderSecret(s.PayoutTerms, s.Note) {
+	s.StatusReason = strings.TrimSpace(s.StatusReason)
+	if (s.Status == CreditSupplierStatusRejected || s.Status == CreditSupplierStatusSuspended) && s.StatusReason == "" {
+		return errors.New("a reason is required when rejecting or suspending a supplier")
+	}
+	if textLooksLikeProviderSecret(s.PayoutTerms, s.Note, s.StatusReason) {
 		return ErrCreditLotSecretInText
 	}
 	return nil
+}
+
+// CreditSupplierApplication is what an ordinary login submits to become a
+// supplier. No credentials: those come later, per lot, once approved.
+type CreditSupplierApplication struct {
+	Name         string `json:"name"`
+	ContactEmail string `json:"contact_email"`
+	// Note is the applicant's own description: which vendors, roughly how much,
+	// how the credits were obtained.
+	Note     string `json:"note"`
+	Attested bool   `json:"attested"`
+}
+
+// supplierCodeFromName derives a slug; the caller uniquifies it.
+func supplierCodeFromName(name string) string {
+	slug := strings.ToLower(strings.TrimSpace(name))
+	slug = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(slug, "-")
+	slug = strings.Trim(slug, "-_")
+	if len(slug) > 40 {
+		slug = strings.Trim(slug[:40], "-_")
+	}
+	if len(slug) < 3 {
+		slug = "supplier-" + slug
+	}
+	return strings.Trim(slug, "-_")
+}
+
+// ApplyForCreditSupplier records a pending supplier for the calling login. One
+// application per login; the operator approves it from Billing -> Credit
+// Supply, after which the login can submit lots.
+func ApplyForCreditSupplier(userId int, input CreditSupplierApplication) (*CreditSupplier, error) {
+	if userId <= 0 {
+		return nil, errors.New("sign in to apply")
+	}
+	if !input.Attested {
+		return nil, errors.New("confirm that you own or control the vendor accounts you intend to offer")
+	}
+	supplier := &CreditSupplier{
+		Name:               strings.TrimSpace(input.Name),
+		ContactEmail:       strings.TrimSpace(input.ContactEmail),
+		Note:               strings.TrimSpace(input.Note),
+		UserId:             userId,
+		Status:             CreditSupplierStatusPending,
+		AttestationVersion: CreditLotAttestationVersion,
+		AttestedAt:         common.GetTimestamp(),
+	}
+	if supplier.Name == "" || supplier.ContactEmail == "" {
+		return nil, errors.New("a company or team name and a contact email are required")
+	}
+	base := supplierCodeFromName(supplier.Name)
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := ensureSupplierUserFree(tx, userId, 0); err != nil {
+			return errors.New("this login already has a supplier application or account")
+		}
+		supplier.Code = base
+		for attempt := 2; attempt < 50; attempt++ {
+			var count int64
+			if err := tx.Model(&CreditSupplier{}).Where("code = ?", supplier.Code).Count(&count).Error; err != nil {
+				return err
+			}
+			if count == 0 {
+				break
+			}
+			supplier.Code = fmt.Sprintf("%s-%d", base, attempt)
+		}
+		if err := ValidateCreditSupplier(supplier); err != nil {
+			return err
+		}
+		return tx.Create(supplier).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	invalidateChannelSupplierIndex()
+	return supplier, nil
 }
 
 func ensureSupplierUserFree(tx *gorm.DB, userId int, exceptSupplierId int) error {
@@ -163,6 +257,10 @@ func UpdateCreditSupplier(id int, patch *CreditSupplier) error {
 		existing.ContactEmail = patch.ContactEmail
 		existing.UserId = patch.UserId
 		existing.Status = patch.Status
+		existing.StatusReason = patch.StatusReason
+		if existing.Status == CreditSupplierStatusActive {
+			existing.StatusReason = ""
+		}
 		existing.PayoutTerms = patch.PayoutTerms
 		existing.Note = patch.Note
 		return tx.Save(&existing).Error
