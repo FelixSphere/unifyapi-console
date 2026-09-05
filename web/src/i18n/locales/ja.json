@@ -1,7 +1,7 @@
 {
-    "Approx. to pay:": "お支払い目安：",
-    "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "概算です。最終的な通貨と金額は、Stripe が決済ページでその時のレートに基づいて決定します。",
-    "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe が決済ページでその時のレートに換算します。実際の請求額はそちらの金額です。",
+  "Approx. to pay:": "お支払い目安：",
+  "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "概算です。最終的な通貨と金額は、Stripe が決済ページでその時のレートに基づいて決定します。",
+  "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe が決済ページでその時のレートに換算します。実際の請求額はそちらの金額です。",
   "translation": {
     "Edit this price": "Edit this price",
     "Looking up...": "Looking up...",

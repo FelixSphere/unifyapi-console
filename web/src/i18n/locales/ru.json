@@ -1,7 +1,7 @@
 {
-    "Approx. to pay:": "Примерно к оплате:",
-    "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Только оценка. Итоговую валюту и сумму Stripe определяет при оплате по своему текущему курсу.",
-    "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe пересчитает по своему текущему курсу на странице оплаты — списана будет та сумма.",
+  "Approx. to pay:": "Примерно к оплате:",
+  "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Только оценка. Итоговую валюту и сумму Stripe определяет при оплате по своему текущему курсу.",
+  "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe пересчитает по своему текущему курсу на странице оплаты — списана будет та сумма.",
   "translation": {
     "Edit this price": "Edit this price",
     "Looking up...": "Looking up...",

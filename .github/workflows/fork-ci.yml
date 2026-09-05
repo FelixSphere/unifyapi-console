@@ -1,11 +1,8 @@
 # Fork-owned CI. Deliberately a separate file from upstream's ci.yml so their
 # edits to that file never conflict with ours.
 #
-# Gate design note: copyright:check and format:check remain red on inherited
-# and historical fork files. They are represented below as explicit skipped
-# steps rather than continue-on-error failures, so a green job contains no
-# hidden red annotations. Re-evaluate at each upstream bump and promote them to
-# hard gates only after a dedicated cleanup makes the full checks green.
+# Every step in this workflow is a hard gate. Fork-owned fixes keep the pinned
+# upstream baseline green instead of hiding failures behind continue-on-error.
 name: Fork CI
 
 on:
@@ -43,15 +40,13 @@ jobs:
 
       - run: bun run build
 
-      - name: copyright:check (skipped - inherited baseline is red)
-        if: ${{ false }}
+      - name: Check copyright headers
         run: bun run copyright:check
 
-      - name: format:check (skipped - inherited baseline is red)
-        if: ${{ false }}
+      - name: Check formatting
         run: bun run format:check
 
-      - name: Test
+      - name: Test frontend
         run: bun test
 
   backend:

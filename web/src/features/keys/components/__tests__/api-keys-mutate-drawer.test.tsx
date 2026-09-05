@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { afterAll as after, afterEach, describe, test } from 'bun:test'
+import { afterAll, afterEach, describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
 
 import { Window } from 'happy-dom'
@@ -279,7 +279,7 @@ afterEach(async () => {
   document.body.replaceChildren()
 })
 
-after(() => {
+afterAll(() => {
   domWindow.close()
 })
 

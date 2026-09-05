@@ -14,5 +14,9 @@ echo "=== go test ./model/ ==="
 go test ./model/ -count=1 2>&1 | tail -1 || true
 echo "=== web typecheck ==="
 (cd web && bun run typecheck 2>&1 | grep -E 'error|^\$' | head -20) || true
-echo "=== web copyright:check (RED AT BASELINE on 2 upstream files) ==="
+echo "=== web copyright:check ==="
 (cd web && node scripts/add-copyright.mjs --check 2>&1 | tail -5) || true
+echo "=== web format:check ==="
+(cd web && bun run format:check 2>&1 | tail -25) || true
+echo "=== web tests ==="
+(cd web && bun test 2>&1 | tail -5) || true

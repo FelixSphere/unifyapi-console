@@ -1,7 +1,7 @@
 {
-    "Approx. to pay:": "Approx. to pay:",
-    "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.",
-    "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.",
+  "Approx. to pay:": "Approx. to pay:",
+  "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.",
+  "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.",
   "translation": {
     "Edit this price": "Edit this price",
     "Looking up...": "Looking up...",

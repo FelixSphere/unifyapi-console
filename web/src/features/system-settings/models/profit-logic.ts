@@ -1,4 +1,12 @@
 /*
+Copyright (C) 2026 FelixSphere
+
+This file is part of a modified version of new-api, distributed under the
+GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
+Upstream: https://github.com/QuantumNous/new-api
+Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
+*/
+/*
 UNIFYAPI-FORK: pure logic for the profit view.
 
 Split from the component for the usual reason -- this decides the numbers an
@@ -114,7 +122,8 @@ export function deriveMargin(line: ReconcileLine): DerivationStep[] {
     {
       labelKey: 'Upstream cost (modelled)',
       amountUSD: -line.cost_usd,
-      noteKey: 'Tokens x vendor official price x this channel purchasing ratio.',
+      noteKey:
+        'Tokens x vendor official price x this channel purchasing ratio.',
     },
     {
       labelKey: 'Margin',

@@ -1,4 +1,12 @@
 /*
+Copyright (C) 2026 FelixSphere
+
+This file is part of a modified version of new-api, distributed under the
+GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
+Upstream: https://github.com/QuantumNous/new-api
+Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
+*/
+/*
 UNIFYAPI-FORK: tests for the discount field's logic.
 
 This is the part of the pricing UI that decides money, so it is tested directly
@@ -67,7 +75,7 @@ describe('discountPayload', () => {
   })
 
   test('an invalid field is never silently persisted', () => {
-    assert.deepEqual(discountPayload({ 'gpt-4o': '0', 'o': 'abc' }), {})
+    assert.deepEqual(discountPayload({ 'gpt-4o': '0', o: 'abc' }), {})
   })
 })
 
@@ -94,7 +102,9 @@ describe('discountLabel', () => {
     assert.deepEqual(discountLabel(1), { kind: 'list' })
     const fifteen = discountLabel(0.85)
     assert.equal(fifteen.kind, 'discount')
-    assert.ok(fifteen.kind === 'discount' && Math.abs(fifteen.percent - 15) < 1e-9)
+    assert.ok(
+      fifteen.kind === 'discount' && Math.abs(fifteen.percent - 15) < 1e-9
+    )
   })
 
   test('a multiplier above 1 is a markup, not a discount', () => {

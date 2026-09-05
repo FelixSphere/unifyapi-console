@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { afterAll as after, describe, test } from 'bun:test'
+import { afterAll, describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
 
 import { Window } from 'happy-dom'
@@ -86,7 +86,7 @@ function changeInputValue(input: HTMLInputElement, value: string) {
 }
 
 describe('tool price validation', () => {
-  after(() => {
+  afterAll(() => {
     domWindow.close()
   })
 

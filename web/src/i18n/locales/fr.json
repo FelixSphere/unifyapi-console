@@ -1,7 +1,7 @@
 {
-    "Approx. to pay:": "À payer (env.) :",
-    "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Estimation seulement. Stripe fixe la devise et le montant définitifs au paiement, à son taux en direct.",
-    "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe convertit à son taux en direct sur la page de paiement ; c'est ce montant qui vous est débité.",
+  "Approx. to pay:": "À payer (env.) :",
+  "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Estimation seulement. Stripe fixe la devise et le montant définitifs au paiement, à son taux en direct.",
+  "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe convertit à son taux en direct sur la page de paiement ; c'est ce montant qui vous est débité.",
   "translation": {
     "Edit this price": "Edit this price",
     "Looking up...": "Looking up...",

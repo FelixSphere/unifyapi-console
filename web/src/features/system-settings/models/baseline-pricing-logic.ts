@@ -1,4 +1,12 @@
 /*
+Copyright (C) 2026 FelixSphere
+
+This file is part of a modified version of new-api, distributed under the
+GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
+Upstream: https://github.com/QuantumNous/new-api
+Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
+*/
+/*
 UNIFYAPI-FORK: pure logic for the official-price & discount tab.
 
 Split out of the component so it can be tested without mounting React. What is
@@ -65,7 +73,9 @@ export function discountLabel(discount: number): DiscountLabel {
 }
 
 /** invalidDiscountModels lists rows whose field cannot be saved. */
-export function invalidDiscountModels(drafts: Record<string, string>): string[] {
+export function invalidDiscountModels(
+  drafts: Record<string, string>
+): string[] {
   return Object.entries(drafts)
     .filter(([, raw]) => Number.isNaN(parseDiscount(raw)))
     .map(([model]) => model)

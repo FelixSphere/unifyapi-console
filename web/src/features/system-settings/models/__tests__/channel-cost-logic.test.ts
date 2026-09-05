@@ -1,4 +1,12 @@
 /*
+Copyright (C) 2026 FelixSphere
+
+This file is part of a modified version of new-api, distributed under the
+GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
+Upstream: https://github.com/QuantumNous/new-api
+Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
+*/
+/*
 UNIFYAPI-FORK: tests for the upstream purchasing-cost field.
 
 The number typed here becomes the cost basis of a reconciliation report finance
@@ -40,9 +48,14 @@ describe('parseCostRatio', () => {
 
   test('rejects a cost beyond the sanity bound', () => {
     // Paying more than 5x a vendor public price is not a contract, it is a typo.
-    assert.ok(Number.isNaN(parseCostRatio(String(MAX_CHANNEL_COST_RATIO + 0.01))))
+    assert.ok(
+      Number.isNaN(parseCostRatio(String(MAX_CHANNEL_COST_RATIO + 0.01)))
+    )
     assert.ok(Number.isNaN(parseCostRatio('99')))
-    assert.equal(parseCostRatio(String(MAX_CHANNEL_COST_RATIO)), MAX_CHANNEL_COST_RATIO)
+    assert.equal(
+      parseCostRatio(String(MAX_CHANNEL_COST_RATIO)),
+      MAX_CHANNEL_COST_RATIO
+    )
   })
 
   test('rejects text', () => {
@@ -77,7 +90,9 @@ describe('costLabel', () => {
     // it is almost always a mistake, so it must never classify as a discount.
     const label = costLabel(1.1)
     assert.equal(label.kind, 'above-list')
-    assert.ok(label.kind === 'above-list' && Math.abs(label.percent - 10) < 1e-9)
+    assert.ok(
+      label.kind === 'above-list' && Math.abs(label.percent - 10) < 1e-9
+    )
   })
 })
 

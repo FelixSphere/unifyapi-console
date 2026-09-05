@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Blocking pre-handoff check. Exits non-zero on anything that must not regress.
-# copyright:check is deliberately excluded: it is already red at v1.0.0-rc.23,
-# so it cannot distinguish our breakage from upstream's. See AGENT-WORKFLOW.md.
+# Blocking pre-handoff check. Every listed gate must be green.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.bun/bin:$PATH"
@@ -24,6 +22,12 @@ scripts/check-billing-coverage.sh
 
 echo "--> web typecheck"
 (cd web && bun run typecheck)
+
+echo "--> web copyright headers"
+(cd web && bun run copyright:check)
+
+echo "--> web formatting"
+(cd web && bun run format:check)
 
 echo "--> web tests"
 (cd web && bun test)
