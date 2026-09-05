@@ -197,64 +197,49 @@ func loadLiveChannels(t *testing.T) liveChannels {
 	return c
 }
 
-// uncostedChannelsAsOf20260905 are enabled channels with no purchasing ratio.
+// listPricedChannelsAsOf20260905 are enabled channels we buy from at the
+// vendor's list price -- no purchasing discount.
 //
-// Every one is an OpenRouter channel, and every Flatkey channel has one -- so
-// this is a category that was missed wholesale, not a scatter of oversights.
+// I first pinned this as "channels MISSING a cost ratio" and wrote it up as a
+// configuration gap. The operator corrected me: OpenRouter genuinely gives no
+// discount, so 1.0 is the true cost, not a placeholder. Every one of the 29 is
+// an OpenRouter channel and every Flatkey channel has a negotiated ratio, which
+// is why the split looked like an oversight -- it is a supplier fact.
 //
-// Pinned rather than fixed here because the real cost of an OpenRouter route is
-// a commercial fact only the operator knows. The list exists so the number
-// cannot grow unnoticed, and so that shrinking it is visible progress.
-var uncostedChannelsAsOf20260905 = 29
+// That makes the number below WORSE news, not better. The cost model is right,
+// so the loss is real: see TestListPricedChannelsSellBelowCost.
+//
+// The residual defect is smaller but worth naming: a deliberate 1.0 and a
+// forgotten one are indistinguishable in `options`, because both are simply
+// absent. Recording the intent is the fix, not filling in a number.
+var listPricedChannelsAsOf20260905 = 29
 
-// TestEveryServingChannelHasAPurchasingCost.
+// TestListPricedChannelsSellBelowCost.
 //
-// An unconfigured channel is costed at the vendor's LIST price, which is not a
-// neutral default once anything is discounted: at the current 0.9 it renders as
-// a steady 11% loss on every request that routes there.
+// 29 of 75 enabled channels buy at list price. The current sale price is 0.9 of
+// list. So every request routed to one of them loses 11.1%, and this is not a
+// modelling artifact -- it is what we actually pay against what we actually
+// charge.
 //
-// That is the failure worth naming. The gap does not look like missing data on
-// the profit or settlement screens -- it looks like a model losing money, which
-// is a conclusion someone will act on. Reconciliation cannot tell the two apart,
-// because "cost equals list" is exactly what an unpriced channel produces.
+// Routing is load balanced, so the same model on both a discounted and a
+// list-priced channel earns money or loses it depending on which one answered,
+// while the customer is billed identically either way. Margin per model is
+// therefore not a single number, and a reconciliation report that shows one is
+// averaging over a coin flip.
 //
-// Routing is load balanced, so a model on both a costed and an uncosted channel
-// has a margin that depends on which one answered -- and the same request bills
-// the customer identically either way.
-func TestEveryServingChannelHasAPurchasingCost(t *testing.T) {
+// This test does not fail on that state -- it is a commercial position the
+// operator holds knowingly. It fails if the exposure GROWS.
+func TestListPricedChannelsSellBelowCost(t *testing.T) {
 	cfg := loadLiveConfig(t)
 	channels := loadLiveChannels(t)
 
-	var uncosted []string
+	var listPriced []string
 	for _, ch := range channels.Channels {
 		if _, ok := cfg.ChannelCostRatio[ch.ID]; !ok {
-			uncosted = append(uncosted, ch.ID+" "+ch.Name)
+			listPriced = append(listPriced, ch.ID+" "+ch.Name)
 		}
 	}
 
-	assert.LessOrEqual(t, len(uncosted), uncostedChannelsAsOf20260905,
-		"%d enabled channels have no purchasing cost, up from %d. Each one is costed at the "+
-			"vendor's list price, so its traffic reports as an 11%% loss at today's 0.9 sale "+
-			"price rather than as missing configuration:\n  %v",
-		len(uncosted), uncostedChannelsAsOf20260905, uncosted)
-
-	if len(uncosted) < uncostedChannelsAsOf20260905 {
-		t.Logf("purchasing cost coverage improved: %d uncosted, was %d. Lower the constant.",
-			len(uncosted), uncostedChannelsAsOf20260905)
-	}
-}
-
-// TestMarginIsUnmeasuredNotNegativeOnUncostedChannels states the distinction in
-// the one place someone will look after reading a red number on the profit
-// screen.
-//
-// With the sale at 0.9 and an uncosted channel at 1.0, reconciliation reports
-// -11.1%. The true margin is unknown, not negative, and the difference decides
-// whether the right response is "raise the price" or "fill in the ratio".
-func TestMarginIsUnmeasuredNotNegativeOnUncostedChannels(t *testing.T) {
-	cfg := loadLiveConfig(t)
-
-	const uncostedRatio = 1.0 // what GetChannelCostRatio returns when unset
 	sale := 0.0
 	for _, models := range cfg.GroupModelDiscount {
 		for _, discount := range models {
@@ -265,11 +250,45 @@ func TestMarginIsUnmeasuredNotNegativeOnUncostedChannels(t *testing.T) {
 	}
 	require.Greater(t, sale, 0.0)
 
-	apparent := (sale - uncostedRatio) / sale * 100
-	assert.Less(t, apparent, 0.0,
-		"an uncosted channel must look like a loss for this test to be about anything")
-	assert.InDelta(t, -11.11, apparent, 0.01,
-		"at a %g sale price an uncosted channel reports %.2f%%. If this number moves, the "+
-			"reconciliation screens are telling operators something different and the docs "+
-			"explaining it need to change too.", sale, apparent)
+	const listCost = 1.0
+	lossPct := (listCost - sale) / sale * 100
+
+	assert.LessOrEqual(t, len(listPriced), listPricedChannelsAsOf20260905,
+		"%d enabled channels buy at list price, up from %d. At the current %g sale price each "+
+			"loses %.1f%% per request. Adding one widens a known loss:\n  %v",
+		len(listPriced), listPricedChannelsAsOf20260905, sale, lossPct, listPriced)
+
+	t.Logf("%d of %d enabled channels buy at list; selling at %g loses %.1f%% on their traffic",
+		len(listPriced), len(channels.Channels), sale, lossPct)
+}
+
+// TestDeepSeekUpstreamDiscountIsRecordedAsCost pins where the 0.7 lives.
+//
+// The operator's "DeepSeek is 0.7" is a SUPPLIER discount, and it belongs in
+// ChannelCostRatio. I spent a stretch treating it as a customer-facing discount
+// and computing margins that were wrong in both direction and magnitude; it was
+// already configured correctly the whole time.
+//
+// Pinned because the two readings produce opposite actions -- one lowers what we
+// charge, the other lowers what we pay -- and the difference is invisible in a
+// sentence like "DeepSeek is 70%".
+func TestDeepSeekUpstreamDiscountIsRecordedAsCost(t *testing.T) {
+	cfg := loadLiveConfig(t)
+
+	// The Flatkey channels serving the DeepSeek family, from the 2026-09-05
+	// abilities snapshot.
+	for channel, model := range map[string]string{
+		"164": "deepseek-v3",
+		"110": "deepseek-v3.2",
+		"97":  "deepseek-v3.2-thinking",
+		"165": "deepseek-v4-flash",
+		"170": "deepseek-v4-pro",
+	} {
+		ratio, ok := cfg.ChannelCostRatio[channel]
+		if assert.True(t, ok, "channel %s serves %s and must carry the negotiated 0.7", channel, model) {
+			assert.InDelta(t, 0.7, ratio, 1e-12,
+				"channel %s (%s): the supplier discount is 0.7. If it moved, margin moved with "+
+					"it, and every DeepSeek price decision rests on this number.", channel, model)
+		}
+	}
 }
