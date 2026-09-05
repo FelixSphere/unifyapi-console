@@ -26,6 +26,7 @@ import {
   refreshAuthentication,
 } from '@/lib/auth-session'
 import { getServerErrorMessageKey } from '@/lib/server-error-message'
+import { noteFailedRequest, observeServerBuild } from '@/lib/stale-bundle'
 import { useAuthStore } from '@/stores/auth-store'
 
 declare module 'axios' {
@@ -79,6 +80,8 @@ function redirectToSignIn(): void {
 
 api.interceptors.response.use(
   (response) => {
+    observeServerBuild(response.headers)
+
     if (response.config.acceptAuthRotation && response.data?.success === true) {
       applyAuthRotation(response.data.data)
     }
@@ -101,6 +104,9 @@ api.interceptors.response.use(
     const config = error?.config as ApiRequestConfig | undefined
     const skipErrorHandler = config?.skipErrorHandler
     const status = error?.response?.status
+    // A tab running a bundle from before a release is not seeing a server
+    // fault; the reload prompt (main.tsx) replaces the error toast.
+    const staleBundle = noteFailedRequest(error) !== null
 
     if (status === 401) {
       if (config && !config.skipAuthRefresh && !config.authRetry) {
@@ -128,7 +134,7 @@ api.interceptors.response.use(
       } else if (!skipErrorHandler) {
         toast.error(t('Session expired!'))
       }
-    } else if (!skipErrorHandler) {
+    } else if (!skipErrorHandler && !staleBundle) {
       const messageKey = getServerErrorMessageKey(error)
       const message = messageKey
         ? t(messageKey)
