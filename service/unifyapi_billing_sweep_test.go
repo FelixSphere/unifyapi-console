@@ -140,34 +140,49 @@ func TestACustomerDiscountNeverMovesUpstreamCost(t *testing.T) {
 	}
 }
 
-// TestDeepSeekSellsAtSeventyPercent pins the commercial decision of
-// 2026-08-31: the DeepSeek family goes to 0.7 for every existing customer.
+// TestEveryCustomerGetsAtLeastTenPercentOff enforces the public promise.
 //
-// Written as dollars rather than as a ratio so the number in the test is the
-// number on the invoice.
-func TestDeepSeekSellsAtSeventyPercent(t *testing.T) {
-	discounts := `{"deepseek-v3":0.7,"deepseek-v3.2":0.7,"deepseek-v3.2-thinking":0.7,` +
-		`"deepseek-v4-flash":0.7,"deepseek-v4-pro":0.7}`
-	withDiscount(t, discounts)
+// The pricing page states the vendor's list price and says every customer has a
+// discount of at least 10%. As of 2026-08-31 the model discounts were
+// deliberately reset to 1 so the page shows the vendor's true list price -- which
+// means the discount now has to come from the GROUP layer, and nothing checks
+// that it actually does.
+//
+// This is the check. A group whose effective ratio is 1 charges list price, and
+// every customer in it is being quoted a discount they are not getting.
+func TestEveryCustomerGetsAtLeastTenPercentOff(t *testing.T) {
+	// The customer-facing groups on production as of 2026-08-31.
+	groups := []string{"Builder_hub_2026", "Chinhin", "GenAI", "UnifyAI", "Vip User"}
 
-	// Official list, then what a customer pays at 0.7, for 1M in + 1M out.
-	cases := map[string]float64{
-		"deepseek-v4-flash": (0.44 + 1.32) * 0.7,
-		"deepseek-v4-pro":   (1.32 + 3.96) * 0.7,
-	}
-	for model, want := range cases {
-		require.InDelta(t, want, chargeUSD(t, model, "default", oneMillionEach()), 1e-6,
-			"%s must bill at 70%% of DeepSeek's published price", model)
-	}
+	previous := ratio_setting.GroupRatio2JSONString()
+	t.Cleanup(func() { require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(previous)) })
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(
+		`{"Builder_hub_2026":0.9,"Chinhin":0.9,"GenAI":0.9,"UnifyAI":0.9,"Vip User":0.85}`))
+	withDiscount(t, `{}`)
 
-	// And the family moves together -- a partial rollout is the shape of a
-	// mistake, not of a decision.
-	for _, model := range []string{
-		"deepseek-v3", "deepseek-v3.2", "deepseek-v3.2-thinking",
-		"deepseek-v4-flash", "deepseek-v4-pro",
-	} {
-		require.InDelta(t, 0.7, ratio_setting.GetModelDiscount(model), 1e-12,
-			"%s is in the DeepSeek family and must carry the same 0.7", model)
+	// claude-sonnet-5 lists at $2 in / $10 out, so 1M each is $12.00 at list.
+	const listUSD = 12.0
+	for _, group := range groups {
+		t.Run(group, func(t *testing.T) {
+			paid := chargeUSD(t, "claude-sonnet-5", group, oneMillionEach())
+			require.LessOrEqual(t, paid, listUSD*0.9+1e-9,
+				"%s pays $%.4f against a $%.2f list price, i.e. %.1f%% off. The pricing page "+
+					"promises at least 10%%. With model discounts at 1, that has to come from "+
+					"this group's ratio.", group, paid, listUSD, (1-paid/listUSD)*100)
+		})
+	}
+}
+
+// TestListPriceIsWhatThePricingPageShows. The page states the vendor's list
+// price, so an undiscounted lookup must equal it exactly -- a model discount
+// creeping back in would make the published price a lie.
+func TestListPriceIsWhatThePricingPageShows(t *testing.T) {
+	withDiscount(t, `{}`)
+	for _, entry := range sweepableCatalog(t) {
+		require.InDelta(t, 1.0, ratio_setting.GetModelDiscount(entry.Model), 1e-12,
+			"%s carries a model discount. Those were reset to 1 on 2026-08-31 so the pricing "+
+				"page shows the vendor's real list price; per-customer discounts belong in the "+
+				"group layer now.", entry.Model)
 	}
 }
 
