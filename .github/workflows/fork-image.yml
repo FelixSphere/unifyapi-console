@@ -111,6 +111,11 @@ jobs:
           tags: ${{ steps.tag.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+          # Stamps the SPA and index.html with the commit so a tab left open
+          # across a release gets a reload prompt (common/build_id.go). Both
+          # arch legs resolve the same SHA, so the two images agree.
+          build-args: |
+            BUILD_ID=${{ github.sha }}
           # Attestations would add unknown/unknown entries to each per-arch tag,
           # which the imagetools merge below would then carry into the combined
           # manifest. Off until the pipeline is proven, then reconsider.

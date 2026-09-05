@@ -193,6 +193,11 @@ func main() {
 	middleware.SetUpLogger(server)
 	InjectUmamiAnalytics()
 	InjectGoogleAnalytics()
+	// The frontend build id lives in the embedded index.html; see common/build_id.go.
+	common.BuildID = common.ExtractBuildID(indexPage)
+	if common.BuildID != "" {
+		common.SysLog("frontend build id: " + common.BuildID)
+	}
 
 	// 设置路由
 	router.SetRouter(server, router.WebAssets{
