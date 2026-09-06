@@ -36,21 +36,33 @@ describe('credit supply operator surface', () => {
     assert.doesNotMatch(section, /consumed_usd:\s*Number/)
   })
 
-  test('approval is the moment the compliance question is asked', () => {
+  test('approval of an operator-entered lot still asks the compliance question', () => {
     assert.match(section, /right to transfer/i)
     assert.match(section, /transfer_rights_confirmed: true/)
   })
 
-  test('supplier applications can be approved or rejected with a reason', () => {
+  test('a verified sale is paid, never approved for free', () => {
+    assert.match(section, /payCreditLot/)
+    assert.match(section, /Pay & activate/)
+    assert.match(section, /reference: payReference\.trim\(\)/)
+    const logic = readFileSync(join(HERE, '../credit-supply-logic.ts'), 'utf8')
+    // availableTransitions offers no `to: 'active'` from `verified`.
+    const verifiedCase = logic.slice(
+      logic.indexOf("case 'verified':", logic.indexOf('availableTransitions')),
+      logic.indexOf("case 'active':", logic.indexOf('availableTransitions'))
+    )
+    assert.doesNotMatch(verifiedCase, /to: 'active'/)
+  })
+
+  test('the buy terms are posted from the operator screen', () => {
+    assert.match(section, /TermsCard/)
+    assert.match(section, /key: 'CreditSupplyTerms'/)
+    // No application queue any more: suppliers are created by their first sale.
     const suppliers = readFileSync(
       join(HERE, '../credit-supply-suppliers.tsx'),
       'utf8'
     )
-    assert.match(suppliers, /decide\(supplier, 'active'\)/)
-    assert.match(
-      suppliers,
-      /decide\(rejecting, 'rejected', rejectReason\.trim\(\)\)/
-    )
+    assert.doesNotMatch(suppliers, /decide\(supplier, 'active'\)/)
   })
 
   test('rejection and suspension carry a reason the supplier will read', () => {

@@ -16,13 +16,15 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 // suppliers). Lifecycle actions live on the lot row so approving a supplier's
 // submission is one click from the number that justifies it.
 
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
@@ -30,6 +32,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Table,
   TableBody,
@@ -40,11 +44,14 @@ import {
 } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getChannels } from '@/features/channels/api'
+import { updateSystemOption } from '@/features/system-settings/api'
 
 import { SettingsSection } from '../components/settings-section'
 import {
   getCreditLots,
   getCreditSupplyOverview,
+  getCreditSupplyTerms,
+  type CreditSupplyTerms,
   getCreditSuppliers,
   type CreditLot,
   type CreditLotStatus,
@@ -60,6 +67,7 @@ import { CreditSuppliersPanel } from './credit-supply-suppliers'
 
 const STATUS_ORDER: CreditLotStatus[] = [
   'active',
+  'verified',
   'pending',
   'suspended',
   'exhausted',
@@ -72,7 +80,12 @@ function attentionReason(
   now: number,
   t: (key: string, opts?: Record<string, unknown>) => string
 ) {
-  if (lot.status === 'pending') return t('Awaiting approval')
+  if (lot.status === 'pending') return t('Verifying the key')
+  if (lot.status === 'verified') {
+    return t('Verified — pay {{amount}} to activate', {
+      amount: formatUSD(lot.face_value_usd * lot.acquisition_rate),
+    })
+  }
   if (lot.low_water_usd > 0 && remainingUSD(lot) <= lot.low_water_usd) {
     return t('{{remaining}} left, at or below the low-water mark', {
       remaining: formatUSD(remainingUSD(lot)),
@@ -85,6 +98,146 @@ function attentionReason(
     })
   }
   return ''
+}
+
+// TermsCard edits the posted buy terms. Saving writes the CreditSupplyTerms
+// option; lots already submitted keep the rate they were submitted under.
+function TermsCard() {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const terms = useQuery({
+    queryKey: ['credit-supply', 'terms'],
+    queryFn: getCreditSupplyTerms,
+  })
+  const [draft, setDraft] = useState<CreditSupplyTerms | null>(null)
+  const current = draft ?? terms.data ?? null
+  const save = useMutation({
+    mutationFn: (value: CreditSupplyTerms) =>
+      updateSystemOption({
+        key: 'CreditSupplyTerms',
+        value: JSON.stringify(value),
+      }),
+    onSuccess: () => {
+      toast.success(
+        t('Buy terms saved. New sales use them; existing lots keep their rate.')
+      )
+      setDraft(null)
+      queryClient.invalidateQueries({ queryKey: ['credit-supply'] })
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
+  if (!current) return null
+  const vendors = Object.keys(current.buy_rates).sort()
+  const setRate = (vendor: string, pct: string) => {
+    const value = Number(pct)
+    setDraft({
+      ...current,
+      buy_rates: {
+        ...current.buy_rates,
+        [vendor]: Number.isFinite(value) ? value / 100 : 0,
+      },
+    })
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className='text-base'>{t('Buy terms')}</CardTitle>
+        <CardDescription>
+          {t(
+            'What we pay per dollar of each vendor’s credit, shown to sellers before they submit. 20% means a seller of $1,000 Anthropic credit receives $200.'
+          )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className='grid gap-3'>
+        <div className='grid gap-3 sm:grid-cols-3'>
+          {vendors.map((vendor) => (
+            <div key={vendor} className='grid gap-1'>
+              <Label className='capitalize'>{vendor}</Label>
+              <div className='flex items-center gap-2'>
+                <Input
+                  type='number'
+                  min={1}
+                  max={99}
+                  step={1}
+                  value={Math.round((current.buy_rates[vendor] ?? 0) * 100)}
+                  onChange={(event) => setRate(vendor, event.target.value)}
+                  data-testid={`buy-rate-${vendor}`}
+                />
+                <span className='text-muted-foreground text-sm'>%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className='grid gap-3 sm:grid-cols-3'>
+          <div className='grid gap-1'>
+            <Label>{t('Minimum sale (USD)')}</Label>
+            <Input
+              type='number'
+              min={0}
+              value={current.min_face_usd}
+              onChange={(event) =>
+                setDraft({
+                  ...current,
+                  min_face_usd: Number(event.target.value),
+                })
+              }
+            />
+          </div>
+          <div className='grid gap-1'>
+            <Label>{t('Supplier channel priority')}</Label>
+            <Input
+              type='number'
+              min={0}
+              value={current.channel_priority}
+              onChange={(event) =>
+                setDraft({
+                  ...current,
+                  channel_priority: Number(event.target.value),
+                })
+              }
+            />
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'Higher than your own channels, so bought credits are consumed first.'
+              )}
+            </p>
+          </div>
+          <div className='grid gap-1'>
+            <Label>{t('Bonus for platform credit (%)')}</Label>
+            <Input
+              type='number'
+              min={0}
+              max={100}
+              value={Math.round((current.platform_credit_bonus ?? 0) * 100)}
+              onChange={(event) =>
+                setDraft({
+                  ...current,
+                  platform_credit_bonus: Number(event.target.value) / 100,
+                })
+              }
+            />
+          </div>
+        </div>
+        <div className='flex justify-end gap-2'>
+          <Button
+            type='button'
+            variant='outline'
+            disabled={draft === null}
+            onClick={() => setDraft(null)}
+          >
+            {t('Reset')}
+          </Button>
+          <Button
+            type='button'
+            disabled={draft === null || save.isPending}
+            onClick={() => save.mutate(current)}
+          >
+            {t('Save buy terms')}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 export function CreditSupplySection() {
@@ -121,7 +274,7 @@ export function CreditSupplySection() {
       <Alert>
         <AlertDescription className='text-xs'>
           {t(
-            'Suppliers sell us vendor credits. Each lot is bound to a channel carrying their key, drawn down at the vendor’s list price, and settled with the supplier at the agreed acquisition rate. Activating a lot writes that rate into the channel’s purchasing cost ratio, so Profit and Settlement already account for it. No money moves here: payables are issued from Settlement → Vendor.'
+            'Anyone can sell us vendor credits at the posted buy rates. A sale is verified automatically (one request through the key), then waits for you to pay it; paying books the payout and enables the channel at supplier priority, so bought credits are consumed first and drawn down at list price. The rate paid becomes the channel’s purchasing cost ratio, so Profit already reflects it. Suppliers are paid once, here — never per period from Settlement.'
           )}
         </AlertDescription>
       </Alert>
@@ -139,7 +292,7 @@ export function CreditSupplySection() {
 
       {overview.data ? (
         <>
-          <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
+          <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-5'>
             <Headline
               label={t('Face value in pool')}
               value={formatUSD(overview.data.face_usd)}
@@ -165,9 +318,17 @@ export function CreditSupplySection() {
               hint={t('Across live lots')}
             />
             <Headline
-              label={t('Payable to suppliers to date')}
-              value={formatUSD(overview.data.payable_usd)}
-              hint={t('Issue from Settlement → Vendor')}
+              label={t('Awaiting payment')}
+              value={formatUSD(overview.data.awaiting_payment_usd)}
+              hint={t('Verified sales; pay to activate')}
+              warn={overview.data.awaiting_payment_usd > 0}
+            />
+            <Headline
+              label={t('Paid to suppliers')}
+              value={formatUSD(overview.data.paid_usd)}
+              hint={t('{{consumed}} of it consumed so far', {
+                consumed: formatUSD(overview.data.payable_usd),
+              })}
             />
           </div>
 
@@ -257,6 +418,8 @@ export function CreditSupplySection() {
           ) : null}
         </>
       ) : null}
+
+      <TermsCard />
 
       <Tabs
         value={tab}

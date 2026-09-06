@@ -33,6 +33,7 @@ import type { Channel } from '@/features/channels/types'
 
 import {
   getCreditLotEvents,
+  payCreditLot,
   saveCreditLot,
   transitionCreditLot,
   type CreditLot,
@@ -49,6 +50,7 @@ import {
   formatUSD,
   lotHealth,
   payableUSD,
+  purchasePriceUSD,
   remainingUSD,
   timestampFromInput,
   type LotHealth,
@@ -86,7 +88,8 @@ const HEALTH_BADGE: Record<
     variant: 'default' | 'secondary' | 'destructive' | 'outline'
   }
 > = {
-  pending: { labelKey: 'Pending approval', variant: 'outline' },
+  pending: { labelKey: 'Verifying', variant: 'outline' },
+  verified: { labelKey: 'Awaiting payment', variant: 'outline' },
   healthy: { labelKey: 'Healthy', variant: 'default' },
   low: { labelKey: 'Running low', variant: 'destructive' },
   expiring: { labelKey: 'Expiring soon', variant: 'destructive' },
@@ -125,6 +128,27 @@ export function CreditLotsPanel({
   } | null>(null)
   const [reason, setReason] = useState('')
   const [historyLot, setHistoryLot] = useState<CreditLot | null>(null)
+  // Settling a verified sale: the one decision the operator makes.
+  const [paying, setPaying] = useState<CreditLot | null>(null)
+  const [payMethod, setPayMethod] = useState<'platform_credit' | 'external'>(
+    'platform_credit'
+  )
+  const [payReference, setPayReference] = useState('')
+  const payMutation = useMutation({
+    mutationFn: payCreditLot,
+    onSuccess: (lot) => {
+      toast.success(
+        t('Sale #{{id}} paid ({{amount}}); the channel is live.', {
+          id: lot.id,
+          amount: formatUSD(lot.paid_usd),
+        })
+      )
+      setPaying(null)
+      setPayReference('')
+      invalidate()
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
   const history = useQuery({
     queryKey: ['credit-supply', 'lot-events', historyLot?.id ?? 0],
     queryFn: () => getCreditLotEvents(historyLot?.id ?? 0),
@@ -270,7 +294,7 @@ export function CreditLotsPanel({
               <TableHead>{t('Channel')}</TableHead>
               <TableHead className='min-w-56'>{t('Drawn down')}</TableHead>
               <TableHead>{t('Rate')}</TableHead>
-              <TableHead>{t('Payable')}</TableHead>
+              <TableHead>{t('Paid / due')}</TableHead>
               <TableHead>{t('Expires')}</TableHead>
               <TableHead>{t('Status')}</TableHead>
               <TableHead className='text-right'>{t('Actions')}</TableHead>
@@ -327,7 +351,32 @@ export function CreditLotsPanel({
                     {formatRate(lot.acquisition_rate)}
                   </TableCell>
                   <TableCell className='tabular-nums'>
-                    {formatUSD(payableUSD(lot))}
+                    {lot.paid_at ? (
+                      <>
+                        <div>{formatUSD(lot.paid_usd)}</div>
+                        <div className='text-muted-foreground text-xs'>
+                          {t('paid {{date}}', {
+                            date: new Date(
+                              lot.paid_at * 1000
+                            ).toLocaleDateString(),
+                          })}
+                          {lot.payout_reference
+                            ? ` · ${lot.payout_reference}`
+                            : ''}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          {lot.status === 'rejected'
+                            ? '—'
+                            : formatUSD(purchasePriceUSD(lot))}
+                        </div>
+                        <div className='text-muted-foreground text-xs'>
+                          {paidDueHint(lot, t)}
+                        </div>
+                      </>
+                    )}
                   </TableCell>
                   <TableCell className='text-sm'>
                     {lot.expires_at
@@ -344,6 +393,24 @@ export function CreditLotsPanel({
                   </TableCell>
                   <TableCell className='text-right'>
                     <div className='flex justify-end gap-1'>
+                      {lot.status === 'verified' ? (
+                        <Button
+                          type='button'
+                          size='sm'
+                          disabled={payMutation.isPending}
+                          onClick={() => {
+                            setPayMethod(
+                              lot.payout_method === 'external'
+                                ? 'external'
+                                : 'platform_credit'
+                            )
+                            setPayReference('')
+                            setPaying(lot)
+                          }}
+                        >
+                          {t('Pay & activate')}
+                        </Button>
+                      ) : null}
                       {availableTransitions(lot, now).map((transition) => (
                         <Button
                           key={transition.to}
@@ -625,6 +692,99 @@ export function CreditLotsPanel({
       />
 
       <Dialog
+        open={paying !== null}
+        onOpenChange={(open) => {
+          if (!open) setPaying(null)
+        }}
+        title={t('Pay & activate sale #{{id}}', { id: paying?.id ?? '' })}
+        description={t(
+          'Paying settles the sale at the rate it was submitted with and enables the channel. Platform credit is booked into the seller’s wallet now; for a transfer, record the reference the seller can look up.'
+        )}
+        footer={
+          <>
+            <Button
+              type='button'
+              variant='outline'
+              onClick={() => setPaying(null)}
+            >
+              {t('Cancel')}
+            </Button>
+            <Button
+              type='button'
+              disabled={
+                payMutation.isPending ||
+                (payMethod === 'external' && payReference.trim() === '')
+              }
+              onClick={() => {
+                if (!paying) return
+                payMutation.mutate({
+                  id: paying.id,
+                  method: payMethod,
+                  reference: payReference.trim(),
+                })
+              }}
+            >
+              {t('Pay {{amount}} & activate', {
+                amount: paying ? formatUSD(purchasePriceUSD(paying)) : '',
+              })}
+            </Button>
+          </>
+        }
+      >
+        {paying ? (
+          <div className='grid gap-4 text-sm'>
+            <div className='grid gap-1'>
+              <div>
+                {t('{{face}} of {{vendor}} credit at {{rate}}', {
+                  face: formatUSD(paying.face_value_usd),
+                  vendor: paying.vendor,
+                  rate: formatRate(paying.acquisition_rate),
+                })}
+              </div>
+              {paying.verification_note ? (
+                <div className='text-muted-foreground text-xs'>
+                  {paying.verification_note}
+                </div>
+              ) : null}
+              {paying.payout_account ? (
+                <div className='text-muted-foreground text-xs'>
+                  {t('Seller’s payout details: {{account}}', {
+                    account: paying.payout_account,
+                  })}
+                </div>
+              ) : null}
+            </div>
+            <Field label={t('Payment method')}>
+              <NativeSelect
+                value={payMethod}
+                onChange={(event) =>
+                  setPayMethod(
+                    event.target.value as 'platform_credit' | 'external'
+                  )
+                }
+              >
+                <NativeSelectOption value='platform_credit'>
+                  {t('Platform credit (booked now)')}
+                </NativeSelectOption>
+                <NativeSelectOption value='external'>
+                  {t('External transfer (already sent)')}
+                </NativeSelectOption>
+              </NativeSelect>
+            </Field>
+            {payMethod === 'external' ? (
+              <Field label={t('Transfer reference')}>
+                <Input
+                  value={payReference}
+                  placeholder='WISE-2026-…'
+                  onChange={(event) => setPayReference(event.target.value)}
+                />
+              </Field>
+            ) : null}
+          </div>
+        ) : null}
+      </Dialog>
+
+      <Dialog
         open={historyLot !== null}
         onOpenChange={(open) => {
           if (!open) setHistoryLot(null)
@@ -745,4 +905,17 @@ function ReasonDialog({
       </Field>
     </Dialog>
   )
+}
+
+// paidDueHint is the small line under the price of an unpaid lot: what the
+// figure means in its current state. Nothing for a rejected sale.
+function paidDueHint(
+  lot: CreditLot,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string | null {
+  if (lot.status === 'rejected') return null
+  if (lot.status === 'verified') return t('due on settlement')
+  return t('consumed so far: {{amount}}', {
+    amount: formatUSD(payableUSD(lot)),
+  })
 }

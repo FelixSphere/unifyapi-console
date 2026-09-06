@@ -86,22 +86,69 @@ Supplier portal (authenticated user linked to a supplier), under
   tagged `supplier:<code>` and a `pending` lot.
 - `GET /usage?days=30`, `GET /statements`.
 
-## Becoming a supplier
+## Selling credits: posted terms, no application
 
-Any signed-in user can apply from **Wallet → Sell your unused vendor credits**
-or from `/supplier`. An application carries a name, a contact email, a free-text
-description of what they hold and an attestation that they own or control the
-vendor accounts — **no credentials**. It creates a `pending` supplier linked to
-the login. The operator approves or rejects it (with a reason the applicant
-reads) in Billing → Credit Supply → Suppliers. Only an `active` supplier can
-submit lots; a lot submission is where the upstream key arrives, into a
-disabled channel, per lot.
+There is no application and no negotiation. **Credit Supply** is one sidebar
+entry for everyone: an ordinary login lands on the seller's page, a super
+admin lands on the operator's page (`web/src/features/supplier-portal/hub.tsx`).
+
+The operator posts the terms once, in Billing → Credit Supply → *Buy terms*
+(option `CreditSupplyTerms`, `model/credit_supply_terms.go`):
+
+| term | default | meaning |
+|---|---|---|
+| `buy_rates.anthropic` | 0.20 | we pay 20¢ per $1 of Anthropic credit (2折) |
+| `buy_rates.openai` | 0.30 | 30¢ per $1 (3折) |
+| `buy_rates.google` | 0.20 | |
+| `channel_priority` | 10 | supplier channels outrank our own accounts (0) |
+| `min_face_usd` | 100 | smallest sale accepted |
+| `platform_credit_bonus` | 0 | extra paid when the seller takes platform credit |
+
+A lot snapshots the rate it was submitted under; changing terms never
+reprices a sale already made. A vendor with no rate is refused, not bought at 0.
+
+### The seller's flow, one form
+
+1. Pick the vendor — the rate and the payout are shown before anything is
+   typed. Enter face value, the API key (write-only), optional expiry, and how
+   to be paid: **platform credit** (booked instantly when the operator pays)
+   or **external** (bank/PayPal/wallet details in their words). Attest that
+   they own or control the account.
+2. Submit. The server creates the supplier record on first sale, a **disabled**
+   channel carrying the key, and a `pending` lot, then **verifies at once**:
+   one real request through the key against a catalogue model. A failure is
+   answered on the spot with the vendor's error, the lot becomes `rejected`
+   and the key is deleted — no operator round trip. Success → `verified`.
+3. Wait for payment. The page shows *Awaiting payment $X*.
+
+### The operator's flow, one click
+
+`verified` lots sit in *Awaiting payment*. **Pay & activate** books the payout
+(platform credit is added to the seller's wallet inside the same transaction;
+an external transfer needs the reference the seller can look up) and activates
+the lot: channel enabled at supplier priority for every customer group, the
+rate written into `ChannelCostRatio`. Nothing is consumed before payment.
 
 ```
-apply ──▶ pending ──approve──▶ active ◀──reinstate── suspended
-             │                   │
-             └──reject──▶ rejected └──suspend──▶ suspended
+pending ──verify ok──▶ verified ──pay──▶ active ──▶ exhausted | expired
+   │                      │                 │
+   └──verify failed───▶ rejected ◀──reject──┘   active ⇄ suspended
 ```
+
+A supplier-sourced lot can never be approved for free (`ErrCreditLotNeedsPayment`);
+only operator-entered lots keep the direct `pending → active` path.
+
+### How bought credits are used
+
+- Priority `channel_priority` (default 10) beats our own accounts, so the
+  router drains bought credits first; within the tier the usual weights apply.
+- The channel is offered to every pricing group, so any eligible request can
+  land on it; models are the vendor's catalogue, optionally narrowed by the seller.
+- Draw-down is at the vendor's list price on every consume log; exhaustion or
+  expiry retires the lot and disables the channel automatically.
+- Cost basis = the rate we paid, so Profit and reconciliation are already right.
+- Suppliers are paid **once**, at activation. `IssueSettlement` refuses a vendor
+  statement for a `supplier:` counterparty so nobody pays twice.
 
 ## Audit trail and attestations
 

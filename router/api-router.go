@@ -244,6 +244,7 @@ func SetApiRouter(router *gin.Engine) {
 			creditSupplyRoute.POST("/lots/:id/transition", controller.TransitionCreditLot)
 			creditSupplyRoute.GET("/lots/:id/usage", controller.GetCreditLotUsage)
 			creditSupplyRoute.GET("/lots/:id/events", controller.GetCreditLotEvents)
+			creditSupplyRoute.POST("/lots/:id/pay", controller.PayCreditLot)
 		}
 		// UNIFYAPI-FORK: supplier portal -- an ordinary login mapped to a
 		// supplier by CreditSupplier.UserId. See controller/credit_supplier_portal.go.
@@ -251,7 +252,7 @@ func SetApiRouter(router *gin.Engine) {
 		supplierRoute.Use(middleware.UserAuth(), middleware.DisableCache())
 		{
 			supplierRoute.GET("/me", controller.GetSupplierPortal)
-			supplierRoute.POST("/apply", middleware.CriticalRateLimit(), controller.ApplyForSupplier)
+			supplierRoute.GET("/terms", controller.GetSupplierTerms)
 			supplierRoute.POST("/lots", middleware.CriticalRateLimit(), controller.SubmitSupplierLot)
 			supplierRoute.GET("/usage", controller.GetSupplierUsage)
 			supplierRoute.GET("/statements", controller.GetSupplierStatements)

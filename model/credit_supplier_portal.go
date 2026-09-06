@@ -14,11 +14,16 @@ package model
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
+
+	"gorm.io/gorm"
 )
 
-var ErrCreditSupplierSuspended = errors.New("this supplier account is not active; lots can be submitted once the operator has approved it")
+var ErrCreditSupplierSuspended = errors.New("this supplier account is suspended; contact the operator")
 
 // SubmitSupplierCreditLot records a supplier's own submission: a new channel
 // carrying their upstream key, born disabled, and a pending lot bound to it.
@@ -32,11 +37,20 @@ func SubmitSupplierCreditLot(supplier *CreditSupplier, channel *Channel, lot *Cr
 	channel.Status = common.ChannelStatusManuallyDisabled
 	tag := supplier.CounterpartyKey()
 	channel.Tag = &tag
+	// Bought credits are cheaper than our own accounts, so the router should
+	// drain them first: a higher priority than the default 0, offered to every
+	// customer group so any eligible request can land on them.
+	terms := GetCreditSupplyTerms()
+	priority := terms.ChannelPriority
+	channel.Priority = &priority
+	if groups := allCustomerGroups(); len(groups) > 0 {
+		channel.Group = strings.Join(groups, ",")
+	}
 	if channel.CreatedTime == 0 {
 		channel.CreatedTime = common.GetTimestamp()
 	}
 	info := channel.GetOtherInfo()
-	info["status_reason"] = fmt.Sprintf("submitted by supplier %s; awaiting approval", supplier.Code)
+	info["status_reason"] = fmt.Sprintf("submitted by supplier %s; awaiting verification and payment", supplier.Code)
 	info["status_time"] = common.GetTimestamp()
 	channel.SetOtherInfo(info)
 	if err := channel.Insert(); err != nil {
@@ -56,6 +70,57 @@ func SubmitSupplierCreditLot(supplier *CreditSupplier, channel *Channel, lot *Cr
 			common.SysError(fmt.Sprintf("credit pool: could not remove channel %d after a refused submission: %v", channel.Id, cleanup))
 		}
 		return err
+	}
+	return nil
+}
+
+// allCustomerGroups lists the pricing groups customers can be in, sorted, so a
+// supplier channel can serve all of them.
+func allCustomerGroups() []string {
+	ratios := ratio_setting.GetGroupRatioCopy()
+	groups := make([]string, 0, len(ratios)+1)
+	seen := map[string]bool{}
+	for name := range ratios {
+		name = strings.TrimSpace(name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		groups = append(groups, name)
+	}
+	if !seen["default"] {
+		groups = append(groups, "default")
+	}
+	sort.Strings(groups)
+	return groups
+}
+
+// RejectUnverifiedSubmission closes a submission whose key did not work. The
+// lot stays as a rejected record with the reason; the channel -- and with it
+// the key -- is removed, so a failed attempt leaves no credential behind.
+func RejectUnverifiedSubmission(lot *CreditLot, reason string) error {
+	reason = strings.TrimSpace(reason)
+	channelId := lot.ChannelId
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		lot.Status = CreditLotStatusRejected
+		lot.StatusReason = reason
+		lot.ChannelId = 0
+		lot.RetiredAt = common.GetTimestamp()
+		if err := tx.Save(lot).Error; err != nil {
+			return err
+		}
+		return appendCreditLotEvent(tx, lot.Id, "system", "verification_failed", CreditLotStatusPending, CreditLotStatusRejected, reason)
+	})
+	if err != nil {
+		return err
+	}
+	if channelId != 0 {
+		if channel, err := GetChannelById(channelId, false); err == nil && channel != nil {
+			if err := channel.Delete(); err != nil {
+				common.SysError(fmt.Sprintf("credit supply: could not remove channel %d of rejected lot %d: %v", channelId, lot.Id, err))
+			}
+		}
+		invalidateChannelLot(channelId)
 	}
 	return nil
 }

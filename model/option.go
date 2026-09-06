@@ -153,6 +153,8 @@ func InitOptionMap() {
 	// UNIFYAPI-FORK: what our upstream charges us, per channel. Reconciliation
 	// only -- never customer billing.
 	common.OptionMap["ChannelCostRatio"] = ratio_setting.ChannelCostRatio2JSONString()
+	// UNIFYAPI-FORK: posted terms on which we buy vendor credits from suppliers.
+	common.OptionMap["CreditSupplyTerms"] = CreditSupplyTerms2JSONString()
 	common.OptionMap["ModelRatio"] = ratio_setting.ModelRatio2JSONString()
 	common.OptionMap["ModelPrice"] = ratio_setting.ModelPrice2JSONString()
 	common.OptionMap["CacheRatio"] = ratio_setting.CacheRatio2JSONString()
@@ -654,6 +656,8 @@ func updateOptionMap(key string, value string) (err error) {
 		err = ratio_setting.UpdateGroupModelDiscountByJSONString(value)
 	case "ChannelCostRatio":
 		err = ratio_setting.UpdateChannelCostRatioByJSONString(value)
+	case "CreditSupplyTerms":
+		err = UpdateCreditSupplyTermsByJSONString(value)
 	// UNIFYAPI-FORK: admin-added prices, merged on top of the code catalog.
 	case "ExtraModelPricing":
 		err = ratio_setting.UpdateExtraModelsByJSONString(value)

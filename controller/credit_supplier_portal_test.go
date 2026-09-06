@@ -9,8 +9,10 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -75,23 +77,28 @@ func TestSupplierPortalIsInvisibleToUnlinkedLogins(t *testing.T) {
 	GetSupplierPortal(c)
 	assert.Equal(t, http.StatusNotFound, recorder.Code)
 
+	// Selling needs no prior link: an empty submission is refused on its
+	// content, not on who is asking.
 	c, recorder = portalContext(t, 42, http.MethodPost, "/api/supplier/lots", `{}`)
 	SubmitSupplierLot(c)
-	assert.Equal(t, http.StatusNotFound, recorder.Code)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, false, decode(t, recorder)["success"])
 }
 
-func TestSupplierSubmissionCreatesDisabledChannelAndPendingLot(t *testing.T) {
+func TestSupplierSubmissionCreatesDisabledChannelAndVerifiedLot(t *testing.T) {
 	setupSupplierPortalTest(t)
-	supplier := &model.CreditSupplier{Name: "Acme Labs", Code: "acme", UserId: 42}
-	require.NoError(t, model.CreateCreditSupplier(supplier))
+	require.NoError(t, model.DB.Create(&model.User{Id: 42, Username: "acme", DisplayName: "Acme Labs"}).Error)
+	previous := verifySupplierChannel
+	t.Cleanup(func() { verifySupplierChannel = previous })
+	verifySupplierChannel = func(*model.Channel, string, int) error { return nil }
 
-	// Refusals first: no attestation, no key, unknown vendor, foreign model.
+	// Refusals first: no attestation, no key, unknown vendor, foreign model, no payout choice.
 	for name, body := range map[string]string{
-		"no attestation": `{"vendor":"anthropic","face_value_usd":1000,"acquisition_rate":0.5,"upstream_key":"sk-ant-x"}`,
-		"no key":         `{"vendor":"anthropic","face_value_usd":1000,"acquisition_rate":0.5,"transfer_rights_confirmed":true}`,
-		"unknown vendor": `{"vendor":"mistral","face_value_usd":1000,"acquisition_rate":0.5,"upstream_key":"k","transfer_rights_confirmed":true}`,
-		"foreign model":  `{"vendor":"anthropic","face_value_usd":1000,"acquisition_rate":0.5,"upstream_key":"k","transfer_rights_confirmed":true,"models":["gpt-5"]}`,
-		"bad rate":       `{"vendor":"anthropic","face_value_usd":1000,"acquisition_rate":1.5,"upstream_key":"k","transfer_rights_confirmed":true}`,
+		"no attestation": `{"vendor":"anthropic","face_value_usd":1000,"upstream_key":"sk-ant-x","payout_method":"platform_credit"}`,
+		"no key":         `{"vendor":"anthropic","face_value_usd":1000,"payout_method":"platform_credit","transfer_rights_confirmed":true}`,
+		"unknown vendor": `{"vendor":"mistral","face_value_usd":1000,"upstream_key":"k","payout_method":"platform_credit","transfer_rights_confirmed":true}`,
+		"foreign model":  `{"vendor":"anthropic","face_value_usd":1000,"upstream_key":"k","payout_method":"platform_credit","transfer_rights_confirmed":true,"models":["gpt-5"]}`,
+		"no payout":      `{"vendor":"anthropic","face_value_usd":1000,"upstream_key":"k","transfer_rights_confirmed":true}`,
 	} {
 		c, recorder := portalContext(t, 42, http.MethodPost, "/api/supplier/lots", body)
 		SubmitSupplierLot(c)
@@ -105,17 +112,17 @@ func TestSupplierSubmissionCreatesDisabledChannelAndPendingLot(t *testing.T) {
 	c, recorder := portalContext(t, 42, http.MethodPost, "/api/supplier/lots", `{
 		"vendor":"anthropic","face_value_usd":1000,"acquisition_rate":0.5,
 		"upstream_key":"sk-ant-supplier-key","models":["claude-sonnet-5"],
-		"note":"startup credits","transfer_rights_confirmed":true
+		"note":"startup credits","payout_method":"platform_credit","transfer_rights_confirmed":true
 	}`)
 	SubmitSupplierLot(c)
 	payload := decode(t, recorder)
 	require.Equal(t, true, payload["success"], recorder.Body.String())
 	data := payload["data"].(map[string]any)
-	assert.Equal(t, "pending", data["status"])
+	assert.Equal(t, "verified", data["status"], "the key was exercised; the sale now waits for payment")
 
 	channel, err := model.GetChannelById(int(data["channel_id"].(float64)), true)
 	require.NoError(t, err)
-	assert.Equal(t, common.ChannelStatusManuallyDisabled, channel.Status, "a submitted key must not serve before approval")
+	assert.Equal(t, common.ChannelStatusManuallyDisabled, channel.Status, "a submitted key must not serve before payment")
 	assert.Equal(t, "sk-ant-supplier-key", channel.Key)
 	assert.Equal(t, "supplier:acme", *channel.Tag)
 	assert.Equal(t, "https://api.anthropic.com", channel.GetBaseURL())
@@ -125,17 +132,19 @@ func TestSupplierSubmissionCreatesDisabledChannelAndPendingLot(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, model.CreditLotSourceSupplier, lot.Source)
 	assert.Equal(t, channel.Id, lot.ChannelId)
+	assert.InDelta(t, 0.2, lot.AcquisitionRate, 1e-9, "the posted rate, not the caller's 0.5")
 	assert.Equal(t, model.CreditLotAttestationVersion, lot.AttestationVersion)
 	assert.Equal(t, "supplier-login", lot.AttestedBy, "the supplier, not the operator, attested")
 	assert.NotZero(t, lot.AttestedAt)
-	assert.InDelta(t, 1, ratio_setting.GetChannelCostRatio(channel.Id), 1e-9, "pending lots do not touch pricing")
+	assert.NotZero(t, lot.VerifiedAt)
+	assert.InDelta(t, 1, ratio_setting.GetChannelCostRatio(channel.Id), 1e-9, "unpaid lots do not touch pricing")
 
-	// The operator approves: channel enabled, rate written.
-	_, err = model.TransitionCreditLot(lot.Id, model.CreditLotTransition{To: model.CreditLotStatusActive, Actor: "root", TransferRightsConfirmed: true})
+	// The operator pays: channel enabled, rate written.
+	_, err = model.PayCreditLot(lot.Id, model.CreditLotPayment{Actor: "root"})
 	require.NoError(t, err)
 	channel, _ = model.GetChannelById(channel.Id, false)
 	assert.Equal(t, common.ChannelStatusEnabled, channel.Status)
-	assert.InDelta(t, 0.5, ratio_setting.GetChannelCostRatio(channel.Id), 1e-9)
+	assert.InDelta(t, 0.2, ratio_setting.GetChannelCostRatio(channel.Id), 1e-9)
 
 	// The portal shows the lot without the note and with the channel name.
 	c, recorder = portalContext(t, 42, http.MethodGet, "/api/supplier/me", "")
@@ -156,13 +165,14 @@ func TestSuspendedSupplierCannotSubmit(t *testing.T) {
 	setupSupplierPortalTest(t)
 	supplier := &model.CreditSupplier{Name: "Acme Labs", Code: "acme", UserId: 42, Status: model.CreditSupplierStatusSuspended, StatusReason: "verification pending"}
 	require.NoError(t, model.CreateCreditSupplier(supplier))
+	require.NoError(t, model.DB.Create(&model.User{Id: 42, Username: "acme"}).Error)
 	c, recorder := portalContext(t, 42, http.MethodPost, "/api/supplier/lots", `{
-		"vendor":"openai","face_value_usd":100,"acquisition_rate":0.4,"upstream_key":"sk-x","transfer_rights_confirmed":true
+		"vendor":"openai","face_value_usd":100,"upstream_key":"sk-x","payout_method":"platform_credit","transfer_rights_confirmed":true
 	}`)
 	SubmitSupplierLot(c)
 	payload := decode(t, recorder)
 	assert.Equal(t, false, payload["success"])
-	assert.Contains(t, payload["message"], "not active")
+	assert.Contains(t, payload["message"], "suspended")
 	var channelCount int64
 	require.NoError(t, model.DB.Model(&model.Channel{}).Count(&channelCount).Error)
 	assert.Zero(t, channelCount)
@@ -217,26 +227,120 @@ func TestSupplierSeesOnlyTheirOwnStatementsAndUsage(t *testing.T) {
 	assert.InDelta(t, 2*list, days[0].(map[string]any)["face_usd"], 1e-9)
 }
 
-func TestAnyLoginCanApplyAndSeesItsApplicationState(t *testing.T) {
+func TestSellingIsDirectVerifiedAndPaidBeforeUse(t *testing.T) {
 	setupSupplierPortalTest(t)
-	c, recorder := portalContext(t, 42, http.MethodPost, "/api/supplier/apply", `{"name":"Acme Labs","contact_email":"ops@acme.example","note":"OpenAI startup credits","attested":true}`)
-	ApplyForSupplier(c)
+	require.NoError(t, model.DB.Create(&model.User{Id: 42, Username: "seller", DisplayName: "Seller Co", Email: "s@x.io", Quota: 0}).Error)
+	previous := verifySupplierChannel
+	t.Cleanup(func() { verifySupplierChannel = previous })
+	var testedModel string
+	verifySupplierChannel = func(channel *model.Channel, testModel string, testUserID int) error {
+		testedModel = testModel
+		assert.Equal(t, 42, testUserID, "the test request runs as the seller")
+		if channel.Key == "sk-broken" {
+			return errors.New("401 invalid x-api-key")
+		}
+		return nil
+	}
+
+	// Terms are posted; the caller's rate is ignored.
+	c, recorder := portalContext(t, 42, http.MethodGet, "/api/supplier/terms", "")
+	GetSupplierTerms(c)
+	assert.Contains(t, recorder.Body.String(), `"anthropic":0.2`)
+
+	// A bad key is answered immediately, the lot is rejected and the key is gone.
+	c, recorder = portalContext(t, 42, http.MethodPost, "/api/supplier/lots", `{"vendor":"anthropic","face_value_usd":1000,"acquisition_rate":0.99,"upstream_key":"sk-broken","payout_method":"platform_credit","transfer_rights_confirmed":true}`)
+	SubmitSupplierLot(c)
 	payload := decode(t, recorder)
-	require.Equal(t, true, payload["success"], recorder.Body.String())
-	assert.Equal(t, "pending", payload["data"].(map[string]any)["status"])
+	assert.Equal(t, false, payload["success"])
+	assert.Contains(t, payload["message"], "could not make a request")
+	var channels int64
+	require.NoError(t, model.DB.Model(&model.Channel{}).Count(&channels).Error)
+	assert.Zero(t, channels, "a failed verification leaves no key behind")
+	rejected, _ := model.GetCreditLots(model.CreditLotFilter{Status: model.CreditLotStatusRejected})
+	require.Len(t, rejected, 1)
+	assert.Zero(t, rejected[0].ChannelId)
+	assert.Contains(t, rejected[0].StatusReason, "invalid x-api-key")
 
-	c, recorder = portalContext(t, 42, http.MethodGet, "/api/supplier/me", "")
-	GetSupplierPortal(c)
-	assert.Equal(t, http.StatusOK, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), `"status":"pending"`)
+	// No application step: the first sale creates the supplier.
+	supplier, err := model.GetCreditSupplierByUserId(42)
+	require.NoError(t, err)
+	assert.Equal(t, model.CreditSupplierStatusActive, supplier.Status)
+	assert.Equal(t, "seller", supplier.Code)
 
-	c, recorder = portalContext(t, 42, http.MethodPost, "/api/supplier/lots", `{"vendor":"openai","face_value_usd":100,"acquisition_rate":0.4,"upstream_key":"sk-x","transfer_rights_confirmed":true}`)
+	// Too small, external without an account, then a good sale.
+	c, recorder = portalContext(t, 42, http.MethodPost, "/api/supplier/lots", `{"vendor":"anthropic","face_value_usd":20,"upstream_key":"sk-ok","payout_method":"platform_credit","transfer_rights_confirmed":true}`)
+	SubmitSupplierLot(c)
+	assert.Contains(t, decode(t, recorder)["message"], "smallest sale")
+	c, recorder = portalContext(t, 42, http.MethodPost, "/api/supplier/lots", `{"vendor":"anthropic","face_value_usd":1000,"upstream_key":"sk-ok","payout_method":"external","transfer_rights_confirmed":true}`)
+	SubmitSupplierLot(c)
+	assert.Contains(t, decode(t, recorder)["message"], "where to send")
+	c, recorder = portalContext(t, 42, http.MethodPost, "/api/supplier/lots", `{"vendor":"anthropic","face_value_usd":1000,"acquisition_rate":0.99,"upstream_key":"sk-ok","payout_method":"platform_credit","transfer_rights_confirmed":true}`)
 	SubmitSupplierLot(c)
 	payload = decode(t, recorder)
-	assert.Equal(t, false, payload["success"])
-	assert.Contains(t, payload["message"], "not active")
+	require.Equal(t, true, payload["success"], recorder.Body.String())
+	data := payload["data"].(map[string]any)
+	assert.Equal(t, "verified", data["status"])
+	assert.InDelta(t, 200, data["payout_usd"], 1e-9, "posted 20% rate, not the caller's 0.99")
+	assert.NotEmpty(t, testedModel)
+	assert.NotEqual(t, "claude-fable-5", testedModel, "verification uses the cheapest catalogue model, not the dearest")
+	cheapest, _ := ratio_setting.CatalogEntryFor(testedModel)
+	opus, _ := ratio_setting.CatalogEntryFor("claude-opus-4-8")
+	assert.Less(t, cheapest.InputUSD, opus.InputUSD)
 
-	c, recorder = portalContext(t, 42, http.MethodPost, "/api/supplier/apply", `{"name":"Twice","contact_email":"a@b.c","attested":true}`)
-	ApplyForSupplier(c)
-	assert.Equal(t, false, decode(t, recorder)["success"])
+	lotId := int(data["lot_id"].(float64))
+	lot, err := model.GetCreditLotById(lotId)
+	require.NoError(t, err)
+	channel, err := model.GetChannelById(lot.ChannelId, false)
+	require.NoError(t, err)
+	assert.Equal(t, common.ChannelStatusManuallyDisabled, channel.Status, "nothing is consumed before payment")
+	assert.EqualValues(t, 10, *channel.Priority, "bought credits drain before our own accounts")
+	assert.Contains(t, channel.Group, "default")
+
+	// Approving a verified sale is refused; paying it activates it and credits the wallet.
+	_, err = model.TransitionCreditLot(lotId, model.CreditLotTransition{To: model.CreditLotStatusActive, Actor: "root", TransferRightsConfirmed: true})
+	require.ErrorIs(t, err, model.ErrCreditLotNeedsPayment)
+	c, recorder = portalContext(t, 1, http.MethodPost, "/api/credit-supply/lots/"+strconv.Itoa(lotId)+"/pay", `{}`)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(lotId)}}
+	PayCreditLot(c)
+	payload = decode(t, recorder)
+	require.Equal(t, true, payload["success"], recorder.Body.String())
+	paid, _ := model.GetCreditLotById(lotId)
+	assert.Equal(t, model.CreditLotStatusActive, paid.Status)
+	assert.InDelta(t, 200, paid.PaidUSD, 1e-9)
+	assert.Equal(t, model.CreditLotPayoutPlatformCredit, paid.PayoutMethod)
+	seller, _ := model.GetUserById(42, false)
+	assert.EqualValues(t, int(200*common.QuotaPerUnit), seller.Quota, "paid into the seller's wallet")
+	channel, _ = model.GetChannelById(lot.ChannelId, false)
+	assert.Equal(t, common.ChannelStatusEnabled, channel.Status)
+	assert.InDelta(t, 0.2, ratio_setting.GetChannelCostRatio(lot.ChannelId), 1e-9, "cost basis is the price we paid")
+
+	// The seller's view shows the payment; a second pay is refused.
+	c, recorder = portalContext(t, 42, http.MethodGet, "/api/supplier/me", "")
+	GetSupplierPortal(c)
+	assert.Contains(t, recorder.Body.String(), `"paid_usd":200`)
+	assert.NotContains(t, recorder.Body.String(), "sk-ok")
+	_, err = model.PayCreditLot(lotId, model.CreditLotPayment{Actor: "root"})
+	require.Error(t, err)
+}
+
+func TestExternalPayoutNeedsAReferenceAndBooksNoCredit(t *testing.T) {
+	setupSupplierPortalTest(t)
+	require.NoError(t, model.DB.Create(&model.User{Id: 7, Username: "cashout", Quota: 0}).Error)
+	previous := verifySupplierChannel
+	t.Cleanup(func() { verifySupplierChannel = previous })
+	verifySupplierChannel = func(*model.Channel, string, int) error { return nil }
+	c, recorder := portalContext(t, 7, http.MethodPost, "/api/supplier/lots", `{"vendor":"openai","face_value_usd":500,"upstream_key":"sk-ok","payout_method":"external","payout_account":"PayPal ops@cashout.example","transfer_rights_confirmed":true}`)
+	SubmitSupplierLot(c)
+	payload := decode(t, recorder)
+	require.Equal(t, true, payload["success"], recorder.Body.String())
+	lotId := int(payload["data"].(map[string]any)["lot_id"].(float64))
+	assert.InDelta(t, 150, payload["data"].(map[string]any)["payout_usd"], 1e-9, "openai is bought at 30%")
+
+	_, err := model.PayCreditLot(lotId, model.CreditLotPayment{Actor: "root"})
+	require.Error(t, err, "an external payment needs the transfer reference")
+	paid, err := model.PayCreditLot(lotId, model.CreditLotPayment{Actor: "root", Reference: "WISE-20260905-0042"})
+	require.NoError(t, err)
+	assert.Equal(t, "WISE-20260905-0042", paid.PayoutReference)
+	user, _ := model.GetUserById(7, false)
+	assert.Zero(t, user.Quota, "cash was sent outside; no platform credit is booked")
 }

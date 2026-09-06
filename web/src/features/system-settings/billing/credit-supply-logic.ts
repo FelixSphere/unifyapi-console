@@ -16,7 +16,8 @@ export const SECONDS_PER_DAY = 86400
 export const EXPIRY_ATTENTION_DAYS = 7
 
 export const LOT_STATUS_LABELS: Record<CreditLotStatus, string> = {
-  pending: 'Pending approval',
+  pending: 'Verifying',
+  verified: 'Awaiting payment',
   active: 'Active',
   suspended: 'Suspended',
   exhausted: 'Exhausted',
@@ -34,6 +35,7 @@ export type LotTransition = {
 
 export type LotHealth =
   | 'pending'
+  | 'verified'
   | 'healthy'
   | 'low'
   | 'expiring'
@@ -51,6 +53,13 @@ export function payableUSD(
   lot: Pick<CreditLot, 'consumed_usd' | 'acquisition_rate'>
 ) {
   return lot.consumed_usd * lot.acquisition_rate
+}
+
+// What the sale costs us at the rate it was submitted with.
+export function purchasePriceUSD(
+  lot: Pick<CreditLot, 'face_value_usd' | 'acquisition_rate'>
+) {
+  return lot.face_value_usd * lot.acquisition_rate
 }
 
 export function consumedPct(
@@ -83,6 +92,8 @@ export function lotHealth(lot: CreditLot, nowSeconds: number): LotHealth {
   switch (lot.status) {
     case 'pending':
       return 'pending'
+    case 'verified':
+      return 'verified'
     case 'rejected':
       return 'rejected'
     case 'suspended':
@@ -93,8 +104,9 @@ export function lotHealth(lot: CreditLot, nowSeconds: number): LotHealth {
     case 'active':
       break
   }
-  if (lot.low_water_usd > 0 && remainingUSD(lot) <= lot.low_water_usd)
+  if (lot.low_water_usd > 0 && remainingUSD(lot) <= lot.low_water_usd) {
     return 'low'
+  }
   if (
     lot.expires_at !== 0 &&
     lot.expires_at - nowSeconds <= EXPIRY_ATTENTION_DAYS * SECONDS_PER_DAY
@@ -112,6 +124,11 @@ export function availableTransitions(
 ): LotTransition[] {
   switch (lot.status) {
     case 'pending':
+      // A supplier's submission is bought, never approved for free: it goes
+      // through verified -> paid. Only operator-entered lots activate here.
+      if (lot.source === 'supplier') {
+        return [{ to: 'rejected', labelKey: 'Reject', destructive: true }]
+      }
       return [
         {
           to: 'active',
@@ -123,6 +140,9 @@ export function availableTransitions(
         },
         { to: 'rejected', labelKey: 'Reject', destructive: true },
       ]
+    case 'verified':
+      // The primary action here is Pay & activate, rendered separately.
+      return [{ to: 'rejected', labelKey: 'Reject', destructive: true }]
     case 'active':
       return [{ to: 'suspended', labelKey: 'Suspend', destructive: true }]
     case 'suspended':

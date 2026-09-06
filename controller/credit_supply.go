@@ -153,6 +153,31 @@ func UpdateCreditLot(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }
 
+// PayCreditLot settles a verified sale: pays the supplier (platform credit is
+// booked here; an external transfer is recorded by reference) and activates
+// the lot in the same step.
+func PayCreditLot(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid lot id"})
+		return
+	}
+	var req struct {
+		Method    string `json:"method"`
+		Reference string `json:"reference"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid request body"})
+		return
+	}
+	lot, err := model.PayCreditLot(id, model.CreditLotPayment{Actor: optionChangeActor(c), Method: req.Method, Reference: req.Reference})
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error(), "data": lot})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": lot})
+}
+
 func TransitionCreditLot(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
