@@ -153,6 +153,55 @@ func supplierCodeFromName(name string) string {
 	return strings.Trim(slug, "-_")
 }
 
+// EnsureCreditSupplierForUser returns the supplier record behind a login,
+// creating an active one on first sale. There is no application step: the
+// terms are posted, the key is verified automatically, and the operator's only
+// decision is to pay.
+func EnsureCreditSupplierForUser(user *User) (*CreditSupplier, error) {
+	if user == nil || user.Id <= 0 {
+		return nil, errors.New("sign in to sell credits")
+	}
+	if existing, err := GetCreditSupplierByUserId(user.Id); err == nil && existing != nil {
+		return existing, nil
+	}
+	name := strings.TrimSpace(user.DisplayName)
+	if name == "" {
+		name = user.Username
+	}
+	supplier := &CreditSupplier{
+		Name:         name,
+		ContactEmail: strings.TrimSpace(user.Email),
+		UserId:       user.Id,
+		Status:       CreditSupplierStatusActive,
+	}
+	base := supplierCodeFromName(user.Username)
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := ensureSupplierUserFree(tx, user.Id, 0); err != nil {
+			return err
+		}
+		supplier.Code = base
+		for attempt := 2; attempt < 50; attempt++ {
+			var count int64
+			if err := tx.Model(&CreditSupplier{}).Where("code = ?", supplier.Code).Count(&count).Error; err != nil {
+				return err
+			}
+			if count == 0 {
+				break
+			}
+			supplier.Code = fmt.Sprintf("%s-%d", base, attempt)
+		}
+		if err := ValidateCreditSupplier(supplier); err != nil {
+			return err
+		}
+		return tx.Create(supplier).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	invalidateChannelSupplierIndex()
+	return supplier, nil
+}
+
 // ApplyForCreditSupplier records a pending supplier for the calling login. One
 // application per login; the operator approves it from Billing -> Credit
 // Supply, after which the login can submit lots.
@@ -240,30 +289,49 @@ func CreateCreditSupplier(s *CreditSupplier) error {
 // UpdateCreditSupplier replaces the editable fields. The id, timestamps and any
 // lots are untouched; renaming a supplier does not rename issued settlements,
 // which carry their own frozen label.
+// UpdateCreditSupplier is a PATCH, not a replace. A caller that sends only a
+// status must not silently unlink the supplier from their login (user_id 0)
+// or blank their identity: omitted identity fields keep their value, and the
+// merged record -- not the raw patch -- is what gets validated. To unlink a
+// login deliberately, send user_id -1.
 func UpdateCreditSupplier(id int, patch *CreditSupplier) error {
-	if err := ValidateCreditSupplier(patch); err != nil {
-		return err
-	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var existing CreditSupplier
 		if err := tx.First(&existing, "id = ?", id).Error; err != nil {
 			return err
 		}
-		if err := ensureSupplierUserFree(tx, patch.UserId, id); err != nil {
+		merged := existing
+		if name := strings.TrimSpace(patch.Name); name != "" {
+			merged.Name = name
+		}
+		if code := strings.TrimSpace(patch.Code); code != "" {
+			merged.Code = code
+		}
+		if email := strings.TrimSpace(patch.ContactEmail); email != "" {
+			merged.ContactEmail = email
+		}
+		switch {
+		case patch.UserId < 0:
+			merged.UserId = 0
+		case patch.UserId > 0:
+			merged.UserId = patch.UserId
+		}
+		if status := strings.TrimSpace(patch.Status); status != "" {
+			merged.Status = status
+		}
+		merged.StatusReason = patch.StatusReason
+		if merged.Status == CreditSupplierStatusActive {
+			merged.StatusReason = ""
+		}
+		merged.PayoutTerms = patch.PayoutTerms
+		merged.Note = patch.Note
+		if err := ValidateCreditSupplier(&merged); err != nil {
 			return err
 		}
-		existing.Name = patch.Name
-		existing.Code = patch.Code
-		existing.ContactEmail = patch.ContactEmail
-		existing.UserId = patch.UserId
-		existing.Status = patch.Status
-		existing.StatusReason = patch.StatusReason
-		if existing.Status == CreditSupplierStatusActive {
-			existing.StatusReason = ""
+		if err := ensureSupplierUserFree(tx, merged.UserId, id); err != nil {
+			return err
 		}
-		existing.PayoutTerms = patch.PayoutTerms
-		existing.Note = patch.Note
-		return tx.Save(&existing).Error
+		return tx.Save(&merged).Error
 	})
 	if err != nil {
 		return err

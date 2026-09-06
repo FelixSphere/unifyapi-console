@@ -86,7 +86,7 @@ const SETUP_GUIDE_CODE_PATTERN = [
 type DashboardActionPath =
   | '/keys'
   | '/wallet'
-  | '/supplier'
+  | '/credit-supply'
   | '/playground'
   | '/channels'
   | '/usage-logs'
@@ -567,7 +567,7 @@ export function OverviewDashboard() {
         description: isSupplier
           ? t('Your credit lots, draw-down and statements')
           : t('Offer us vendor credits you will not use'),
-        to: '/supplier',
+        to: '/credit-supply',
         icon: Coins,
       },
     ],

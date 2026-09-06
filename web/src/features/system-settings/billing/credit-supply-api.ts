@@ -37,6 +37,7 @@ export type CreditSupplierInput = Omit<
 
 export type CreditLotStatus =
   | 'pending'
+  | 'verified'
   | 'active'
   | 'suspended'
   | 'exhausted'
@@ -64,6 +65,14 @@ export type CreditLot = {
   attested_by: string
   approved_by: string
   approved_at: number
+  verified_at: number
+  verification_note: string
+  payout_method: 'platform_credit' | 'external' | ''
+  payout_account: string
+  payout_reference: string
+  paid_usd: number
+  paid_at: number
+  paid_by: string
   retired_at: number
   created_at: number
   updated_at: number
@@ -116,6 +125,8 @@ export type CreditSupplyOverview = {
   consumed_usd: number
   remaining_usd: number
   payable_usd: number
+  awaiting_payment_usd: number
+  paid_usd: number
   unpriced_lots: number
   by_vendor: CreditSupplyVendorTotals[]
   attention: CreditLot[]
@@ -200,6 +211,35 @@ export async function transitionCreditLot(input: {
         transfer_rights_confirmed: input.transfer_rights_confirmed ?? false,
       }
     )
+  )
+}
+
+// Settle a verified sale: pays the supplier (platform credit is booked
+// server-side; an external transfer is recorded by reference) and activates
+// the lot in one step.
+export async function payCreditLot(input: {
+  id: number
+  method?: 'platform_credit' | 'external'
+  reference?: string
+}) {
+  return unwrap(
+    await api.post<Envelope<CreditLot>>(
+      `/api/credit-supply/lots/${input.id}/pay`,
+      { method: input.method ?? '', reference: input.reference ?? '' }
+    )
+  )
+}
+
+export type CreditSupplyTerms = {
+  buy_rates: Record<string, number>
+  channel_priority: number
+  min_face_usd: number
+  platform_credit_bonus: number
+}
+
+export async function getCreditSupplyTerms() {
+  return unwrap(
+    await api.get<Envelope<CreditSupplyTerms>>('/api/supplier/terms')
   )
 }
 

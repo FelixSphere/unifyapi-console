@@ -7,7 +7,7 @@ Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, Pencil, Plus, X } from 'lucide-react'
+import { Pencil, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -68,9 +68,6 @@ export function CreditSuppliersPanel({
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<CreditSupplier | null>(null)
   const [form, setForm] = useState<SupplierFormState>(emptySupplierForm())
-  // Rejecting an application asks for the reason the applicant will read.
-  const [rejecting, setRejecting] = useState<CreditSupplier | null>(null)
-  const [rejectReason, setRejectReason] = useState('')
 
   const mutation = useMutation({
     mutationFn: saveCreditSupplier,
@@ -81,26 +78,6 @@ export function CreditSuppliersPanel({
     },
     onError: (error: Error) => toast.error(error.message),
   })
-
-  const decide = (
-    supplier: CreditSupplier,
-    status: 'active' | 'rejected' | 'suspended',
-    reason = ''
-  ) => {
-    mutation.mutate({
-      id: supplier.id,
-      supplier: {
-        name: supplier.name,
-        code: supplier.code,
-        contact_email: supplier.contact_email,
-        user_id: supplier.user_id,
-        status,
-        status_reason: reason,
-        payout_terms: supplier.payout_terms,
-        note: supplier.note,
-      },
-    })
-  }
 
   const openCreate = () => {
     setEditing(null)
@@ -139,7 +116,9 @@ export function CreditSuppliersPanel({
       code: form.code.trim().toLowerCase(),
       contact_email: form.contactEmail.trim(),
       user_id: userId,
-      status: form.active ? 'active' : 'suspended',
+      // The switch means active/suspended; any other stored status is kept
+      // as it is rather than silently rewritten by an unrelated edit.
+      status: form.active ? 'active' : keptInactiveStatus(editing),
       status_reason: form.active
         ? ''
         : editing?.status_reason || 'Suspended by operator',
@@ -231,40 +210,9 @@ export function CreditSuppliersPanel({
                         {supplier.status_reason}
                       </div>
                     ) : null}
-                    {supplier.status === 'pending' && supplier.note ? (
-                      <div className='text-muted-foreground mt-1 max-w-64 text-xs italic'>
-                        “{supplier.note}”
-                      </div>
-                    ) : null}
                   </TableCell>
                   <TableCell className='text-right'>
                     <div className='flex justify-end gap-1'>
-                      {supplier.status === 'pending' ? (
-                        <>
-                          <Button
-                            type='button'
-                            size='sm'
-                            disabled={mutation.isPending}
-                            onClick={() => decide(supplier, 'active')}
-                          >
-                            <Check className='size-4' />
-                            {t('Approve')}
-                          </Button>
-                          <Button
-                            type='button'
-                            size='sm'
-                            variant='outline'
-                            disabled={mutation.isPending}
-                            onClick={() => {
-                              setRejectReason('')
-                              setRejecting(supplier)
-                            }}
-                          >
-                            <X className='size-4' />
-                            {t('Reject')}
-                          </Button>
-                        </>
-                      ) : null}
                       <Button
                         type='button'
                         size='icon-sm'
@@ -392,50 +340,6 @@ export function CreditSuppliersPanel({
           </div>
         </div>
       </Dialog>
-
-      <Dialog
-        open={rejecting !== null}
-        onOpenChange={(open) => {
-          if (!open) setRejecting(null)
-        }}
-        title={t('Reject application from {{name}}?', {
-          name: rejecting?.name ?? '',
-        })}
-        description={t(
-          'The applicant reads this reason in their Wallet. Never paste a key here.'
-        )}
-        footer={
-          <>
-            <Button
-              type='button'
-              variant='outline'
-              onClick={() => setRejecting(null)}
-            >
-              {t('Cancel')}
-            </Button>
-            <Button
-              type='button'
-              variant='destructive'
-              disabled={mutation.isPending || rejectReason.trim() === ''}
-              onClick={() => {
-                if (!rejecting) return
-                decide(rejecting, 'rejected', rejectReason.trim())
-                setRejecting(null)
-              }}
-            >
-              {t('Reject')}
-            </Button>
-          </>
-        }
-      >
-        <Field label={t('Reason')}>
-          <Textarea
-            rows={3}
-            value={rejectReason}
-            onChange={(event) => setRejectReason(event.target.value)}
-          />
-        </Field>
-      </Dialog>
     </div>
   )
 }
@@ -468,4 +372,11 @@ function Field({
       {children}
     </div>
   )
+}
+
+function keptInactiveStatus(
+  editing: CreditSupplier | null
+): CreditSupplier['status'] {
+  if (editing && editing.status !== 'active') return editing.status
+  return 'suspended'
 }

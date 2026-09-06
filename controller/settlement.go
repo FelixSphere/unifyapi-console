@@ -344,6 +344,13 @@ func IssueSettlement(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "缺少结算对象"})
 		return
 	}
+	// UNIFYAPI-FORK: supplier credits are bought outright when the sale is
+	// paid; nothing is owed per period, so a vendor statement to a supplier
+	// would be a second payment.
+	if kind == service.StatementKindVendor && model.IsSupplierCounterparty(req.Counterparty) {
+		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "供应商额度在成交时已一次性付清，不按周期结算；付款记录见 计费与支付 → Credit Supply"})
+		return
+	}
 	if !validSettlementStatus(req.Status) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "未知的状态：" + req.Status})
 		return

@@ -31,36 +31,39 @@ describe('supplier portal surface', () => {
     assert.doesNotMatch(api, /credit-pool\/lots/)
   })
 
-  test('submission carries the supplier attestation and a write-only key', () => {
+  test('a sale carries the attestation, a write-only key and a payout choice; the rate is posted, not typed', () => {
     assert.match(dialog, /transfer_rights_confirmed: true/)
     assert.match(dialog, /PasswordInput/)
-    assert.match(
-      dialog,
-      /disabled=\{mutation\.isPending \|\| !form\.confirmed\}/
-    )
+    assert.match(dialog, /payout_method: form\.payoutMethod/)
+    // The seller never sets their own price: no acquisition_rate is sent.
+    assert.doesNotMatch(dialog, /acquisition_rate:/)
   })
 
-  test('a non-supplier login gets an explanation, not an error toast', () => {
+  test('a login that has not sold yet sees the posted terms, not an error', () => {
     assert.match(api, /skipErrorHandler: true/)
-    // A non-supplier is shown the invitation card instead of a dead end.
-    assert.match(page, /me\.isError \|\|/)
-    assert.match(page, /<SellCreditsCard \/>/)
+    assert.match(page, /getSupplierTerms/)
+    // No application step exists any more.
+    assert.doesNotMatch(page, /applyForSupplier|SellCreditsCard|EmptyState/)
+    assert.doesNotMatch(api, /\/api\/supplier\/apply/)
   })
 
-  test('every customer is offered the way in', () => {
-    // The Wallet card and the dashboard action are for all logins; only the
-    // wording changes once the login is an approved supplier.
-    assert.match(dashboard, /Sell unused credits/)
-    assert.doesNotMatch(dashboard, /supplierOnly/)
-    const wallet = readFileSync(join(HERE, '../../wallet/index.tsx'), 'utf8')
-    assert.match(wallet, /<SellCreditsCard compact \/>/)
-    assert.doesNotMatch(wallet, /credit-contributions/)
-    const card = readFileSync(
-      join(HERE, '../components/sell-credits-card.tsx'),
+  test('the way in is the sidebar entry, routed by role', () => {
+    const sidebar = readFileSync(
+      join(HERE, '../../../hooks/use-sidebar-data.ts'),
       'utf8'
     )
-    assert.match(card, /applyForSupplier/)
-    assert.doesNotMatch(card, /upstream_key/)
+    assert.match(sidebar, /url: '\/credit-supply'/)
+    const hub = readFileSync(join(HERE, '../hub.tsx'), 'utf8')
+    assert.match(hub, /SUPER_ADMIN/)
+    assert.match(hub, /<SupplierPortal \/>/)
+    assert.match(hub, /<CreditSupplySection \/>/)
+    // The dashboard action points at the same entry; Wallet no longer carries it.
+    assert.match(dashboard, /to: '\/credit-supply'/)
+    const wallet = readFileSync(join(HERE, '../../wallet/index.tsx'), 'utf8')
+    assert.doesNotMatch(
+      wallet,
+      /SellCreditsCard|credit-contributions|supplier-portal/
+    )
   })
 
   test('the duplicate contribution module is gone', () => {

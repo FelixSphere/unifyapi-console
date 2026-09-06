@@ -154,9 +154,15 @@ func TestCreditLotTransitionsFollowTheLifecycle(t *testing.T) {
 	_, err := TransitionCreditLot(lot.Id, CreditLotTransition{To: CreditLotStatusSuspended, Actor: "test", Reason: "supplier asked us to pause"})
 	require.ErrorIs(t, err, ErrCreditLotTransition, "pending cannot be suspended, only approved or rejected")
 
-	approved, err := TransitionCreditLot(lot.Id, approve("test"))
+	// A supplier's lot is bought, not approved: verify, then pay.
+	_, err = TransitionCreditLot(lot.Id, approve("test"))
+	require.ErrorIs(t, err, ErrCreditLotTransition, "a supplier submission cannot be activated for free")
+	_, err = MarkCreditLotVerified(lot.Id, "system", "key answered")
+	require.NoError(t, err)
+	approved, err := PayCreditLot(lot.Id, CreditLotPayment{Actor: "test", Method: CreditLotPayoutExternal, Reference: "wire-1"})
 	require.NoError(t, err)
 	assert.Equal(t, CreditLotStatusActive, approved.Status)
+	assert.InDelta(t, 60, approved.PaidUSD, 1e-9, "face 100 at the 0.6 rate the lot was submitted with")
 	assert.InDelta(t, 0.6, ratio_setting.GetChannelCostRatio(7), 1e-9)
 	reloaded, err := GetChannelById(7, false)
 	require.NoError(t, err)
@@ -387,7 +393,9 @@ func TestApprovalIsRefusedWithoutTheTransferConfirmation(t *testing.T) {
 	setupCreditSupplyTestDB(t)
 	supplier := seedSupplier(t, "acme")
 	seedSupplierChannel(t, 7)
-	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 100, AcquisitionRate: 0.5, Source: CreditLotSourceSupplier}
+	// Operator-entered lots are the only ones approved without a payment, and
+	// then the operator carries the right-to-transfer confirmation.
+	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 100, AcquisitionRate: 0.5, Source: CreditLotSourceAdmin}
 	require.NoError(t, CreateCreditLot(lot, "portal:user:9"))
 
 	_, err := TransitionCreditLot(lot.Id, CreditLotTransition{To: CreditLotStatusActive, Actor: "root"})
@@ -491,4 +499,90 @@ func TestSupplierApplicationBecomesPendingAndCannotSubmitUntilApproved(t *testin
 	assert.Empty(t, approved.StatusReason)
 	require.NoError(t, SubmitSupplierCreditLot(approved, channel, lot, "user:9"))
 	assert.Equal(t, CreditLotStatusPending, lot.Status)
+}
+
+func TestCreditSupplyTermsArePostedAndValidated(t *testing.T) {
+	previous := CreditSupplyTerms2JSONString()
+	t.Cleanup(func() { require.NoError(t, UpdateCreditSupplyTermsByJSONString(previous)) })
+	terms := GetCreditSupplyTerms()
+	rate, ok := terms.BuyRate("Anthropic")
+	require.True(t, ok)
+	assert.InDelta(t, 0.20, rate, 1e-9, "2折 by default")
+	rate, _ = terms.BuyRate("openai")
+	assert.InDelta(t, 0.30, rate, 1e-9, "3折 by default")
+	_, ok = terms.BuyRate("mistral")
+	assert.False(t, ok, "vendors we do not buy are refused, not bought at 0")
+
+	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":1.2}}`), "paying more than face value is a typo")
+	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"Anthropic":0.2}}`), "keys are lower-case vendor ids")
+	require.NoError(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":0.25,"openai":0.35},"channel_priority":20,"min_face_usd":50,"platform_credit_bonus":0.1}`))
+	terms = GetCreditSupplyTerms()
+	assert.InDelta(t, 275, terms.PayoutUSD(1000, 0.25, CreditLotPayoutPlatformCredit), 1e-9, "10% bonus for taking platform credit")
+	assert.InDelta(t, 250, terms.PayoutUSD(1000, 0.25, CreditLotPayoutExternal), 1e-9)
+	assert.EqualValues(t, 20, terms.ChannelPriority)
+}
+
+func TestFirstSaleCreatesTheSupplierWithoutAnApplication(t *testing.T) {
+	setupCreditSupplyTestDB(t)
+	first, err := EnsureCreditSupplierForUser(&User{Id: 11, Username: "Tel Aviv Labs", Email: "ops@tal.example"})
+	require.NoError(t, err)
+	assert.Equal(t, CreditSupplierStatusActive, first.Status)
+	assert.Equal(t, "tel-aviv-labs", first.Code)
+	assert.Equal(t, "Tel Aviv Labs", first.Name)
+	again, err := EnsureCreditSupplierForUser(&User{Id: 11, Username: "Tel Aviv Labs"})
+	require.NoError(t, err)
+	assert.Equal(t, first.Id, again.Id, "idempotent per login")
+}
+
+func TestVerifiedSaleCannotBeApprovedOnlyPaid(t *testing.T) {
+	setupCreditSupplyTestDB(t)
+	supplier := seedSupplier(t, "seller-one")
+	seedSupplierChannel(t, 7)
+	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 1000, AcquisitionRate: 0.2, Source: CreditLotSourceSupplier, PayoutMethod: CreditLotPayoutExternal, PayoutAccount: "IBAN ..."}
+	require.NoError(t, CreateCreditLot(lot, "user:1"))
+	_, err := TransitionCreditLot(lot.Id, CreditLotTransition{To: CreditLotStatusActive, Actor: "root", TransferRightsConfirmed: true})
+	require.Error(t, err, "a supplier's submission is never activated for free")
+	verified, err := MarkCreditLotVerified(lot.Id, "system", "ok")
+	require.NoError(t, err)
+	assert.Equal(t, CreditLotStatusVerified, verified.Status)
+	_, err = MarkCreditLotVerified(lot.Id, "system", "twice")
+	require.Error(t, err)
+	_, err = TransitionCreditLot(lot.Id, CreditLotTransition{To: CreditLotStatusActive, Actor: "root", TransferRightsConfirmed: true})
+	require.ErrorIs(t, err, ErrCreditLotNeedsPayment)
+	overview, err := GetCreditSupplyOverview()
+	require.NoError(t, err)
+	assert.InDelta(t, 200, overview.AwaitingPaymentUSD, 1e-9)
+	paid, err := PayCreditLot(lot.Id, CreditLotPayment{Actor: "root", Reference: "ref-1"})
+	require.NoError(t, err)
+	assert.Equal(t, CreditLotStatusActive, paid.Status)
+	assert.InDelta(t, 200, paid.PaidUSD, 1e-9)
+	overview, _ = GetCreditSupplyOverview()
+	assert.InDelta(t, 200, overview.PaidUSD, 1e-9)
+	assert.Zero(t, overview.AwaitingPaymentUSD)
+	// Rejecting a verified sale still works and needs a reason.
+	lot2 := &CreditLot{SupplierId: supplier.Id, Vendor: "openai", FaceValueUSD: 500, AcquisitionRate: 0.3, Source: CreditLotSourceSupplier}
+	require.NoError(t, CreateCreditLot(lot2, "user:1"))
+	_, err = MarkCreditLotVerified(lot2.Id, "system", "ok")
+	require.NoError(t, err)
+	_, err = TransitionCreditLot(lot2.Id, CreditLotTransition{To: CreditLotStatusRejected, Actor: "root", Reason: "duplicate of #1"})
+	require.NoError(t, err)
+}
+
+func TestUpdateCreditSupplierIsAPatchThatKeepsTheLogin(t *testing.T) {
+	setupCreditSupplyTestDB(t)
+	supplier := &CreditSupplier{Name: "Acme", Code: "acme", ContactEmail: "a@acme.example", UserId: 42, Status: CreditSupplierStatusActive}
+	require.NoError(t, CreateCreditSupplier(supplier))
+	// A status-only update, as a script or curl would send it.
+	require.NoError(t, UpdateCreditSupplier(supplier.Id, &CreditSupplier{Status: CreditSupplierStatusSuspended, StatusReason: "paused"}))
+	got, err := GetCreditSupplierById(supplier.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 42, got.UserId, "the login link survives an unrelated update")
+	assert.Equal(t, "Acme", got.Name)
+	assert.Equal(t, "acme", got.Code)
+	assert.Equal(t, CreditSupplierStatusSuspended, got.Status)
+	// Unlinking is explicit.
+	require.NoError(t, UpdateCreditSupplier(supplier.Id, &CreditSupplier{UserId: -1, Status: CreditSupplierStatusActive}))
+	got, _ = GetCreditSupplierById(supplier.Id)
+	assert.Zero(t, got.UserId)
+	assert.Empty(t, got.StatusReason, "reactivation clears the reason")
 }

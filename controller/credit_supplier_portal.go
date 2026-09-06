@@ -22,11 +22,14 @@ package controller
 // customer side.
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -108,25 +111,6 @@ type portalSupplierView struct {
 	Counterparty string `json:"counterparty"`
 }
 
-// ApplyForSupplier turns an ordinary login into a pending supplier. It carries
-// no credentials by design; those arrive per lot after approval.
-func ApplyForSupplier(c *gin.Context) {
-	var input model.CreditSupplierApplication
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid request body"})
-		return
-	}
-	supplier, err := model.ApplyForCreditSupplier(c.GetInt("id"), input)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
-		return
-	}
-	common.SysLog("credit supply: new supplier application #" + strconv.Itoa(supplier.Id) + " (" + supplier.Code + ")")
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
-		"id": supplier.Id, "code": supplier.Code, "status": supplier.Status,
-	}})
-}
-
 // portalLotView is a lot without the operator's note.
 type portalLotView struct {
 	Id               int     `json:"id"`
@@ -145,6 +129,12 @@ type portalLotView struct {
 	Source           string  `json:"source"`
 	RetiredAt        int64   `json:"retired_at"`
 	CreatedAt        int64   `json:"created_at"`
+	VerifiedAt       int64   `json:"verified_at"`
+	PayoutMethod     string  `json:"payout_method"`
+	PayoutUSD        float64 `json:"payout_usd"`
+	PaidUSD          float64 `json:"paid_usd"`
+	PaidAt           int64   `json:"paid_at"`
+	PayoutReference  string  `json:"payout_reference"`
 }
 
 func GetSupplierPortal(c *gin.Context) {
@@ -175,13 +165,17 @@ func GetSupplierPortal(c *gin.Context) {
 
 	views := make([]portalLotView, 0, len(lots))
 	totals := gin.H{}
-	var face, consumed, remaining, payable float64
+	terms := model.GetCreditSupplyTerms()
+	var face, consumed, remaining, awaiting, paid float64
 	for _, lot := range lots {
 		views = append(views, portalLotView{
 			Id: lot.Id, Vendor: lot.Vendor, ChannelId: lot.ChannelId, ChannelName: channelNames[lot.ChannelId],
 			FaceValueUSD: lot.FaceValueUSD, AcquisitionRate: lot.AcquisitionRate, ConsumedUSD: lot.ConsumedUSD,
 			RemainingUSD: lot.RemainingUSD(), PayableUSD: lot.PayableUSD(), UnpricedRequests: lot.UnpricedRequests,
 			ExpiresAt: lot.ExpiresAt, Status: lot.Status, StatusReason: lot.StatusReason, Source: lot.Source, RetiredAt: lot.RetiredAt, CreatedAt: lot.CreatedAt,
+			VerifiedAt: lot.VerifiedAt, PayoutMethod: lot.PayoutMethod,
+			PayoutUSD: terms.PayoutUSD(lot.FaceValueUSD, lot.AcquisitionRate, lot.PayoutMethod),
+			PaidUSD:   lot.PaidUSD, PaidAt: lot.PaidAt, PayoutReference: lot.PayoutReference,
 		})
 		if lot.Status == model.CreditLotStatusRejected {
 			continue
@@ -189,12 +183,16 @@ func GetSupplierPortal(c *gin.Context) {
 		face += lot.FaceValueUSD
 		consumed += lot.ConsumedUSD
 		remaining += lot.RemainingUSD()
-		payable += lot.PayableUSD()
+		if lot.Status == model.CreditLotStatusVerified {
+			awaiting += terms.PayoutUSD(lot.FaceValueUSD, lot.AcquisitionRate, lot.PayoutMethod)
+		}
+		paid += lot.PaidUSD
 	}
 	totals["face_usd"] = face
 	totals["consumed_usd"] = consumed
 	totals["remaining_usd"] = remaining
-	totals["payable_usd"] = payable
+	totals["awaiting_payment_usd"] = awaiting
+	totals["paid_usd"] = paid
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
 		"supplier": portalSupplierView{
@@ -204,11 +202,83 @@ func GetSupplierPortal(c *gin.Context) {
 		"lots":    views,
 		"totals":  totals,
 		"vendors": supplierVendorPresets(),
+		"terms": gin.H{
+			"buy_rates":             terms.BuyRates,
+			"min_face_usd":          terms.MinFaceUSD,
+			"platform_credit_bonus": terms.PlatformCreditBonus,
+		},
 	}})
 }
 
 // supplierLotSubmission is what a supplier may propose. The rate is their
 // asking price; the operator may edit it before approving.
+// GetSupplierTerms is the price list a seller sees before typing anything.
+func GetSupplierTerms(c *gin.Context) {
+	terms := model.GetCreditSupplyTerms()
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
+		"buy_rates":             terms.BuyRates,
+		"min_face_usd":          terms.MinFaceUSD,
+		"platform_credit_bonus": terms.PlatformCreditBonus,
+		"channel_priority":      terms.ChannelPriority,
+		"vendors":               supplierVendorPresets(),
+	}})
+}
+
+// verifySupplierChannel makes one real request through the submitted key. It
+// is a variable so tests can stand in for the vendor.
+var verifySupplierChannel = func(channel *model.Channel, testModel string, testUserID int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	// The test request runs as the seller: the relay needs a real user for
+	// group and logging, and the seller is the one asking us to try their key.
+	result := testChannel(ctx, channel, testUserID, testModel, "", false)
+	if result.localErr != nil {
+		return result.localErr
+	}
+	if result.newAPIError != nil {
+		return result.newAPIError
+	}
+	return nil
+}
+
+// cheapestVerificationModel picks the least expensive catalogue model among
+// those the channel will serve: the verification request is paid for with the
+// seller's credits, so it should cost cents, not dollars.
+func cheapestVerificationModel(models []string) string {
+	best := ""
+	bestPrice := 0.0
+	for _, name := range models {
+		entry, ok := ratio_setting.CatalogEntryFor(name)
+		if !ok {
+			continue
+		}
+		price := entry.InputUSD + entry.OutputUSD
+		if best == "" || price < bestPrice {
+			best, bestPrice = name, price
+		}
+	}
+	if best == "" && len(models) > 0 {
+		return models[0]
+	}
+	return best
+}
+
+// sellerFor resolves (or creates) the supplier behind the calling login.
+func sellerFor(c *gin.Context) (*model.CreditSupplier, bool) {
+	userId := c.GetInt("id")
+	user, err := model.GetUserById(userId, false)
+	if err != nil || user == nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "sign in to sell credits"})
+		return nil, false
+	}
+	supplier, err := model.EnsureCreditSupplierForUser(user)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return nil, false
+	}
+	return supplier, true
+}
+
 type supplierLotSubmission struct {
 	Vendor          string   `json:"vendor"`
 	FaceValueUSD    float64  `json:"face_value_usd"`
@@ -217,16 +287,16 @@ type supplierLotSubmission struct {
 	Note            string   `json:"note"`
 	UpstreamKey     string   `json:"upstream_key"`
 	Models          []string `json:"models"`
+	// PayoutMethod is platform_credit (instant on settlement) or external;
+	// PayoutAccount is where an external payment should go, in the seller's words.
+	PayoutMethod  string `json:"payout_method"`
+	PayoutAccount string `json:"payout_account"`
 	// TransferRightsConfirmed is the supplier's own attestation. It does not
 	// replace the operator's check at approval; it puts the claim on record.
 	TransferRightsConfirmed bool `json:"transfer_rights_confirmed"`
 }
 
 func SubmitSupplierLot(c *gin.Context) {
-	supplier, ok := portalSupplier(c)
-	if !ok {
-		return
-	}
 	var req supplierLotSubmission
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid request body"})
@@ -235,6 +305,33 @@ func SubmitSupplierLot(c *gin.Context) {
 	preset, known := supplierVendorPreset_(strings.ToLower(strings.TrimSpace(req.Vendor)))
 	if !known {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "choose one of the offered vendors"})
+		return
+	}
+	terms := model.GetCreditSupplyTerms()
+	rate, buying := terms.BuyRate(preset.Key)
+	if !buying {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "we are not buying " + preset.Label + " credits at the moment"})
+		return
+	}
+	if req.FaceValueUSD < terms.MinFaceUSD {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": fmt.Sprintf("the smallest sale we accept is $%.0f of credit", terms.MinFaceUSD)})
+		return
+	}
+	req.PayoutMethod = strings.TrimSpace(req.PayoutMethod)
+	req.PayoutAccount = strings.TrimSpace(req.PayoutAccount)
+	switch req.PayoutMethod {
+	case model.CreditLotPayoutPlatformCredit:
+	case model.CreditLotPayoutExternal:
+		if req.PayoutAccount == "" {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "tell us where to send the payment (bank, PayPal, or wallet details)"})
+			return
+		}
+	default:
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "choose how you want to be paid"})
+		return
+	}
+	supplier, ok := sellerFor(c)
+	if !ok {
 		return
 	}
 	req.UpstreamKey = strings.TrimSpace(req.UpstreamKey)
@@ -282,17 +379,41 @@ func SubmitSupplierLot(c *gin.Context) {
 	lot := &model.CreditLot{
 		Vendor:          preset.Key,
 		FaceValueUSD:    req.FaceValueUSD,
-		AcquisitionRate: req.AcquisitionRate,
+		AcquisitionRate: rate, // the posted rate, never the caller's number
 		ExpiresAt:       req.ExpiresAt,
 		Note:            strings.TrimSpace(req.Note),
+		PayoutMethod:    req.PayoutMethod,
+		PayoutAccount:   req.PayoutAccount,
 	}
-	if err := model.SubmitSupplierCreditLot(supplier, channel, lot, optionChangeActor(c)); err != nil {
+	actor := optionChangeActor(c)
+	if err := model.SubmitSupplierCreditLot(supplier, channel, lot, actor); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
 	}
 	common.SysLog("credit supply: supplier " + supplier.Code + " submitted lot #" + strconv.Itoa(lot.Id) + " on channel #" + strconv.Itoa(channel.Id))
+
+	// Verify now, while the seller is still on the page: one real request
+	// through the key. A failure is answered immediately with the vendor's
+	// reason, and the key is discarded -- no operator round trip.
+	testModel := cheapestVerificationModel(models)
+	if err := verifySupplierChannel(channel, testModel, c.GetInt("id")); err != nil {
+		reason := "automatic verification failed: " + err.Error()
+		if rejectErr := model.RejectUnverifiedSubmission(lot, reason); rejectErr != nil {
+			common.SysError("credit supply: could not record failed verification for lot #" + strconv.Itoa(lot.Id) + ": " + rejectErr.Error())
+		}
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "we could not make a request with this key (" + err.Error() + "). Check the key and try again.", "data": gin.H{
+			"lot_id": lot.Id, "status": model.CreditLotStatusRejected,
+		}})
+		return
+	}
+	verified, err := model.MarkCreditLotVerified(lot.Id, "system", "key answered a "+testModel+" request")
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
-		"lot_id": lot.Id, "channel_id": channel.Id, "status": lot.Status,
+		"lot_id": verified.Id, "channel_id": channel.Id, "status": verified.Status,
+		"payout_usd": terms.PayoutUSD(verified.FaceValueUSD, verified.AcquisitionRate, verified.PayoutMethod),
 	}})
 }
 
