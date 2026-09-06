@@ -54,7 +54,15 @@ func TestCustomerPricingDecoratesACopyWithoutLeakingAcrossCustomers(t *testing.T
 	require.InDelta(t, 2.25, cached[0].ModelRatio, 1e-12)
 	require.NotNil(t, genAI[0].CustomerGroupModelRatio)
 	require.InDelta(t, 0.8, *genAI[0].CustomerGroupModelRatio, 1e-12)
-	require.InDelta(t, 2.5, genAI[0].ModelRatio, 1e-12, "display base is official $5 / 2")
+	// The published base must NOT be rewritten. This used to assert 2.5 -- the
+	// official ratio -- which locked in the behaviour that made Model Square
+	// quote a different price to a customer with a contract than to everyone
+	// else, and made the global ModelDiscount invisible on the page. The row
+	// keeps whatever the catalogue published; only the annotation is added.
+	require.InDelta(t, 2.25, genAI[0].ModelRatio, 1e-12,
+		"the published price must survive customer annotation untouched")
+	require.InDelta(t, 2.25, unifyAI[0].ModelRatio, 1e-12,
+		"and must be the same number for a different customer")
 	require.NotNil(t, unifyAI[0].CustomerGroupModelRatio)
 	require.InDelta(t, 0.9, *unifyAI[0].CustomerGroupModelRatio, 1e-12)
 }
