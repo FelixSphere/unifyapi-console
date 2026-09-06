@@ -239,9 +239,9 @@ func TestSellingIsDirectVerifiedAndPaidBeforeUse(t *testing.T) {
 		if channel.Key == "sk-broken" {
 			return verificationUsage{}, errors.New("401 invalid x-api-key")
 		}
-		// One million input tokens: at list price this is exactly the model's
-		// per-million input rate, easy to check below.
-		return verificationUsage{PromptTokens: 1_000_000, CompletionTokens: 0}, nil
+		// One million input tokens, 400k of them cached: the booking must use
+		// the cache-read rate for those, like customer draw-down does.
+		return verificationUsage{PromptTokens: 1_000_000, CachedTokens: 400_000, CompletionTokens: 0}, nil
 	}
 
 	// Terms are posted; the caller's rate is ignored.
@@ -295,10 +295,12 @@ func TestSellingIsDirectVerifiedAndPaidBeforeUse(t *testing.T) {
 	channel, err := model.GetChannelById(lot.ChannelId, false)
 	require.NoError(t, err)
 	assert.Equal(t, common.ChannelStatusManuallyDisabled, channel.Status, "nothing is consumed before payment")
-	inputUSD, _ := ratio_setting.ListPriceUSD(testedModel, 1_000_000, 0, 0)
-	assert.Greater(t, inputUSD, 0.0)
-	assert.InDelta(t, inputUSD, lot.ConsumedUSD, 1e-9, "the verification request is drawn from the lot at list price")
-	assert.Contains(t, lot.VerificationNote, "drawn from the lot")
+	withCache, _ := ratio_setting.ListPriceUSD(testedModel, 1_000_000, 400_000, 0)
+	noCache, _ := ratio_setting.ListPriceUSD(testedModel, 1_000_000, 0, 0)
+	assert.Greater(t, withCache, 0.0)
+	assert.Less(t, withCache, noCache, "the catalogue prices cached reads below fresh input for this model")
+	assert.InDelta(t, withCache, lot.ConsumedUSD, 1e-9, "the verification is drawn from the lot on the same cache-aware list-price path as customer traffic")
+	assert.Contains(t, lot.VerificationNote, "400000 of them cached")
 	var logs int64
 	require.NoError(t, model.DB.Model(&model.Log{}).Count(&logs).Error)
 	assert.Zero(t, logs, "a verification is not revenue: no consume log row")

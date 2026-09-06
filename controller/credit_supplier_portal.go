@@ -229,7 +229,13 @@ func GetSupplierTerms(c *gin.Context) {
 // verificationUsage is what the verification request consumed, so the lot can
 // account for the seller's credits it burned before we owned them.
 type verificationUsage struct {
-	PromptTokens     int
+	PromptTokens int
+	// CachedTokens is the subset of PromptTokens served from the vendor's
+	// cache. It must travel with the usage: the vendor charged the cache-read
+	// rate for them, so the lot has to be debited at that rate too, exactly as
+	// customer draw-down is. Dropping it would debit the seller more than the
+	// vendor took (12.5% on a typical 40%-cached profile).
+	CachedTokens     int
 	CompletionTokens int
 }
 
@@ -248,7 +254,7 @@ var verifySupplierChannel = func(channel *model.Channel, testModel string, testU
 	if result.newAPIError != nil {
 		return verificationUsage{}, result.newAPIError
 	}
-	return verificationUsage{PromptTokens: result.promptTokens, CompletionTokens: result.completionTokens}, nil
+	return verificationUsage{PromptTokens: result.promptTokens, CachedTokens: result.cachedTokens, CompletionTokens: result.completionTokens}, nil
 }
 
 // cheapestVerificationModel picks the least expensive catalogue model among
@@ -420,9 +426,11 @@ func SubmitSupplierLot(c *gin.Context) {
 	// The verification drew on the seller's vendor balance, at list price like
 	// every other draw-down; the lot's remaining figure must not pretend it
 	// did not happen.
-	verificationUSD, _ := ratio_setting.ListPriceUSD(testModel, int64(usage.PromptTokens), 0, int64(usage.CompletionTokens))
+	// Same pricing path as customer draw-down (RecordCreditSupplyConsumption):
+	// list price with cached reads at the vendor's cache-read rate.
+	verificationUSD, _ := ratio_setting.ListPriceUSD(testModel, int64(usage.PromptTokens), int64(usage.CachedTokens), int64(usage.CompletionTokens))
 	verified, err := model.MarkCreditLotVerified(lot.Id, "system",
-		fmt.Sprintf("key answered a %s request (%d in / %d out tokens, $%.6f at list price, drawn from the lot)", testModel, usage.PromptTokens, usage.CompletionTokens, verificationUSD),
+		fmt.Sprintf("key answered a %s request (%d in, %d of them cached / %d out tokens, $%.6f at list price, drawn from the lot)", testModel, usage.PromptTokens, usage.CachedTokens, usage.CompletionTokens, verificationUSD),
 		verificationUSD)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})

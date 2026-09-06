@@ -43,6 +43,7 @@ type testResult struct {
 	// Token usage of a successful test, for callers that account for it
 	// themselves (the credit-supply verification).
 	promptTokens     int
+	cachedTokens     int
 	completionTokens int
 }
 
@@ -546,6 +547,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		localErr:         nil,
 		newAPIError:      nil,
 		promptTokens:     usage.PromptTokens,
+		cachedTokens:     usage.PromptTokensDetails.CachedTokens,
 		completionTokens: usage.CompletionTokens,
 	}
 }
