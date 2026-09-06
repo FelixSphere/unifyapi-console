@@ -114,6 +114,24 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
 - Fields parsed into unsigned types (`*uint`) accept huge positive JSON numbers (e.g. `18446744073686646784`, a wrapped negative); a `>= 0` check is not sufficient, an upper bound is mandatory.
 - Regression tests for these invariants belong with the boundary they protect (request validators, converter helpers). See `relay/helper/openai_image_request_test.go`, `relay/common/relay_utils_test.go`, and `common/quota_math_test.go` for the expected style.
 
+**Pricing and rate calculation — change as little as possible:**
+
+Pricing code decides what a customer is invoiced and what we owe a vendor. A defect here does not crash; it bills the wrong number quietly, for every request, until someone reconciles. Treat every change to it as a commercial change, not a code change.
+
+- **Default to not touching it.** If a task can be completed without editing a price, a ratio, a discount, or the code that reads them, do that instead. "While I was in there" refactors of pricing code are not acceptable — no renames, no extracting helpers, no tidying dead branches, no changing a default. If a change is genuinely required, make the smallest one that does the job and say in the PR description what number it moves and for whom.
+- **Know which of the three prices you are touching.** They are deliberately independent and must stay that way:
+  1. *Official list price* — `setting/ratio_setting/unifyapi_catalog.go`, in USD per 1M tokens. The single source of truth. This is also our commercial price.
+  2. *Customer discount* — `ModelDiscount` (global, per model) and `GroupModelDiscount` (per customer group, per model), multiplied by the group ratio. Revenue side only.
+  3. *Upstream cost* — `ChannelCostRatio`, per channel. Reconciliation only; it must never reach a customer's bill.
+  A change that makes one of these move another is a bug even if every test passes. `TestACustomerDiscountNeverMovesUpstreamCost` and `TestACustomerContractNeverRewritesThePublishedPrice` exist for exactly this.
+- **The Model Square is the public catalogue, not a quote.** It prices from `model_ratio x group ratio`. It must never read a viewer's contract discount. This regressed once and shipped.
+- **Options rows replace, they do not merge.** `types.LoadFromJsonString` overwrites the whole map. One save through a raw-ratio path discards the entire code baseline — production once held a 2,877-key row this way. Admin-added prices go through `ExtraModelPricing`, which merges and may only ADD models the catalogue does not carry.
+- **Some completion ratios are locked and ignore your edit.** `getHardcodedCompletionModelRatio` in `setting/ratio_setting/model_ratio.go` returns a `locked` flag; when it is set, `GetCompletionRatio` never consults the configured map. Ten catalogued models are in that state today, all Claude and GPT-5 family. Changing an output price for one of them in the catalogue changes the published price and NOT the bill, with no warning. `TestLockedModelsStillBillTheCatalogueOutputPrice` fails if the two ever disagree; if it fails, the fix is in `model_ratio.go`, not in the catalogue.
+- **Save-time validation and structural validation do not cover the same shapes.** `UpdateExtraModelsByJSONString` rejects a cache price above the input price; it accepts transposed input/output prices, which only `ValidateCatalog` catches — and that does not run on the save path. Do not assume a saved price was validated.
+- **A price change needs a vendor citation.** Set `QuoteSource` and `QuoteDate` on the catalogue row. `scripts/pricing-drift` checks against models.dev, which has lagged a real vendor increase by 17 days; a dated quote outranks it.
+- **Tests must be able to fail.** A pricing test that derives its expected value from the same table it is testing proves nothing — a sweep built that way passed with `gpt-4o` mutated from $2.50 to $0.25. Pin hand-typed vendor dollar figures for the models carrying traffic (`TestPinnedDollarsForTheModelsThatCarryTheTraffic`), and check that the assertion actually breaks when you mutate the value it guards.
+- **Before changing anything under `setting/ratio_setting/`, `pkg/billingexpr/`, or the billing path in `service/`, read `docs/HOW-PRICING-WORKS.md`.** It gives the full derivation and names which test guards each step.
+
 **Backend test quality:** Backend tests must protect real behavior, API contracts, billing/accounting invariants, data compatibility, or regression paths.
 
 - Do not add tests that only improve coverage numbers, prove that code happens to run, or lock in implementation details without a user-visible or cross-module contract.

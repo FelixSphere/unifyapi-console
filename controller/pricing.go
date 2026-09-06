@@ -97,14 +97,16 @@ func applyCustomerGroupModelPricing(pricing []model.Pricing, userGroup string) [
 		if !catalogued {
 			continue
 		}
+		// Annotate only. The base price is NOT rewritten.
+		//
+		// This used to reset ModelRatio to official, to stop Model Square
+		// multiplying the global ModelDiscount underneath the customer's
+		// contract. Model Square no longer prices from the contract at all --
+		// it is a public catalogue -- so rewriting the base here would instead
+		// strip the global discount from the published price and quote list to
+		// everyone whose group happens to have a contract.
 		out[i].CustomerGroupModelRatio = &ratio
-		// Model Square multiplies the model base by its displayed group ratio.
-		// Reset the base to official here so a global ModelDiscount cannot be
-		// applied a second time beneath the final customer multiplier.
-		out[i].ModelRatio = entry.ModelRatio()
-		if entry.PerCallUSD > 0 {
-			out[i].ModelPrice = entry.PerCallUSD
-		}
+		_ = entry
 	}
 	return out
 }
