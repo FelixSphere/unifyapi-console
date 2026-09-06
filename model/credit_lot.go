@@ -522,7 +522,10 @@ func (lot *CreditLot) PurchasePriceUSD() float64 {
 
 // MarkCreditLotVerified records that the submitted key answered a real
 // request. The lot now waits for payment; the channel stays disabled.
-func MarkCreditLotVerified(id int, actor, note string) (*CreditLot, error) {
+// verificationUSD is the list-price cost of the verification request, booked
+// against the lot's face value: the seller's vendor balance really did go
+// down by that much, so the remaining figure must not overstate it.
+func MarkCreditLotVerified(id int, actor, note string, verificationUSD float64) (*CreditLot, error) {
 	var lot CreditLot
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.First(&lot, "id = ?", id).Error; err != nil {
@@ -534,6 +537,9 @@ func MarkCreditLotVerified(id int, actor, note string) (*CreditLot, error) {
 		lot.Status = CreditLotStatusVerified
 		lot.VerifiedAt = common.GetTimestamp()
 		lot.VerificationNote = strings.TrimSpace(note)
+		if verificationUSD > 0 {
+			lot.ConsumedUSD += verificationUSD
+		}
 		if err := tx.Save(&lot).Error; err != nil {
 			return err
 		}

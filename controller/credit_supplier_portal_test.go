@@ -32,7 +32,7 @@ func setupSupplierPortalTest(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&model.User{}, &model.Channel{}, &model.Ability{}, &model.Option{}, &model.PricingConfigHistory{},
-		&model.CreditSupplier{}, &model.CreditLot{}, &model.CreditLotUsage{}, &model.CreditLotEvent{}, &model.Settlement{},
+		&model.CreditSupplier{}, &model.CreditLot{}, &model.CreditLotUsage{}, &model.CreditLotEvent{}, &model.Settlement{}, &model.Log{},
 	))
 	previousDB := model.DB
 	previousType := common.MainDatabaseType()
@@ -90,7 +90,7 @@ func TestSupplierSubmissionCreatesDisabledChannelAndVerifiedLot(t *testing.T) {
 	require.NoError(t, model.DB.Create(&model.User{Id: 42, Username: "acme", DisplayName: "Acme Labs"}).Error)
 	previous := verifySupplierChannel
 	t.Cleanup(func() { verifySupplierChannel = previous })
-	verifySupplierChannel = func(*model.Channel, string, int) error { return nil }
+	verifySupplierChannel = func(*model.Channel, string, int) (verificationUsage, error) { return verificationUsage{}, nil }
 
 	// Refusals first: no attestation, no key, unknown vendor, foreign model, no payout choice.
 	for name, body := range map[string]string{
@@ -233,13 +233,15 @@ func TestSellingIsDirectVerifiedAndPaidBeforeUse(t *testing.T) {
 	previous := verifySupplierChannel
 	t.Cleanup(func() { verifySupplierChannel = previous })
 	var testedModel string
-	verifySupplierChannel = func(channel *model.Channel, testModel string, testUserID int) error {
+	verifySupplierChannel = func(channel *model.Channel, testModel string, testUserID int) (verificationUsage, error) {
 		testedModel = testModel
 		assert.Equal(t, 42, testUserID, "the test request runs as the seller")
 		if channel.Key == "sk-broken" {
-			return errors.New("401 invalid x-api-key")
+			return verificationUsage{}, errors.New("401 invalid x-api-key")
 		}
-		return nil
+		// One million input tokens: at list price this is exactly the model's
+		// per-million input rate, easy to check below.
+		return verificationUsage{PromptTokens: 1_000_000, CompletionTokens: 0}, nil
 	}
 
 	// Terms are posted; the caller's rate is ignored.
@@ -293,6 +295,13 @@ func TestSellingIsDirectVerifiedAndPaidBeforeUse(t *testing.T) {
 	channel, err := model.GetChannelById(lot.ChannelId, false)
 	require.NoError(t, err)
 	assert.Equal(t, common.ChannelStatusManuallyDisabled, channel.Status, "nothing is consumed before payment")
+	inputUSD, _ := ratio_setting.ListPriceUSD(testedModel, 1_000_000, 0, 0)
+	assert.Greater(t, inputUSD, 0.0)
+	assert.InDelta(t, inputUSD, lot.ConsumedUSD, 1e-9, "the verification request is drawn from the lot at list price")
+	assert.Contains(t, lot.VerificationNote, "drawn from the lot")
+	var logs int64
+	require.NoError(t, model.DB.Model(&model.Log{}).Count(&logs).Error)
+	assert.Zero(t, logs, "a verification is not revenue: no consume log row")
 	assert.EqualValues(t, 10, *channel.Priority, "bought credits drain before our own accounts")
 	assert.Contains(t, channel.Group, "default")
 
@@ -328,7 +337,7 @@ func TestExternalPayoutNeedsAReferenceAndBooksNoCredit(t *testing.T) {
 	require.NoError(t, model.DB.Create(&model.User{Id: 7, Username: "cashout", Quota: 0}).Error)
 	previous := verifySupplierChannel
 	t.Cleanup(func() { verifySupplierChannel = previous })
-	verifySupplierChannel = func(*model.Channel, string, int) error { return nil }
+	verifySupplierChannel = func(*model.Channel, string, int) (verificationUsage, error) { return verificationUsage{}, nil }
 	c, recorder := portalContext(t, 7, http.MethodPost, "/api/supplier/lots", `{"vendor":"openai","face_value_usd":500,"upstream_key":"sk-ok","payout_method":"external","payout_account":"PayPal ops@cashout.example","transfer_rights_confirmed":true}`)
 	SubmitSupplierLot(c)
 	payload := decode(t, recorder)

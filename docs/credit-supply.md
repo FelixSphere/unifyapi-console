@@ -116,9 +116,16 @@ reprices a sale already made. A vendor with no rate is refused, not bought at 0.
    they own or control the account.
 2. Submit. The server creates the supplier record on first sale, a **disabled**
    channel carrying the key, and a `pending` lot, then **verifies at once**:
-   one real request through the key against a catalogue model. A failure is
-   answered on the spot with the vendor's error, the lot becomes `rejected`
-   and the key is deleted — no operator round trip. Success → `verified`.
+   one real request through the key against the cheapest catalogue model the
+   channel will serve. A failure is answered on the spot with the vendor's
+   error, the lot becomes `rejected` and the key is deleted — no operator
+   round trip. Success → `verified`.
+
+   The verification request is **not consumption**: nobody is charged for it,
+   so it is kept out of the consume log (`channelTestOptions.SkipConsumeLog`)
+   and therefore out of reconciliation's revenue and cost. Its list-price cost
+   is booked on the lot's `consumed_usd` instead, because the seller's vendor
+   balance really went down by that much before we owned it.
 3. Wait for payment. The page shows *Awaiting payment $X*.
 
 ### The operator's flow, one click

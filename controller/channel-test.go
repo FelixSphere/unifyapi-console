@@ -40,6 +40,34 @@ type testResult struct {
 	context     *gin.Context
 	localErr    error
 	newAPIError *types.NewAPIError
+	// Token usage of a successful test, for callers that account for it
+	// themselves (the credit-supply verification).
+	promptTokens     int
+	completionTokens int
+}
+
+// channelTestOptionsKey carries per-call options through the context.
+type channelTestOptionsKey struct{}
+
+// channelTestOptions adjusts what testChannel does beside the request itself.
+type channelTestOptions struct {
+	// SkipConsumeLog keeps the test out of the consumption ledger. The
+	// operator's channel test is billed to the test user like any request; a
+	// credit-supply verification is not revenue (nobody is charged for it),
+	// so logging it would inflate reconciliation's revenue and cost columns.
+	SkipConsumeLog bool
+}
+
+func withChannelTestOptions(ctx context.Context, opts channelTestOptions) context.Context {
+	return context.WithValue(ctx, channelTestOptionsKey{}, opts)
+}
+
+func channelTestOptionsFrom(ctx context.Context) channelTestOptions {
+	if ctx == nil {
+		return channelTestOptions{}
+	}
+	opts, _ := ctx.Value(channelTestOptionsKey{}).(channelTestOptions)
+	return opts
 }
 
 func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointType string) string {
@@ -492,29 +520,33 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	}
 	info.SetEstimatePromptTokens(usage.PromptTokens)
 
-	quota, tieredResult := settleTestQuota(info, priceData, usage)
-	tok := time.Now()
-	milliseconds := tok.Sub(tik).Milliseconds()
-	consumedTime := float64(milliseconds) / 1000.0
-	other := buildTestLogOther(c, info, priceData, usage, tieredResult)
-	model.RecordConsumeLog(c, testUserID, model.RecordConsumeLogParams{
-		ChannelId:        channel.Id,
-		PromptTokens:     usage.PromptTokens,
-		CompletionTokens: usage.CompletionTokens,
-		ModelName:        info.OriginModelName,
-		TokenName:        "模型测试",
-		Quota:            quota,
-		Content:          "模型测试",
-		UseTimeSeconds:   int(consumedTime),
-		IsStream:         info.IsStream,
-		Group:            service.CustomerGroupForLog(info, other),
-		Other:            other,
-	})
+	if !channelTestOptionsFrom(ctx).SkipConsumeLog {
+		quota, tieredResult := settleTestQuota(info, priceData, usage)
+		tok := time.Now()
+		milliseconds := tok.Sub(tik).Milliseconds()
+		consumedTime := float64(milliseconds) / 1000.0
+		other := buildTestLogOther(c, info, priceData, usage, tieredResult)
+		model.RecordConsumeLog(c, testUserID, model.RecordConsumeLogParams{
+			ChannelId:        channel.Id,
+			PromptTokens:     usage.PromptTokens,
+			CompletionTokens: usage.CompletionTokens,
+			ModelName:        info.OriginModelName,
+			TokenName:        "模型测试",
+			Quota:            quota,
+			Content:          "模型测试",
+			UseTimeSeconds:   int(consumedTime),
+			IsStream:         info.IsStream,
+			Group:            service.CustomerGroupForLog(info, other),
+			Other:            other,
+		})
+	}
 	common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
 	return testResult{
-		context:     c,
-		localErr:    nil,
-		newAPIError: nil,
+		context:          c,
+		localErr:         nil,
+		newAPIError:      nil,
+		promptTokens:     usage.PromptTokens,
+		completionTokens: usage.CompletionTokens,
 	}
 }
 

@@ -226,19 +226,29 @@ func GetSupplierTerms(c *gin.Context) {
 
 // verifySupplierChannel makes one real request through the submitted key. It
 // is a variable so tests can stand in for the vendor.
-var verifySupplierChannel = func(channel *model.Channel, testModel string, testUserID int) error {
+// verificationUsage is what the verification request consumed, so the lot can
+// account for the seller's credits it burned before we owned them.
+type verificationUsage struct {
+	PromptTokens     int
+	CompletionTokens int
+}
+
+var verifySupplierChannel = func(channel *model.Channel, testModel string, testUserID int) (verificationUsage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
-	// The test request runs as the seller: the relay needs a real user for
-	// group and logging, and the seller is the one asking us to try their key.
+	// The request runs as the seller (the relay needs a real user for group
+	// resolution) but is NOT recorded as their consumption: nobody is charged
+	// for a verification, so it must not appear as revenue or as customer
+	// cost in reconciliation. Its vendor-side cost is booked on the lot instead.
+	ctx = withChannelTestOptions(ctx, channelTestOptions{SkipConsumeLog: true})
 	result := testChannel(ctx, channel, testUserID, testModel, "", false)
 	if result.localErr != nil {
-		return result.localErr
+		return verificationUsage{}, result.localErr
 	}
 	if result.newAPIError != nil {
-		return result.newAPIError
+		return verificationUsage{}, result.newAPIError
 	}
-	return nil
+	return verificationUsage{PromptTokens: result.promptTokens, CompletionTokens: result.completionTokens}, nil
 }
 
 // cheapestVerificationModel picks the least expensive catalogue model among
@@ -396,7 +406,8 @@ func SubmitSupplierLot(c *gin.Context) {
 	// through the key. A failure is answered immediately with the vendor's
 	// reason, and the key is discarded -- no operator round trip.
 	testModel := cheapestVerificationModel(models)
-	if err := verifySupplierChannel(channel, testModel, c.GetInt("id")); err != nil {
+	usage, err := verifySupplierChannel(channel, testModel, c.GetInt("id"))
+	if err != nil {
 		reason := "automatic verification failed: " + err.Error()
 		if rejectErr := model.RejectUnverifiedSubmission(lot, reason); rejectErr != nil {
 			common.SysError("credit supply: could not record failed verification for lot #" + strconv.Itoa(lot.Id) + ": " + rejectErr.Error())
@@ -406,7 +417,13 @@ func SubmitSupplierLot(c *gin.Context) {
 		}})
 		return
 	}
-	verified, err := model.MarkCreditLotVerified(lot.Id, "system", "key answered a "+testModel+" request")
+	// The verification drew on the seller's vendor balance, at list price like
+	// every other draw-down; the lot's remaining figure must not pretend it
+	// did not happen.
+	verificationUSD, _ := ratio_setting.ListPriceUSD(testModel, int64(usage.PromptTokens), 0, int64(usage.CompletionTokens))
+	verified, err := model.MarkCreditLotVerified(lot.Id, "system",
+		fmt.Sprintf("key answered a %s request (%d in / %d out tokens, $%.6f at list price, drawn from the lot)", testModel, usage.PromptTokens, usage.CompletionTokens, verificationUSD),
+		verificationUSD)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
