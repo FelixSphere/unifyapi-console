@@ -157,7 +157,7 @@ func TestCreditLotTransitionsFollowTheLifecycle(t *testing.T) {
 	// A supplier's lot is bought, not approved: verify, then pay.
 	_, err = TransitionCreditLot(lot.Id, approve("test"))
 	require.ErrorIs(t, err, ErrCreditLotTransition, "a supplier submission cannot be activated for free")
-	_, err = MarkCreditLotVerified(lot.Id, "system", "key answered")
+	_, err = MarkCreditLotVerified(lot.Id, "system", "key answered", 0)
 	require.NoError(t, err)
 	approved, err := PayCreditLot(lot.Id, CreditLotPayment{Actor: "test", Method: CreditLotPayoutExternal, Reference: "wire-1"})
 	require.NoError(t, err)
@@ -542,10 +542,12 @@ func TestVerifiedSaleCannotBeApprovedOnlyPaid(t *testing.T) {
 	require.NoError(t, CreateCreditLot(lot, "user:1"))
 	_, err := TransitionCreditLot(lot.Id, CreditLotTransition{To: CreditLotStatusActive, Actor: "root", TransferRightsConfirmed: true})
 	require.Error(t, err, "a supplier's submission is never activated for free")
-	verified, err := MarkCreditLotVerified(lot.Id, "system", "ok")
+	verified, err := MarkCreditLotVerified(lot.Id, "system", "ok", 0.75)
 	require.NoError(t, err)
 	assert.Equal(t, CreditLotStatusVerified, verified.Status)
-	_, err = MarkCreditLotVerified(lot.Id, "system", "twice")
+	assert.InDelta(t, 0.75, verified.ConsumedUSD, 1e-9, "the verification's list-price cost is drawn from the lot")
+	assert.InDelta(t, 999.25, verified.RemainingUSD(), 1e-9)
+	_, err = MarkCreditLotVerified(lot.Id, "system", "twice", 0)
 	require.Error(t, err)
 	_, err = TransitionCreditLot(lot.Id, CreditLotTransition{To: CreditLotStatusActive, Actor: "root", TransferRightsConfirmed: true})
 	require.ErrorIs(t, err, ErrCreditLotNeedsPayment)
@@ -562,7 +564,7 @@ func TestVerifiedSaleCannotBeApprovedOnlyPaid(t *testing.T) {
 	// Rejecting a verified sale still works and needs a reason.
 	lot2 := &CreditLot{SupplierId: supplier.Id, Vendor: "openai", FaceValueUSD: 500, AcquisitionRate: 0.3, Source: CreditLotSourceSupplier}
 	require.NoError(t, CreateCreditLot(lot2, "user:1"))
-	_, err = MarkCreditLotVerified(lot2.Id, "system", "ok")
+	_, err = MarkCreditLotVerified(lot2.Id, "system", "ok", 0)
 	require.NoError(t, err)
 	_, err = TransitionCreditLot(lot2.Id, CreditLotTransition{To: CreditLotStatusRejected, Actor: "root", Reason: "duplicate of #1"})
 	require.NoError(t, err)
