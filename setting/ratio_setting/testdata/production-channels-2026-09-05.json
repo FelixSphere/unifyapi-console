@@ -1,0 +1,382 @@
+{
+ "captured": "2026-09-05",
+ "source": "abilities JOIN channels on i-0358879cccc5be97a (ap-southeast-5), read-only via SSM",
+ "note": "Enabled channels serving at least one model. Names and model counts only.",
+ "channels": [
+  {
+   "id": "97",
+   "name": "Flatkey DeepSeek · deepseek-v3.2-thinking",
+   "models": 1
+  },
+  {
+   "id": "98",
+   "name": "Flatkey OpenAI · gpt-5",
+   "models": 1
+  },
+  {
+   "id": "99",
+   "name": "OR Gemini · nano-banana-pro-preview",
+   "models": 1
+  },
+  {
+   "id": "100",
+   "name": "Flatkey Gemini · nano-banana-pro-preview",
+   "models": 1
+  },
+  {
+   "id": "101",
+   "name": "FlatKey Anthropic · claude-opus-4-5",
+   "models": 1
+  },
+  {
+   "id": "102",
+   "name": "Flatkey Gemini · gemini-3.1-flash-image",
+   "models": 1
+  },
+  {
+   "id": "103",
+   "name": "OR Gemini · gemini-flash-lite-latest",
+   "models": 1
+  },
+  {
+   "id": "104",
+   "name": "OR - Anthropic · claude-opus-4-8",
+   "models": 1
+  },
+  {
+   "id": "105",
+   "name": "OR Deepseek · deepseek-v4-flash",
+   "models": 1
+  },
+  {
+   "id": "106",
+   "name": "Flatkey Gemini · gemini-3-pro-image",
+   "models": 1
+  },
+  {
+   "id": "107",
+   "name": "Flatkey OpenAI · gpt-4o",
+   "models": 1
+  },
+  {
+   "id": "108",
+   "name": "OR Deepseek · deepseek-v3.2",
+   "models": 1
+  },
+  {
+   "id": "109",
+   "name": "OR Gemini · gemini-3.1-flash-lite-preview",
+   "models": 1
+  },
+  {
+   "id": "110",
+   "name": "Flatkey DeepSeek · deepseek-v3.2",
+   "models": 1
+  },
+  {
+   "id": "111",
+   "name": "OR Gemini · gemini-2.5-flash-lite",
+   "models": 1
+  },
+  {
+   "id": "112",
+   "name": "FlatKey Kimi · kimi-k3",
+   "models": 1
+  },
+  {
+   "id": "113",
+   "name": "Flatkey GLM 5 · glm-5.1",
+   "models": 1
+  },
+  {
+   "id": "114",
+   "name": "Flatkey Gemini · gemini-2.5-flash-image",
+   "models": 1
+  },
+  {
+   "id": "115",
+   "name": "OR - Anthropic · claude-sonnet-4-6",
+   "models": 1
+  },
+  {
+   "id": "116",
+   "name": "OR - Anthropic · claude-opus-4-7",
+   "models": 1
+  },
+  {
+   "id": "117",
+   "name": "OR OpenAI · gpt-5.4",
+   "models": 1
+  },
+  {
+   "id": "118",
+   "name": "Flatkey Gemini · gemini-2.5-flash",
+   "models": 1
+  },
+  {
+   "id": "119",
+   "name": "Flatkey Qwen · qwen3.7-plus",
+   "models": 1
+  },
+  {
+   "id": "120",
+   "name": "Flatkey Qwen · qwen3.7-max",
+   "models": 1
+  },
+  {
+   "id": "121",
+   "name": "FlatKey Anthropic · claude-fable-5.1",
+   "models": 1
+  },
+  {
+   "id": "122",
+   "name": "Flatkey Gemini · gemini-flash-latest",
+   "models": 1
+  },
+  {
+   "id": "123",
+   "name": "OR Gemini · gemini-2.5-flash",
+   "models": 1
+  },
+  {
+   "id": "124",
+   "name": "Flatkey Gemini · gemini-2.5-flash-lite",
+   "models": 1
+  },
+  {
+   "id": "125",
+   "name": "Flatkey Qwen · qwen3.5-flash",
+   "models": 1
+  },
+  {
+   "id": "126",
+   "name": "OR OpenAI · gpt-5",
+   "models": 1
+  },
+  {
+   "id": "127",
+   "name": "FlatKey Kimi · kimi-k2.6",
+   "models": 1
+  },
+  {
+   "id": "128",
+   "name": "OR - Anthropic · claude-opus-5",
+   "models": 1
+  },
+  {
+   "id": "129",
+   "name": "Flatkey Gemini · gemini-3.1-flash-lite-preview",
+   "models": 1
+  },
+  {
+   "id": "130",
+   "name": "Flatkey GLM 5 · glm-5-turbo",
+   "models": 1
+  },
+  {
+   "id": "131",
+   "name": "OR Qwen · qwen3.7-plus",
+   "models": 1
+  },
+  {
+   "id": "132",
+   "name": "OR - Anthropic · claude-opus-4-6",
+   "models": 1
+  },
+  {
+   "id": "133",
+   "name": "OR Gemini · gemini-3-flash-preview",
+   "models": 1
+  },
+  {
+   "id": "134",
+   "name": "FlatKey Anthropic · claude-sonnet-5",
+   "models": 1
+  },
+  {
+   "id": "135",
+   "name": "OR Deepseek · deepseek-v4-pro",
+   "models": 1
+  },
+  {
+   "id": "136",
+   "name": "OR Gemini · gemini-3-pro-image",
+   "models": 1
+  },
+  {
+   "id": "137",
+   "name": "Flatkey Gemini · gemini-pro-latest",
+   "models": 1
+  },
+  {
+   "id": "138",
+   "name": "OR Gemini · gemini-2.5-pro",
+   "models": 1
+  },
+  {
+   "id": "139",
+   "name": "OR - Anthropic · claude-fable-5",
+   "models": 1
+  },
+  {
+   "id": "140",
+   "name": "Flatkey Gemini · gemini-3.1-pro-preview",
+   "models": 1
+  },
+  {
+   "id": "141",
+   "name": "FlatKey Anthropic · claude-sonnet-4-6",
+   "models": 1
+  },
+  {
+   "id": "142",
+   "name": "Flatkey OpenAI · gpt-5-mini",
+   "models": 1
+  },
+  {
+   "id": "143",
+   "name": "Flatkey GLM 5 · glm-5.2",
+   "models": 1
+  },
+  {
+   "id": "144",
+   "name": "OR Qwen · qwen3.7-max",
+   "models": 1
+  },
+  {
+   "id": "145",
+   "name": "OR Qwen · qwen3.6-plus",
+   "models": 1
+  },
+  {
+   "id": "146",
+   "name": "Flatkey Qwen · qwen3.5-plus",
+   "models": 1
+  },
+  {
+   "id": "147",
+   "name": "OR Kimi · kimi-k2.5",
+   "models": 1
+  },
+  {
+   "id": "148",
+   "name": "Flatkey Qwen · qwen3.6-plus",
+   "models": 1
+  },
+  {
+   "id": "149",
+   "name": "FlatKey Anthropic · claude-opus-4-6",
+   "models": 1
+  },
+  {
+   "id": "150",
+   "name": "Flatkey OpenAI · gpt-4o-mini",
+   "models": 1
+  },
+  {
+   "id": "151",
+   "name": "OR Qwen · qwen3.8-max",
+   "models": 1
+  },
+  {
+   "id": "152",
+   "name": "OR OpenAI · gpt-4o",
+   "models": 1
+  },
+  {
+   "id": "153",
+   "name": "OR Gemini · gemini-flash-latest",
+   "models": 1
+  },
+  {
+   "id": "154",
+   "name": "FlatKey Anthropic · claude-opus-5",
+   "models": 1
+  },
+  {
+   "id": "155",
+   "name": "FlatKey Kimi · kimi-k2.5",
+   "models": 1
+  },
+  {
+   "id": "156",
+   "name": "FlatKey Anthropic · claude-sonnet-4-5",
+   "models": 1
+  },
+  {
+   "id": "157",
+   "name": "Flatkey Qwen · qwen3.8-max",
+   "models": 1
+  },
+  {
+   "id": "158",
+   "name": "Flatkey Gemini · gemini-2.5-pro",
+   "models": 1
+  },
+  {
+   "id": "159",
+   "name": "OR Gemini · gemini-3.1-pro-preview",
+   "models": 1
+  },
+  {
+   "id": "160",
+   "name": "Flatkey GLM 5 · glm-5.3",
+   "models": 1
+  },
+  {
+   "id": "161",
+   "name": "FlatKey Anthropic · claude-opus-4-7",
+   "models": 1
+  },
+  {
+   "id": "162",
+   "name": "Flatkey Gemini · gemini-3-flash-preview",
+   "models": 1
+  },
+  {
+   "id": "163",
+   "name": "OR Gemini · gemini-3.1-flash-image",
+   "models": 1
+  },
+  {
+   "id": "164",
+   "name": "Flatkey DeepSeek · deepseek-v3",
+   "models": 1
+  },
+  {
+   "id": "165",
+   "name": "Flatkey DeepSeek · deepseek-v4-flash",
+   "models": 1
+  },
+  {
+   "id": "166",
+   "name": "FlatKey Anthropic · claude-opus-4-8",
+   "models": 1
+  },
+  {
+   "id": "167",
+   "name": "OR Gemini · gemini-2.5-flash-image",
+   "models": 1
+  },
+  {
+   "id": "168",
+   "name": "Flatkey Gemini · gemini-flash-lite-latest",
+   "models": 1
+  },
+  {
+   "id": "169",
+   "name": "OR Kimi · kimi-k3",
+   "models": 1
+  },
+  {
+   "id": "170",
+   "name": "Flatkey DeepSeek · deepseek-v4-pro",
+   "models": 1
+  },
+  {
+   "id": "171",
+   "name": "OR Gemini · gemini-pro-latest",
+   "models": 1
+  }
+ ]
+}

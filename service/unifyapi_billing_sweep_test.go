@@ -140,37 +140,49 @@ func TestACustomerDiscountNeverMovesUpstreamCost(t *testing.T) {
 	}
 }
 
-// TestEveryCustomerGetsAtLeastTenPercentOff enforces the public promise.
+// TestGroupRatioCanDeliverAPerCustomerDiscount proves the MECHANISM, and the
+// name now says so because the previous one did not.
 //
-// The pricing page states the vendor's list price and says every customer has a
-// discount of at least 10%. As of 2026-08-31 the model discounts were
-// deliberately reset to 1 so the page shows the vendor's true list price -- which
-// means the discount now has to come from the GROUP layer, and nothing checks
-// that it actually does.
+// It was called TestEveryCustomerGetsAtLeastTenPercentOff, which was wrong twice
+// over and the CI/CD agent was right to say so:
 //
-// This is the check. A group whose effective ratio is 1 charges list price, and
-// every customer in it is being quoted a discount they are not getting.
-func TestEveryCustomerGetsAtLeastTenPercentOff(t *testing.T) {
-	// The customer-facing groups on production as of 2026-08-31.
-	groups := []string{"Builder_hub_2026", "Chinhin", "GenAI", "UnifyAI", "Vip User"}
-
+//   - It sets the group ratios itself and then asserts on them, so it cannot
+//     fail on the production fact it was named for. Live GroupRatio is all 1 and
+//     ModelDiscount is empty -- every customer pays exact list -- and it passed
+//     green throughout. That is the same shape as two failures that have already
+//     cost us here: an emptied discount table being indistinguishable from list
+//     price, and the 37.5 sentinel rendering as though it were a real price.
+//
+//   - "at least 10%" appears in neither this repo's locale files nor the
+//     marketing site's source. It came from a chat message about copy the owner
+//     was still drafting. Encoding it as a requirement would one day fail CI and
+//     tell an operator they are breaking a promise that may not exist.
+//
+// What it actually proves: with model discounts at 1, a group ratio alone is
+// enough to deliver a per-customer discount, and it reaches the charge. Worth
+// having, because the discount layer moved to the group on 2026-08-31 and
+// nothing else exercises that path end to end.
+//
+// TO MAKE THIS A REAL GUARD once the ratios are configured: read group_ratio
+// from the production fixture instead of setting it here, the way
+// TestServedButUnsellableModelsAreDeclaredAndRefused reads the model list. It
+// would then fail on the live configuration rather than on one the test invented
+// -- which is the only version worth the name it used to have.
+func TestGroupRatioCanDeliverAPerCustomerDiscount(t *testing.T) {
 	previous := ratio_setting.GroupRatio2JSONString()
 	t.Cleanup(func() { require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(previous)) })
-	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(
-		`{"Builder_hub_2026":0.9,"Chinhin":0.9,"GenAI":0.9,"UnifyAI":0.9,"Vip User":0.85}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"list":1,"discounted":0.9}`))
 	withDiscount(t, `{}`)
 
 	// claude-sonnet-5 lists at $2 in / $10 out, so 1M each is $12.00 at list.
-	const listUSD = 12.0
-	for _, group := range groups {
-		t.Run(group, func(t *testing.T) {
-			paid := chargeUSD(t, "claude-sonnet-5", group, oneMillionEach())
-			require.LessOrEqual(t, paid, listUSD*0.9+1e-9,
-				"%s pays $%.4f against a $%.2f list price, i.e. %.1f%% off. The pricing page "+
-					"promises at least 10%%. With model discounts at 1, that has to come from "+
-					"this group's ratio.", group, paid, listUSD, (1-paid/listUSD)*100)
-		})
-	}
+	atList := chargeUSD(t, "claude-sonnet-5", "list", oneMillionEach())
+	require.InDelta(t, 12.0, atList, 1e-6,
+		"with no model discount the charge must be the vendor's list price exactly")
+
+	discounted := chargeUSD(t, "claude-sonnet-5", "discounted", oneMillionEach())
+	require.InDelta(t, 10.8, discounted, 1e-6)
+	require.InDelta(t, 0.9, discounted/atList, 1e-9,
+		"a 0.9 group ratio must take exactly 10 percent off, with the discount layer empty")
 }
 
 // TestListPriceIsWhatThePricingPageShows. The page states the vendor's list
