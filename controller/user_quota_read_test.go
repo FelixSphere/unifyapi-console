@@ -269,3 +269,63 @@ func TestAdminSubtractCanDriveABalanceNegative(t *testing.T) {
 	assert.Error(t, model.SetUserQuota(user.Id, -1),
 		"override refuses what subtract will happily produce")
 }
+
+// TestSettlementCanOverdrawAWalletBeyondItsBalance pins CURRENT behaviour of
+// the spend path, measured end to end and flagged for a product decision.
+//
+// The relay gate checks the balance against the PRE-CONSUME estimate, which is
+// derived from input tokens because the completion length is not knowable in
+// advance. Settlement then charges the real cost with no floor, so a request
+// that passes the gate can leave the wallet negative by roughly the cost of its
+// completion.
+//
+// Measured on a live instance (mock upstream, 10000 prompt / 4000 cached / 2000
+// completion):
+//
+//	claude-opus-4-8, wallet 1300 ($0.0026), estimate 1250 -> gate passes
+//	actual charge 41000 ($0.0820) -> wallet -39700 (-$0.0794), 31.5x the balance
+//
+// Two things bound the exposure, both verified: the reservation is atomic, so 3
+// concurrent requests against that wallet served exactly ONE and refused two on
+// quota; and once negative, `userQuota <= 0` refuses everything. So the loss is
+// one completion per top-up cycle, not unbounded -- but it scales with
+// completion length (a 32k-token opus completion is ~$0.80).
+//
+// Not changed here: pre-charging max_tokens would refuse legitimate requests,
+// and capping the settlement would mean serving a response we cannot bill.
+// Which trade to take is a business call.
+func TestSettlementCanOverdrawAWalletBeyondItsBalance(t *testing.T) {
+	setupAdminUserReadTest(t)
+	user := fundedTenantLogin(t, "funded", 1_300)
+
+	// The spend path's own reservation cannot overdraw...
+	_, err := model.TryDecreaseUserQuotaWithTx(model.DB, user.Id, 41_000)
+	assert.Error(t, err, "an atomic reservation must refuse to overdraw")
+
+	// ...but settlement applies the real cost unguarded.
+	require.NoError(t, model.DecreaseUserQuota(user.Id, 41_000, true))
+	spendable, err := model.GetUserQuota(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 1_300-41_000, spendable,
+		"settlement has no floor today; see the comment before changing this")
+}
+
+// TestUnlimitedTokenStillChargesTheWallet guards the obvious catastrophe.
+//
+// `unlimited_quota` removes the TOKEN's own ceiling. If it also skipped the
+// wallet, an unlimited token would be free service. Verified live: an unlimited
+// token's request still took 1200 off the wallet, and the token's own
+// remain_quota simply went negative and is ignored.
+func TestUnlimitedTokenStillChargesTheWallet(t *testing.T) {
+	setupAdminUserReadTest(t)
+	user := fundedTenantLogin(t, "funded", 10_000)
+
+	// The wallet debit is the same call the relay settles with, regardless of
+	// the token's own ceiling: nothing in this path consults unlimited_quota.
+	require.NoError(t, model.DecreaseUserQuota(user.Id, 1_200, true))
+
+	spendable, err := model.GetUserQuota(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 8_800, spendable,
+		"an unlimited token must not mean a free wallet")
+}
