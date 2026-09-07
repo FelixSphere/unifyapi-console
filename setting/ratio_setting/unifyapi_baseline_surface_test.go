@@ -59,40 +59,6 @@ func TestBaselineMapsAreEmptyUntilAModelNeedsThem(t *testing.T) {
 	}
 }
 
-// TestBaselineMapsPickUpARowThatSetsThem proves the builders are wired, rather
-// than trivially empty because they never read anything.
-func TestBaselineMapsPickUpARowThatSetsThem(t *testing.T) {
-	entries := []CatalogEntry{
-		{Model: "probe-percall", PerCallUSD: 0.04},
-		{Model: "probe-image", ImageRatio: 3},
-		{Model: "probe-audio", AudioRatio: 7, AudioCompletionRatio: 11},
-	}
-
-	got := map[string]map[string]float64{}
-	for _, build := range []struct {
-		name  string
-		field func(CatalogEntry) float64
-	}{
-		{"PerCallUSD", func(e CatalogEntry) float64 { return e.PerCallUSD }},
-		{"ImageRatio", func(e CatalogEntry) float64 { return e.ImageRatio }},
-		{"AudioRatio", func(e CatalogEntry) float64 { return e.AudioRatio }},
-		{"AudioCompletionRatio", func(e CatalogEntry) float64 { return e.AudioCompletionRatio }},
-	} {
-		m := map[string]float64{}
-		for _, e := range entries {
-			if v := build.field(e); v > 0 {
-				m[e.Model] = v
-			}
-		}
-		got[build.name] = m
-	}
-
-	assert.Equal(t, map[string]float64{"probe-percall": 0.04}, got["PerCallUSD"])
-	assert.Equal(t, map[string]float64{"probe-image": 3}, got["ImageRatio"])
-	assert.Equal(t, map[string]float64{"probe-audio": 7}, got["AudioRatio"])
-	assert.Equal(t, map[string]float64{"probe-audio": 11}, got["AudioCompletionRatio"])
-}
-
 // TestValidateCatalogAcceptsTheShippedCatalogue is the floor: whatever else is
 // true, the prices compiled into the binary must be structurally sound.
 func TestValidateCatalogAcceptsTheShippedCatalogue(t *testing.T) {

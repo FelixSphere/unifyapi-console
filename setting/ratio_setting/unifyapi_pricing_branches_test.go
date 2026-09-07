@@ -13,14 +13,47 @@ import (
 // the extras save path rejects most malformed shapes before they can be
 // assembled, so a bad row can now only originate from a code edit -- which is
 // exactly the case these tests stand in for.
+//
+// catalogIndex is rebuilt too. It is a package var built ONCE at init from
+// unifyapiCatalog, so swapping the slice alone leaves Catalog() returning the
+// fake rows while CatalogEntryFor() keeps answering from the real ones. Two
+// disagreeing views of "the catalogue" inside one test is a trap, and a test
+// that hit it would report a passing invariant about rows it never saw.
 func withCompiledCatalog(t *testing.T, entries []CatalogEntry) {
 	t.Helper()
-	previous := unifyapiCatalog
+
+	previousCatalog, previousIndex := unifyapiCatalog, catalogIndex
 	t.Cleanup(func() {
-		unifyapiCatalog = previous
+		unifyapiCatalog, catalogIndex = previousCatalog, previousIndex
 		InitRatioSettings()
 	})
-	unifyapiCatalog = entries
+
+	rebuilt := make(map[string]CatalogEntry, len(entries))
+	for _, entry := range entries {
+		rebuilt[entry.Model] = entry
+	}
+	unifyapiCatalog, catalogIndex = entries, rebuilt
+}
+
+// TestWithCompiledCatalogKeepsBothViewsInSync guards the helper itself. If it
+// ever stops rebuilding the index, every test built on it starts asserting
+// against a catalogue it is not actually using.
+func TestWithCompiledCatalogKeepsBothViewsInSync(t *testing.T) {
+	realModel := unifyapiCatalog[0].Model
+	withCompiledCatalog(t, []CatalogEntry{
+		{Model: "probe-only", Vendor: "openai", InputUSD: 1, OutputUSD: 2},
+	})
+
+	entry, ok := CatalogEntryFor("probe-only")
+	require.True(t, ok, "CatalogEntryFor must see the swapped catalogue")
+	assert.InDelta(t, 0.5, entry.ModelRatio(), 1e-9)
+
+	_, ok = CatalogEntryFor(realModel)
+	assert.False(t, ok,
+		"%s is not in the swapped catalogue; still finding it means catalogIndex "+
+			"is stale and Catalog() and CatalogEntryFor disagree", realModel)
+
+	require.Len(t, Catalog(), 1)
 }
 
 // TestValidateCatalogRejectsEveryMalformedRow. Each row below is a shape that
@@ -207,16 +240,36 @@ func TestHardcodedCompletionRatioLegacyFamilies(t *testing.T) {
 	}
 }
 
-// TestUnknownModelIsNotSellableByDefault. The 37.5 sentinel is returned with
-// exists=false; self-use mode is the one configuration that turns it into a
-// real price. Every caller must check the flag, and this pins both halves.
+// TestUnknownModelIsNotSellableByDefault, and the two sentinels agree.
+//
+// The 37.5 sentinel ($75/1M) comes back with exists=false: an unknown model
+// must not be billable, and every caller has to check the flag.
+//
+// It is written out TWICE in production code -- once at the tail of
+// GetModelRatio, once again at the tail of GetModelRatioOrPrice -- so the two
+// can silently diverge. An earlier version of this test exercised only
+// GetModelRatioOrPrice and so could not see the other literal change:
+// mutating GetModelRatio's 37.5 to 40 left it passing. Both paths are asserted
+// here, and asserted to agree, because callers of one and callers of the other
+// must not disagree about the price of a model nobody sells.
 func TestUnknownModelIsNotSellableByDefault(t *testing.T) {
 	InitRatioSettings()
 
-	value, usePrice, exists := GetModelRatioOrPrice("no-such-model-anywhere")
+	const unknown = "no-such-model-anywhere"
+
+	value, usePrice, exists := GetModelRatioOrPrice(unknown)
 	assert.False(t, exists, "an unknown model must not be billable")
 	assert.False(t, usePrice)
-	assert.InDelta(t, 37.5, value, 1e-9)
+	assert.InDelta(t, 37.5, value, 1e-9, "GetModelRatioOrPrice sentinel")
+
+	ratio, ok, _ := GetModelRatio(unknown)
+	assert.False(t, ok, "and it must not be billable through the ratio path either")
+	assert.InDelta(t, 37.5, ratio, 1e-9, "GetModelRatio sentinel")
+
+	assert.InDelta(t, value, ratio, 1e-9,
+		"the two hardcoded sentinels have drifted apart. Callers of GetModelRatio "+
+			"and callers of GetModelRatioOrPrice now disagree about an unknown model's "+
+			"price; both literals must move together.")
 }
 
 // TestGroupModelDiscountMissesAreReportedAsAbsent. A per-customer contract
@@ -240,6 +293,57 @@ func TestGroupModelDiscountMissesAreReportedAsAbsent(t *testing.T) {
 
 	_, ok = GetGroupModelDiscount("group-with-no-contract", "gpt-4o")
 	assert.False(t, ok)
+}
+
+// TestAZeroDiscountAlreadyInTheMapReportsAsAbsent.
+//
+// The save path rejects a zero multiplier, so this state cannot be created
+// through the console -- but the options row is also written by raw SQL over
+// SSM, and a row predating that validation loads straight into the map. The
+// accessor's own `ratio > 0` guard is the only thing between such a row and a
+// customer billed nothing.
+//
+// Writing through the map directly is the point: going via the validated save
+// path exercises the validator instead of the guard, which is why an earlier
+// version of this test could not see the guard being removed.
+func TestAZeroDiscountAlreadyInTheMapReportsAsAbsent(t *testing.T) {
+	InitRatioSettings()
+	previous := GroupModelDiscount2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, UpdateGroupModelDiscountByJSONString(previous))
+		InitRatioSettings()
+	})
+
+	groupModelDiscountMap.Set("cust-legacy", map[string]float64{
+		"gpt-4o":          0,
+		"claude-opus-4-5": 0.9,
+	})
+
+	_, ok := GetGroupModelDiscount("cust-legacy", "gpt-4o")
+	assert.False(t, ok,
+		"a stored zero must report as absent so the caller falls back to the list "+
+			"price; reporting it as present bills this customer nothing")
+
+	ratio, ok := GetGroupModelDiscount("cust-legacy", "claude-opus-4-5")
+	require.True(t, ok, "a real contract on the same group still applies")
+	assert.InDelta(t, 0.9, ratio, 1e-9)
+}
+
+// TestAnUnnamedCustomerGroupIsRejected. A blank group key is not a customer.
+// It would collect contract prices no user can ever match, and the admin UI
+// would show a discount that never applies.
+func TestAnUnnamedCustomerGroupIsRejected(t *testing.T) {
+	for _, name := range []string{"", " ", "\t"} {
+		problems := ValidateGroupModelDiscounts(map[string]map[string]float64{
+			name: {"gpt-4o": 0.9},
+		})
+		require.NotEmpty(t, problems, "group name %q must be rejected", name)
+		assert.Contains(t, fmt.Sprint(problems), "must not be empty")
+	}
+
+	assert.Empty(t, ValidateGroupModelDiscounts(map[string]map[string]float64{
+		"cust-acme": {"gpt-4o": 0.9},
+	}), "a named group with a real catalogue model is fine")
 }
 
 // TestGroupModelDiscountRejectsMalformedInput. This table sets what a named

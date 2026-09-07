@@ -41,10 +41,25 @@ read_coverage() {
 failed=0
 
 check() {
-  local package="$1" threshold="$2" output coverage
+  local package="$1" threshold="$2" output coverage status
 
-  output="$(go test "./${package}" -count=1 -cover)"
+  # Capture the status rather than letting `set -e` abort here. A genuine test
+  # failure must print the go test output and say which package failed: an
+  # earlier version of this script died inside the command substitution, so CI
+  # showed the previous package's success line and a bare exit 1, naming
+  # neither the package nor the failing test.
+  set +e
+  output="$(go test "./${package}" -count=1 -cover 2>&1)"
+  status=$?
+  set -e
+
   printf '%s\n' "$output"
+
+  if [[ "$status" -ne 0 ]]; then
+    echo "${package}: tests failed (exit ${status}); coverage not evaluated" >&2
+    failed=1
+    return
+  fi
 
   coverage="$(read_coverage "$output" || true)"
   if [[ -z "$coverage" ]]; then
