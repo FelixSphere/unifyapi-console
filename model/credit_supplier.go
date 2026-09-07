@@ -176,6 +176,15 @@ func EnsureCreditSupplierForUser(user *User) (*CreditSupplier, error) {
 	}
 	base := supplierCodeFromName(user.Username)
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		// Two first sales from the same login at once must not create two
+		// supplier records: lock the user row for the transaction.
+		var owner User
+		if err := lockForUpdate(tx).Select("id").First(&owner, "id = ?", user.Id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("sign in to sell credits")
+			}
+			return err
+		}
 		if err := ensureSupplierUserFree(tx, user.Id, 0); err != nil {
 			return err
 		}

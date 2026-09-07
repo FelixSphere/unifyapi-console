@@ -86,6 +86,15 @@ function attentionReason(
       amount: formatUSD(lot.face_value_usd * lot.acquisition_rate),
     })
   }
+  if (
+    lot.status === 'active' &&
+    lot.channel_status !== 0 &&
+    lot.channel_status !== 1
+  ) {
+    return t(
+      'Channel disabled by the relay while the lot is active — the key stopped working or the vendor balance is gone; check the seller’s face value'
+    )
+  }
   if (lot.low_water_usd > 0 && remainingUSD(lot) <= lot.low_water_usd) {
     return t('{{remaining}} left, at or below the low-water mark', {
       remaining: formatUSD(remainingUSD(lot)),

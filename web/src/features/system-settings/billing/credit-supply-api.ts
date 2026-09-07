@@ -49,6 +49,8 @@ export type CreditLot = {
   supplier_id: number
   vendor: string
   channel_id: number
+  // Live status of the bound channel (1 = enabled), attached on read.
+  channel_status: number
   face_value_usd: number
   acquisition_rate: number
   consumed_usd: number
