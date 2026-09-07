@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -267,14 +266,10 @@ func TestResetWritesTheCatalogueNotUpstreamDefaults(t *testing.T) {
 				"would leave it unpriced and it would start refusing requests", e.Model)
 	}
 
-	assert.JSONEq(t, DefaultModelRatio2JSONString(), mustJSON(t, defaults))
-}
-
-func mustJSON(t *testing.T, v any) string {
-	t.Helper()
-	b, err := common.Marshal(v)
-	require.NoError(t, err)
-	return string(b)
+	// Deliberately NOT asserting DefaultModelRatio2JSONString() against
+	// GetDefaultModelRatioMap(): both are baselineModelRatio(), so comparing
+	// them is Marshal(f()) == Marshal(f()) and cannot fail. The loop above is
+	// the assertion that carries this test.
 }
 
 // TestGroupRatioSettingLazilyRestoresSpecialGroups. The registered config
