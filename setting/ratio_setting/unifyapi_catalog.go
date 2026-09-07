@@ -141,7 +141,21 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "gpt-image-2", Vendor: "openai", InputUSD: 5, OutputUSD: 30, CacheReadUSD: 1.25, CacheWriteUSD: 0},
 
 	// ---- Moonshot ----
-	{Model: "kimi-k2.5", Vendor: "moonshotai", InputUSD: 0.6, OutputUSD: 3, CacheReadUSD: 0.1, CacheWriteUSD: 0},
+	// Moonshot retired kimi-k2.5 from its published list -- it is gone from
+	// models.dev's moonshotai provider, which now carries only k2.6, k2.7-code,
+	// k2.7-code-highspeed and k3. We still sell it and customers still call it
+	// (111 billed requests, 4 in the last seven days), served through two
+	// enabled channels, so dropping the row would send live traffic to the 37.5
+	// fallback and get it refused.
+	//
+	// Unverified rather than removed, therefore: the price below is the last
+	// published one and it keeps billing exactly as before, but nothing can
+	// check it any more. Vendor is cleared because the catalog's invariant is
+	// Unverified <=> no vendor -- a named vendor asserts "models.dev can verify
+	// this", which is now false. Only a human re-reading Moonshot's pricing page
+	// can catch the next change, or the model should be withdrawn.
+	{Model: "kimi-k2.5", Vendor: "", InputUSD: 0.6, OutputUSD: 3, CacheReadUSD: 0.1, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://platform.moonshot.ai/docs/pricing (retired from the published list; last known price)", QuoteDate: "2026-09-07"},
 	{Model: "kimi-k2.6", Vendor: "moonshotai", InputUSD: 0.95, OutputUSD: 4, CacheReadUSD: 0.16, CacheWriteUSD: 0},
 	{Model: "kimi-k3", Vendor: "moonshotai", InputUSD: 3, OutputUSD: 15, CacheReadUSD: 0.3, CacheWriteUSD: 0},
 

@@ -345,15 +345,16 @@ func TestDetectBaselineShadowCatchesEachWayTheDatabaseCanWin(t *testing.T) {
 	require.True(t, ok, "a catalogued model missing from a live map must be reported")
 }
 
-// TestUnverifiedEntriesAreDeclared keeps the five models with no models.dev
-// listing from quietly becoming forty. Each one is a price nothing can check,
-// so the list is pinned here and the drift report prints it every run.
+// TestUnverifiedEntriesAreDeclared keeps the models with no models.dev listing
+// from quietly becoming forty. Each one is a price nothing can check, so the
+// list is pinned here and the drift report prints it every run.
 func TestUnverifiedEntriesAreDeclared(t *testing.T) {
 	want := []string{
 		"deepseek-v3",            // retired; DeepSeek publishes v4 only
 		"deepseek-v3.2",          //
 		"deepseek-v3.2-thinking", //
 		"glm-5-turbo",            // not listed; Zhipu lists glm-5v-turbo
+		"kimi-k2.5",              // retired by Moonshot, but still sold and still called
 		"qwen3.5-flash",          // not listed
 	}
 

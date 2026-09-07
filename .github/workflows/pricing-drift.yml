@@ -80,9 +80,26 @@ jobs:
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
           set -e
           cat drift.txt
+          # Also put it in the run summary. The log is where a report goes to
+          # die: nobody opens a green run, and on a red one the summary is the
+          # first thing shown.
+          {
+            echo "### Pricing drift"
+            echo
+            echo '```'
+            cat drift.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
+      # Issues are disabled repo-wide in this fork (see AGENT-WORKFLOW.md), so
+      # this step is best-effort: it must not be the thing that fails the run.
+      # It used to be -- github-script threw "Issues has been disabled in this
+      # repository" as an unhandled error, which killed the job before the
+      # explicit failure step below and left the report only in the log. The
+      # run went red for the wrong reason, which is worse than either outcome.
       - name: Open an issue when a vendor has repriced
         if: steps.drift.outputs.exit_code == '1'
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
@@ -122,6 +139,7 @@ jobs:
               'Prices are never updated automatically, by design.',
             ].join('\n')
 
+            try {
             if (existing.data.length > 0) {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
@@ -137,6 +155,12 @@ jobs:
                 labels: ['pricing-drift'],
                 body,
               })
+            }
+            } catch (error) {
+              core.warning(
+                'Could not file the drift report as an issue (' + error.message + '). ' +
+                'The report is in the run summary and the run still fails below.'
+              )
             }
 
       - name: Fail the run so the schedule shows red
