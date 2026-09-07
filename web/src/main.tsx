@@ -66,6 +66,8 @@ const queryClient = new QueryClient({
 
         if (failureCount >= 0 && import.meta.env.DEV) return false
         if (failureCount > 3 && import.meta.env.PROD) return false
+        // An endpoint this bundle no longer matches will not come back.
+        if (getStaleBundleReason(error)) return false
 
         return !(
           error instanceof AxiosError &&

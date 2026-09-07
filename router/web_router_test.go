@@ -63,6 +63,32 @@ func TestWebRouterSpaFallbackCarriesBuildID(t *testing.T) {
 	assert.Contains(t, recorder.Body.String(), "spa")
 }
 
+// A chunk from a previous build must fail fast (404), not come back as the
+// SPA shell with 200: rspack only reports a ChunkLoadError immediately on a
+// failed script load, and waits two minutes on a page that never registers it.
+func TestWebRouterMissingStaticChunkIs404NotSpaShell(t *testing.T) {
+	engine := newWebRouterUnderTest(t, "build-under-test")
+
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/static/js/async/1127.bee1faa10b.js", nil))
+
+	require.Equal(t, http.StatusNotFound, recorder.Code)
+	assert.NotContains(t, recorder.Body.String(), "spa")
+	assert.Equal(t, "build-under-test", recorder.Header().Get(common.BuildIDHeader))
+}
+
+// Reload must fetch a fresh shell whatever the query string: "/?aff=x" is
+// still the shell, and the old Cache() keyed on RequestURI gave it a week.
+func TestWebRouterShellWithQueryIsNotCached(t *testing.T) {
+	engine := newWebRouterUnderTest(t, "build-under-test")
+
+	for _, target := range []string{"/", "/?aff=partner", "/index.html", "/billing?tab=x"} {
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, target, nil))
+		assert.Equal(t, "no-cache", recorder.Header().Get("Cache-Control"), target)
+	}
+}
+
 func TestWebRouterOmitsBuildIDHeaderWhenUnknown(t *testing.T) {
 	engine := newWebRouterUnderTest(t, "")
 

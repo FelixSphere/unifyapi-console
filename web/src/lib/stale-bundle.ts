@@ -25,7 +25,7 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
  * The VERSION string cannot serve this purpose: it is not bumped per release.
  */
 
-export const SERVER_BUILD_HEADER = 'x-unifyapi-build'
+const SERVER_BUILD_HEADER = 'x-unifyapi-build'
 
 export type StaleBundleReason = 'build-mismatch' | 'removed-endpoint'
 
@@ -53,7 +53,7 @@ export function readServerBuildId(headers: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-export function isBuildMismatch(
+function isBuildMismatch(
   serverBuildId: string,
   clientBuildId: string
 ): boolean {
@@ -68,7 +68,7 @@ export function isBuildMismatch(
  * The router's answer for an unknown path under /api, /v1 or /assets:
  * `{"error":{"message":"Invalid URL (POST /api/…)","type":"invalid_request_error"}}`.
  */
-export function isRelayNotFoundPayload(data: unknown): boolean {
+function isRelayNotFoundPayload(data: unknown): boolean {
   if (!isRecord(data) || !isRecord(data.error)) return false
   return (
     data.error.type === 'invalid_request_error' &&
@@ -91,21 +91,22 @@ function requestPath(config: unknown): string {
  * Classify a failed request. A mismatching build header is conclusive. A relay
  * 404 under /api counts as a removed endpoint unless the server proved it was
  * built from the same bundle, in which case it is a bug in this build, not
- * staleness, and the normal error path applies.
+ * staleness, and the normal error path applies. A bundle without a build id
+ * (dev) cannot be stale, so nothing is classified for it.
  */
 export function getStaleBundleReason(
   error: unknown,
   clientBuildId: string = CLIENT_BUILD_ID
 ): StaleBundleReason | null {
+  if (clientBuildId === '') return null
   if (!isRecord(error) || !isRecord(error.response)) return null
   const response = error.response
 
   const serverBuildId = readServerBuildId(response.headers)
   if (isBuildMismatch(serverBuildId, clientBuildId)) return 'build-mismatch'
 
-  const sameBuild = clientBuildId !== '' && serverBuildId === clientBuildId
   if (
-    !sameBuild &&
+    serverBuildId !== clientBuildId &&
     response.status === 404 &&
     requestPath(error.config).startsWith('/api/') &&
     isRelayNotFoundPayload(response.data)
@@ -113,6 +114,22 @@ export function getStaleBundleReason(
     return 'removed-endpoint'
   }
   return null
+}
+
+/**
+ * A route chunk that no longer exists on the server. Rsbuild loads async
+ * chunks through script tags; a 404 (or, before the router learned to 404
+ * under /static, an HTML page that never registers the chunk) surfaces as
+ * rspack's ChunkLoadError from the route loader. The root errorComponent
+ * turns it into the reload page instead of the generic error page.
+ */
+export function isChunkLoadError(error: unknown): boolean {
+  if (!isRecord(error)) return false
+  if (error.name === 'ChunkLoadError') return true
+  const message = typeof error.message === 'string' ? error.message : ''
+  return /Loading (?:CSS )?chunk .+ failed|Failed to fetch dynamically imported module|Importing a module script failed/i.test(
+    message
+  )
 }
 
 /** /500 is for genuine server failures only: a response with status >= 500. */

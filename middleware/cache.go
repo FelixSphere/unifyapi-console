@@ -6,7 +6,9 @@ import (
 
 func Cache() func(c *gin.Context) {
 	return func(c *gin.Context) {
-		if c.Request.RequestURI == "/" {
+		// The path, not the RequestURI: "/?aff=x" is the SPA shell too, and a
+		// shell cached for a week would hand a reloading tab its stale bundle back.
+		if c.Request.URL.Path == "/" || c.Request.URL.Path == "/index.html" {
 			c.Header("Cache-Control", "no-cache")
 		} else {
 			c.Header("Cache-Control", "max-age=604800") // one week

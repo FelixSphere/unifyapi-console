@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 
 import {
   getStaleBundleReason,
+  isChunkLoadError,
   isServerFailure,
   markStaleBundle,
   noteFailedRequest,
@@ -77,10 +78,18 @@ describe('getStaleBundleReason', () => {
     )
   })
 
-  test('a relay 404 under /api is still detected when this bundle has no build id (dev)', () => {
+  test('a bundle without a build id (dev) is never classified as stale', () => {
+    assert.equal(getStaleBundleReason(axiosError({ status: 404 }), ''), null)
     assert.equal(
-      getStaleBundleReason(axiosError({ status: 404 }), ''),
-      'removed-endpoint'
+      getStaleBundleReason(
+        axiosError({
+          status: 200,
+          data: {},
+          headers: { 'x-unifyapi-build': 'build-new' },
+        }),
+        ''
+      ),
+      null
     )
   })
 
@@ -122,6 +131,48 @@ describe('getStaleBundleReason', () => {
       null
     )
     assert.equal(getStaleBundleReason(null, CLIENT), null)
+  })
+})
+
+describe('isChunkLoadError', () => {
+  test("recognises rspack's ChunkLoadError by name and by message", () => {
+    const named = Object.assign(
+      new Error(
+        'Loading chunk 1127 failed.\n(missing: /static/js/async/1127.bee1faa10b.js)'
+      ),
+      {
+        name: 'ChunkLoadError',
+      }
+    )
+
+    assert.equal(isChunkLoadError(named), true)
+    assert.equal(
+      isChunkLoadError({
+        message:
+          'Loading CSS chunk 2261 failed.\n(/static/css/2261.10e003a7e2.css)',
+      }),
+      true
+    )
+    assert.equal(
+      isChunkLoadError(
+        new TypeError(
+          'Failed to fetch dynamically imported module: /static/js/async/x.js'
+        )
+      ),
+      true
+    )
+  })
+
+  test('ordinary errors and API failures are not chunk-load errors', () => {
+    assert.equal(
+      isChunkLoadError(
+        new TypeError("Cannot read properties of undefined (reading 'map')")
+      ),
+      false
+    )
+    assert.equal(isChunkLoadError(axiosError({ status: 500 })), false)
+    assert.equal(isChunkLoadError('Loading chunk failed'), false)
+    assert.equal(isChunkLoadError(null), false)
   })
 })
 

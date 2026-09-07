@@ -28,7 +28,11 @@ func SetWebRouter(router *gin.Engine, assets WebAssets) {
 	router.Use(static.Serve("/", frontendFS))
 	router.NoRoute(func(c *gin.Context) {
 		c.Set(middleware.RouteTagKey, "web")
-		if strings.HasPrefix(c.Request.RequestURI, "/v1") || strings.HasPrefix(c.Request.RequestURI, "/api") || strings.HasPrefix(c.Request.RequestURI, "/assets") {
+		// Rsbuild emits the SPA's chunks under /static; a chunk that vanished
+		// with a release must 404 so the old tab fails fast with a
+		// ChunkLoadError instead of waiting two minutes on an HTML page that
+		// never registers the chunk (web/src/lib/stale-bundle.ts).
+		if strings.HasPrefix(c.Request.RequestURI, "/v1") || strings.HasPrefix(c.Request.RequestURI, "/api") || strings.HasPrefix(c.Request.RequestURI, "/assets") || strings.HasPrefix(c.Request.RequestURI, "/static/") {
 			controller.RelayNotFound(c)
 			return
 		}
