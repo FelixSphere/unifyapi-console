@@ -25,7 +25,7 @@ func setupCreditSupplyTestDB(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&Channel{}, &Ability{}, &Option{}, &PricingConfigHistory{},
-		&CreditSupplier{}, &CreditLot{}, &CreditLotUsage{}, &CreditLotEvent{},
+		&CreditSupplier{}, &CreditLot{}, &CreditLotUsage{}, &CreditLotEvent{}, &User{},
 	))
 	previous := DB
 	previousType := common.MainDatabaseType()
@@ -524,6 +524,7 @@ func TestCreditSupplyTermsArePostedAndValidated(t *testing.T) {
 
 func TestFirstSaleCreatesTheSupplierWithoutAnApplication(t *testing.T) {
 	setupCreditSupplyTestDB(t)
+	require.NoError(t, DB.Create(&User{Id: 11, Username: "Tel Aviv Labs", Email: "ops@tal.example"}).Error)
 	first, err := EnsureCreditSupplierForUser(&User{Id: 11, Username: "Tel Aviv Labs", Email: "ops@tal.example"})
 	require.NoError(t, err)
 	assert.Equal(t, CreditSupplierStatusActive, first.Status)
@@ -587,4 +588,79 @@ func TestUpdateCreditSupplierIsAPatchThatKeepsTheLogin(t *testing.T) {
 	got, _ = GetCreditSupplierById(supplier.Id)
 	assert.Zero(t, got.UserId)
 	assert.Empty(t, got.StatusReason, "reactivation clears the reason")
+}
+
+func TestVerifiedLotOwnsItsChannelAndIsFlaggedBeforeExpiry(t *testing.T) {
+	setupCreditSupplyTestDB(t)
+	supplier := seedSupplier(t, "acme")
+	seedSupplierChannel(t, 7)
+	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 500, AcquisitionRate: 0.2, Source: CreditLotSourceSupplier, ExpiresAt: common.GetTimestamp() + 3*86400}
+	require.NoError(t, CreateCreditLot(lot, "user:1"))
+	_, err := MarkCreditLotVerified(lot.Id, "system", "ok", 0)
+	require.NoError(t, err)
+	// A verified sale is awaiting payment: its channel is taken.
+	second := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 100, AcquisitionRate: 0.2}
+	require.ErrorIs(t, CreateCreditLot(second, "root"), ErrCreditLotChannelBound)
+	overview, err := GetCreditSupplyOverview()
+	require.NoError(t, err)
+	ids := []int{}
+	for _, item := range overview.Attention {
+		ids = append(ids, item.Id)
+	}
+	assert.Contains(t, ids, lot.Id, "awaiting payment and expiring in 3 days both deserve attention")
+}
+
+func TestRejectingASupplierSaleDeletesItsChannel(t *testing.T) {
+	setupCreditSupplyTestDB(t)
+	supplier := seedSupplier(t, "acme")
+	seedSupplierChannel(t, 7)
+	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 500, AcquisitionRate: 0.2, Source: CreditLotSourceSupplier}
+	require.NoError(t, CreateCreditLot(lot, "user:1"))
+	_, err := MarkCreditLotVerified(lot.Id, "system", "ok", 0)
+	require.NoError(t, err)
+	rejected, err := TransitionCreditLot(lot.Id, CreditLotTransition{To: CreditLotStatusRejected, Actor: "root", Reason: "duplicate account"})
+	require.NoError(t, err)
+	assert.Zero(t, rejected.ChannelId)
+	var channels int64
+	require.NoError(t, DB.Model(&Channel{}).Where("id = ?", 7).Count(&channels).Error)
+	assert.Zero(t, channels, "the seller's key does not linger in a disabled channel")
+
+	// An operator-entered lot keeps its channel (the operator owns that key).
+	seedSupplierChannel(t, 8)
+	own := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 8, FaceValueUSD: 500, AcquisitionRate: 0.2}
+	require.NoError(t, CreateCreditLot(own, "root"))
+	_, err = TransitionCreditLot(own.Id, CreditLotTransition{To: CreditLotStatusRejected, Actor: "root", Reason: "entered twice"})
+	require.NoError(t, err)
+	require.NoError(t, DB.Model(&Channel{}).Where("id = ?", 8).Count(&channels).Error)
+	assert.EqualValues(t, 1, channels)
+}
+
+func TestActiveLotWithAutoDisabledChannelNeedsAttention(t *testing.T) {
+	setupCreditSupplyTestDB(t)
+	supplier := seedSupplier(t, "acme")
+	seedSupplierChannel(t, 7)
+	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 500, AcquisitionRate: 0.2}
+	require.NoError(t, CreateCreditLot(lot, "root"))
+	_, err := TransitionCreditLot(lot.Id, approve("root"))
+	require.NoError(t, err)
+	overview, err := GetCreditSupplyOverview()
+	require.NoError(t, err)
+	for _, item := range overview.Attention {
+		assert.NotEqual(t, lot.Id, item.Id, "a healthy active lot is not an alert")
+	}
+	// The relay gives up on the key.
+	require.True(t, UpdateChannelStatus(7, "", common.ChannelStatusAutoDisabled, "401 from vendor"))
+	overview, err = GetCreditSupplyOverview()
+	require.NoError(t, err)
+	flagged := false
+	for _, item := range overview.Attention {
+		if item.Id == lot.Id {
+			flagged = true
+			assert.Equal(t, common.ChannelStatusAutoDisabled, item.ChannelStatus)
+		}
+	}
+	assert.True(t, flagged, "an active lot whose channel is disabled is exactly what the operator must see")
+	lots, err := GetCreditLots(CreditLotFilter{})
+	require.NoError(t, err)
+	assert.Equal(t, common.ChannelStatusAutoDisabled, lots[0].ChannelStatus, "the lots list carries the channel status too")
 }

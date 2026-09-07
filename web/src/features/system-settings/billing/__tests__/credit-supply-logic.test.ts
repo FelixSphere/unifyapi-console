@@ -30,6 +30,7 @@ function lot(overrides: Partial<CreditLot> = {}): CreditLot {
     supplier_id: 1,
     vendor: 'anthropic',
     channel_id: 7,
+    channel_status: 1,
     face_value_usd: 1000,
     acquisition_rate: 0.45,
     consumed_usd: 250,

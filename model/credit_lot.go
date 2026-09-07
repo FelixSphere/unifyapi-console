@@ -135,8 +135,13 @@ type CreditLot struct {
 	PaidBy          string  `json:"paid_by" gorm:"type:varchar(64)"`
 	// RetiredAt is when the lot became exhausted or expired.
 	RetiredAt int64 `json:"retired_at" gorm:"not null;default:0"`
-	CreatedAt int64 `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt int64 `json:"updated_at" gorm:"autoUpdateTime"`
+
+	// ChannelStatus is the bound channel's live status, attached on read for
+	// the operator screens (not stored): the relay can auto-disable a channel
+	// the lot still considers active.
+	ChannelStatus int   `json:"channel_status" gorm:"-"`
+	CreatedAt     int64 `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt     int64 `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 // CreditLotEvent is one line of a lot's history: who moved it, from what to
@@ -195,10 +200,16 @@ func (lot *CreditLot) PayableUSD() float64 {
 }
 
 // Live reports whether the lot occupies its channel binding.
+// creditLotLiveStatuses are the statuses in which a lot owns its channel and
+// still matters operationally: pending (verifying), verified (awaiting
+// payment), active, suspended. Retired and rejected lots are history.
+var creditLotLiveStatuses = []string{CreditLotStatusPending, CreditLotStatusVerified, CreditLotStatusActive, CreditLotStatusSuspended}
+
 func (lot *CreditLot) Live() bool {
-	switch lot.Status {
-	case CreditLotStatusPending, CreditLotStatusActive, CreditLotStatusSuspended:
-		return true
+	for _, status := range creditLotLiveStatuses {
+		if lot.Status == status {
+			return true
+		}
 	}
 	return false
 }
@@ -265,8 +276,7 @@ func ensureChannelFree(tx *gorm.DB, channelId int, exceptLotId int) error {
 	}
 	var lotCount int64
 	err := tx.Model(&CreditLot{}).
-		Where("channel_id = ? AND id <> ? AND status IN ?", channelId, exceptLotId,
-			[]string{CreditLotStatusPending, CreditLotStatusActive, CreditLotStatusSuspended}).
+		Where("channel_id = ? AND id <> ? AND status IN ?", channelId, exceptLotId, creditLotLiveStatuses).
 		Count(&lotCount).Error
 	if err != nil {
 		return err
@@ -434,7 +444,10 @@ func TransitionCreditLot(id int, req CreditLotTransition) (*CreditLot, error) {
 	now := common.GetTimestamp()
 	var lot CreditLot
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.First(&lot, "id = ?", id).Error; err != nil {
+		// Locked for the transaction: two operators paying, verifying or
+		// transitioning the same lot at once must serialise, or both would
+		// pass the status check and the payout would be booked twice.
+		if err := lockForUpdate(tx).First(&lot, "id = ?", id).Error; err != nil {
 			return err
 		}
 		from := lot.Status
@@ -505,12 +518,44 @@ func TransitionCreditLot(id int, req CreditLotTransition) (*CreditLot, error) {
 		if err := applyLotCostRatio(&lot, actor); err != nil {
 			return &lot, err
 		}
-	case CreditLotStatusSuspended, CreditLotStatusRejected:
+	case CreditLotStatusSuspended:
 		if lot.ChannelId != 0 {
 			UpdateChannelStatus(lot.ChannelId, "", common.ChannelStatusManuallyDisabled, channelReason)
 		}
+	case CreditLotStatusRejected:
+		if lot.ChannelId != 0 {
+			if lot.Source == CreditLotSourceSupplier {
+				// The channel exists only to carry this seller's key. A rejected
+				// sale must not leave that key parked in a disabled channel.
+				if err := detachAndDeleteLotChannel(&lot); err != nil {
+					return &lot, err
+				}
+			} else {
+				UpdateChannelStatus(lot.ChannelId, "", common.ChannelStatusManuallyDisabled, channelReason)
+			}
+		}
 	}
 	return &lot, nil
+}
+
+// detachAndDeleteLotChannel removes a supplier lot's channel -- and with it
+// the key -- keeping the lot as a record with channel_id 0.
+func detachAndDeleteLotChannel(lot *CreditLot) error {
+	channelId := lot.ChannelId
+	if channelId == 0 {
+		return nil
+	}
+	if err := DB.Model(&CreditLot{}).Where("id = ?", lot.Id).Update("channel_id", 0).Error; err != nil {
+		return err
+	}
+	lot.ChannelId = 0
+	if channel, err := GetChannelById(channelId, false); err == nil && channel != nil {
+		if err := channel.Delete(); err != nil {
+			common.SysError(fmt.Sprintf("credit supply: could not remove channel %d of rejected lot %d: %v", channelId, lot.Id, err))
+		}
+	}
+	invalidateChannelLot(channelId)
+	return nil
 }
 
 // PurchasePriceUSD is what the sale costs us under the rate the lot was
@@ -528,7 +573,10 @@ func (lot *CreditLot) PurchasePriceUSD() float64 {
 func MarkCreditLotVerified(id int, actor, note string, verificationUSD float64) (*CreditLot, error) {
 	var lot CreditLot
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.First(&lot, "id = ?", id).Error; err != nil {
+		// Locked for the transaction: two operators paying, verifying or
+		// transitioning the same lot at once must serialise, or both would
+		// pass the status check and the payout would be booked twice.
+		if err := lockForUpdate(tx).First(&lot, "id = ?", id).Error; err != nil {
 			return err
 		}
 		if lot.Status != CreditLotStatusPending {
@@ -578,7 +626,10 @@ func PayCreditLot(id int, payment CreditLotPayment) (*CreditLot, error) {
 	var supplier CreditSupplier
 	var wallet BillingEntity
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.First(&lot, "id = ?", id).Error; err != nil {
+		// Locked for the transaction: two operators paying, verifying or
+		// transitioning the same lot at once must serialise, or both would
+		// pass the status check and the payout would be booked twice.
+		if err := lockForUpdate(tx).First(&lot, "id = ?", id).Error; err != nil {
 			return err
 		}
 		if lot.Status != CreditLotStatusVerified {
@@ -654,6 +705,35 @@ func PayCreditLot(id int, payment CreditLotPayment) (*CreditLot, error) {
 	return &lot, nil
 }
 
+// attachChannelStatus fills the transient ChannelStatus of every lot that is
+// bound to a channel, in one query.
+func attachChannelStatus(lots []*CreditLot) error {
+	ids := make([]int, 0, len(lots))
+	for _, lot := range lots {
+		if lot.ChannelId != 0 {
+			ids = append(ids, lot.ChannelId)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	var rows []struct {
+		Id     int
+		Status int
+	}
+	if err := DB.Model(&Channel{}).Select("id, status").Where("id IN ?", ids).Scan(&rows).Error; err != nil {
+		return err
+	}
+	status := make(map[int]int, len(rows))
+	for _, row := range rows {
+		status[row.Id] = row.Status
+	}
+	for _, lot := range lots {
+		lot.ChannelStatus = status[lot.ChannelId]
+	}
+	return nil
+}
+
 type CreditLotFilter struct {
 	SupplierId int
 	Status     string
@@ -668,8 +748,13 @@ func GetCreditLots(filter CreditLotFilter) ([]*CreditLot, error) {
 		query = query.Where("status = ?", filter.Status)
 	}
 	var lots []*CreditLot
-	err := query.Order("id desc").Find(&lots).Error
-	return lots, err
+	if err := query.Order("id desc").Find(&lots).Error; err != nil {
+		return nil, err
+	}
+	if err := attachChannelStatus(lots); err != nil {
+		return nil, err
+	}
+	return lots, nil
 }
 
 func GetCreditLotById(id int) (*CreditLot, error) {
@@ -733,6 +818,10 @@ func GetCreditSupplyOverview() (*CreditSupplyOverview, error) {
 		return nil, err
 	}
 	now := common.GetTimestamp()
+	terms := GetCreditSupplyTerms()
+	if err := attachChannelStatus(lots); err != nil {
+		return nil, err
+	}
 	overview := &CreditSupplyOverview{
 		Suppliers:    int(supplierCount),
 		LotsByStatus: map[string]int{},
@@ -749,7 +838,7 @@ func GetCreditSupplyOverview() (*CreditSupplyOverview, error) {
 		overview.RemainingUSD += lot.RemainingUSD()
 		overview.PayableUSD += lot.PayableUSD()
 		if lot.Status == CreditLotStatusVerified {
-			overview.AwaitingPaymentUSD += lot.PurchasePriceUSD()
+			overview.AwaitingPaymentUSD += terms.PayoutUSD(lot.FaceValueUSD, lot.AcquisitionRate, lot.PayoutMethod)
 		}
 		overview.PaidUSD += lot.PaidUSD
 		if lot.UnpricedRequests > 0 {
@@ -767,8 +856,13 @@ func GetCreditSupplyOverview() (*CreditSupplyOverview, error) {
 		totals.PayableUSD += lot.PayableUSD()
 
 		needsAttention := lot.Status == CreditLotStatusPending ||
+			lot.Status == CreditLotStatusVerified ||
 			(lot.Status == CreditLotStatusActive && lot.LowWaterUSD > 0 && lot.RemainingUSD() <= lot.LowWaterUSD) ||
-			(lot.Live() && lot.ExpiresAt != 0 && lot.ExpiresAt-now <= 7*86400)
+			(lot.Live() && lot.ExpiresAt != 0 && lot.ExpiresAt-now <= 7*86400) ||
+			// An active lot whose channel the relay auto-disabled (bad key,
+			// vendor says no balance) looks live in this ledger while nothing
+			// flows through it. The face value was probably overstated.
+			(lot.Status == CreditLotStatusActive && lot.ChannelStatus != 0 && lot.ChannelStatus != common.ChannelStatusEnabled)
 		if needsAttention {
 			overview.Attention = append(overview.Attention, lot)
 		}
