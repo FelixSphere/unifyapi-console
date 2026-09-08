@@ -56,7 +56,7 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		ChannelId: info.ChannelId,
 		ModelName: info.OriginModelName,
 		TokenName: tokenName,
-		Quota:     info.PriceData.Quota,
+		Quota:     CustomerChargeQuota(info, info.PriceData.Quota, other),
 		Content:   logContent,
 		TokenId:   info.TokenId,
 		Group:     CustomerGroupForLog(info, other),
@@ -86,10 +86,20 @@ func taskIsSubscription(task *model.Task) bool {
 	return task.PrivateData.BillingSource == BillingSourceSubscription && task.PrivateData.SubscriptionId > 0
 }
 
+func taskIsPromotional(task *model.Task) bool {
+	return task.PrivateData.BillingSource == BillingSourcePromotional && task.PrivateData.CreditReservationId > 0
+}
+
 // taskAdjustFunding 调整任务的资金来源（钱包或订阅），delta > 0 表示扣费，delta < 0 表示退还。
 func taskAdjustFunding(task *model.Task, delta int) error {
 	if taskIsSubscription(task) {
 		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
+	}
+	if taskIsPromotional(task) {
+		if delta < 0 && -delta == task.Quota {
+			return model.RefundCreditPoolReservation(task.PrivateData.CreditReservationId)
+		}
+		return model.AdjustSettledCreditPoolReservation(task.PrivateData.CreditReservationId, int64(delta))
 	}
 	if delta > 0 {
 		return model.DecreaseUserQuota(task.UserId, delta, false)
@@ -271,6 +281,12 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	other["task_id"] = task.TaskID
 	other["pre_consumed_quota"] = preConsumedQuota
 	other["actual_quota"] = actualQuota
+	if taskIsPromotional(task) {
+		other["promotional"] = true
+		other["promotional_quota"] = logQuota
+		other["credit_reservation_id"] = task.PrivateData.CreditReservationId
+		logQuota = 0
+	}
 	for _, clamp := range clamps {
 		attachQuotaSaturationToOther(other, clamp)
 	}

@@ -30,7 +30,7 @@ import (
 // productionFixture is a capture of what production served on 2026-08-28. It is
 // kept as the record of which model names production actually exposes, which is
 // what TestServedButUnsellableModelsAreDeclaredAndRefused checks against.
-const productionFixture = "testdata/production-pricing-2026-08-28.json"
+const productionFixture = "testdata/production-pricing-2026-08-31.json"
 
 type productionPricing struct {
 	Captured   string             `json:"captured"`
@@ -52,30 +52,18 @@ func loadProductionPricing(t *testing.T) productionPricing {
 }
 
 // servedButUnsellable are models a channel still offers that the catalog does
-// not price, so the relay refuses them.
+// not price. The relay refuses those, so every entry is a model we advertise
+// and then cannot serve.
 //
-// Five, all for the same reason:
+// EMPTY IS THE GOAL STATE, and as of the 2026-08-31 snapshot it is empty: all
+// 46 models on a channel have a baseline price. Getting here took catalguing
+// glm-5.3 and dropping the five seedance/MiniMax entries from their channels.
 //
-//   - the five were dropped deliberately in #17 as models nobody had ever been
-//     billed for. Correct to drop, but they are STILL on their channels' model
-//     lists, so the pricing page keeps advertising them and a caller who tries
-//     one now gets a refusal instead of a response.
-//
-// glm-5.3 used to be a sixth. It is catalogued now: Zhipu publishes it at the
-// same 1.4/4.4/0.26 as glm-5.1 and glm-5.2, which we already sell, so there was
-// never a pricing reason to refuse it -- only that nobody had added the row.
-//
-// Neither is a regression from the pricing work. Both are loose ends with the
-// same fix: take them off the channel model lists, or catalogue them. Pinned
-// here so the set cannot quietly grow -- every entry is a model we advertise
-// and cannot serve.
-var servedButUnsellable = []string{
-	"MiniMax-H3",
-	"seedance-2.0",
-	"seedance-2.0-fast",
-	"seedance-2.0-mini",
-	"seedance2.0-pro",
-}
+// The list stays as an explicit allow-list rather than being deleted, because
+// the useful failure is the one that happens when somebody adds a model to a
+// channel without pricing it. That must be a deliberate edit here with a
+// reason, not a silent regression discovered by a customer getting a refusal.
+var servedButUnsellable = []string{}
 
 func TestServedButUnsellableModelsAreDeclaredAndRefused(t *testing.T) {
 	resetRatioMapsToBaseline(t)
@@ -88,8 +76,10 @@ func TestServedButUnsellableModelsAreDeclaredAndRefused(t *testing.T) {
 		}
 	}
 	require.ElementsMatch(t, servedButUnsellable, uncatalogued,
-		"a model that production serves but the catalog does not price is advertised and then refused. "+
-			"Adding one needs a reason; removing one means it was catalogued or unlisted, which is the fix.")
+		"every model on a channel must have a baseline price. A model here is advertised on the "+
+			"pricing page and then refused by the relay. Either give it a catalog row, or take it "+
+			"off the channel's model list -- adding it to servedButUnsellable is only for a gap "+
+			"somebody has decided to live with, and needs a reason written down.")
 
 	for _, name := range uncatalogued {
 		_, ok, _ := GetModelRatio(name)

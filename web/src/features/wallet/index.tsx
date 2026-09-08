@@ -182,7 +182,11 @@ export function Wallet(props: WalletProps) {
   const handleSelectPreset = (preset: PresetAmount) => {
     setTopupAmount(preset.value)
     setSelectedPreset(preset.value)
-    calculatePaymentAmount(preset.value, getCurrentPaymentType(), selectedCurrency)
+    calculatePaymentAmount(
+      preset.value,
+      getCurrentPaymentType(),
+      selectedCurrency
+    )
   }
 
   // Handle topup amount change

@@ -104,3 +104,62 @@ func smokeTestExpr(exprStr string) error {
 	}
 	return nil
 }
+
+// ApplyCatalogBillingExprs installs expressions generated from the pricing
+// catalog, replacing any previous catalog-generated set.
+//
+// UNIFYAPI-FORK. The catalog is authoritative for what a model costs, and some
+// vendor prices -- audio input above the text rate, a context tier -- cannot be
+// expressed by the flat ratio maps at all. Those models are put on the
+// expression engine, with their prices generated from the same catalog row
+// everything else derives from.
+//
+// It REPLACES rather than merges, for the same reason the ratio maps are rebuilt
+// rather than mutated: when a model stops needing an expression -- a vendor
+// drops a tier, or a discount changes -- the stale one has to disappear, not
+// linger and keep billing the old shape. Anything an admin set by hand for a
+// model the catalog does not manage is left alone.
+func ApplyCatalogBillingExprs(exprs map[string]string) {
+	managed := make(map[string]bool, len(exprs))
+	for model := range exprs {
+		managed[model] = true
+	}
+
+	modes := make(map[string]string, len(billingSetting.BillingMode))
+	kept := make(map[string]string, len(billingSetting.BillingExpr))
+	for model, expr := range billingSetting.BillingExpr {
+		// A previously catalog-managed model that no longer needs an
+		// expression drops out here rather than being carried forward.
+		if _, isCatalogued := catalogManagedExprs[model]; isCatalogued && !managed[model] {
+			continue
+		}
+		if managed[model] {
+			continue
+		}
+		kept[model] = expr
+		if mode, ok := billingSetting.BillingMode[model]; ok {
+			modes[model] = mode
+		}
+	}
+
+	for model, expr := range exprs {
+		kept[model] = expr
+		modes[model] = BillingModeTieredExpr
+	}
+
+	billingSetting.BillingExpr = kept
+	billingSetting.BillingMode = modes
+	catalogManagedExprs = managed
+}
+
+// catalogManagedExprs remembers which models the catalog installed an
+// expression for, so a later rebuild can tell "the catalog stopped managing
+// this" from "an admin set this by hand".
+var catalogManagedExprs = map[string]bool{}
+
+// SetBillingExprForTest installs an expression as if an admin had written it,
+// so tests can prove a catalog rebuild leaves hand-written entries alone.
+func SetBillingExprForTest(model, expr string) {
+	billingSetting.BillingExpr[model] = expr
+	billingSetting.BillingMode[model] = BillingModeTieredExpr
+}

@@ -53,20 +53,26 @@ export function getConfiguredGroupRatio(
 /**
  * Resolve the group ratio used by model square summary prices.
  *
- * When no specific group is selected, the model square shows the best price
- * available to the viewer. When a group filter is active, it shows that
- * group's price instead.
+ * Model Square is the PUBLIC catalogue. It prices from the model's own ratio
+ * (official list x the global ModelDiscount) times a group ratio -- never from
+ * an individual customer's negotiated contract.
+ *
+ * It used to return `customer_group_model_ratio` first and unconditionally,
+ * which was wrong in two ways at once. It put one customer's negotiated rate on
+ * a public page, and because it returned before any other branch it made the
+ * group filter inert: selecting a group with no contract still showed the
+ * viewer's own discount. With ModelDiscount reset to 1 so the page would quote
+ * true list prices, the page still quoted 0.9x to any viewer whose group had a
+ * contract -- the reset had no visible effect, which is what made it look like
+ * the discount had not been cleared at all.
+ *
+ * `customer_group_model_ratio` is still sent by the API for callers that want to
+ * show "your price" deliberately. It must not leak into this one.
  */
 export function getDisplayGroupRatio(
   model: PricingModel,
   selectedGroup?: string
 ): number {
-  if (
-    typeof model.customer_group_model_ratio === 'number' &&
-    Number.isFinite(model.customer_group_model_ratio)
-  ) {
-    return model.customer_group_model_ratio
-  }
   const modelEnableGroups = Array.isArray(model.enable_groups)
     ? model.enable_groups
     : []

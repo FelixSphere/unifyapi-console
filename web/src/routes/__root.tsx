@@ -23,6 +23,7 @@ import {
   Outlet,
   redirect,
   useNavigate,
+  type ErrorComponentProps,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import { useEffect } from 'react'
@@ -33,6 +34,7 @@ import { ThemeCustomizationProvider } from '@/context/theme-customization-provid
 import { saveAffiliateCode } from '@/features/auth/lib/storage'
 import { GeneralError } from '@/features/errors/general-error'
 import { NotFoundError } from '@/features/errors/not-found-error'
+import { StaleBundleError } from '@/features/errors/stale-bundle-error'
 import { getSetupStatus } from '@/features/setup/api'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import {
@@ -42,6 +44,7 @@ import {
 } from '@/lib/auth-session'
 import { subscribeAuthSessionEvents } from '@/lib/auth-session-sync'
 import { resolveLegacyRoute } from '@/lib/legacy-route'
+import { isChunkLoadError } from '@/lib/stale-bundle'
 import { useAuthStore } from '@/stores/auth-store'
 
 function RootComponent() {
@@ -105,6 +108,13 @@ function RootComponent() {
       )}
     </ThemeCustomizationProvider>
   )
+}
+
+// A route chunk that vanished with a release is not an application error:
+// the tab is running a bundle the server no longer serves. See lib/stale-bundle.ts.
+function RootErrorComponent(props: ErrorComponentProps) {
+  if (isChunkLoadError(props.error)) return <StaleBundleError />
+  return <GeneralError error={props.error} />
 }
 
 // 缓存 setup 状态检查结果，避免每次导航都重复调用 API
@@ -178,5 +188,5 @@ export const Route = createRootRouteWithContext<{
   },
   component: RootComponent,
   notFoundComponent: NotFoundError,
-  errorComponent: GeneralError,
+  errorComponent: RootErrorComponent,
 })

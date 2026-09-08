@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
 // ---------------------------------------------------------------------------
@@ -29,6 +31,88 @@ type FundingSource interface {
 type WalletFunding struct {
 	userId   int
 	consumed int // 实际预扣的用户额度
+}
+
+// PromoFunding consumes two independent meters: the tenant's customer-facing
+// grant at contract price and the pool's provider-facing inventory at cost.
+type PromoFunding struct {
+	relayInfo     *relaycommon.RelayInfo
+	grantId       int
+	poolId        int
+	reservationId int
+	preConsumed   int64
+	customerRatio float64
+	costRatio     float64
+}
+
+func (p *PromoFunding) Source() string { return BillingSourcePromotional }
+
+func (p *PromoFunding) PreConsume(amount int) error {
+	if amount <= 0 {
+		return nil
+	}
+	poolQuota := model.CreditPoolCostQuota(int64(amount), p.customerRatio, p.costRatio)
+	reservation, err := model.ReserveCreditPool(
+		p.relayInfo.RequestId, p.relayInfo.UserId, p.grantId, p.poolId, p.relayInfo.ChannelId,
+		int64(amount), poolQuota, p.customerRatio, p.costRatio,
+	)
+	if err != nil {
+		return err
+	}
+	p.reservationId = reservation.Id
+	p.preConsumed = int64(amount)
+	p.relayInfo.CreditReservationId = reservation.Id
+	return nil
+}
+
+func (p *PromoFunding) Settle(delta int) error {
+	if p.reservationId <= 0 {
+		return nil
+	}
+	actualCustomer := p.preConsumed + int64(delta)
+	p.costRatio = ratio_setting.GetChannelCostRatio(p.relayInfo.ChannelId)
+	actualPool := model.CreditPoolCostQuota(actualCustomer, p.customerRatio, p.costRatio)
+	if err := model.SettleCreditPoolReservationAtCost(p.reservationId, p.relayInfo.ChannelId, actualCustomer, actualPool, p.costRatio); err != nil {
+		return err
+	}
+	p.preConsumed = actualCustomer
+	return nil
+}
+
+func (p *PromoFunding) Reserve(delta int) error {
+	if delta <= 0 || p.reservationId <= 0 {
+		return nil
+	}
+	targetCustomer := p.preConsumed + int64(delta)
+	targetPool := model.CreditPoolCostQuota(targetCustomer, p.customerRatio, p.costRatio)
+	if err := model.ResizePendingCreditPoolReservation(p.reservationId, targetCustomer, targetPool); err != nil {
+		return err
+	}
+	p.preConsumed = targetCustomer
+	return nil
+}
+
+func (p *PromoFunding) RollbackReserve(delta int) error {
+	if delta <= 0 || p.reservationId <= 0 {
+		return nil
+	}
+	targetCustomer := p.preConsumed - int64(delta)
+	if targetCustomer <= 0 {
+		return p.Refund()
+	}
+	targetPool := model.CreditPoolCostQuota(targetCustomer, p.customerRatio, p.costRatio)
+	if err := model.ResizePendingCreditPoolReservation(p.reservationId, targetCustomer, targetPool); err != nil {
+		return err
+	}
+	p.preConsumed = targetCustomer
+	return nil
+}
+
+func (p *PromoFunding) Refund() error {
+	if p.reservationId <= 0 {
+		return nil
+	}
+	return model.RefundCreditPoolReservation(p.reservationId)
 }
 
 func (w *WalletFunding) Source() string { return BillingSourceWallet }

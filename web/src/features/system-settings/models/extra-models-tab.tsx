@@ -1,4 +1,12 @@
 /*
+Copyright (C) 2026 FelixSphere
+
+This file is part of a modified version of new-api, distributed under the
+GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
+Upstream: https://github.com/QuantumNous/new-api
+Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
+*/
+/*
 UNIFYAPI-FORK: the "extra model pricing" tab.
 
 This replaced the raw-ratio editor, and the difference is the whole point. That
@@ -14,7 +22,16 @@ deliberate: the ratio is the unreadable form, and a decimal typed one place off
 in that form billed a model at 8.5% of cost here for weeks.
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, DownloadCloud, Info, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  DownloadCloud,
+  Info,
+  Pencil,
+  Plus,
+  Save,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -33,7 +50,11 @@ import {
 } from '@/components/ui/table'
 
 import { getExtraModels, lookupModelPrice, updateExtraModels } from '../api'
-import type { ExtraModelDraft, ExtraModelRow, ModelPriceCandidate } from '../types'
+import type {
+  ExtraModelDraft,
+  ExtraModelRow,
+  ModelPriceCandidate,
+} from '../types'
 import {
   completionRatioFromUSD,
   draftToPayload,
@@ -70,9 +91,12 @@ export function ExtraModelsTab() {
       ),
     [draft, catalogued, rows]
   )
-  const touched = draft.model !== '' || draft.input_usd !== '' || draft.output_usd !== ''
+  const touched =
+    draft.model !== '' || draft.input_usd !== '' || draft.output_usd !== ''
 
-  const [candidates, setCandidates] = useState<ModelPriceCandidate[] | null>(null)
+  const [candidates, setCandidates] = useState<ModelPriceCandidate[] | null>(
+    null
+  )
 
   /* Sync fills the form from the vendor's published price so nobody retypes
      four numbers off another tab -- retyping is where a decimal slips, and a
@@ -99,8 +123,12 @@ export function ExtraModelsTab() {
       ...current,
       input_usd: String(candidate.input_usd),
       output_usd: String(candidate.output_usd),
-      cache_read_usd: candidate.cache_read_usd ? String(candidate.cache_read_usd) : '',
-      cache_write_usd: candidate.cache_write_usd ? String(candidate.cache_write_usd) : '',
+      cache_read_usd: candidate.cache_read_usd
+        ? String(candidate.cache_read_usd)
+        : '',
+      cache_write_usd: candidate.cache_write_usd
+        ? String(candidate.cache_write_usd)
+        : '',
       vendor: candidate.provider,
       note: current.note || `models.dev · ${candidate.provider}`,
     }))
@@ -111,7 +139,9 @@ export function ExtraModelsTab() {
     mutationFn: updateExtraModels,
     onSuccess: (response) => {
       if (!response.success) {
-        toast.error(response.errors?.join('; ') ?? response.message ?? t('Failed to save'))
+        toast.error(
+          response.errors?.join('; ') ?? response.message ?? t('Failed to save')
+        )
         return
       }
       toast.success(response.message ?? t('Saved'))
@@ -133,8 +163,12 @@ export function ExtraModelsTab() {
             model: row.model,
             input_usd: String(row.input_usd),
             output_usd: String(row.output_usd),
-            cache_read_usd: row.cache_read_usd ? String(row.cache_read_usd) : '',
-            cache_write_usd: row.cache_write_usd ? String(row.cache_write_usd) : '',
+            cache_read_usd: row.cache_read_usd
+              ? String(row.cache_read_usd)
+              : '',
+            cache_write_usd: row.cache_write_usd
+              ? String(row.cache_write_usd)
+              : '',
             vendor: row.vendor ?? '',
             note: row.note ?? '',
           }),
@@ -153,8 +187,12 @@ export function ExtraModelsTab() {
       note: draft.note || undefined,
       input_usd: input,
       output_usd: output,
-      cache_read_usd: draft.cache_read_usd ? Number.parseFloat(draft.cache_read_usd) : undefined,
-      cache_write_usd: draft.cache_write_usd ? Number.parseFloat(draft.cache_write_usd) : undefined,
+      cache_read_usd: draft.cache_read_usd
+        ? Number.parseFloat(draft.cache_read_usd)
+        : undefined,
+      cache_write_usd: draft.cache_write_usd
+        ? Number.parseFloat(draft.cache_write_usd)
+        : undefined,
       discount: 1,
       model_ratio: ratioFromUSD(input),
       completion_ratio: completionRatioFromUSD(input, output),
@@ -212,7 +250,9 @@ export function ExtraModelsTab() {
       </Alert>
 
       {isLoading ? (
-        <div className='text-muted-foreground p-6 text-sm'>{t('Loading...')}</div>
+        <div className='text-muted-foreground p-6 text-sm'>
+          {t('Loading...')}
+        </div>
       ) : null}
       {!isLoading && isError ? (
         <Alert variant='destructive'>
@@ -228,8 +268,12 @@ export function ExtraModelsTab() {
                 <TableHead>{t('Model')}</TableHead>
                 <TableHead className='text-right'>{t('Input $/1M')}</TableHead>
                 <TableHead className='text-right'>{t('Output $/1M')}</TableHead>
-                <TableHead className='text-right'>{t('Cache read $/1M')}</TableHead>
-                <TableHead className='text-right'>{t('Billing ratio')}</TableHead>
+                <TableHead className='text-right'>
+                  {t('Cache read $/1M')}
+                </TableHead>
+                <TableHead className='text-right'>
+                  {t('Billing ratio')}
+                </TableHead>
                 <TableHead className='w-20' />
               </TableRow>
             </TableHeader>
@@ -247,7 +291,9 @@ export function ExtraModelsTab() {
                       </Badge>
                     ) : null}
                     {row.note ? (
-                      <span className='text-muted-foreground block text-[10px]'>{row.note}</span>
+                      <span className='text-muted-foreground block text-[10px]'>
+                        {row.note}
+                      </span>
                     ) : null}
                   </TableCell>
                   <TableCell className='text-right font-mono text-xs tabular-nums'>
@@ -257,10 +303,13 @@ export function ExtraModelsTab() {
                     {formatUSDPrice(row.output_usd)}
                   </TableCell>
                   <TableCell className='text-muted-foreground text-right font-mono text-xs tabular-nums'>
-                    {row.cache_read_usd ? formatUSDPrice(row.cache_read_usd) : '—'}
+                    {row.cache_read_usd
+                      ? formatUSDPrice(row.cache_read_usd)
+                      : '—'}
                   </TableCell>
                   <TableCell className='text-muted-foreground text-right font-mono text-xs tabular-nums'>
-                    {row.model_ratio.toFixed(4)} × {row.completion_ratio.toFixed(2)}
+                    {row.model_ratio.toFixed(4)} ×{' '}
+                    {row.completion_ratio.toFixed(2)}
                   </TableCell>
                   <TableCell className='whitespace-nowrap'>
                     <Button
@@ -286,8 +335,13 @@ export function ExtraModelsTab() {
               ))}
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className='text-muted-foreground py-6 text-center text-sm'>
-                    {t('No extra models. Everything on sale is priced by the catalog.')}
+                  <TableCell
+                    colSpan={6}
+                    className='text-muted-foreground py-6 text-center text-sm'
+                  >
+                    {t(
+                      'No extra models. Everything on sale is priced by the catalog.'
+                    )}
                   </TableCell>
                 </TableRow>
               ) : null}
@@ -354,7 +408,11 @@ export function ExtraModelsTab() {
             disabled={errors.length > 0 || !touched || mutation.isPending}
             onClick={addDraft}
           >
-            {mutation.isPending ? <Save className='size-4' /> : <Plus className='size-4' />}
+            {mutation.isPending ? (
+              <Save className='size-4' />
+            ) : (
+              <Plus className='size-4' />
+            )}
             {t('Add and save')}
           </Button>
         </div>
@@ -363,11 +421,18 @@ export function ExtraModelsTab() {
           <div className='mt-3 rounded-md border'>
             <div className='flex items-center justify-between border-b px-3 py-2'>
               <span className='text-muted-foreground text-xs'>
-                {t('{{count}} providers publish a price for this model. Pick one.', {
-                  count: candidates.length,
-                })}
+                {t(
+                  '{{count}} providers publish a price for this model. Pick one.',
+                  {
+                    count: candidates.length,
+                  }
+                )}
               </span>
-              <Button size='sm' variant='ghost' onClick={() => setCandidates(null)}>
+              <Button
+                size='sm'
+                variant='ghost'
+                onClick={() => setCandidates(null)}
+              >
                 <X className='size-4' />
               </Button>
             </div>
@@ -386,7 +451,8 @@ export function ExtraModelsTab() {
                     </Badge>
                   ) : null}
                   <span className='text-muted-foreground ml-auto font-mono tabular-nums'>
-                    {formatUSDPrice(candidate.input_usd)} / {formatUSDPrice(candidate.output_usd)}
+                    {formatUSDPrice(candidate.input_usd)} /{' '}
+                    {formatUSDPrice(candidate.output_usd)}
                   </span>
                 </button>
               ))}
@@ -405,15 +471,23 @@ export function ExtraModelsTab() {
         {touched && errors.length > 0 ? (
           <p className='text-destructive mt-2 text-xs'>{errors[0].message}</p>
         ) : null}
-        {touched && errors.length === 0 && draft.input_usd && draft.output_usd ? (
+        {touched &&
+        errors.length === 0 &&
+        draft.input_usd &&
+        draft.output_usd ? (
           <p className='text-muted-foreground mt-2 text-xs'>
-            {t('Will bill at ratio {{ratio}} with a {{completion}}x output multiplier.', {
-              ratio: ratioFromUSD(Number.parseFloat(draft.input_usd)).toFixed(4),
-              completion: completionRatioFromUSD(
-                Number.parseFloat(draft.input_usd),
-                Number.parseFloat(draft.output_usd)
-              ).toFixed(2),
-            })}
+            {t(
+              'Will bill at ratio {{ratio}} with a {{completion}}x output multiplier.',
+              {
+                ratio: ratioFromUSD(Number.parseFloat(draft.input_usd)).toFixed(
+                  4
+                ),
+                completion: completionRatioFromUSD(
+                  Number.parseFloat(draft.input_usd),
+                  Number.parseFloat(draft.output_usd)
+                ).toFixed(2),
+              }
+            )}
           </p>
         ) : null}
       </div>

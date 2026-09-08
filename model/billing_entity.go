@@ -202,3 +202,54 @@ func TryDecreaseUserQuota(userId int, quota int) error {
 	_ = invalidateBillingQuotaCache(entity)
 	return nil
 }
+
+// FillEffectiveQuotas rewrites each user's Quota to the balance actually spent
+// from: the tenant wallet for a tenant-backed login, the user's own column
+// otherwise.
+//
+// Admin-facing reads MUST use this. Every login created through the admin API
+// gets its own tenant, and from then on its balance lives in `tenants.quota`
+// while `users.quota` stays at whatever it was — normally 0. Returning the raw
+// column therefore makes a funded account read as empty, and makes every quota
+// the operator sets look like it was silently discarded, because the number on
+// screen never moves. The money is never actually lost; only the read is wrong.
+// GetSelf already resolves this (buildSelfUserData), which is why a customer
+// sees the correct balance while an operator does not.
+//
+// One query per page, not one per row: a page of users is the hot path here.
+func FillEffectiveQuotas(users []*User) error {
+	tenantIds := make([]int, 0, len(users))
+	seen := make(map[int]bool, len(users))
+	for _, user := range users {
+		if user == nil || user.TenantId <= 0 || seen[user.TenantId] {
+			continue
+		}
+		seen[user.TenantId] = true
+		tenantIds = append(tenantIds, user.TenantId)
+	}
+	if len(tenantIds) == 0 {
+		return nil
+	}
+	var rows []struct {
+		Id    int
+		Quota int
+	}
+	if err := DB.Model(&Tenant{}).Select("id", "quota").Where("id IN ?", tenantIds).Find(&rows).Error; err != nil {
+		return err
+	}
+	quotaByTenant := make(map[int]int, len(rows))
+	for _, row := range rows {
+		quotaByTenant[row.Id] = row.Quota
+	}
+	for _, user := range users {
+		if user == nil || user.TenantId <= 0 {
+			continue
+		}
+		// A tenant row that has gone missing leaves the user's own column
+		// alone rather than zeroing the display.
+		if quota, ok := quotaByTenant[user.TenantId]; ok {
+			user.Quota = quota
+		}
+	}
+	return nil
+}

@@ -345,6 +345,12 @@ func GetAllUsers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// users.quota is stale for any tenant-backed login; show what is actually
+	// spendable. See model.FillEffectiveQuotas.
+	if err := model.FillEffectiveQuotas(users); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
@@ -375,6 +381,10 @@ func SearchUsers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if err := model.FillEffectiveQuotas(users); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
@@ -400,6 +410,10 @@ func GetUser(c *gin.Context) {
 	myRole := c.GetInt("role")
 	if !canManageTargetRole(myRole, user.Role) {
 		common.ApiErrorI18n(c, i18n.MsgUserNoPermissionSameLevel)
+		return
+	}
+	if err := model.FillEffectiveQuotas([]*model.User{user}); err != nil {
+		common.ApiError(c, err)
 		return
 	}
 	user.AdminPermissions = authz.Capabilities(user.Id, user.Role)

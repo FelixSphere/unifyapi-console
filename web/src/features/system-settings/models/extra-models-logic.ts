@@ -1,4 +1,12 @@
 /*
+Copyright (C) 2026 FelixSphere
+
+This file is part of a modified version of new-api, distributed under the
+GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
+Upstream: https://github.com/QuantumNous/new-api
+Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
+*/
+/*
 UNIFYAPI-FORK: pure logic for the extra-models tab.
 
 This is the screen that replaced the raw-ratio editor, and it exists because
@@ -40,7 +48,8 @@ export function validateDraft(
   } else if (name !== name.trim()) {
     errors.push({
       field: 'model',
-      message: 'Model name has leading or trailing spaces, so API calls will not match it',
+      message:
+        'Model name has leading or trailing spaces, so API calls will not match it',
     })
   } else if (cataloguedModels.includes(name)) {
     // The rule that keeps this table from becoming the one it replaced.
@@ -57,28 +66,44 @@ export function validateDraft(
   const output = Number.parseFloat(draft.output_usd)
 
   if (!Number.isFinite(input) || input <= 0) {
-    errors.push({ field: 'input_usd', message: 'Input price must be greater than 0' })
+    errors.push({
+      field: 'input_usd',
+      message: 'Input price must be greater than 0',
+    })
   } else if (input > MAX_PRICE_USD) {
-    errors.push({ field: 'input_usd', message: 'Price looks like a misplaced decimal' })
+    errors.push({
+      field: 'input_usd',
+      message: 'Price looks like a misplaced decimal',
+    })
   }
 
   if (!Number.isFinite(output) || output <= 0) {
-    errors.push({ field: 'output_usd', message: 'Output price must be greater than 0' })
+    errors.push({
+      field: 'output_usd',
+      message: 'Output price must be greater than 0',
+    })
   } else if (output > MAX_PRICE_USD) {
-    errors.push({ field: 'output_usd', message: 'Price looks like a misplaced decimal' })
+    errors.push({
+      field: 'output_usd',
+      message: 'Price looks like a misplaced decimal',
+    })
   }
 
   if (draft.cache_read_usd.trim()) {
     const cacheRead = Number.parseFloat(draft.cache_read_usd)
     if (!Number.isFinite(cacheRead) || cacheRead < 0) {
-      errors.push({ field: 'cache_read_usd', message: 'Cache read price cannot be negative' })
+      errors.push({
+        field: 'cache_read_usd',
+        message: 'Cache read price cannot be negative',
+      })
     } else if (Number.isFinite(input) && cacheRead > input) {
       // Backwards everywhere it is published, and it overstates cost in
       // reconciliation rather than under-charging, so it hides rather than
       // announces itself.
       errors.push({
         field: 'cache_read_usd',
-        message: 'Cache read costs more than fresh input — the two are the wrong way round',
+        message:
+          'Cache read costs more than fresh input — the two are the wrong way round',
       })
     }
   }
@@ -135,7 +160,10 @@ export function ratioFromUSD(inputUSD: number): number {
 }
 
 /** completionRatioFromUSD is the output multiplier over input. */
-export function completionRatioFromUSD(inputUSD: number, outputUSD: number): number {
+export function completionRatioFromUSD(
+  inputUSD: number,
+  outputUSD: number
+): number {
   if (!inputUSD) return 1
   return outputUSD / inputUSD
 }

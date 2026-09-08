@@ -53,6 +53,13 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
+      # The SHA that was actually checked out. On workflow_dispatch github.sha
+      # is the dispatching branch, not inputs.ref, so two trial builds of
+      # different refs would otherwise share one build id.
+      - name: Resolve built commit
+        id: rev
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Resolve image tag
         id: tag
         run: |
@@ -111,6 +118,11 @@ jobs:
           tags: ${{ steps.tag.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+          # Stamps the SPA and index.html with the commit so a tab left open
+          # across a release gets a reload prompt (common/build_id.go). Both
+          # arch legs resolve the same SHA, so the two images agree.
+          build-args: |
+            BUILD_ID=${{ steps.rev.outputs.sha }}
           # Attestations would add unknown/unknown entries to each per-arch tag,
           # which the imagetools merge below would then carry into the combined
           # manifest. Off until the pipeline is proven, then reconsider.

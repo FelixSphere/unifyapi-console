@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   Activity,
   Box,
+  Coins,
   CreditCard,
   FileText,
   FlaskConical,
@@ -36,7 +37,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { type SidebarData } from '@/components/layout/types'
+import type { SidebarData } from '@/components/layout/types'
 import { ROLE } from '@/lib/roles'
 
 /**
@@ -107,6 +108,13 @@ export function useSidebarData(): SidebarData {
             title: t('Wallet'),
             url: '/wallet',
             icon: Wallet,
+          },
+          {
+            // UNIFYAPI-FORK: sell vendor credits (customers) / run the credit
+            // supply (super admin). Same entry, role-routed.
+            title: t('Credit Supply'),
+            url: '/credit-supply',
+            icon: Coins,
           },
           {
             title: t('Profile'),

@@ -3,6 +3,8 @@ name: CI
 on:
   pull_request:
     types: [opened, synchronize, closed]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -83,6 +85,9 @@ jobs:
 
       - name: Typecheck
         run: bun run typecheck
+
+      - name: Check Bun test-runner imports
+        run: node scripts/check-test-runner.mjs
 
       - name: Test
         run: bun test

@@ -86,7 +86,10 @@ func ValidateChannelCostRatios(ratios map[string]float64) []error {
 	return problems
 }
 
-// UpstreamCostUSD is what a channel charges us for a request's tokens, in USD.
+// ListPriceUSD is what a request's tokens cost at the vendor's official list
+// price, before any purchasing discount. It is the denomination a vendor's own
+// prepaid credit balance decrements in, which is why the credit supply draws lots
+// down by this figure rather than by UpstreamCostUSD (see model/credit_lot.go).
 //
 // The split matters: cached reads are an order of magnitude cheaper than fresh
 // input at every vendor that offers them (Anthropic bills them at 0.1x), so
@@ -96,7 +99,7 @@ func ValidateChannelCostRatios(ratios map[string]float64) []error {
 //
 // Returns false for a model with no official price, since a cost we cannot
 // compute must be reported as unknown rather than silently counted as zero.
-func UpstreamCostUSD(model string, channelID int, promptTokens, cachedTokens, completionTokens int64) (float64, bool) {
+func ListPriceUSD(model string, promptTokens, cachedTokens, completionTokens int64) (float64, bool) {
 	entry, ok := CatalogEntryFor(model)
 	if !ok {
 		return 0, false
@@ -121,6 +124,15 @@ func UpstreamCostUSD(model string, channelID int, promptTokens, cachedTokens, co
 		cachedPrice = entry.CacheReadUSD
 	}
 	cost += float64(cachedTokens) / perMillion * cachedPrice
+	return cost, true
+}
 
+// UpstreamCostUSD is what a channel charges us for a request's tokens, in USD:
+// the list price scaled by that channel's purchasing ratio.
+func UpstreamCostUSD(model string, channelID int, promptTokens, cachedTokens, completionTokens int64) (float64, bool) {
+	cost, ok := ListPriceUSD(model, promptTokens, cachedTokens, completionTokens)
+	if !ok {
+		return 0, false
+	}
 	return cost * GetChannelCostRatio(channelID), true
 }

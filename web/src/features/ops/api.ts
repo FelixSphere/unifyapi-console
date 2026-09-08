@@ -60,6 +60,49 @@ export type TenantModelUsage = {
   completion_tokens: number
 }
 
+export type CreditPoolSummary = {
+  id: number
+  name: string
+  routing_group: string
+  models: string
+  status: number
+  original_quota: number
+  remaining_quota: number
+  granted_quota: number
+  grant_remaining_quota: number
+  accrued_payable_quota: number
+  lots: number
+  grants: number
+}
+
+export type CreditPoolLot = {
+  id: number
+  pool_id: number
+  channel_id: number
+  source_type: 'free' | 'purchased' | 'contributed'
+  contributor_tenant_id: number
+  label: string
+  original_quota: number
+  remaining_quota: number
+  acquisition_ratio: number
+  accrued_payable_quota: number
+  expires_at: number
+  status: number
+}
+
+export type TenantCreditGrant = {
+  id: number
+  tenant_id: number
+  pool_id: number
+  name: string
+  original_quota: number
+  remaining_quota: number
+  starts_at: number
+  expires_at: number
+  priority: number
+  status: number
+}
+
 type Envelope<T> = { success: boolean; message: string; data: T }
 
 export async function getTenantOverviews(params: {
@@ -151,6 +194,75 @@ export async function extendTenantTerm(tenantId: number, days: number) {
     `/api/tenant/${tenantId}/extend`,
     { days }
   )
+  if (!res.data.success) throw new Error(res.data.message)
+  return res.data.data
+}
+
+export async function getCreditPools() {
+  const res = await api.get<Envelope<CreditPoolSummary[]>>('/api/credit-pool/')
+  if (!res.data.success) throw new Error(res.data.message)
+  return res.data.data ?? []
+}
+
+export async function getCreditPool(poolId: number) {
+  const res = await api.get<
+    Envelope<{ lots: CreditPoolLot[]; grants: TenantCreditGrant[] }>
+  >(`/api/credit-pool/${poolId}`)
+  if (!res.data.success) throw new Error(res.data.message)
+  return res.data.data
+}
+
+export async function createCreditPool(input: {
+  name: string
+  routing_group: string
+  models: string
+}) {
+  const res = await api.post<Envelope<CreditPoolSummary>>(
+    '/api/credit-pool/',
+    input
+  )
+  if (!res.data.success) throw new Error(res.data.message)
+  return res.data.data
+}
+
+export async function addCreditPoolLot(
+  poolId: number,
+  input: Omit<
+    CreditPoolLot,
+    'id' | 'pool_id' | 'remaining_quota' | 'status' | 'accrued_payable_quota'
+  >
+) {
+  const res = await api.post<Envelope<CreditPoolLot>>(
+    `/api/credit-pool/${poolId}/lots`,
+    input
+  )
+  if (!res.data.success) throw new Error(res.data.message)
+  return res.data.data
+}
+
+export async function addTenantCreditGrant(
+  poolId: number,
+  input: Omit<
+    TenantCreditGrant,
+    'id' | 'pool_id' | 'remaining_quota' | 'status'
+  >
+) {
+  const res = await api.post<Envelope<TenantCreditGrant>>(
+    `/api/credit-pool/${poolId}/grants`,
+    input
+  )
+  if (!res.data.success) throw new Error(res.data.message)
+  return res.data.data
+}
+
+export async function getMyPromotionalCredits() {
+  const res = await api.get<
+    Envelope<{
+      original_quota: number
+      remaining_quota: number
+      grants: TenantCreditGrant[]
+    }>
+  >('/api/credit-pool/self')
   if (!res.data.success) throw new Error(res.data.message)
   return res.data.data
 }

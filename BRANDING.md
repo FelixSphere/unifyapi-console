@@ -100,6 +100,18 @@ finds the whole delta without consulting git history.
 - `web/scripts/check-brand-invariants.mjs` — the licence/brand guard.
 - `.github/workflows/fork-ci.yml` — fork-owned CI.
 - `BRANDING.md` — this file.
+- `model/credit_supplier.go`, `model/credit_lot.go`, `model/credit_supply_consume.go`,
+  `model/credit_supplier_portal.go`, `model/credit_supply_terms.go`, `service/credit_supply.go`, `controller/credit_supply.go`,
+  `controller/credit_supplier_portal.go`, `docs/credit-supply.md` —
+  the supplier credit supply: third-party vendor credits routed through a channel,
+  drawn down at list price, settled to the supplier at an acquisition rate that
+  doubles as the channel's `ChannelCostRatio`.
+- `common/build_id.go`, `web/src/lib/stale-bundle.ts`, `web/src/features/errors/stale-bundle-error.tsx`
+  (plus the `BUILD_ID` arg in
+  `Dockerfile` / `fork-image.yml` and the `unifyapi-build` meta in `rsbuild.config.ts`) —
+  a per-build id stamped into the bundle and echoed by the server on every response
+  (`X-UnifyAPI-Build`, `/api/status.build_id`), so a tab left open across a release
+  gets a "new version available, reload" prompt instead of the /500 page.
 
 ### Not touched, on purpose
 

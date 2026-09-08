@@ -215,3 +215,85 @@ func TestStripeTopUpCreditsTenantAndSnapshotsOwnership(t *testing.T) {
 	assert.Zero(t, storedMember.Quota)
 	assert.Equal(t, "cus_shared", storedMember.StripeCustomer)
 }
+
+// --- what an operator sees ---
+//
+// The tests above prove the tenant wallet is the balance that gets SPENT. None
+// of them proved it is the balance an operator is SHOWN, and that gap shipped:
+// every admin-facing read returned `users.quota` raw, which is 0 for every
+// tenant-backed login, so a funded account read as empty and each quota an
+// operator set looked silently discarded. The money was always fine; the read
+// was not.
+
+func TestFillEffectiveQuotasShowsTheSpendableBalanceNotTheStaleColumn(t *testing.T) {
+	setupBillingEntityTestDB(t)
+
+	tenant := Tenant{Name: "Acme", Slug: "acme", Quota: 0}
+	require.NoError(t, DB.Create(&tenant).Error)
+	user := User{Username: "member", AffCode: "aff-member", TenantId: tenant.Id, Quota: 0}
+	require.NoError(t, DB.Create(&user).Error)
+
+	require.NoError(t, SetUserQuota(user.Id, 50_000_000))
+
+	// The premise: the user's own column stays behind. If this ever fails the
+	// helper is no longer needed -- do not "fix" it by loosening the assertion.
+	var raw User
+	require.NoError(t, DB.First(&raw, user.Id).Error)
+	require.Equal(t, 0, raw.Quota, "the tenant wallet holds the balance; users.quota is expected to be stale")
+
+	spendable, err := GetUserQuota(user.Id, true)
+	require.NoError(t, err)
+	require.Equal(t, 50_000_000, spendable)
+
+	shown := []*User{&raw}
+	require.NoError(t, FillEffectiveQuotas(shown))
+	assert.Equal(t, spendable, shown[0].Quota,
+		"an operator must be shown the same number the relay will spend")
+}
+
+func TestFillEffectiveQuotasHandlesAPageOfMixedLogins(t *testing.T) {
+	setupBillingEntityTestDB(t)
+
+	first := Tenant{Name: "First", Slug: "first", Quota: 11}
+	second := Tenant{Name: "Second", Slug: "second", Quota: 22}
+	require.NoError(t, DB.Create(&first).Error)
+	require.NoError(t, DB.Create(&second).Error)
+
+	// Two logins in the same tenant, one in another, one with no tenant at all.
+	inFirstA := User{Username: "a", AffCode: "aff-a", TenantId: first.Id, Quota: 999}
+	inFirstB := User{Username: "b", AffCode: "aff-b", TenantId: first.Id, Quota: 0}
+	inSecond := User{Username: "c", AffCode: "aff-c", TenantId: second.Id, Quota: 0}
+	tenantless := User{Username: "d", AffCode: "aff-d", TenantId: 0, Quota: 77}
+	for _, u := range []*User{&inFirstA, &inFirstB, &inSecond, &tenantless} {
+		require.NoError(t, DB.Create(u).Error)
+	}
+
+	page := []*User{&inFirstA, &inFirstB, &inSecond, &tenantless}
+	require.NoError(t, FillEffectiveQuotas(page))
+
+	assert.Equal(t, 11, inFirstA.Quota, "a stale column must be overwritten, not preferred")
+	assert.Equal(t, 11, inFirstB.Quota, "members of one tenant share one balance")
+	assert.Equal(t, 22, inSecond.Quota)
+	assert.Equal(t, 77, tenantless.Quota, "a tenantless login owns its own column")
+}
+
+func TestFillEffectiveQuotasKeepsTheColumnWhenTheTenantRowIsGone(t *testing.T) {
+	setupBillingEntityTestDB(t)
+
+	// A dangling tenant_id must not blank the display: showing 0 for a login
+	// whose wallet cannot be read would look exactly like the bug this helper
+	// exists to fix.
+	orphan := User{Username: "orphan", AffCode: "aff-orphan", TenantId: 4242, Quota: 12345}
+	require.NoError(t, DB.Create(&orphan).Error)
+
+	page := []*User{&orphan}
+	require.NoError(t, FillEffectiveQuotas(page))
+	assert.Equal(t, 12345, orphan.Quota)
+}
+
+func TestFillEffectiveQuotasToleratesEmptyAndNilEntries(t *testing.T) {
+	setupBillingEntityTestDB(t)
+	require.NoError(t, FillEffectiveQuotas(nil))
+	require.NoError(t, FillEffectiveQuotas([]*User{}))
+	require.NoError(t, FillEffectiveQuotas([]*User{nil}))
+}

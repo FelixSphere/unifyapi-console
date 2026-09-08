@@ -91,3 +91,27 @@ export async function getUptimeStatus() {
   )
   return res.data
 }
+
+export type PromotionalCreditGrant = {
+  id: number
+  name: string
+  original_quota: number
+  remaining_quota: number
+  expires_at: number
+}
+
+export async function getMyPromotionalCredits() {
+  const res = await api.get<{
+    success: boolean
+    message: string
+    data: {
+      original_quota: number
+      remaining_quota: number
+      grants: PromotionalCreditGrant[]
+    }
+  }>('/api/credit-pool/self')
+  if (!res.data.success) {
+    throw new Error(res.data.message || 'Failed to load promotional credits')
+  }
+  return res.data.data
+}

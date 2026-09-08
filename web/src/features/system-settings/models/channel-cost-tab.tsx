@@ -1,4 +1,12 @@
 /*
+Copyright (C) 2026 FelixSphere
+
+This file is part of a modified version of new-api, distributed under the
+GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
+Upstream: https://github.com/QuantumNous/new-api
+Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
+*/
+/*
 UNIFYAPI-FORK: the "upstream purchasing cost" tab.
 
 The second of the three prices UnifyAPI keeps apart -- what our upstream charges
@@ -77,7 +85,9 @@ export function ChannelCostTab() {
     mutationFn: updateChannelCost,
     onSuccess: (response) => {
       if (!response.success) {
-        toast.error(response.errors?.join('; ') ?? response.message ?? t('Failed to save'))
+        toast.error(
+          response.errors?.join('; ') ?? response.message ?? t('Failed to save')
+        )
         return
       }
       toast.success(response.message ?? t('Upstream costs saved'))

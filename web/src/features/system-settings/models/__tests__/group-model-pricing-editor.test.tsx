@@ -1,5 +1,13 @@
+/*
+Copyright (C) 2026 FelixSphere
+
+This file is part of a modified version of new-api, distributed under the
+GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
+Upstream: https://github.com/QuantumNous/new-api
+Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
+*/
+import { afterAll, describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { after, describe, test } from 'node:test'
 
 import { Window } from 'happy-dom'
 
@@ -71,7 +79,7 @@ function changeInputValue(input: HTMLInputElement, value: string) {
 }
 
 describe('customer model pricing table', () => {
-  after(() => {
+  afterAll(() => {
     domWindow.close()
   })
 

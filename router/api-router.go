@@ -230,6 +230,33 @@ func SetApiRouter(router *gin.Engine) {
 			partnershipProgramRoute.PUT("/:id/customers/:customerId", controller.UpdatePartnershipCustomer)
 			partnershipProgramRoute.DELETE("/:id/customers/:customerId", controller.RemovePartnershipCustomer)
 		}
+		// UNIFYAPI-FORK: supplier credit supply. See docs/credit-supply.md.
+		creditSupplyRoute := apiRouter.Group("/credit-supply")
+		creditSupplyRoute.Use(middleware.RootAuth())
+		{
+			creditSupplyRoute.GET("/overview", controller.GetCreditSupplyOverview)
+			creditSupplyRoute.GET("/suppliers", controller.GetCreditSuppliers)
+			creditSupplyRoute.POST("/suppliers", controller.CreateCreditSupplier)
+			creditSupplyRoute.PUT("/suppliers/:id", controller.UpdateCreditSupplier)
+			creditSupplyRoute.GET("/lots", controller.GetCreditLots)
+			creditSupplyRoute.POST("/lots", controller.CreateCreditLot)
+			creditSupplyRoute.PUT("/lots/:id", controller.UpdateCreditLot)
+			creditSupplyRoute.POST("/lots/:id/transition", controller.TransitionCreditLot)
+			creditSupplyRoute.GET("/lots/:id/usage", controller.GetCreditLotUsage)
+			creditSupplyRoute.GET("/lots/:id/events", controller.GetCreditLotEvents)
+			creditSupplyRoute.POST("/lots/:id/pay", controller.PayCreditLot)
+		}
+		// UNIFYAPI-FORK: supplier portal -- an ordinary login mapped to a
+		// supplier by CreditSupplier.UserId. See controller/credit_supplier_portal.go.
+		supplierRoute := apiRouter.Group("/supplier")
+		supplierRoute.Use(middleware.UserAuth(), middleware.DisableCache())
+		{
+			supplierRoute.GET("/me", controller.GetSupplierPortal)
+			supplierRoute.GET("/terms", controller.GetSupplierTerms)
+			supplierRoute.POST("/lots", middleware.CriticalRateLimit(), controller.SubmitSupplierLot)
+			supplierRoute.GET("/usage", controller.GetSupplierUsage)
+			supplierRoute.GET("/statements", controller.GetSupplierStatements)
+		}
 
 		// Custom OAuth provider management (root only)
 		customOAuthRoute := apiRouter.Group("/custom-oauth-provider")
@@ -291,6 +318,7 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		registerChannelRoutes(apiRouter)
 		registerAuthzRoutes(apiRouter)
+		registerCreditPoolRoutes(apiRouter)
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())
 		{
