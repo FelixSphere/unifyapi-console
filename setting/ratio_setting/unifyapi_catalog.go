@@ -196,6 +196,13 @@ var unifyapiCatalog = []CatalogEntry{
 		ContextTier: &ContextTier{ThresholdTokens: 200000, InputUSD: 4, OutputUSD: 18, CacheReadUSD: 0.4}},
 	{Model: "gemini-3.1-pro-preview-customtools", Vendor: "google", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 0,
 		ContextTier: &ContextTier{ThresholdTokens: 200000, InputUSD: 4, OutputUSD: 18, CacheReadUSD: 0.4}},
+	// Vendor is deliberately blank: the pinned models.dev fixture (2026-09-02)
+	// predates this model, so the drift checker cannot verify it and would
+	// report it as retired. Unverified + a dated quote off Google's own page is
+	// the designed way to say "priced from the vendor, not the aggregator".
+	// Clear the flag and set Vendor: "google" once the fixture is refreshed.
+	{Model: "gemini-3.5-flash", Vendor: "", InputUSD: 1.5, OutputUSD: 9, CacheReadUSD: 0.15, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://ai.google.dev/gemini-api/docs/pricing", QuoteDate: "2026-09-08"},
 	{Model: "gemini-flash-latest", Vendor: "google", InputUSD: 0.75, OutputUSD: 3.75, CacheReadUSD: 0.075, CacheWriteUSD: 0},
 	{Model: "gemini-flash-lite-latest", Vendor: "google", InputUSD: 0.3, OutputUSD: 2.5, CacheReadUSD: 0.03, CacheWriteUSD: 0},
 	{Model: "gemini-pro-latest", Vendor: "google", UpstreamModel: "gemini-3.1-pro-preview", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 0},
