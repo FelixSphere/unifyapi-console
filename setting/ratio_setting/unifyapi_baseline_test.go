@@ -54,6 +54,7 @@ var publishedModels = []string{
 	"gemini-3.1-flash-lite-preview",
 	"gemini-3.1-pro-preview",
 	"gemini-3.1-pro-preview-customtools",
+	"gemini-3.5-flash",
 	"gemini-flash-latest",
 	"gemini-flash-lite-latest",
 	"gemini-pro-latest",
