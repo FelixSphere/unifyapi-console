@@ -16,6 +16,16 @@ export default defineConfig(({ envMode }) => {
     'http://localhost:3000'
 
   const isProd = envMode === 'production'
+  // Stale-bundle detection (src/lib/stale-bundle.ts): one id per production
+  // build, stamped into the bundle and into index.html so the Go server can
+  // read it back from the embedded page (common/build_id.go). CI passes the
+  // commit SHA through the Dockerfile's BUILD_ID arg; a local build falls back
+  // to a timestamp. Dev builds leave it empty so a dev SPA proxied to any
+  // server never prompts.
+  const buildId = isProd
+    ? process.env.VITE_REACT_APP_BUILD_ID?.trim() ||
+      `local-${new Date().toISOString().replaceAll(/[-:.TZ]/g, '')}`
+    : ''
   const devProxy = Object.fromEntries(
     (['/api', '/mj', '/pg'] as const).map((key) => [
       key,
@@ -56,6 +66,9 @@ export default defineConfig(({ envMode }) => {
       entry: {
         index: './src/main.tsx',
       },
+      define: {
+        'import.meta.env.VITE_REACT_APP_BUILD_ID': JSON.stringify(buildId),
+      },
     },
     resolve: {
       alias: {
@@ -64,6 +77,8 @@ export default defineConfig(({ envMode }) => {
     },
     html: {
       template: './index.html',
+      // `false` omits the tag (dev builds have no id).
+      meta: { 'unifyapi-build': buildId || false },
     },
     server: {
       host: '0.0.0.0',
