@@ -55,6 +55,8 @@ var publishedModels = []string{
 	"gemini-3.1-pro-preview",
 	"gemini-3.1-pro-preview-customtools",
 	"gemini-3.5-flash",
+	"gemini-3.7-flash",
+	"gemini-3.8-flash",
 	"gemini-flash-latest",
 	"gemini-flash-lite-latest",
 	"gemini-pro-latest",
@@ -355,6 +357,8 @@ func TestUnverifiedEntriesAreDeclared(t *testing.T) {
 		"deepseek-v3.2",          //
 		"deepseek-v3.2-thinking", //
 		"gemini-3.5-flash",       // newer than the pinned fixture; quoted off Google's page
+		"gemini-3.7-flash",       // same, and on promotional pricing until 2026-12-31
+		"gemini-3.8-flash",       // same
 		"glm-5-turbo",            // not listed; Zhipu lists glm-5v-turbo
 		"kimi-k2.5",              // retired by Moonshot, but still sold and still called
 		"qwen3.5-flash",          // not listed
