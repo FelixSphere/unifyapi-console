@@ -9,9 +9,20 @@ on:
 permissions:
   contents: read
 
+# A merge fires two runs one second apart: the `push` to main, and the
+# `pull_request` run for action `closed` (which checks out base.ref, i.e. the
+# merged main -- see the checkout step below). They contended for the same
+# concurrency group, and the push run lost every time: 7 of the last 10 `CI`
+# runs on main were 2-second cancellations. `CI` had effectively stopped
+# gating main, while still appearing in the checks list as though it did.
+#
+# github.event_name separates the two so they no longer race, and main is
+# never cancelled: on a branch, superseding a run saves minutes and costs
+# nothing, but on main the cancelled run is the only record that the merged
+# commit was tested.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   backend:
