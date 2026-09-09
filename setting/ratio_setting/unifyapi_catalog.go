@@ -191,6 +191,18 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "gemini-3-flash-preview", Vendor: "google", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0, AudioInputUSD: 1.0},
 	{Model: "gemini-3-pro-image", Vendor: "google", InputUSD: 2, OutputUSD: 120, CacheReadUSD: 0, CacheWriteUSD: 0},
 	{Model: "gemini-3.1-flash-image", Vendor: "google", InputUSD: 0.5, OutputUSD: 60, CacheReadUSD: 0, CacheWriteUSD: 0},
+	// Nano Banana 2 Lite. Google quotes TWO output rates for every image model
+	// -- text/thinking tokens and image tokens -- and this row carries the
+	// IMAGE rate ($30.00/1M, "equivalent to $0.0336 per 1K resolution image"),
+	// which is the convention the three image rows above already follow:
+	// 3-pro-image 120 not 12, 3.1-flash-image 60 not 3.
+	//
+	// That deliberately overcharges the text/thinking tokens of an image
+	// request rather than undercharging its image tokens. Splitting the two
+	// needs a billing expression, not a flat row; until then this errs the
+	// safe way. Google publishes no cache price for it.
+	{Model: "gemini-3.1-flash-lite-image", Vendor: "", InputUSD: 0.25, OutputUSD: 30, CacheReadUSD: 0, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://ai.google.dev/gemini-api/docs/pricing (image output rate; $1.50/1M for text and thinking)", QuoteDate: "2026-09-10"},
 	{Model: "gemini-3.1-flash-lite-preview", Vendor: "google", InputUSD: 0.25, OutputUSD: 1.5, CacheReadUSD: 0.025, CacheWriteUSD: 0, AudioInputUSD: 0.5},
 	{Model: "gemini-3.1-pro-preview", Vendor: "google", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 0,
 		ContextTier: &ContextTier{ThresholdTokens: 200000, InputUSD: 4, OutputUSD: 18, CacheReadUSD: 0.4}},

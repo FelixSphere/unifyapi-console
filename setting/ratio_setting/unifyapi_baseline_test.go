@@ -51,6 +51,7 @@ var publishedModels = []string{
 	"gemini-3-flash-preview",
 	"gemini-3-pro-image",
 	"gemini-3.1-flash-image",
+	"gemini-3.1-flash-lite-image",
 	"gemini-3.1-flash-lite-preview",
 	"gemini-3.1-pro-preview",
 	"gemini-3.1-pro-preview-customtools",
@@ -353,15 +354,16 @@ func TestDetectBaselineShadowCatchesEachWayTheDatabaseCanWin(t *testing.T) {
 // list is pinned here and the drift report prints it every run.
 func TestUnverifiedEntriesAreDeclared(t *testing.T) {
 	want := []string{
-		"deepseek-v3",            // retired; DeepSeek publishes v4 only
-		"deepseek-v3.2",          //
-		"deepseek-v3.2-thinking", //
-		"gemini-3.5-flash",       // newer than the pinned fixture; quoted off Google's page
-		"gemini-3.7-flash",       // same, and on promotional pricing until 2026-12-31
-		"gemini-3.8-flash",       // same
-		"glm-5-turbo",            // not listed; Zhipu lists glm-5v-turbo
-		"kimi-k2.5",              // retired by Moonshot, but still sold and still called
-		"qwen3.5-flash",          // not listed
+		"deepseek-v3",                 // retired; DeepSeek publishes v4 only
+		"deepseek-v3.2",               //
+		"deepseek-v3.2-thinking",      //
+		"gemini-3.1-flash-lite-image", // Nano Banana 2 Lite; newer than the pinned fixture
+		"gemini-3.5-flash",            // newer than the pinned fixture; quoted off Google's page
+		"gemini-3.7-flash",            // same, and on promotional pricing until 2026-12-31
+		"gemini-3.8-flash",            // same
+		"glm-5-turbo",                 // not listed; Zhipu lists glm-5v-turbo
+		"kimi-k2.5",                   // retired by Moonshot, but still sold and still called
+		"qwen3.5-flash",               // not listed
 	}
 
 	var got []string
