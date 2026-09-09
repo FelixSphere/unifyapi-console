@@ -136,7 +136,7 @@ func TestUnverifiableCountIsStable(t *testing.T) {
 			count++
 		}
 	}
-	require.Equal(t, 7, count,
+	require.Equal(t, 9, count,
 		"unverifiable entries are prices nothing can defend; growing this number needs a reason")
 }
 

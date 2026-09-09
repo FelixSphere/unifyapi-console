@@ -196,6 +196,22 @@ var unifyapiCatalog = []CatalogEntry{
 		ContextTier: &ContextTier{ThresholdTokens: 200000, InputUSD: 4, OutputUSD: 18, CacheReadUSD: 0.4}},
 	{Model: "gemini-3.1-pro-preview-customtools", Vendor: "google", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 0,
 		ContextTier: &ContextTier{ThresholdTokens: 200000, InputUSD: 4, OutputUSD: 18, CacheReadUSD: 0.4}},
+	// gemini-3.7-flash and gemini-3.8-flash are on PROMOTIONAL pricing.
+	//
+	// Google lists $0.75 in / $3.75 out / $0.075 cached "through December 31,
+	// 2026", then "$1.50 / $7.50 / $0.15 starting January 1, 2027" -- a
+	// doubling, already published, with a date on it. The promotional figure is
+	// the official price today, so it is what we sell at today; but nothing
+	// about a price in a Go file expires by itself, and on 2027-01-01 our cost
+	// doubles while the catalogue keeps quoting half of it.
+	//
+	// TestPromotionalPricesHaveNotExpired fails from 2026-12-15 so this cannot
+	// be forgotten. When it does: set both rows to 1.5 / 7.5 / 0.15 and move
+	// the deadline, or drop the models.
+	{Model: "gemini-3.8-flash", Vendor: "", InputUSD: 0.75, OutputUSD: 3.75, CacheReadUSD: 0.075, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://ai.google.dev/gemini-api/docs/pricing (promotional through 2026-12-31; $1.50/$7.50 from 2027-01-01)", QuoteDate: "2026-09-10"},
+	{Model: "gemini-3.7-flash", Vendor: "", InputUSD: 0.75, OutputUSD: 3.75, CacheReadUSD: 0.075, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://ai.google.dev/gemini-api/docs/pricing (promotional through 2026-12-31; $1.50/$7.50 from 2027-01-01)", QuoteDate: "2026-09-10"},
 	// Vendor is deliberately blank: the pinned models.dev fixture (2026-09-02)
 	// predates this model, so the drift checker cannot verify it and would
 	// report it as retired. Unverified + a dated quote off Google's own page is
