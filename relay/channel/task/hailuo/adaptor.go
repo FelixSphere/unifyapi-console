@@ -34,7 +34,7 @@ type TaskAdaptor struct {
 
 func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.ChannelType = info.ChannelType
-	a.baseURL = info.ChannelBaseUrl
+	a.baseURL = strings.TrimRight(info.ChannelBaseUrl, "/")
 	a.apiKey = info.ApiKey
 }
 
@@ -43,6 +43,9 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	if isH3Model(info.UpstreamModelName) && isFlatkeyBaseURL(a.baseURL) {
+		return a.baseURL + "/v1/videos", nil
+	}
 	if isH3Model(info.UpstreamModelName) {
 		return a.baseURL + "/v2/video_generation", nil
 	}
@@ -70,6 +73,9 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		body, err := convertH3Request(&req, info)
 		if err != nil {
 			return nil, err
+		}
+		if isFlatkeyBaseURL(a.baseURL) {
+			return buildFlatkeyBody(body, &req)
 		}
 		data, err := common.Marshal(body)
 		return bytes.NewReader(data), err
@@ -99,6 +105,9 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	}
 	_ = resp.Body.Close()
 
+	if isH3Model(info.UpstreamModelName) && isFlatkeyBaseURL(a.baseURL) {
+		return flatkeySubmitResponse(c, responseBody, info)
+	}
 	var hResp VideoResponse
 	if err := common.Unmarshal(responseBody, &hResp); err != nil {
 		taskErr = service.TaskErrorWrapper(errors.Wrapf(err, "body: %s", responseBody), "unmarshal_response_body_failed", http.StatusInternalServerError)
@@ -136,9 +145,14 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 		return nil, fmt.Errorf("invalid task_id")
 	}
 
+	baseUrl = strings.TrimRight(baseUrl, "/")
 	uri := fmt.Sprintf("%s%s?task_id=%s", baseUrl, QueryTaskEndpoint, url.QueryEscape(taskID))
 	if strings.HasPrefix(taskID, h3TaskPrefix) {
 		uri = baseUrl + "/v2/query/video_generation/" + url.PathEscape(strings.TrimPrefix(taskID, h3TaskPrefix))
+	}
+
+	if strings.HasPrefix(taskID, flatkeyTaskPrefix) {
+		uri = baseUrl + "/v1/videos/" + url.PathEscape(strings.TrimPrefix(taskID, flatkeyTaskPrefix))
 	}
 
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
@@ -204,6 +218,9 @@ func (a *TaskAdaptor) parseResolutionFromSize(size string, modelConfig ModelConf
 }
 
 func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {
+	if result, matched, err := parseFlatkeyTask(respBody); matched || err != nil {
+		return result, err
+	}
 	var h3 h3Response
 	if err := common.Unmarshal(respBody, &h3); err != nil {
 		return nil, err
@@ -253,7 +270,7 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 }
 
 func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, error) {
-	if strings.HasPrefix(originTask.GetUpstreamTaskID(), h3TaskPrefix) {
+	if strings.HasPrefix(originTask.GetUpstreamTaskID(), h3TaskPrefix) || strings.HasPrefix(originTask.GetUpstreamTaskID(), flatkeyTaskPrefix) {
 		return common.Marshal(originTask.ToOpenAIVideo())
 	}
 	var hailuoResp QueryTaskResponse

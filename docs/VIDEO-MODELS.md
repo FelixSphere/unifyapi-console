@@ -160,3 +160,11 @@ new customer requests to supported models.
 - [Gemini Omni](https://ai.google.dev/gemini-api/docs/omni), [Interactions API](https://ai.google.dev/api/interactions-api), [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing)
 - [Jimeng 3.0](https://docs.volcengine.com/docs/85621/1792707?lang=zh)
 - [OpenAI deprecations](https://developers.openai.com/api/docs/deprecations)
+
+### Flatkey MiniMax H3 channels
+
+Use channel type **MiniMax**, Base URL `https://router.flatkey.ai` (no `/v1` suffix), and the Flatkey key. The existing `https://console.flatkey.ai` origin is also recognized without redirecting credentials to a different host. For H3/H3-Max only, these exact origins select Flatkey's `/v1/videos` submit, task query, and authenticated content endpoints. Official MiniMax and other custom origins retain their native V1/V2 protocols.
+
+H3 requests are converted to `content`, `resolution`, `duration`, and `ratio`; the default test sends 5 seconds at `768P`. Put custom H3 fields in the video test's `metadata`, for example `{"metadata":{"resolution":"2K","duration":6}}` for H3, or `{"metadata":{"aigc_watermark":false}}`. Keep the channel parameter/header override fields empty for this integration: video task bodies do not apply channel parameter overrides. Selecting OpenAI instead only forwards generic video fields and does not perform H3 parameter conversion.
+
+Flatkey task IDs carry an internal protocol prefix, so polling and authenticated downloads continue using the hosted task lifecycle. Failed tasks follow the existing refund path; this integration does not change baseline prices. Reference: https://flatkey.ai/models/minimax-h3 (checked 2026-09-10).
