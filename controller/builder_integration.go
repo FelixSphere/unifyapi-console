@@ -22,7 +22,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -101,6 +100,10 @@ func BuilderIntegration(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"connected": true})
 		return
 	}
+	if c.Param("action") == "checkout" && !isStripeTopUpEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"code": "UNIFY_STRIPE_UNAVAILABLE"})
+		return
+	}
 	link, user, err := model.GetBuilderIdentity(request.Subject)
 	if errors.Is(err, gorm.ErrRecordNotFound) && c.Param("action") == "workspace" {
 		c.JSON(http.StatusOK, gin.H{"connected": false})
@@ -134,7 +137,7 @@ func BuilderIntegration(c *gin.Context) {
 			c.JSON(http.StatusBadGateway, gin.H{"code": "UNIFY_READ_FAILED"})
 			return
 		}
-		data["stripe_available"] = setting.StripeApiSecret != ""
+		data["stripe_available"] = isStripeTopUpEnabled()
 		c.JSON(http.StatusOK, data)
 	case "checkout":
 		if request.Amount < 1 || request.Amount > 10000 {
