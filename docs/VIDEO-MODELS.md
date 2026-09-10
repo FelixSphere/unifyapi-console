@@ -31,6 +31,13 @@ current documented Singapore base is
 `https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com`.
 Model availability requires upstream account access, independently of relay support.
 
+The admin channel test is synchronous and does not verify video generation.
+Registered video models (including mapped aliases) return a message directing
+operators to `POST /v1/videos` and `GET /v1/videos/{id}` instead of sending a
+chat request. Automatic channel tests skip them without changing channel health
+or status. Use the task API with the required reference media to verify an
+enabled video channel; submitting a generation task incurs provider charges.
+
 Vidu's reference action maps `viduq3-pro` to the upstream `viduq3` name.
 Use explicit `metadata.action` for reference generation where the number of
 images alone cannot identify the intended action. Vidu Q3 subjects use `metadata.subjects`, `auto_subjects`, and `audio_type`.
