@@ -37,9 +37,10 @@ import (
 )
 
 type testResult struct {
-	context     *gin.Context
-	localErr    error
-	newAPIError *types.NewAPIError
+	videoTestModel string
+	context        *gin.Context
+	localErr       error
+	newAPIError    *types.NewAPIError
 	// Token usage of a successful test, for callers that account for it
 	// themselves (the credit-supply verification).
 	promptTokens     int
@@ -137,7 +138,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	}
 
 	if err := validateSynchronousChannelTest(channel, testModel); err != nil {
-		return testResult{localErr: err}
+		return testResult{localErr: err, videoTestModel: testModel}
 	}
 
 	endpointType = normalizeChannelTestEndpoint(channel, testModel, endpointType)
@@ -893,6 +894,10 @@ func TestChannel(c *gin.Context) {
 	}
 	result := testChannel(requestCtx, channel, testUserID, testModel, endpointType, isStream)
 	if result.localErr != nil {
+		if errors.Is(result.localErr, errVideoChannelTestUnsupported) {
+			c.JSON(http.StatusOK, gin.H{"success": false, "video_test": true, "model": result.videoTestModel})
+			return
+		}
 		resp := gin.H{
 			"success": false,
 			"message": result.localErr.Error(),

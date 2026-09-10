@@ -31,12 +31,20 @@ current documented Singapore base is
 `https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com`.
 Model availability requires upstream account access, independently of relay support.
 
-The admin channel test is synchronous and does not verify video generation.
-Registered video models (including mapped aliases) return a message directing
-operators to `POST /v1/videos` and `GET /v1/videos/{id}` instead of sending a
-chat request. Automatic channel tests skip them without changing channel health
-or status. Use the task API with the required reference media to verify an
-enabled video channel; submitting a generation task incurs provider charges.
+The admin channel test detects registered video models (including mapped
+aliases) and submits a real asynchronous generation on the selected channel.
+The page polls the saved task and marks success only after generation completes.
+The request uses a short text prompt by default; expand **Video test options**
+to supply JSON with `prompt`, `images`, `duration`, `size`, or provider `metadata`
+for models requiring reference media. These tests charge the operator's account
+through the same reservation, settlement and failure-refund path as `/v1/videos`.
+No API key is created, no fallback channel is used, and channel status is unchanged.
+Automatic health checks still skip video generation.
+
+If browser polling is interrupted or exceeds 20 minutes, the result stays
+**Pending** with its task ID. Clicking Test again in the same page resumes that
+task instead of submitting another generation. The task itself persists on the
+server and is visible in task history even after the page is closed.
 
 Vidu's reference action maps `viduq3-pro` to the upstream `viduq3` name.
 Use explicit `metadata.action` for reference generation where the number of
