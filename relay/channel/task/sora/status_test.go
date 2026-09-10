@@ -28,9 +28,13 @@ func TestExplicitVideoFailureStillTerminates(t *testing.T) {
 	require.Equal(t, "generation rejected", result.Reason)
 }
 
-func TestUnknownVideoStatusWithExplicitErrorStillFails(t *testing.T) {
-	result, err := (&TaskAdaptor{}).ParseTaskResult([]byte(`{"id":"upstream_job","status":"unknown","error":{"message":"permission denied"}}`))
-	require.NoError(t, err)
-	require.Equal(t, model.TaskStatusFailure, result.Status)
-	require.Equal(t, "permission denied", result.Reason)
+func TestUnknownVideoStatusPreservesStandardErrorHandling(t *testing.T) {
+	for _, body := range []string{
+		`{"status":"unknown","error":{"message":"permission denied"}}`,
+		`{"status":"unknown","error":{"code":"429","message":"rate limited"}}`,
+	} {
+		result, err := (&TaskAdaptor{}).ParseTaskResult([]byte(body))
+		require.NoError(t, err)
+		require.Empty(t, result.Status)
+	}
 }

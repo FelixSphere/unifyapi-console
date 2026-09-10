@@ -306,9 +306,9 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 
 	switch resTask.Status {
 	case "unknown":
-		if resTask.Error != nil && resTask.Error.Message != "" {
-			taskResult.Status = model.TaskStatusFailure
-			taskResult.Reason = resTask.Error.Message
+		if resTask.Error != nil {
+			// Preserve the poller's standard error handling, including its
+			// rate-limit retry rule, rather than classifying errors here.
 			break
 		}
 		// FlatKey can return unknown while a submitted Seedance job becomes
