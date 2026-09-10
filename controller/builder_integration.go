@@ -34,6 +34,7 @@ type builderRequest struct {
 	EmailVerified   bool   `json:"email_verified"`
 	ManagementToken string `json:"management_token"`
 	Range           string `json:"range"`
+	OwnerEligible   bool   `json:"owner_eligible"`
 	Amount          int64  `json:"amount"`
 }
 
@@ -110,6 +111,23 @@ func BuilderIntegration(c *gin.Context) {
 		return
 	}
 	switch c.Param("action") {
+	case "claim":
+		if !request.OwnerEligible {
+			c.JSON(http.StatusForbidden, gin.H{"code": "UNIFY_OWNER_REQUIRED"})
+			return
+		}
+		if err := model.ClaimBuilderTeamGrant(request.Subject, request.PartnershipCode); err != nil {
+			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_GRANT_UNAVAILABLE"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"claimed": true})
+	case "credit-status":
+		claimed, err := model.BuilderGrantStatus(link)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"code": "UNIFY_READ_FAILED"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"claimed": claimed})
 	case "workspace":
 		data, err := model.ReadBuilderWorkspace(link, user, request.Range)
 		if err != nil {

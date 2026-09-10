@@ -1,12 +1,12 @@
 # Builder API integration bridge
 
-Status: work in progress, disabled by default, not released.
+Status: implemented locally, disabled by default, not released.
 
 The bridge provides server-authenticated account provisioning/connection,
 account and request projections, a dedicated inference key and the existing
-Stripe checkout. It does not implement the team launch grant yet. The product
-requirement is one $10 grant per team, shared across its products; the team's
-cross-product identity and spending ownership still need confirmation.
+Stripe checkout, plus a transactional $10 team launch grant. All products with
+the same owner form one team and share that owner's account balance. The
+Builder subject is the durable team identity; products cannot reset the grant.
 
 ## Trust boundary
 
@@ -42,8 +42,7 @@ implemented yet; operators can revoke the dedicated key or disable the account.
 ## Scope and release
 
 HTTP-only integration; source and storage remain separate products. No dependency
-was added. Validate the team grant and complete integration tests before enabling
-this bridge. Deploy UnifyAPI first through its own release owner, then configure
+was added. Complete live integration validation before enabling this bridge. Deploy UnifyAPI first through its own release owner, then configure
 the Builder API backend. Do not convert demonstration balances into real credit.
 
 ## Local validation
@@ -53,3 +52,25 @@ model tests, billing coverage gates, frontend typecheck/format/license checks,
 373 frontend tests and frontend/Go builds. The controller full suite and the
 focused Builder account/projection/assertion tests also passed. No production
 configuration, live user grant or Stripe payment was changed.
+
+## Team launch grant
+
+Builder's backend asserts active product ownership in the signed claim request.
+A browser cannot choose the owner, grant amount or group. The active configured
+offer must match the original identity's program/customer, have grant quota
+equal to USD 10 in quota units, and have remaining capacity.
+
+A transaction locks the offer, identity, user and enrollment, consumes one
+program slot, credits the owner's existing billing entity and records the quota
+and timestamp on BuilderIdentity. A unique subject and unique user prevent
+cross-product and concurrent duplicate grants. Prior partnership signup grants
+also count as claimed. Failed quota writes roll back the capacity and receipt.
+Changing server configuration never creates another identity or receipt.
+
+The workspace credit feed includes launch receipts (negative identity IDs) and
+Stripe top-ups (positive IDs). Membership and product transfers do not transfer
+the owner's balance or reveal their key to another user.
+
+Focused tests cover concurrent claims, exhausted capacity, previous grants and
+transaction rollback, in addition to existing provisioning and isolation tests.
+No live payment or production grant was issued during implementation.

@@ -103,3 +103,110 @@ func TestBuilderWorkspaceProjectionDoesNotExposeCredentialsOrOtherUsers(t *testi
 	assert.NotContains(t, string(encoded), "access_token")
 	assert.NotNil(t, data["models"])
 }
+
+func TestBuilderTeamGrantConcurrentClaimsCreditOwnerOnce(t *testing.T) {
+	setupPartnershipTestDB(t)
+	require.NoError(t, DB.AutoMigrate(&BuilderIdentity{}, &Token{}))
+	sqlDB, err := DB.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	require.NoError(t, CreatePartnershipProgram(&PartnershipProgram{Name: "Builders", Code: "builders", Group: "partner", GrantQuota: common.QuotaFromFloat(10 * common.QuotaPerUnit), GrantLimit: 1, Enabled: true}))
+	link, err := ConnectBuilderIdentity("team-owner", "owner@example.invalid", "builders", "")
+	require.NoError(t, err)
+	results := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		go func() { results <- ClaimBuilderTeamGrant("team-owner", "builders") }()
+	}
+	for i := 0; i < 8; i++ {
+		require.NoError(t, <-results)
+	}
+	quota, err := GetUserQuota(link.UserId, true)
+	require.NoError(t, err)
+	assert.Equal(t, common.QuotaFromFloat(10*common.QuotaPerUnit), quota)
+	stored, _, err := GetBuilderIdentity("team-owner")
+	require.NoError(t, err)
+	assert.Positive(t, stored.GrantClaimedAt)
+	claimed, err := BuilderGrantStatus(stored)
+	require.NoError(t, err)
+	assert.True(t, claimed)
+	program, err := GetPartnershipProgramByCode("builders")
+	require.NoError(t, err)
+	assert.Equal(t, 1, program.ClaimedCount)
+	second, err := ConnectBuilderIdentity("other-owner", "other@example.invalid", "builders", "")
+	require.NoError(t, err)
+	require.Error(t, ClaimBuilderTeamGrant(second.Subject, "builders"))
+	quota, err = GetUserQuota(second.UserId, true)
+	require.NoError(t, err)
+	assert.Zero(t, quota)
+}
+
+func TestBuilderTeamGrantDoesNotStackExistingPartnershipGrant(t *testing.T) {
+	setupPartnershipTestDB(t)
+	require.NoError(t, DB.AutoMigrate(&BuilderIdentity{}, &Token{}))
+	require.NoError(t, CreatePartnershipProgram(&PartnershipProgram{Name: "Builders", Code: "builders", Group: "partner", GrantQuota: common.QuotaFromFloat(10 * common.QuotaPerUnit), GrantLimit: 2, Enabled: true}))
+	link, err := ConnectBuilderIdentity("owner", "owner@example.invalid", "builders", "")
+	require.NoError(t, err)
+	require.NoError(t, DB.Model(&PartnershipEnrollment{}).Where("user_id = ?", link.UserId).Update("granted_quota", 123).Error)
+	require.NoError(t, ClaimBuilderTeamGrant(link.Subject, "builders"))
+	quota, err := GetUserQuota(link.UserId, true)
+	require.NoError(t, err)
+	assert.Zero(t, quota)
+	claimed, err := BuilderGrantStatus(link)
+	require.NoError(t, err)
+	assert.True(t, claimed)
+	program, err := GetPartnershipProgramByCode("builders")
+	require.NoError(t, err)
+	assert.Zero(t, program.ClaimedCount)
+}
+
+func TestBuilderTeamGrantRollsBackWhenQuotaWriteFails(t *testing.T) {
+	setupPartnershipTestDB(t)
+	require.NoError(t, DB.AutoMigrate(&BuilderIdentity{}, &Token{}))
+	require.NoError(t, CreatePartnershipProgram(&PartnershipProgram{Name: "Builders", Code: "builders", Group: "partner", GrantQuota: common.QuotaFromFloat(10 * common.QuotaPerUnit), GrantLimit: 1, Enabled: true}))
+	link, err := ConnectBuilderIdentity("owner", "owner@example.invalid", "builders", "")
+	require.NoError(t, err)
+	require.NoError(t, DB.Exec("CREATE TRIGGER fail_grant BEFORE UPDATE OF quota ON tenants BEGIN SELECT RAISE(ABORT, 'injected failure'); END").Error)
+	require.Error(t, ClaimBuilderTeamGrant(link.Subject, "builders"))
+	program, err := GetPartnershipProgramByCode("builders")
+	require.NoError(t, err)
+	assert.Zero(t, program.ClaimedCount)
+	stored, _, err := GetBuilderIdentity(link.Subject)
+	require.NoError(t, err)
+	assert.Zero(t, stored.GrantClaimedAt)
+	claimed, err := BuilderGrantStatus(stored)
+	require.NoError(t, err)
+	assert.False(t, claimed)
+	require.NoError(t, DB.Exec("DROP TRIGGER fail_grant").Error)
+	require.NoError(t, ClaimBuilderTeamGrant(link.Subject, "builders"))
+}
+
+func TestBuilderTeamGrantRejectsChangedOfferOrDisabledAccount(t *testing.T) {
+	for _, scenario := range []string{"wrong-amount", "wrong-customer", "disabled-account", "disabled-program"} {
+		t.Run(scenario, func(t *testing.T) {
+			setupPartnershipTestDB(t)
+			require.NoError(t, DB.AutoMigrate(&BuilderIdentity{}, &Token{}))
+			require.NoError(t, CreatePartnershipProgram(&PartnershipProgram{Name: "Builders", Code: "builders", Group: "partner", GrantQuota: common.QuotaFromFloat(10 * common.QuotaPerUnit), GrantLimit: 2, Enabled: true}))
+			link, err := ConnectBuilderIdentity("owner", "owner@example.invalid", "builders", "")
+			require.NoError(t, err)
+			code := "builders"
+			switch scenario {
+			case "wrong-amount":
+				require.NoError(t, DB.Model(&PartnershipProgram{}).Where("id = ?", link.ProgramId).Update("grant_quota", 1).Error)
+			case "wrong-customer":
+				require.NoError(t, CreatePartnershipProgram(&PartnershipProgram{Name: "Other", Code: "other", Group: "partner", GrantQuota: common.QuotaFromFloat(10 * common.QuotaPerUnit), GrantLimit: 2, Enabled: true}))
+				code = "other"
+			case "disabled-account":
+				require.NoError(t, DB.Model(&User{}).Where("id = ?", link.UserId).Update("status", common.UserStatusDisabled).Error)
+			case "disabled-program":
+				require.NoError(t, DB.Model(&PartnershipProgram{}).Where("id = ?", link.ProgramId).Update("enabled", false).Error)
+			}
+			require.Error(t, ClaimBuilderTeamGrant(link.Subject, code))
+			quota, err := GetUserQuota(link.UserId, true)
+			require.NoError(t, err)
+			assert.Zero(t, quota)
+			program, err := GetPartnershipProgramByCode("builders")
+			require.NoError(t, err)
+			assert.Zero(t, program.ClaimedCount)
+		})
+	}
+}

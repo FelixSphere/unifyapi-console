@@ -19,13 +19,15 @@ import (
 // BuilderIdentity links a trusted Builder subject to one personal account.
 // Email is used only when provisioning; it is never an authentication lookup.
 type BuilderIdentity struct {
-	Id         int    `gorm:"primaryKey"`
-	Subject    string `gorm:"type:varchar(128);not null;uniqueIndex"`
-	UserId     int    `gorm:"not null;uniqueIndex"`
-	ProgramId  int    `gorm:"not null;index"`
-	CustomerId int    `gorm:"not null"`
-	TokenId    int    `gorm:"not null"`
-	CreatedAt  int64  `gorm:"autoCreateTime"`
+	Id             int    `gorm:"primaryKey"`
+	Subject        string `gorm:"type:varchar(128);not null;uniqueIndex"`
+	UserId         int    `gorm:"not null;uniqueIndex"`
+	ProgramId      int    `gorm:"not null;index"`
+	CustomerId     int    `gorm:"not null"`
+	TokenId        int    `gorm:"not null"`
+	CreatedAt      int64  `gorm:"autoCreateTime"`
+	GrantQuota     int    `gorm:"not null;default:0"`
+	GrantClaimedAt int64  `gorm:"not null;default:0"`
 }
 
 var ErrBuilderLinkRequired = errors.New("existing account ownership verification required")
@@ -176,6 +178,10 @@ func ReadBuilderWorkspace(link *BuilderIdentity, user *User, period string) (map
 	for _, topup := range topups {
 		credits = append(credits, map[string]any{"id": topup.Id, "amount": topup.Money, "timestamp": time.Unix(topup.CompleteTime, 0).UTC().Format(time.RFC3339), "description": "Account top-up"})
 	}
+	// Negative IDs distinguish launch receipts from positive Stripe top-up IDs.
+	if link.GrantClaimedAt > 0 {
+		credits = append(credits, map[string]any{"id": -link.Id, "amount": float64(link.GrantQuota) / common.QuotaPerUnit, "timestamp": time.Unix(link.GrantClaimedAt, 0).UTC().Format(time.RFC3339), "description": "Team launch credit"})
+	}
 	models := []string{}
 	if err := DB.Table("abilities").Where(commonGroupCol+" = ? AND enabled = ?", user.Group, true).Distinct("model").Order("model").Pluck("model", &models).Error; err != nil {
 		return nil, err
@@ -189,4 +195,74 @@ func ReadBuilderWorkspace(link *BuilderIdentity, user *User, period string) (map
 		"key":    map[string]any{"id": token.Id, "masked": token.GetMaskedKey(), "active": token.Status == common.TokenStatusEnabled && (token.ExpiredTime == -1 || token.ExpiredTime > now.Unix()), "created_at": time.Unix(token.CreatedTime, 0).UTC().Format(time.RFC3339)},
 		"models": models, "activity": activity, "totals": totals, "credits": credits,
 	}, nil
+}
+
+// BuilderGrantStatus includes an earlier partnership signup grant so linking
+// an already-funded account cannot stack another launch grant.
+func BuilderGrantStatus(link *BuilderIdentity) (bool, error) {
+	if link.GrantClaimedAt > 0 {
+		return true, nil
+	}
+	var enrollment PartnershipEnrollment
+	err := DB.Where("program_id = ? AND user_id = ?", link.ProgramId, link.UserId).First(&enrollment).Error
+	return enrollment.GrantedQuota > 0, err
+}
+
+// ClaimBuilderTeamGrant treats the immutable, unique Builder subject as the
+// team owner. No product identifier participates in grant uniqueness.
+func ClaimBuilderTeamGrant(subject, code string) error {
+	var userID int
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		offer, err := getPartnershipOfferByCode(tx, code, true)
+		if err != nil {
+			return err
+		}
+		var link BuilderIdentity
+		if err := lockForUpdate(tx).Where("subject = ?", subject).First(&link).Error; err != nil {
+			return err
+		}
+		userID = link.UserId
+		if link.GrantClaimedAt > 0 {
+			return nil
+		}
+		if offer.Program.Id != link.ProgramId || offer.CustomerId != link.CustomerId {
+			return ErrBuilderUnavailable
+		}
+		var user User
+		if err := lockForUpdate(tx).First(&user, link.UserId).Error; err != nil {
+			return err
+		}
+		if user.Status != common.UserStatusEnabled || IsStaffRole(user.Role) {
+			return ErrBuilderUnavailable
+		}
+		var enrollment PartnershipEnrollment
+		if err := lockForUpdate(tx).Where("program_id = ? AND user_id = ?", link.ProgramId, link.UserId).First(&enrollment).Error; err != nil {
+			return err
+		}
+		if enrollment.GrantedQuota > 0 {
+			return nil
+		}
+		quota, err := common.QuotaFromFloatStrict(10 * common.QuotaPerUnit)
+		if err != nil || quota <= 0 || offer.Program.GrantQuota != quota {
+			return ErrBuilderUnavailable
+		}
+		result := tx.Model(&PartnershipProgram{}).Where("id = ? AND claimed_count < grant_limit", link.ProgramId).UpdateColumn("claimed_count", gorm.Expr("claimed_count + 1"))
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrBuilderUnavailable
+		}
+		if _, err := IncreaseUserQuotaWithTx(tx, link.UserId, quota); err != nil {
+			return err
+		}
+		if err := tx.Model(&enrollment).Update("granted_quota", quota).Error; err != nil {
+			return err
+		}
+		return tx.Model(&link).Updates(map[string]any{"grant_quota": quota, "grant_claimed_at": time.Now().Unix()}).Error
+	})
+	if err == nil {
+		_ = InvalidateBillingQuotaCacheForUser(userID)
+	}
+	return err
 }
