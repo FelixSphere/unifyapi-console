@@ -69,6 +69,9 @@ func SubmitChannelVideoTest(c *gin.Context) {
 		return
 	}
 	c.Set("group", group)
+	// Manual tests must not auto-disable the channel on a submission error.
+	// This database-loaded object is request-local; preserve the saved setting.
+	ch.AutoBan = common.GetPointer(0)
 	c.Set("specific_channel_id", id) // no fallback or retry onto another channel
 	if apiErr := middleware.SetupContextForSelectedChannel(c, ch, req.Model); apiErr != nil {
 		common.ApiError(c, apiErr)

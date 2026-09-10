@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -116,4 +117,44 @@ func TestChannelVideoGenerationPersistsBillsPollsAndRefunds(t *testing.T) {
 		FetchChannelVideoTest(c)
 		require.Equal(t, http.StatusNotFound, w.Code)
 	}
+}
+
+func TestChannelVideoSubmissionFailureKeepsChannelEnabled(t *testing.T) {
+	initModelListColumnNames(t)
+	db := setupCreditPoolControllerDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Task{}, &model.Log{}))
+	savedDisable := common.AutomaticDisableChannelEnabled
+	common.AutomaticDisableChannelEnabled = true
+	t.Cleanup(func() { common.AutomaticDisableChannelEnabled = savedDisable })
+	service.InitHttpClient()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"error":"fixture invalid key"}`)
+	}))
+	defer upstream.Close()
+	user := model.User{Id: 91235, Username: "video-error-operator", Status: 1, Role: 100, Group: "default", Quota: 10000000, Setting: `{"billing_preference":"wallet_only"}`}
+	require.NoError(t, db.Create(&user).Error)
+	ch := model.Channel{Id: 91235, Type: constant.ChannelTypeMiniMax, Key: "fixture-key", BaseURL: &upstream.URL, Models: "MiniMax-H3", Group: "default", Status: common.ChannelStatusEnabled, AutoBan: common.GetPointer(1)}
+	require.NoError(t, db.Create(&ch).Error)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(ch.Id)}}
+	c.Set("id", user.Id)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/channel/test/91235/video", bytes.NewBufferString(`{"model":"MiniMax-H3"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	SubmitChannelVideoTest(c)
+	require.Equal(t, http.StatusUnauthorized, w.Code, w.Body.String())
+	// The selected request-local channel suppresses auto-ban synchronously.
+	autoBan, exists := common.GetContextKey(c, constant.ContextKeyChannelAutoBan)
+	require.True(t, exists)
+	require.Equal(t, false, autoBan)
+	require.Eventually(t, func() bool {
+		return db.First(&user, user.Id).Error == nil && user.Quota == 10000000
+	}, time.Second*3, time.Millisecond*10)
+	require.NoError(t, db.First(&ch, ch.Id).Error)
+	require.Equal(t, common.ChannelStatusEnabled, ch.Status)
+	require.True(t, ch.GetAutoBan())
+	var tasks int64
+	require.NoError(t, db.Model(&model.Task{}).Count(&tasks).Error)
+	require.Zero(t, tasks)
 }
