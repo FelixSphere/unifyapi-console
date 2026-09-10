@@ -305,6 +305,17 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	}
 
 	switch resTask.Status {
+	case "unknown":
+		if resTask.Error != nil && resTask.Error.Message != "" {
+			taskResult.Status = model.TaskStatusFailure
+			taskResult.Reason = resTask.Error.Message
+			break
+		}
+		// FlatKey can return unknown while a submitted Seedance job becomes
+		// visible, then in_progress on a later poll. Do not finalize/refund it.
+		// A parse error leaves the task unchanged for retry; the normal task
+		// timeout sweep still bounds how long an unresolved job can wait.
+		return nil, fmt.Errorf("upstream video status is temporarily unknown; retry polling")
 	case "queued", "pending":
 		taskResult.Status = model.TaskStatusQueued
 	case "processing", "in_progress":
