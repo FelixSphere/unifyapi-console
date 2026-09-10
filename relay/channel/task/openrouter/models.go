@@ -14,7 +14,7 @@ var defaults = map[string]struct {
 	"bytedance/seedance-2.0-mini":          {5, "720p"},
 	"bytedance/seedance-2.5":               {5, "720p"},
 	"black-forest-labs/flux-3-video":       {5, "720p"},
-	"minimax/hailuo-3":                     {5, "768p"},
+	"minimax/hailuo-3":                     {5, "2K"},
 	"runway/aleph-2":                       {0, ""},
 	"runway/gen-4.5":                       {5, "720p"},
 	"x-ai/grok-imagine-video-1.5":          {5, "720p"},

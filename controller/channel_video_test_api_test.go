@@ -76,7 +76,8 @@ func TestChannelVideoGenerationPersistsBillsPollsAndRefunds(t *testing.T) {
 						require.Equal(t, "MiniMax-H3", payload["model"])
 					}
 					if openrouter {
-						require.Equal(t, "768p", payload["resolution"])
+						require.Equal(t, "2K", payload["resolution"])
+						require.NotContains(t, payload, "size")
 					} else {
 						require.Equal(t, "768P", payload["resolution"])
 					}

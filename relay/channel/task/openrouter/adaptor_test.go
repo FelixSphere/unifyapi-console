@@ -92,5 +92,43 @@ func TestRegisteredDefaults(t *testing.T) {
 	d, r, ok := TestDefaults("minimax/hailuo-3")
 	require.True(t, ok)
 	require.GreaterOrEqual(t, d, 4)
-	require.Equal(t, "768p", r)
+	require.Equal(t, "2K", r)
+}
+
+func TestRawSizeIsNormalizedAfterMetadata(t *testing.T) {
+	for _, tc := range []struct{ name, body, resolution, size string }{
+		{"raw shorthand", `{"model":"my-video","prompt":"animate","size":"768p"}`, "768p", ""},
+		{"H3 default", `{"model":"my-video","prompt":"animate","size":"2K"}`, "2K", ""},
+		{"resolution override", `{"model":"my-video","prompt":"animate","size":"768p","metadata":{"resolution":"2K","duration":5}}`, "2K", ""},
+		{"native resolution", `{"model":"my-video","prompt":"animate","size":"768p","resolution":"2K"}`, "2K", ""},
+		{"metadata size", `{"model":"my-video","prompt":"animate","size":"768p","metadata":{"size":"2K"}}`, "2K", ""},
+		{"pixel dimensions", `{"model":"my-video","prompt":"animate","size":"1920x1080"}`, "", "1920x1080"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", strings.NewReader(tc.body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			a := &TaskAdaptor{}
+			info := testInfo()
+			a.Init(info)
+			require.Nil(t, a.ValidateRequestAndSetAction(c, info))
+			info.UpstreamModelName = "minimax/hailuo-3"
+			reader, err := a.BuildRequestBody(c, info)
+			require.NoError(t, err)
+			data, err := io.ReadAll(reader)
+			require.NoError(t, err)
+			var payload map[string]any
+			require.NoError(t, common.Unmarshal(data, &payload))
+			if tc.size == "" {
+				require.NotContains(t, payload, "size")
+			} else {
+				require.Equal(t, tc.size, payload["size"])
+			}
+			if tc.resolution == "" {
+				require.NotContains(t, payload, "resolution")
+			} else {
+				require.Equal(t, tc.resolution, payload["resolution"])
+			}
+		})
+	}
 }
