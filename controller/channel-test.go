@@ -111,10 +111,6 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		constant.ChannelTypeMidjourney,
 		constant.ChannelTypeMidjourneyPlus,
 		constant.ChannelTypeSunoAPI,
-		constant.ChannelTypeKling,
-		constant.ChannelTypeJimeng,
-		constant.ChannelTypeDoubaoVideo,
-		constant.ChannelTypeVidu,
 	}
 	if lo.Contains(unsupportedTestChannelTypes, channel.Type) {
 		channelTypeName := constant.GetChannelTypeName(channel.Type)
@@ -138,6 +134,10 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 				testModel = "gpt-4o-mini"
 			}
 		}
+	}
+
+	if err := validateSynchronousChannelTest(channel, testModel); err != nil {
+		return testResult{localErr: err}
 	}
 
 	endpointType = normalizeChannelTestEndpoint(channel, testModel, endpointType)
@@ -959,6 +959,9 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 		isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 		tik := time.Now()
 		result := testChannel(ctx, channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
+		if errors.Is(result.localErr, errVideoChannelTestUnsupported) {
+			continue
+		}
 		tok := time.Now()
 		milliseconds := tok.Sub(tik).Milliseconds()
 		if ctx != nil && ctx.Err() != nil {
