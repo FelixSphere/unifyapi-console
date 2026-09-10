@@ -1,6 +1,6 @@
 # Builder API integration bridge
 
-Status: draft integration; existing account/grant bridge is locally validated, but the clarified per-team customer-group target below is not implemented or released.
+Release scope: the opt-in v1 account/grant bridge using one configured customer registration code. The program/team target below is future work, not part of this release. Builder must document this limitation in its integration PR before enabling the bridge.
 
 ## Clarified target: program, team and customer group
 
@@ -23,7 +23,7 @@ rule remains USD 10 once per team, shared across the owner's products.
 The current code still signs a configured customer registration code and links
 individual users to that offer. It does not yet transmit a team object, resolve
 a program by name, or provision a distinct customer/Pricing Group for each team.
-Do not enable or merge this draft as a completed implementation of that target.
+Do not describe this v1 release as a completed implementation of that target.
 
 ### Remaining implementation and product decisions
 
@@ -34,7 +34,7 @@ Do not enable or merge this draft as a completed implementation of that target.
 - Decide whether ordinary members may view or spend team credit, or only owners.
 - Preserve existing account funds and require an explicit policy for group moves.
 - Verify two-team isolation, rename/retry stability and shared-grant uniqueness.
-- Complete real provider and Stripe test-mode integration validation before release.
+- Complete real provider and Stripe test-mode integration validation before claiming end-to-end integration works.
 
 
 The bridge provides server-authenticated account provisioning/connection,
@@ -109,3 +109,9 @@ the owner's balance or reveal their key to another user.
 Focused tests cover concurrent claims, exhausted capacity, previous grants and
 transaction rollback, in addition to existing provisioning and isolation tests.
 No live payment or production grant was issued during implementation.
+
+## Limited v1 release boundary
+
+Only `/api/builder/v1/:action` is implemented. There is no v2 endpoint, program-name lookup, per-team customer provisioning, member wallet sharing, multi-team selection, or automatic account/group/fund migration. Builder must assert verified identity and owner eligibility server-side; it must not share an owner credential with ordinary members. Grant uniqueness is the linked owner subject/user, shared by that owner's products.
+
+Stripe availability and checkout use the existing full payment configuration/compliance gate. Deploying this code does not configure or enable the bridge: missing `BUILDER_INTEGRATION_SECRET` or `BUILDER_INTEGRATION_PARTNERSHIP_CODE` keeps it disabled. Deployment does not confirm payment compliance. The additive identity/grant receipt table must be retained on rollback; disabling the bridge does not reverse grants or revoke issued inference keys. Revoke those keys separately if required.
