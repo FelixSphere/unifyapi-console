@@ -24,8 +24,14 @@ import (
 )
 
 func TestChannelVideoGenerationPersistsBillsPollsAndRefunds(t *testing.T) {
-	for _, flatkey := range []bool{false, true} {
-		t.Run(fmt.Sprintf("flatkey=%t", flatkey), func(t *testing.T) {
+	for _, protocol := range []string{"native", "flatkey", "openrouter"} {
+		t.Run(protocol, func(t *testing.T) {
+			flatkey, openrouter := protocol == "flatkey", protocol == "openrouter"
+			hosted := flatkey || openrouter
+			apiPrefix := ""
+			if openrouter {
+				apiPrefix = "/api"
+			}
 			initModelListColumnNames(t)
 			db := setupCreditPoolControllerDB(t)
 			require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Task{}, &model.Log{}, &model.CreditLot{}))
@@ -46,47 +52,68 @@ func TestChannelVideoGenerationPersistsBillsPollsAndRefunds(t *testing.T) {
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				require.Equal(t, "Bearer fixture-key", r.Header.Get("Authorization"))
 				w.Header().Set("Content-Type", "application/json")
-				if flatkey && strings.HasSuffix(r.URL.Path, "/content") {
+				if hosted && strings.HasSuffix(r.URL.Path, "/content") {
 					require.Equal(t, http.MethodGet, r.Method)
-					require.Equal(t, "/v1/videos/generation-1/content", r.URL.Path)
+					require.Equal(t, apiPrefix+"/v1/videos/generation-1/content", r.URL.Path)
 					downloads++
 					w.Header().Set("Content-Type", "video/mp4")
 					w.Write([]byte("fixture-video-bytes"))
 					return
 				}
 				switch r.Method + " " + r.URL.Path {
-				case "POST /v2/video_generation", "POST /v1/videos":
-					if flatkey {
-						require.Equal(t, "/v1/videos", r.URL.Path)
+				case "POST /v2/video_generation", "POST /v1/videos", "POST /api/v1/videos":
+					if hosted {
+						require.Equal(t, apiPrefix+"/v1/videos", r.URL.Path)
 					} else {
 						require.Equal(t, "/v2/video_generation", r.URL.Path)
 					}
 					posts++
 					var payload map[string]any
 					require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
-					require.Equal(t, "MiniMax-H3", payload["model"])
-					require.Equal(t, "768P", payload["resolution"])
+					if openrouter {
+						require.Equal(t, "minimax/hailuo-3", payload["model"])
+					} else {
+						require.Equal(t, "MiniMax-H3", payload["model"])
+					}
+					if openrouter {
+						require.Equal(t, "768p", payload["resolution"])
+					} else {
+						require.Equal(t, "768P", payload["resolution"])
+					}
 					require.EqualValues(t, 5, payload["duration"])
-					require.NotEmpty(t, payload["content"])
-					if flatkey {
-						fmt.Fprintf(w, `{"id":"generation-%d","status":"queued"}`, posts)
+					if openrouter {
+						require.NotEmpty(t, payload["prompt"])
+					} else {
+						require.NotEmpty(t, payload["content"])
+					}
+					if hosted {
+						if openrouter {
+							w.WriteHeader(http.StatusAccepted)
+							fmt.Fprintf(w, `{"id":"generation-%d","status":"pending","error":""}`, posts)
+						} else {
+							fmt.Fprintf(w, `{"id":"generation-%d","status":"queued"}`, posts)
+						}
 					} else {
 						fmt.Fprintf(w, `{"task_id":"generation-%d"}`, posts)
 					}
 				default:
 					require.Equal(t, http.MethodGet, r.Method)
-					if flatkey {
-						require.Contains(t, r.URL.Path, "/v1/videos/generation-")
+					if hosted {
+						require.Contains(t, r.URL.Path, apiPrefix+"/v1/videos/generation-")
 					} else {
 						require.Contains(t, r.URL.Path, "/v2/query/video_generation/generation-")
 					}
 					polls++
-					if flatkey {
+					if hosted {
 						status := state
 						if status == "succeeded" {
 							status = "completed"
 						}
-						fmt.Fprintf(w, `{"id":"generation-%d","status":"%s","error":{"message":"fixture rejection"}}`, posts, status)
+						if openrouter {
+							fmt.Fprintf(w, `{"id":"generation-%d","status":"%s","error":"fixture rejection"}`, posts, status)
+						} else {
+							fmt.Fprintf(w, `{"id":"generation-%d","status":"%s","error":{"message":"fixture rejection"}}`, posts, status)
+						}
 						return
 					}
 					fmt.Fprintf(w, `{"task":{"id":"generation-%d","model":"MiniMax-H3","status":"%s","content":{"url":"https://example.com/result.mp4"},"usage":{"output_seconds":5},"error":{"message":"fixture rejection"}}}`, posts, state)
@@ -94,8 +121,11 @@ func TestChannelVideoGenerationPersistsBillsPollsAndRefunds(t *testing.T) {
 			}))
 			defer upstream.Close()
 			baseURL := upstream.URL
-			if flatkey {
+			if hosted {
 				baseURL = "https://router.flatkey.ai"
+				if openrouter {
+					baseURL = "https://openrouter.ai/api"
+				}
 				fetch := system_setting.GetFetchSetting()
 				savedProtection := fetch.EnableSSRFProtection
 				fetch.EnableSSRFProtection = false
@@ -108,6 +138,10 @@ func TestChannelVideoGenerationPersistsBillsPollsAndRefunds(t *testing.T) {
 			user := model.User{Id: 91234, Username: "video-test-operator", Status: 1, Role: 100, Group: "default", Quota: 10000000, Setting: `{"billing_preference":"wallet_only"}`}
 			require.NoError(t, db.Create(&user).Error)
 			ch := model.Channel{Id: 91234, Type: constant.ChannelTypeMiniMax, Key: "fixture-key", BaseURL: &baseURL, Models: "MiniMax-H3", Group: "default", Status: common.ChannelStatusManuallyDisabled}
+			if openrouter {
+				ch.Type = constant.ChannelTypeOpenRouter
+				ch.ModelMapping = common.GetPointer(`{"MiniMax-H3":"minimax/hailuo-3"}`)
+			}
 			require.NoError(t, db.Create(&ch).Error)
 			submit := func() string {
 				w := httptest.NewRecorder()
@@ -138,7 +172,7 @@ func TestChannelVideoGenerationPersistsBillsPollsAndRefunds(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, model.TaskStatus(model.TaskStatusSuccess), task.Status)
 			require.Equal(t, "completed", videoTestStatus(task)["status"])
-			if flatkey {
+			if hosted {
 				response := httptest.NewRecorder()
 				c, _ := gin.CreateTestContext(response)
 				c.Set("id", user.Id)
@@ -222,7 +256,7 @@ func TestChannelVideoSubmissionFailureKeepsChannelEnabled(t *testing.T) {
 type flatkeyFixtureTransport struct{ target string }
 
 func (transport flatkeyFixtureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if req.URL.Host != "router.flatkey.ai" {
+	if req.URL.Host != "router.flatkey.ai" && req.URL.Host != "openrouter.ai" {
 		return nil, fmt.Errorf("unexpected upstream host %s", req.URL.Host)
 	}
 	request := req.Clone(req.Context())
