@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -66,12 +67,9 @@ func payload(c *gin.Context, info *relaycommon.RelayInfo) (map[string]any, error
 		body["duration"] = duration
 	}
 	if req.Size != "" {
-		if strings.Contains(strings.ToLower(req.Size), "x") {
-			body["size"] = req.Size
-		} else {
-			body["resolution"] = req.Size
-		}
+		body["size"] = req.Size
 	}
+
 	images := req.Images
 	if len(images) == 0 && req.InputReference != "" {
 		images = []string{req.InputReference}
@@ -110,6 +108,31 @@ func payload(c *gin.Context, info *relaycommon.RelayInfo) (map[string]any, error
 	if _, ok := body["duration"]; !ok {
 		if d, _, known := TestDefaults(info.UpstreamModelName); known && d > 0 {
 			body["duration"] = d
+		}
+	}
+	// Normalize after merging the raw body and metadata: otherwise raw size
+	// reintroduces shorthand (768p/2K) after it was converted to resolution.
+	if value, ok := body["size"]; ok {
+		if value == nil {
+			delete(body, "size")
+		} else {
+			size, ok := value.(string)
+			if !ok {
+				return nil, fmt.Errorf("size must be a resolution label or WIDTHxHEIGHT")
+			}
+			size = strings.ToLower(strings.TrimSpace(size))
+			if size == "" {
+				delete(body, "size")
+			} else if resolutionLabel.MatchString(size) {
+				if _, explicit := body["resolution"]; !explicit {
+					body["resolution"] = size
+				}
+				delete(body, "size")
+			} else if pixelDimensions.MatchString(size) {
+				body["size"] = size
+			} else {
+				return nil, fmt.Errorf("invalid size: expected a resolution label or WIDTHxHEIGHT")
+			}
 		}
 	}
 	if r, ok := body["resolution"].(string); ok {
@@ -223,3 +246,6 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	c.JSON(http.StatusOK, video)
 	return job.ID, data, nil
 }
+
+var resolutionLabel = regexp.MustCompile(`^[1-9][0-9]*[pk]$`)
+var pixelDimensions = regexp.MustCompile(`^[1-9][0-9]*x[1-9][0-9]*$`)
