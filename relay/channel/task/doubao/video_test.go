@@ -33,6 +33,7 @@ func TestSeedance25OfficialModelAndLASRoutes(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "https://operator.las.ap-southeast-1.bytepluses.com/api/v1/contents/generations/tasks", endpoint)
 	require.Contains(t, a.GetModelList(), "dreamina-seedance-2-5-260628")
+	require.Contains(t, a.GetModelList(), "seedance-2.5")
 
 	r, err := a.convertToRequestPayload(&relaycommon.TaskSubmitReq{
 		Model: "dreamina-seedance-2-5-260628", Prompt: "animate", Duration: 30,
@@ -41,7 +42,7 @@ func TestSeedance25OfficialModelAndLASRoutes(t *testing.T) {
 	assert.Equal(t, "dreamina-seedance-2-5-260628", r.Model)
 
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Set("task_request", relaycommon.TaskSubmitReq{Model: "doubao-seedance-2-5-260628", Prompt: "animate", Duration: 4})
+	c.Set("task_request", relaycommon.TaskSubmitReq{Model: "seedance-2.5", Prompt: "animate", Duration: 4})
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
 	body, err := a.BuildRequestBody(c, info)
 	require.NoError(t, err)
@@ -63,7 +64,7 @@ func TestSeedance25OfficialModelAndLASRoutes(t *testing.T) {
 }
 
 func TestSeedance25PricingRatios(t *testing.T) {
-	for _, model := range []string{"doubao-seedance-2-5-260628", "dreamina-seedance-2-5-260628"} {
+	for _, model := range []string{"seedance-2.5", "doubao-seedance-2-5-260628", "dreamina-seedance-2-5-260628"} {
 		withoutVideo, ok := GetVideoInputRatio(model, "720p", false)
 		require.True(t, ok)
 		assert.InDelta(t, 1, withoutVideo, 1e-12)

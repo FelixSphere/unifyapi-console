@@ -3,6 +3,7 @@ package doubao
 import "strings"
 
 var ModelList = []string{
+	"seedance-2.5",
 	"doubao-seedance-2-5-260628",
 	"dreamina-seedance-2-5-260628",
 	"doubao-seedance-1-0-pro-250528",
@@ -30,6 +31,10 @@ var videoPriceTable = map[string]map[videoPriceKey]float64{
 	// BytePlus publishes Seedance 2.5 at $10.70/M tokens without video input
 	// and $6.40/M tokens with video input. The same schedule applies to the
 	// legacy doubao-prefixed public alias and the official Dreamina model ID.
+	"seedance-2.5": {
+		{hasVideo: false}: 10.7,
+		{hasVideo: true}:  6.4,
+	},
 	"doubao-seedance-2-5-260628": {
 		{hasVideo: false}: 10.7,
 		{hasVideo: true}:  6.4,
