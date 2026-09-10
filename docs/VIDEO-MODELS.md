@@ -12,7 +12,7 @@ production channels, obtain model access, or deploy the service.
 | Ali / DashScope | `happyhorse-1.1-t2v`, `happyhorse-1.1-i2v`, `happyhorse-1.1-r2v` | `input.media`, `parameters` (resolution, ratio, duration, watermark, seed) |
 | Ali / DashScope | `wan3.0-video`, `wan3.0-video-prime` | `input.media`, `parameters` (duration can be -1) |
 | MiniMax / Hailuo | `MiniMax-H3`, `MiniMax-H3-Max` | `content`, `duration`, `resolution`, `ratio` |
-| Doubao | `doubao-seedance-2-5-260628` | `content`, `omni_reference_task_type`, `output_format`, existing native fields |
+| Doubao / BytePlus LAS | `dreamina-seedance-2-5-260628` (official), `doubao-seedance-2-5-260628` (compatibility alias) | `content`, `omni_reference_task_type`, `output_format`, existing native fields |
 | Kling | `kling-3.0`, `kling-3.0-turbo`, `kling-3.0-omni` | `contents`, `settings`, `options` |
 | Vidu | `viduq3-pro`, `viduq3-pro-fast`, `viduq3-turbo`, `viduq3`, `viduq3-mix` | existing image fields plus `audio`, `off_peak`, `aspect_ratio`, `style` |
 | Gemini | `veo-3.1-lite-generate-preview` | existing Veo parameters |
@@ -86,6 +86,17 @@ implemented**: the adapter requires an explicit fixed task price. Its official
 token prices are not represented as a fake per-second catalog price.
 Gemini Developer Veo Fast resolution multipliers differ from Vertex AI; the
 adapters now keep those schedules separate.
+
+Seedance 2.5 is the exception to the paragraph above: it has a compiled,
+official BytePlus list-price baseline. Configure a Doubao Video channel with
+`https://operator.las.ap-southeast-1.bytepluses.com` and a LAS API key. The
+adapter selects `/api/v1/contents/generations/tasks` for LAS (and retains
+`/api/v3` for Ark), accepts the official `dreamina-seedance-2-5-260628` model
+ID, automatically translates the legacy `doubao-` alias on LAS, and settles
+the completed task from upstream `usage.total_tokens`. The
+baseline is USD 10.70/M tokens without video input; requests containing video
+apply USD 6.40/M tokens as a `6.4/10.7` billing multiplier. These are vendor
+cost baselines; customer model and group discounts remain separate.
 
 ## Examples
 

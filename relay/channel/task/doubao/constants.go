@@ -4,6 +4,7 @@ import "strings"
 
 var ModelList = []string{
 	"doubao-seedance-2-5-260628",
+	"dreamina-seedance-2-5-260628",
 	"doubao-seedance-1-0-pro-250528",
 	"doubao-seedance-1-0-lite-t2v",
 	"doubao-seedance-1-0-lite-i2v",
@@ -21,10 +22,22 @@ type videoPriceKey struct {
 	hasVideo bool
 }
 
-// videoPriceTable 各模型在不同 (输出分辨率档, 是否含视频输入) 下的单价（元/百万 token）。
+// videoPriceTable 各模型在不同 (输出分辨率档, 是否含视频输入) 下的供应商单价（每百万 token）。
+// 同一模型的倍率只比较其表内价格，因此人民币与美元模型可以安全共存。
 // 其中零值键 {480p/720p, 不含视频} 为基准价，等于管理员应配置的 ModelRatio；
 // 计费时取 实际单价/基准价 作为 OtherRatio。
 var videoPriceTable = map[string]map[videoPriceKey]float64{
+	// BytePlus publishes Seedance 2.5 at $10.70/M tokens without video input
+	// and $6.40/M tokens with video input. The same schedule applies to the
+	// legacy doubao-prefixed public alias and the official Dreamina model ID.
+	"doubao-seedance-2-5-260628": {
+		{hasVideo: false}: 10.7,
+		{hasVideo: true}:  6.4,
+	},
+	"dreamina-seedance-2-5-260628": {
+		{hasVideo: false}: 10.7,
+		{hasVideo: true}:  6.4,
+	},
 	"doubao-seedance-2-0-260128": {
 		{hasVideo: false}:                46.0,
 		{hasVideo: true}:                 28.0,
