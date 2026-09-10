@@ -140,3 +140,21 @@ func VeoResolutionRatio(modelName, resolution string) float64 {
 	}
 	return 1.0
 }
+
+// GeminiDeveloperVeoRatio follows the Developer API list prices, which differ
+// from Vertex AI. https://ai.google.dev/gemini-api/docs/pricing
+func GeminiDeveloperVeoRatio(name, resolution string) float64 {
+	if name == "veo-3.1-fast-generate-preview" {
+		switch resolution {
+		case "1080p":
+			return 1.2
+		case "4k":
+			return 3
+		}
+		return 1
+	}
+	if name == "veo-3.1-lite-generate-preview" && resolution == "1080p" {
+		return 1.6
+	}
+	return VeoResolutionRatio(name, resolution)
+}

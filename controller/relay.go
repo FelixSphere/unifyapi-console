@@ -25,6 +25,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/samber/lo"
@@ -599,6 +600,9 @@ func RelayTask(c *gin.Context) {
 			OriginModelName: relayInfo.OriginModelName,
 			UserGroup:       relayInfo.UserGroup,
 			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+		}
+		if entry, ok := ratio_setting.CatalogEntryFor(relayInfo.OriginModelName); ok {
+			task.PrivateData.BillingContext.PriceUnit = entry.PriceUnit
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData

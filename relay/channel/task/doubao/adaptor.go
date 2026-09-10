@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -42,6 +43,8 @@ type MediaURL struct {
 }
 
 type requestPayload struct {
+	OmniReferenceTaskType string         `json:"omni_reference_task_type,omitempty"`
+	OutputFormat          string         `json:"output_format,omitempty"`
 	Model                 string         `json:"model"`
 	Content               []ContentItem  `json:"content,omitempty"`
 	CallbackURL           string         `json:"callback_url,omitempty"`
@@ -294,8 +297,43 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
 	}
 
-	if sec, _ := strconv.Atoi(req.Seconds); sec > 0 {
+	if req.Duration > 0 {
+		r.Duration = lo.ToPtr(dto.IntValue(req.Duration))
+	} else if req.Seconds != "" {
+		sec, err := strconv.Atoi(req.Seconds)
+		if err != nil {
+			return nil, fmt.Errorf("invalid seconds: %w", err)
+		}
 		r.Duration = lo.ToPtr(dto.IntValue(sec))
+	}
+	if r.Duration != nil && (*r.Duration < -1 || *r.Duration == 0 || *r.Duration > relaycommon.MaxTaskDurationSeconds) {
+		return nil, fmt.Errorf("invalid video duration")
+	}
+	if strings.HasPrefix(req.Model, "doubao-seedance-2-5") {
+		if r.Duration != nil && *r.Duration != -1 && (*r.Duration < 4 || *r.Duration > 30) {
+			return nil, fmt.Errorf("Seedance 2.5 duration must be -1 or 4 to 30 seconds")
+		}
+		switch r.OmniReferenceTaskType {
+		case "", "auto", "reference":
+		case "edit", "extend":
+			hasVideo := false
+			for _, content := range r.Content {
+				if content.Type == "video_url" && content.Role == "reference_video" {
+					hasVideo = true
+				}
+			}
+			if !hasVideo || r.Ratio != "adaptive" {
+				return nil, fmt.Errorf("Seedance edit/extend requires reference_video and adaptive ratio")
+			}
+			if r.OmniReferenceTaskType == "edit" && r.Duration != nil && *r.Duration != -1 {
+				return nil, fmt.Errorf("Seedance edit requires duration -1")
+			}
+		default:
+			return nil, fmt.Errorf("invalid omni_reference_task_type")
+		}
+		if r.OutputFormat != "" && r.OutputFormat != "mp4" && r.OutputFormat != "mov" {
+			return nil, fmt.Errorf("output_format must be mp4 or mov")
+		}
 	}
 
 	r.Content = lo.Reject(r.Content, func(c ContentItem, _ int) bool { return c.Type == "text" })
@@ -332,7 +370,7 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 		// 解析 usage 信息用于按倍率计费
 		taskResult.CompletionTokens = resTask.Usage.CompletionTokens
 		taskResult.TotalTokens = resTask.Usage.TotalTokens
-	case "failed":
+	case "failed", "expired", "cancelled":
 		taskResult.Status = model.TaskStatusFailure
 		taskResult.Progress = "100%"
 		taskResult.Reason = resTask.Error.Message
@@ -361,7 +399,7 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, erro
 	openAIVideo.CompletedAt = originTask.UpdatedAt
 	openAIVideo.Model = originTask.Properties.OriginModelName
 
-	if dResp.Status == "failed" {
+	if originTask.Status == model.TaskStatusFailure {
 		openAIVideo.Error = &dto.OpenAIVideoError{
 			Message: dResp.Error.Message,
 			Code:    dResp.Error.Code,

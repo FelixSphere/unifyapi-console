@@ -16,6 +16,7 @@ import (
 )
 
 type Pricing struct {
+	PriceUnit              string                  `json:"price_unit,omitempty"`
 	ModelName              string                  `json:"model_name"`
 	Description            string                  `json:"description,omitempty"`
 	Icon                   string                  `json:"icon,omitempty"`
@@ -379,6 +380,9 @@ func updatePricing() {
 		modelPrice, findPrice := ratio_setting.GetModelPrice(model, false)
 		if findPrice {
 			pricing.ModelPrice = modelPrice
+			if entry, ok := ratio_setting.CatalogEntryFor(model); ok {
+				pricing.PriceUnit = entry.PriceUnit
+			}
 			pricing.QuotaType = 1
 		} else {
 			modelRatio, _, _ := ratio_setting.GetModelRatio(model)

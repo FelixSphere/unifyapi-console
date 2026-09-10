@@ -255,3 +255,15 @@ func TestChannelCostValidationRejectsBadInput(t *testing.T) {
 
 	require.Empty(t, ValidateChannelCostRatios(map[string]float64{"1": 0.85, "2": 1}))
 }
+
+func TestVideoDiscountUpdatesUnitPriceAndRemovalRestoresIt(t *testing.T) {
+	withCleanDiscounts(t)
+	require.NoError(t, UpdateModelDiscountByJSONString(`{"MiniMax-H3":0.8}`))
+	price, ok := GetModelPrice("MiniMax-H3", true)
+	require.True(t, ok)
+	require.InDelta(t, 0.064, price, 1e-9)
+	require.NoError(t, UpdateModelDiscountByJSONString(`{}`))
+	price, ok = GetModelPrice("MiniMax-H3", true)
+	require.True(t, ok)
+	require.InDelta(t, 0.08, price, 1e-9)
+}

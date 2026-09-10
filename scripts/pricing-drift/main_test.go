@@ -136,8 +136,17 @@ func TestUnverifiableCountIsStable(t *testing.T) {
 			count++
 		}
 	}
-	require.Equal(t, 10, count,
-		"unverifiable entries are prices nothing can defend; growing this number needs a reason")
+	// Seven video models use dated official vendor quotes: models.dev does not
+	// expose their per-second pricing. Keep the ten prior exceptions visible.
+	require.Equal(t, 17, count,
+		"unverifiable entries require a documented reason and a maintained quote")
+	for _, name := range []string{"happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max", "wan3.0-video", "wan3.0-video-prime"} {
+		entry, ok := ratio_setting.CatalogEntryFor(name)
+		require.True(t, ok)
+		require.Equal(t, "second", entry.PriceUnit)
+		require.NotEmpty(t, entry.QuoteSource)
+		require.NotEmpty(t, entry.QuoteDate)
+	}
 }
 
 // TestCheckDetectsAPriceChange mutates the fixture the way a vendor repricing

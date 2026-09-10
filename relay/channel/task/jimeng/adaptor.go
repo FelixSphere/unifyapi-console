@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,6 +84,7 @@ type TaskAdaptor struct {
 	accessKey   string
 	secretKey   string
 	baseURL     string
+	requestKey  string
 }
 
 func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
@@ -170,6 +172,7 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	if err != nil {
 		return nil, errors.Wrap(err, "convert request payload failed")
 	}
+	a.requestKey = body.ReqKey
 	data, err := common.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -209,6 +212,9 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	ov.CreatedAt = time.Now().Unix()
 	ov.Model = info.OriginModelName
 	c.JSON(http.StatusOK, ov)
+	if a.requestKey != "" {
+		return "jimeng-v3:" + taskcommon.EncodeLocalTaskID(a.requestKey+"|"+jResp.Data.TaskID), responseBody, nil
+	}
 	return jResp.Data.TaskID, responseBody, nil
 }
 
@@ -219,12 +225,24 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 		return nil, fmt.Errorf("invalid task_id")
 	}
 
+	requestKey := "jimeng_vgfm_t2v_l20"
+	if strings.HasPrefix(taskID, "jimeng-v3:") {
+		decoded, err := taskcommon.DecodeLocalTaskID(strings.TrimPrefix(taskID, "jimeng-v3:"))
+		if err != nil {
+			return nil, err
+		}
+		parts := strings.SplitN(decoded, "|", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			return nil, fmt.Errorf("invalid Jimeng task ID")
+		}
+		requestKey, taskID = parts[0], parts[1]
+	}
 	uri := fmt.Sprintf("%s/?Action=CVSync2AsyncGetResult&Version=2022-08-31", baseUrl)
 	if isNewAPIRelay(key) {
-		uri = fmt.Sprintf("%s/jimeng/?Action=CVSync2AsyncGetResult&Version=2022-08-31", a.baseURL)
+		uri = fmt.Sprintf("%s/jimeng/?Action=CVSync2AsyncGetResult&Version=2022-08-31", baseUrl)
 	}
 	payload := map[string]string{
-		"req_key": "jimeng_vgfm_t2v_l20", // This is fixed value from doc: https://www.volcengine.com/docs/85621/1544774
+		"req_key": requestKey,
 		"task_id": taskID,
 	}
 	payloadBytes, err := common.Marshal(payload)
@@ -262,7 +280,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 }
 
 func (a *TaskAdaptor) GetModelList() []string {
-	return []string{"jimeng_vgfm_t2v_l20"}
+	return []string{"jimeng_v30_pro", "jimeng_v30_720p", "jimeng_v30_1080p", "jimeng_vgfm_t2v_l20"}
 }
 
 func (a *TaskAdaptor) GetChannelName() string {
@@ -385,6 +403,13 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq, in
 		Prompt: req.Prompt,
 	}
 
+	if req.Duration == 0 && req.Seconds != "" {
+		seconds, err := strconv.Atoi(req.Seconds)
+		if err != nil {
+			return nil, err
+		}
+		req.Duration = seconds
+	}
 	switch req.Duration {
 	case 10:
 		r.Frames = 241 // 24*10+1 = 241
@@ -393,7 +418,10 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq, in
 	}
 
 	// Handle one-of image_urls or binary_data_base64
-	if req.HasImage() {
+	if len(req.Images) == 0 && req.Image != "" {
+		req.Images = []string{req.Image}
+	}
+	if len(req.Images) > 0 {
 		if strings.HasPrefix(req.Images[0], "http") {
 			r.ImageUrls = req.Images
 		} else {
@@ -402,6 +430,10 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq, in
 	}
 	if err := taskcommon.UnmarshalMetadata(req.Metadata, &r); err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
+	}
+
+	if r.ReqKey != info.UpstreamModelName {
+		return nil, fmt.Errorf("metadata cannot change Jimeng model")
 	}
 
 	// 即梦视频3.0 ReqKey转换

@@ -18,6 +18,7 @@ package ratio_setting
 
 import (
 	"fmt"
+	"math"
 	"sort"
 )
 
@@ -190,7 +191,7 @@ func baselineModelPrice() map[string]float64 {
 	out := make(map[string]float64)
 	for _, entry := range Catalog() {
 		if entry.PerCallUSD > 0 {
-			out[entry.Model] = entry.PerCallUSD
+			out[entry.Model] = entry.PerCallUSD * GetModelDiscount(entry.Model)
 		}
 	}
 	return out
@@ -268,10 +269,16 @@ func ValidateCatalog() []error {
 		}
 		seen[entry.Model] = true
 
-		if entry.InputUSD <= 0 {
+		if entry.PerCallUSD < 0 || math.IsNaN(entry.PerCallUSD) || math.IsInf(entry.PerCallUSD, 0) {
+			problems = append(problems, fmt.Errorf("%s: invalid per-unit price", entry.Model))
+		}
+		if entry.PriceUnit != "" && (entry.PriceUnit != "second" || entry.PerCallUSD <= 0) {
+			problems = append(problems, fmt.Errorf("%s: invalid price unit", entry.Model))
+		}
+		if entry.PerCallUSD == 0 && entry.InputUSD <= 0 {
 			problems = append(problems, fmt.Errorf("%s: input price must be positive, got %g", entry.Model, entry.InputUSD))
 		}
-		if entry.OutputUSD <= 0 {
+		if entry.PerCallUSD == 0 && entry.OutputUSD <= 0 {
 			problems = append(problems, fmt.Errorf("%s: output price must be positive, got %g", entry.Model, entry.OutputUSD))
 		}
 		if entry.OutputUSD < entry.InputUSD {
@@ -311,6 +318,7 @@ type BaselineShadow struct {
 // liveRatioMaps pairs each catalog-owned option with the map actually billing.
 func liveRatioMaps() map[string]map[string]float64 {
 	return map[string]map[string]float64{
+		"ModelPrice":       modelPriceMap.ReadAll(),
 		"ModelRatio":       modelRatioMap.ReadAll(),
 		"CompletionRatio":  completionRatioMap.ReadAll(),
 		"CacheRatio":       cacheRatioMap.ReadAll(),
