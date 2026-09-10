@@ -1,9 +1,9 @@
-import { useAuthStore } from '@/stores/auth-store'
-
 /*
 Copyright (C) 2026 UnifyAI
 SPDX-License-Identifier: AGPL-3.0-or-later
 */
+import { useAuthStore } from '@/stores/auth-store'
+
 import { fetchChannelVideoTest, submitChannelVideoTest } from '../api'
 import type { ChannelTestResponse } from '../types'
 
