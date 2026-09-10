@@ -271,6 +271,7 @@ func migrateDB() error {
 		&PartnershipProgram{},
 		&PartnershipCustomer{},
 		&PartnershipEnrollment{},
+		&BuilderIdentity{},
 		// UNIFYAPI-FORK: supplier credit supply, see credit_supplier.go / credit_lot.go
 		&CreditSupplier{},
 		&CreditLot{},
@@ -355,6 +356,7 @@ func migrateDBFast() error {
 		{&PartnershipProgram{}, "PartnershipProgram"},
 		{&PartnershipCustomer{}, "PartnershipCustomer"},
 		{&PartnershipEnrollment{}, "PartnershipEnrollment"},
+		{&BuilderIdentity{}, "BuilderIdentity"},
 		{&CreditSupplier{}, "CreditSupplier"},
 		{&CreditLot{}, "CreditLot"},
 		{&CreditLotUsage{}, "CreditLotUsage"},

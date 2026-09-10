@@ -322,3 +322,10 @@ GOWORK=off CGO_ENABLED=0 go build \
 ```
 
 Requires `bun` (pinned to 1.3.14, matching upstream CI) and Go 1.26.
+
+### Builder API bridge (unreleased)
+
+`model/builder_integration.go` and `controller/builder_integration.go` add an
+opt-in server-authenticated Builder account bridge. `model/main.go` registers
+its additive identity table; `router/api-router.go` registers its endpoint.
+See `docs/builder-integration.md` for scope and incomplete team-credit work.
