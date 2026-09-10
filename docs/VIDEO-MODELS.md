@@ -168,3 +168,13 @@ Use channel type **MiniMax**, Base URL `https://router.flatkey.ai` (no `/v1` suf
 H3 requests are converted to `content`, `resolution`, `duration`, and `ratio`; the default test sends 5 seconds at `768P`. Put custom H3 fields in the video test's `metadata`, for example `{"metadata":{"resolution":"2K","duration":6}}` for H3, or `{"metadata":{"aigc_watermark":false}}`. Keep the channel parameter/header override fields empty for this integration: video task bodies do not apply channel parameter overrides. Selecting OpenAI instead only forwards generic video fields and does not perform H3 parameter conversion.
 
 Flatkey task IDs carry an internal protocol prefix, so polling and authenticated downloads continue using the hosted task lifecycle. Failed tasks follow the existing refund path; this integration does not change baseline prices. Reference: https://flatkey.ai/models/minimax-h3 (checked 2026-09-10).
+
+### OpenRouter video channels
+
+Use channel type **OpenRouter** and the default Base URL (`https://openrouter.ai/api`, without `/v1`). OpenRouter video IDs are namespaced, such as `minimax/hailuo-3`, `minimax/hailuo-3-max`, or `google/veo-3.1`; use a model mapping when exposing a different public model name. Discover current IDs and capabilities with `GET https://openrouter.ai/api/v1/videos/models`.
+
+The adapter handles `/api/v1/videos` submission (HTTP 202), pending/completed/failed job polling, string failure reasons, and authenticated content downloads. Generic gateway `size` and `seconds` become OpenRouter resolution/pixel size and duration. Native JSON fields and gateway `metadata` can carry aspect ratio, frame images, references, audio, seed, callback URL, and provider options. Metadata takes precedence for these supported fields; model mapping remains authoritative. Channel Parameter Override is not applied to video tasks.
+
+Manual test defaults use a capability snapshot from the video models endpoint, including 768p for H3. Some editing/upscaling models require reference assets and need explicit test metadata. Configure customer video pricing separately: this change does not seed or replace prices. Duration multiplies the configured base rate; OpenRouter `usage.cost` is never substituted for customer quota. A task accepted by the provider is persisted once, and failed jobs use the existing refund path.
+
+Sources checked 2026-09-10: https://openrouter.ai/docs/api/api-reference/video-generation/create-videos and https://openrouter.ai/docs/api/api-reference/video-generation/get-videos.

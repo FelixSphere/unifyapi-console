@@ -34,7 +34,7 @@ func validateSynchronousChannelTest(channel *model.Channel, modelName string) er
 	// compatible proxy. Reuse adapter discovery so new model IDs stay covered.
 	for _, channelType := range []int{constant.ChannelTypeAli, constant.ChannelTypeMiniMax,
 		constant.ChannelTypeDoubaoVideo, constant.ChannelTypeKling, constant.ChannelTypeJimeng,
-		constant.ChannelTypeVidu, constant.ChannelTypeGemini, constant.ChannelTypeVertexAi, constant.ChannelTypeSora} {
+		constant.ChannelTypeVidu, constant.ChannelTypeGemini, constant.ChannelTypeVertexAi, constant.ChannelTypeSora, constant.ChannelTypeOpenRouter} {
 		adaptor := relay.GetTaskAdaptor(constant.TaskPlatform(strconv.Itoa(channelType)))
 		for _, videoModel := range adaptor.GetModelList() {
 			if modelName == videoModel || info.UpstreamModelName == videoModel {

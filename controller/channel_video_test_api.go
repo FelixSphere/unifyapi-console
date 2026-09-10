@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	taskopenrouter "github.com/QuantumNous/new-api/relay/channel/task/openrouter"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -125,6 +127,11 @@ func applyVideoTestDefaults(ch *model.Channel, req *relaycommon.TaskSubmitReq) e
 		duration = 8
 	case strings.HasPrefix(name, "sora-"):
 		duration, size = 4, "1280x720"
+	}
+	if ch.Type == constant.ChannelTypeOpenRouter {
+		if d, r, ok := taskopenrouter.TestDefaults(info.UpstreamModelName); ok {
+			duration, size = d, r
+		}
 	}
 	if req.Duration == 0 && req.Seconds == "" {
 		req.Duration = duration
