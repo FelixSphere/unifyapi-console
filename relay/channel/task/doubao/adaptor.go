@@ -145,7 +145,8 @@ func taskAPIBaseURL(baseURL string) string {
 }
 
 func isSeedance25Model(model string) bool {
-	return strings.HasPrefix(model, "doubao-seedance-2-5") ||
+	return model == "seedance-2.5" ||
+		strings.HasPrefix(model, "doubao-seedance-2-5") ||
 		strings.HasPrefix(model, "dreamina-seedance-2-5")
 }
 
@@ -220,8 +221,13 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	if info.IsModelMapped {
 		body.Model = info.UpstreamModelName
 	} else {
-		if usesLASAPI(a.baseURL) && strings.HasPrefix(body.Model, "doubao-seedance-2-5") {
-			body.Model = strings.Replace(body.Model, "doubao-seedance-2-5", "dreamina-seedance-2-5", 1)
+		if usesLASAPI(a.baseURL) {
+			switch {
+			case body.Model == "seedance-2.5":
+				body.Model = "dreamina-seedance-2-5-260628"
+			case strings.HasPrefix(body.Model, "doubao-seedance-2-5"):
+				body.Model = strings.Replace(body.Model, "doubao-seedance-2-5", "dreamina-seedance-2-5", 1)
+			}
 		}
 		info.UpstreamModelName = body.Model
 	}
