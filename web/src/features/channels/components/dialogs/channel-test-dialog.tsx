@@ -79,6 +79,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Tooltip,
   TooltipContent,
@@ -113,7 +114,7 @@ type ModelRow = {
   model: string
 }
 
-type TestStatus = 'idle' | 'testing' | 'success' | 'error'
+type TestStatus = 'idle' | 'testing' | 'pending' | 'success' | 'error'
 
 type TestResult = {
   status: TestStatus
@@ -334,6 +335,7 @@ function ChannelTestDialogContent({
   > | null>(null)
   const [endpointType, setEndpointType] = useState('auto')
   const [isStreamTest, setIsStreamTest] = useState(false)
+  const [videoOptions, setVideoOptions] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({})
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
@@ -563,11 +565,18 @@ function ChannelTestDialogContent({
             endpointType: endpointType === 'auto' ? undefined : endpointType,
             stream: effectiveStreamTest || undefined,
             silent,
+            videoOptions,
+            onProgress: (message) =>
+              updateTestResult(model, { status: 'testing', error: message }),
           },
           (success, responseTime, error, errorCode) => {
             const completedAt = Date.now()
             finalResult = {
-              status: success ? 'success' : 'error',
+              status: success
+                ? 'success'
+                : errorCode === 'video_test_pending'
+                  ? 'pending'
+                  : 'error',
               responseTime,
               completedAt,
               error,
@@ -600,6 +609,7 @@ function ChannelTestDialogContent({
       currentRow,
       endpointType,
       effectiveStreamTest,
+      videoOptions,
       markModelTesting,
       refreshChannelLists,
       t,
@@ -650,7 +660,7 @@ function ChannelTestDialogContent({
           if (result.status === 'success') {
             successCount += 1
           }
-          failedCount = completedCount - successCount
+          if (result.status === 'error') failedCount += 1
 
           setBatchProgress({
             total: uniqueModels.length,
@@ -1051,6 +1061,27 @@ function ChannelTestDialogContent({
             </div>
           </div>
 
+          <details className='rounded-md border p-3 text-sm'>
+            <summary className='cursor-pointer'>
+              {t('Video test options')}
+            </summary>
+            <p className='text-muted-foreground my-2 text-xs'>
+              {t(
+                'Video tests generate a short clip and charge your account. Optional JSON can supply a prompt, images, duration, size, or provider metadata. Automatic health checks do not generate videos.'
+              )}
+            </p>
+            <Label htmlFor='video-test-options'>
+              {t('Request options (JSON)')}
+            </Label>
+            <Textarea
+              id='video-test-options'
+              value={videoOptions}
+              onChange={(event) => setVideoOptions(event.target.value)}
+              placeholder='{"prompt":"A red ball rolling across a table"}'
+              className='mt-2 font-mono text-xs'
+            />
+          </details>
+
           <div className='space-y-3 max-sm:has-[div[role="toolbar"]]:pb-16'>
             <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
               <div className='min-w-0 space-y-2'>
@@ -1206,6 +1237,9 @@ function TestStatusCell({ result }: { result?: TestResult }) {
     )
   }
 
+  if (result.status === 'pending') {
+    return <StatusBadge label={t('Pending')} variant='info' copyable={false} />
+  }
   if (result.status === 'success') {
     return (
       <StatusBadge label={t('Success')} variant='success' copyable={false} />
@@ -1234,11 +1268,18 @@ function TestResultCell({
     return (
       <div className='text-muted-foreground flex min-w-0 items-center gap-2 text-sm'>
         <Loader2 className='size-4 shrink-0 animate-spin' />
-        <span className='truncate'>{t('Testing...')}</span>
+        <span className='break-all'>{result.error || t('Testing...')}</span>
       </div>
     )
   }
 
+  if (result.status === 'pending') {
+    return (
+      <span className='text-muted-foreground text-sm break-all'>
+        {result.error}
+      </span>
+    )
+  }
   if (result.status === 'success') {
     return typeof result.responseTime === 'number' ? (
       <span className='text-muted-foreground text-sm'>

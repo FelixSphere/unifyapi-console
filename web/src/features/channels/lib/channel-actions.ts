@@ -42,6 +42,7 @@ import {
 } from '../api'
 import { CHANNEL_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import type { ChannelTestResponse, CopyChannelParams } from '../types'
+import { runVideoChannelTest } from './video-channel-test'
 
 // ============================================================================
 // Query Keys
@@ -276,6 +277,8 @@ export async function handleTestChannel(
     endpointType?: string
     stream?: boolean
     silent?: boolean
+    videoOptions?: string
+    onProgress?: (message: string) => void
   },
   onTestComplete?: (
     success: boolean,
@@ -296,7 +299,15 @@ export async function handleTestChannel(
       : undefined
 
   try {
-    const response = await testChannel(id, payload)
+    let response = await testChannel(id, payload)
+    if (response.video_test) {
+      response = await runVideoChannelTest(
+        id,
+        response.model || options?.testModel || '',
+        options?.videoOptions,
+        options?.onProgress
+      )
+    }
     const responseTime = getChannelTestResponseTime(response)
     const duration = formatChannelTestDuration(responseTime)
     const target = getChannelTestLabel(options)
@@ -316,7 +327,7 @@ export async function handleTestChannel(
       onTestComplete?.(true, responseTime)
     } else {
       const errorMsg = response.message || i18next.t(ERROR_MESSAGES.TEST_FAILED)
-      if (!options?.silent) {
+      if (!options?.silent && response.error_code !== 'video_test_pending') {
         toast.error(i18next.t('{{target}} test failed', { target }), {
           description: response.error_code
             ? `${errorMsg} (${response.error_code})`
@@ -326,9 +337,14 @@ export async function handleTestChannel(
       onTestComplete?.(false, responseTime, errorMsg, response.error_code)
     }
   } catch (_error: unknown) {
-    const err = _error as { response?: { data?: { message?: string } } }
+    const err = _error as {
+      message?: string
+      response?: { data?: { message?: string } }
+    }
     const errorMsg =
-      err?.response?.data?.message || i18next.t(ERROR_MESSAGES.TEST_FAILED)
+      err?.response?.data?.message ||
+      err?.message ||
+      i18next.t(ERROR_MESSAGES.TEST_FAILED)
     const target = getChannelTestLabel(options)
     if (!options?.silent) {
       toast.error(i18next.t('{{target}} test failed', { target }), {

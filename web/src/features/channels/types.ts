@@ -183,6 +183,8 @@ export interface ChannelOpsResponse {
 
 export interface ChannelTestResponse {
   success: boolean
+  video_test?: boolean
+  model?: string
   message?: string
   error_code?: string
   time?: number

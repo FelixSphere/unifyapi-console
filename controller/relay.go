@@ -501,6 +501,12 @@ func RelayTask(c *gin.Context) {
 		return
 	}
 
+	relayTaskWithInfo(c, relayInfo)
+}
+
+// Shared by the public relay and authenticated admin video tests. Keeping one
+// submission path preserves reservation, durable polling, settlement and refunds.
+func relayTaskWithInfo(c *gin.Context, relayInfo *relaycommon.RelayInfo) {
 	if taskErr := relay.ResolveOriginTask(c, relayInfo); taskErr != nil {
 		respondTaskError(c, taskErr)
 		return
