@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	urlpkg "net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -135,6 +136,16 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 
 // BuildRequestURL constructs the upstream URL.
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	if isV3(info.UpstreamModelName) {
+		path := "/text-to-video/"
+		if info.Action == constant.TaskActionGenerate {
+			path = "/image-to-video/"
+		}
+		if info.UpstreamModelName == "kling-3.0-omni" {
+			path = "/omni-video/"
+		}
+		return strings.TrimRight(a.baseURL, "/") + path + info.UpstreamModelName, nil
+	}
 	path := lo.Ternary(info.Action == constant.TaskActionGenerate, "/v1/videos/image2video", "/v1/videos/text2video")
 
 	if isNewAPIRelay(info.ApiKey) {
@@ -166,6 +177,13 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	}
 	req := v.(relaycommon.TaskSubmitReq)
 
+	if isV3(info.UpstreamModelName) {
+		data, err := makeV3Request(req, info)
+		if err != nil {
+			return nil, err
+		}
+		return bytes.NewReader(data), nil
+	}
 	body, err := a.convertToRequestPayload(&req, info)
 	if err != nil {
 		return nil, err
@@ -206,6 +224,15 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 		taskErr = service.TaskErrorWrapperLocal(fmt.Errorf("%s", kResp.Message), "task_failed", http.StatusBadRequest)
 		return
 	}
+	if isV3(info.UpstreamModelName) {
+		var envelope struct {
+			Data v3Task `json:"data"`
+		}
+		if common.Unmarshal(responseBody, &envelope) != nil || envelope.Data.ID == "" {
+			return "", nil, service.TaskErrorWrapperLocal(fmt.Errorf("missing Kling task ID"), "invalid_response", http.StatusBadGateway)
+		}
+		kResp.Data.TaskId = v3TaskPrefix + envelope.Data.ID
+	}
 	ov := dto.NewOpenAIVideo()
 	ov.ID = info.PublicTaskID
 	ov.TaskID = info.PublicTaskID
@@ -231,6 +258,9 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 		url = fmt.Sprintf("%s/kling%s/%s", baseUrl, path, taskID)
 	}
 
+	if strings.HasPrefix(taskID, v3TaskPrefix) {
+		url = strings.TrimRight(baseUrl, "/") + "/tasks?task_ids=" + urlpkg.QueryEscape(strings.TrimPrefix(taskID, v3TaskPrefix))
+	}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -253,7 +283,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 }
 
 func (a *TaskAdaptor) GetModelList() []string {
-	return []string{"kling-v1", "kling-v1-6", "kling-v2-master"}
+	return []string{"kling-3.0", "kling-3.0-turbo", "kling-3.0-omni", "kling-v1", "kling-v1-6", "kling-v2-master"}
 }
 
 func (a *TaskAdaptor) GetChannelName() string {
@@ -336,6 +366,9 @@ func (a *TaskAdaptor) createJWTTokenWithKey(apiKey string) (string, error) {
 }
 
 func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {
+	if result, modern, err := parseV3Response(respBody); modern {
+		return result, err
+	}
 	taskInfo := &relaycommon.TaskInfo{}
 	resPayload := responsePayload{}
 	err := common.Unmarshal(respBody, &resPayload)
@@ -379,6 +412,9 @@ func isNewAPIRelay(apiKey string) bool {
 }
 
 func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, error) {
+	if strings.HasPrefix(originTask.GetUpstreamTaskID(), v3TaskPrefix) {
+		return common.Marshal(originTask.ToOpenAIVideo())
+	}
 	var klingResp responsePayload
 	if err := common.Unmarshal(originTask.Data, &klingResp); err != nil {
 		return nil, errors.Wrap(err, "unmarshal kling task data failed")

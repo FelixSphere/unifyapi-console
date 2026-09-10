@@ -26,6 +26,8 @@ import (
 // to this list -- a test that reads the catalog to check the catalog would pass
 // no matter what changed.
 var publishedModels = []string{
+	"wan3.0-video", "wan3.0-video-prime", "happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max",
+
 	"MiniMax-M2.5",
 	"MiniMax-M2.7",
 	"claude-fable-5",
@@ -354,6 +356,8 @@ func TestDetectBaselineShadowCatchesEachWayTheDatabaseCanWin(t *testing.T) {
 // list is pinned here and the drift report prints it every run.
 func TestUnverifiedEntriesAreDeclared(t *testing.T) {
 	want := []string{
+		"wan3.0-video", "wan3.0-video-prime", "happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max",
+
 		"deepseek-v3",                 // retired; DeepSeek publishes v4 only
 		"deepseek-v3.2",               //
 		"deepseek-v3.2-thinking",      //

@@ -188,7 +188,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             props.selectedGroup
           )}
         </span>{' '}
-        / {t('request')}
+        / {props.model.price_unit === 'second' ? t('second') : t('request')}
       </span>
     )
   }

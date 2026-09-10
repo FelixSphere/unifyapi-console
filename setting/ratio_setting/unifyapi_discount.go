@@ -115,6 +115,12 @@ func applyModelDiscounts() {
 	}
 	modelRatioMap.Clear()
 	modelRatioMap.AddAll(effective)
+	// Video unit prices share the same explicit model discount as token prices.
+	for _, entry := range catalog {
+		if entry.PerCallUSD > 0 {
+			modelPriceMap.Set(entry.Model, entry.PerCallUSD*GetModelDiscount(entry.Model))
+		}
+	}
 }
 
 // ValidateModelDiscounts reports discounts that cannot be applied, and flags

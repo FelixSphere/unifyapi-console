@@ -88,9 +88,11 @@ type AliVideoOutput struct {
 
 // AliUsage 使用统计
 type AliUsage struct {
-	Duration   dto.IntValue `json:"duration,omitempty"`
-	VideoCount dto.IntValue `json:"video_count,omitempty"`
-	SR         dto.IntValue `json:"SR,omitempty"`
+	Duration            dto.StringValue `json:"duration,omitempty"`
+	InputVideoDuration  float64         `json:"input_video_duration,omitempty"`
+	OutputVideoDuration float64         `json:"output_video_duration,omitempty"`
+	VideoCount          dto.IntValue    `json:"video_count,omitempty"`
+	SR                  dto.IntValue    `json:"SR,omitempty"`
 }
 
 type AliMetadata struct {
@@ -151,6 +153,27 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	taskReq, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil, errors.Wrap(err, "get_task_request_failed")
+	}
+
+	upstreamModel := taskReq.Model
+	if info.IsModelMapped {
+		upstreamModel = info.UpstreamModelName
+	}
+	if strings.HasPrefix(upstreamModel, "wan3.0-video") {
+		body, err := convertWan3Request(info, taskReq)
+		if err != nil {
+			return nil, err
+		}
+		data, err := common.Marshal(body)
+		return bytes.NewReader(data), err
+	}
+	if strings.HasPrefix(upstreamModel, "happyhorse-") {
+		body, err := convertHappyHorseRequest(info, taskReq)
+		if err != nil {
+			return nil, err
+		}
+		data, err := common.Marshal(body)
+		return bytes.NewReader(data), err
 	}
 
 	aliReq, err := a.convertToAliRequest(info, taskReq)
@@ -450,6 +473,52 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	taskReq, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil
+	}
+
+	upstreamModel := taskReq.Model
+	if info.IsModelMapped {
+		upstreamModel = info.UpstreamModelName
+	}
+	if strings.HasPrefix(upstreamModel, "wan3.0-video") {
+		body, err := convertWan3Request(info, taskReq)
+		if err != nil {
+			return nil
+		}
+		seconds := *body.Parameters.Duration
+		if seconds == -1 {
+			seconds = 30
+		}
+		for _, media := range body.Input.Media {
+			if media.Type == "reference_video" {
+				seconds = 30
+				break
+			}
+		}
+		ratio := 1.0
+		switch body.Parameters.Resolution {
+		case "480P":
+			ratio = 0.5
+			if upstreamModel == "wan3.0-video-prime" {
+				ratio = 0.068 / 0.14
+			}
+		case "1080P":
+			ratio = 2
+		}
+		return map[string]float64{"seconds": float64(seconds), "resolution": ratio}
+	}
+	if strings.HasPrefix(upstreamModel, "happyhorse-") {
+		body, err := convertHappyHorseRequest(info, taskReq)
+		if err != nil {
+			return nil
+		}
+		ratio := 1.0
+		switch body.Parameters.Resolution {
+		case "480P":
+			ratio = 0.07 / 0.14
+		case "1080P":
+			ratio = 0.18 / 0.14
+		}
+		return map[string]float64{"seconds": float64(*body.Parameters.Duration), "resolution": ratio}
 	}
 
 	aliReq, err := a.convertToAliRequest(info, taskReq)

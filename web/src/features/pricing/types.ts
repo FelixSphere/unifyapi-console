@@ -40,6 +40,7 @@ export type PricingModel = {
   model_ratio: number
   completion_ratio: number
   model_price?: number
+  price_unit?: 'second'
   cache_ratio?: number | null
   create_cache_ratio?: number | null
   image_ratio?: number | null

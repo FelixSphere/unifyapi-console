@@ -3,6 +3,7 @@ package doubao
 import "strings"
 
 var ModelList = []string{
+	"doubao-seedance-2-5-260628",
 	"doubao-seedance-1-0-pro-250528",
 	"doubao-seedance-1-0-lite-t2v",
 	"doubao-seedance-1-0-lite-i2v",

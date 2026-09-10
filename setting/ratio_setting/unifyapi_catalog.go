@@ -68,9 +68,10 @@ type CatalogEntry struct {
 	QuoteDate   string // YYYY-MM-DD
 
 	// PerCallUSD prices a model per request instead of per token (image and
-	// video generation work this way). Zero means per-token, which is every
-	// catalogued model today. Set it and the model moves to quota_type 1.
+	// video generation work this way). Zero means per-token. Set it and the model moves to quota_type 1;
+	// PriceUnit distinguishes a whole request from a second of video.
 	PerCallUSD float64
+	PriceUnit  string // "second" for video rates; empty retains per-request billing
 
 	// ImageRatio / AudioRatio / AudioCompletionRatio are multipliers for models
 	// that bill image or audio tokens at a different rate from text. Zero means
@@ -108,6 +109,15 @@ func (e CatalogEntry) UpstreamID() string {
 // is not in this table has no price and is refused at relay time; that is
 // deliberate, so an unpriced model can never be served by accident.
 var unifyapiCatalog = []CatalogEntry{
+	// Video list prices are USD per output second; adaptors apply duration and resolution.
+	// HappyHorse uses the official international (Singapore) list price.
+	{Model: "wan3.0-video", PerCallUSD: 0.10, PriceUnit: "second", Unverified: true, QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing", QuoteDate: "2026-09-10"},
+	{Model: "wan3.0-video-prime", PerCallUSD: 0.14, PriceUnit: "second", Unverified: true, QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing", QuoteDate: "2026-09-10"},
+	{Model: "happyhorse-1.1-t2v", Vendor: "", PerCallUSD: 0.14, PriceUnit: "second", Unverified: true, QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing", QuoteDate: "2026-09-10"},
+	{Model: "happyhorse-1.1-i2v", Vendor: "", PerCallUSD: 0.14, PriceUnit: "second", Unverified: true, QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing", QuoteDate: "2026-09-10"},
+	{Model: "happyhorse-1.1-r2v", Vendor: "", PerCallUSD: 0.14, PriceUnit: "second", Unverified: true, QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing", QuoteDate: "2026-09-10"},
+	{Model: "MiniMax-H3", Vendor: "", PerCallUSD: 0.08, PriceUnit: "second", Unverified: true, QuoteSource: "https://platform.minimax.io/docs/guides/pricing-paygo", QuoteDate: "2026-09-10"},
+	{Model: "MiniMax-H3-Max", Vendor: "", PerCallUSD: 0.08, PriceUnit: "second", Unverified: true, QuoteSource: "https://platform.minimax.io/docs/guides/pricing-paygo", QuoteDate: "2026-09-10"},
 
 	// ---- unlisted vendor ----
 	{Model: "nano-banana-pro-preview", Vendor: "google", UpstreamModel: "gemini-3-pro-image", InputUSD: 2, OutputUSD: 120, CacheReadUSD: 0, CacheWriteUSD: 0},
