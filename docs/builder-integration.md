@@ -1,6 +1,41 @@
 # Builder API integration bridge
 
-Status: implemented locally, disabled by default, not released.
+Status: draft integration; existing account/grant bridge is locally validated, but the clarified per-team customer-group target below is not implemented or released.
+
+## Clarified target: program, team and customer group
+
+Status: agreed relationship; not yet implemented by the current bridge.
+
+UnifyAPI must already contain the named partnership program. For local testing,
+the program name is `Builder Local Test`. Builder's server will supply that
+configured program name together with verified user information and authoritative
+team information (stable IDs, display names, owner ID and membership role).
+
+Each Builder team maps to a distinct customer and Pricing Group under that
+program. A repeated connection reuses the mapping; names are display metadata,
+not identity keys. Products with the same owner form one team. Adding products
+or renaming a team does not create another grant allowance.
+
+A Pricing Group controls pricing/model access; it does not by itself establish
+a shared balance or permission to spend the owner's funds. The confirmed grant
+rule remains USD 10 once per team, shared across the owner's products.
+
+The current code still signs a configured customer registration code and links
+individual users to that offer. It does not yet transmit a team object, resolve
+a program by name, or provision a distinct customer/Pricing Group for each team.
+Do not enable or merge this draft as a completed implementation of that target.
+
+### Remaining implementation and product decisions
+
+- Define and validate the signed user/team/program contract on both servers.
+- Resolve only an existing, active program; define an unambiguous name lookup.
+- Persist an idempotent team-to-customer/Pricing Group mapping.
+- Decide whether users belonging to multiple teams select an active team.
+- Decide whether ordinary members may view or spend team credit, or only owners.
+- Preserve existing account funds and require an explicit policy for group moves.
+- Verify two-team isolation, rename/retry stability and shared-grant uniqueness.
+- Complete real provider and Stripe test-mode integration validation before release.
+
 
 The bridge provides server-authenticated account provisioning/connection,
 account and request projections, a dedicated inference key and the existing
