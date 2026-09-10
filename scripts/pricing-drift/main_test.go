@@ -100,7 +100,7 @@ func TestAStaleFeedDoesNotFailTheCheck(t *testing.T) {
 }
 
 // TestEveryCatalogEntryIsEitherCheckedOrDeclaredUnverifiable makes sure the
-// checker has an opinion about all 59 models. A model that fell through both
+// checker has an opinion about every catalog model. A model that fell through both
 // branches would be silently unchecked, which is exactly the state this whole
 // change exists to eliminate.
 func TestEveryCatalogEntryIsEitherCheckedOrDeclaredUnverifiable(t *testing.T) {
@@ -136,14 +136,23 @@ func TestUnverifiableCountIsStable(t *testing.T) {
 			count++
 		}
 	}
-	// Seven video models use dated official vendor quotes: models.dev does not
-	// expose their per-second pricing. Keep the ten prior exceptions visible.
-	require.Equal(t, 17, count,
+	// Seven per-second video models and two token-billed Seedance aliases use
+	// dated official vendor quotes: models.dev does not expose their pricing.
+	// Keep the ten prior exceptions visible as well.
+	require.Equal(t, 19, count,
 		"unverifiable entries require a documented reason and a maintained quote")
 	for _, name := range []string{"happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max", "wan3.0-video", "wan3.0-video-prime"} {
 		entry, ok := ratio_setting.CatalogEntryFor(name)
 		require.True(t, ok)
 		require.Equal(t, "second", entry.PriceUnit)
+		require.NotEmpty(t, entry.QuoteSource)
+		require.NotEmpty(t, entry.QuoteDate)
+	}
+	for _, name := range []string{"doubao-seedance-2-5-260628", "dreamina-seedance-2-5-260628"} {
+		entry, ok := ratio_setting.CatalogEntryFor(name)
+		require.True(t, ok)
+		require.Zero(t, entry.PerCallUSD)
+		require.Equal(t, 10.7, entry.InputUSD)
 		require.NotEmpty(t, entry.QuoteSource)
 		require.NotEmpty(t, entry.QuoteDate)
 	}

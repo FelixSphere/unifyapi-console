@@ -27,6 +27,7 @@ import (
 // no matter what changed.
 var publishedModels = []string{
 	"wan3.0-video", "wan3.0-video-prime", "happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max",
+	"doubao-seedance-2-5-260628", "dreamina-seedance-2-5-260628",
 
 	"MiniMax-M2.5",
 	"MiniMax-M2.7",
@@ -147,6 +148,9 @@ func TestBaselineRatiosDeriveFromOfficialPrices(t *testing.T) {
 		// Google publishes no cache-write price, so there must be no entry.
 		{"gemini-2.5-pro", 1.25, 10, 0.125, 0, 0.625, 8, 0.1, 0},
 		{"gemini-3-pro-image", 2, 120, 0, 0, 1, 60, 0, 0},
+		// Seedance reports one token total for the completed video task, so input
+		// and output use the same published no-video rate.
+		{"dreamina-seedance-2-5-260628", 10.7, 10.7, 0, 0, 5.35, 1, 0, 0},
 	}
 
 	for _, tc := range cases {
@@ -357,6 +361,7 @@ func TestDetectBaselineShadowCatchesEachWayTheDatabaseCanWin(t *testing.T) {
 func TestUnverifiedEntriesAreDeclared(t *testing.T) {
 	want := []string{
 		"wan3.0-video", "wan3.0-video-prime", "happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max",
+		"doubao-seedance-2-5-260628", "dreamina-seedance-2-5-260628",
 
 		"deepseek-v3",                 // retired; DeepSeek publishes v4 only
 		"deepseek-v3.2",               //

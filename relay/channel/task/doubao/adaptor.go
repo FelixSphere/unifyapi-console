@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -125,9 +126,32 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate)
 }
 
+func usesLASAPI(baseURL string) bool {
+	baseURL = strings.TrimRight(strings.ToLower(baseURL), "/")
+	return strings.Contains(baseURL, "operator.las.") || strings.HasSuffix(baseURL, "/api/v1")
+}
+
+func taskAPIBaseURL(baseURL string) string {
+	baseURL = strings.TrimRight(baseURL, "/")
+	if strings.HasSuffix(baseURL, "/api/v1") || strings.HasSuffix(baseURL, "/api/v3") {
+		return baseURL
+	}
+	// BytePlus LAS exposes Seedance 2.5 through its operator API. ModelArk and
+	// Volcengine Ark retain the v3 path used by the existing Doubao channels.
+	if usesLASAPI(baseURL) {
+		return baseURL + "/api/v1"
+	}
+	return baseURL + "/api/v3"
+}
+
+func isSeedance25Model(model string) bool {
+	return strings.HasPrefix(model, "doubao-seedance-2-5") ||
+		strings.HasPrefix(model, "dreamina-seedance-2-5")
+}
+
 // BuildRequestURL constructs the upstream URL.
 func (a *TaskAdaptor) BuildRequestURL(_ *relaycommon.RelayInfo) (string, error) {
-	return fmt.Sprintf("%s/api/v3/contents/generations/tasks", a.baseURL), nil
+	return taskAPIBaseURL(a.baseURL) + "/contents/generations/tasks", nil
 }
 
 // BuildRequestHeader sets required headers.
@@ -196,6 +220,9 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	if info.IsModelMapped {
 		body.Model = info.UpstreamModelName
 	} else {
+		if usesLASAPI(a.baseURL) && strings.HasPrefix(body.Model, "doubao-seedance-2-5") {
+			body.Model = strings.Replace(body.Model, "doubao-seedance-2-5", "dreamina-seedance-2-5", 1)
+		}
 		info.UpstreamModelName = body.Model
 	}
 	data, err := common.Marshal(body)
@@ -248,7 +275,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 		return nil, fmt.Errorf("invalid task_id")
 	}
 
-	uri := fmt.Sprintf("%s/api/v3/contents/generations/tasks/%s", baseUrl, taskID)
+	uri := fmt.Sprintf("%s/contents/generations/tasks/%s", taskAPIBaseURL(baseUrl), url.PathEscape(taskID))
 
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
 	if err != nil {
@@ -309,7 +336,7 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 	if r.Duration != nil && (*r.Duration < -1 || *r.Duration == 0 || *r.Duration > relaycommon.MaxTaskDurationSeconds) {
 		return nil, fmt.Errorf("invalid video duration")
 	}
-	if strings.HasPrefix(req.Model, "doubao-seedance-2-5") {
+	if isSeedance25Model(req.Model) {
 		if r.Duration != nil && *r.Duration != -1 && (*r.Duration < 4 || *r.Duration > 30) {
 			return nil, fmt.Errorf("Seedance 2.5 duration must be -1 or 4 to 30 seconds")
 		}

@@ -118,6 +118,12 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "happyhorse-1.1-r2v", Vendor: "", PerCallUSD: 0.14, PriceUnit: "second", Unverified: true, QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing", QuoteDate: "2026-09-10"},
 	{Model: "MiniMax-H3", Vendor: "", PerCallUSD: 0.08, PriceUnit: "second", Unverified: true, QuoteSource: "https://platform.minimax.io/docs/guides/pricing-paygo", QuoteDate: "2026-09-10"},
 	{Model: "MiniMax-H3-Max", Vendor: "", PerCallUSD: 0.08, PriceUnit: "second", Unverified: true, QuoteSource: "https://platform.minimax.io/docs/guides/pricing-paygo", QuoteDate: "2026-09-10"},
+	// Seedance 2.5 reports completion_tokens/total_tokens when the async task
+	// finishes, so it remains token-billed. $10.70/M is the no-video baseline;
+	// the Doubao task adaptor applies 6.40/10.70 when the request contains video.
+	// The doubao-prefixed name is retained as a compatibility alias.
+	{Model: "doubao-seedance-2-5-260628", Vendor: "", InputUSD: 10.7, OutputUSD: 10.7, Unverified: true, QuoteSource: "https://ai.byteplus.com/en", QuoteDate: "2026-09-10"},
+	{Model: "dreamina-seedance-2-5-260628", Vendor: "", InputUSD: 10.7, OutputUSD: 10.7, Unverified: true, QuoteSource: "https://ai.byteplus.com/en", QuoteDate: "2026-09-10"},
 
 	// ---- unlisted vendor ----
 	{Model: "nano-banana-pro-preview", Vendor: "google", UpstreamModel: "gemini-3-pro-image", InputUSD: 2, OutputUSD: 120, CacheReadUSD: 0, CacheWriteUSD: 0},
