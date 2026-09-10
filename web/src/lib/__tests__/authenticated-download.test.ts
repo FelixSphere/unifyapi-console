@@ -15,6 +15,30 @@ import {
 } from '../authenticated-download'
 
 describe('fetchAuthenticatedFile', () => {
+  test('video without Content-Disposition uses the MP4 fallback', async () => {
+    const blob = new Blob(['video'], { type: 'video/mp4' })
+    const result = await fetchAuthenticatedFile(
+      '/v1/videos/task_video/content',
+      async () => ({ data: blob, headers: {} }),
+      'task_video.mp4'
+    )
+    assert.equal(result.filename, 'task_video.mp4')
+    assert.equal(result.blob, blob)
+  })
+
+  test('failed content requests reject instead of downloading an error file', async () => {
+    await assert.rejects(
+      fetchAuthenticatedFile(
+        '/v1/videos/task_video/content',
+        async () => {
+          throw new Error('Unauthorized')
+        },
+        'task_video.mp4'
+      ),
+      /Unauthorized/
+    )
+  })
+
   test('uses the authenticated request path and asks for a blob', async () => {
     const blob = new Blob(['invoice'])
     const seen: unknown[] = []
