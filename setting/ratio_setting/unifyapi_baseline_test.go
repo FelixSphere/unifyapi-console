@@ -76,6 +76,7 @@ var publishedModels = []string{
 	"gpt-5",
 	"gpt-5-mini",
 	"gpt-5.4",
+	"gpt-5.6-sol",
 	"gpt-6-astra",
 	"gpt-image-2",
 	"kimi-k2.5",
@@ -148,6 +149,7 @@ func TestBaselineRatiosDeriveFromOfficialPrices(t *testing.T) {
 		{"gpt-5.4", 2.5, 15, 0.25, 0, 1.25, 6, 0.1, 0},
 		// The one OpenAI model that does publish a cache-write price, so unlike
 		// the rest of the range it must derive a non-zero write ratio.
+		{"gpt-5.6-sol", 4, 20, 0.4, 5, 2, 5, 0.1, 1.25},
 		{"gpt-6-astra", 10, 50, 1, 12.5, 5, 5, 0.1, 1.25},
 		// Google publishes no cache-write price, so there must be no entry.
 		{"gemini-2.5-pro", 1.25, 10, 0.125, 0, 0.625, 8, 0.1, 0},
