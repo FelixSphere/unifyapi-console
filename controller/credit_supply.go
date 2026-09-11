@@ -100,10 +100,16 @@ type creditLotPayload struct {
 	ExpiresAt       int64   `json:"expires_at"`
 	Status          string  `json:"status"`
 	Note            string  `json:"note"`
+	// DealType and RevenueSharePct describe a key the operator is entering on
+	// a contributor's behalf. They are set once, at creation: UpdateCreditLot
+	// never reads them, because the deal somebody agreed to is not an editable
+	// field.
+	DealType        string  `json:"deal_type"`
+	RevenueSharePct float64 `json:"revenue_share_pct"`
 }
 
 func (p creditLotPayload) lot() *model.CreditLot {
-	return &model.CreditLot{
+	lot := &model.CreditLot{
 		SupplierId:      p.SupplierId,
 		Vendor:          p.Vendor,
 		ChannelId:       p.ChannelId,
@@ -114,7 +120,14 @@ func (p creditLotPayload) lot() *model.CreditLot {
 		Status:          p.Status,
 		Source:          model.CreditLotSourceAdmin,
 		Note:            p.Note,
+		DealType:        p.DealType,
+		RevenueSharePct: p.RevenueSharePct,
 	}
+	if lot.DealType == model.CreditLotDealRevenueShare {
+		// The basis is posted, not negotiated per lot, and is frozen here.
+		lot.RevenueShareBasis = model.GetCreditSupplyTerms().ShareBasis()
+	}
+	return lot
 }
 
 func CreateCreditLot(c *gin.Context) {
@@ -248,4 +261,51 @@ func GetCreditLotUsage(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": rows})
+}
+
+// PaySupplierShare settles everything a contributor is owed for the keys they
+// contributed, across all of their lots, in one payment.
+func PaySupplierShare(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid supplier id"})
+		return
+	}
+	var req struct {
+		Method    string `json:"method"`
+		Reference string `json:"reference"`
+		Force     bool   `json:"force"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid request body"})
+		return
+	}
+	result, err := model.PaySupplierShare(id, model.SharePayoutRequest{
+		Actor: optionChangeActor(c), Method: req.Method, Reference: req.Reference, Force: req.Force,
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "supplier not found"})
+			return
+		}
+		status := http.StatusOK
+		if errors.Is(err, model.ErrNoShareToPay) || errors.Is(err, model.ErrShareBelowMinimum) {
+			status = http.StatusConflict
+		}
+		c.JSON(status, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": result})
+}
+
+// GetCreditSharePayouts lists dividend payments, newest first.
+func GetCreditSharePayouts(c *gin.Context) {
+	supplierId, _ := strconv.Atoi(c.Query("supplier_id"))
+	lotId, _ := strconv.Atoi(c.Query("lot_id"))
+	payouts, err := model.ListCreditSharePayouts(model.CreditShareFilter{SupplierId: supplierId, LotId: lotId})
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": payouts})
 }

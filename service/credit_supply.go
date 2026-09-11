@@ -29,8 +29,8 @@ func notifyCreditLotEvent(lot model.CreditLot, event string) {
 		subject = fmt.Sprintf("Credit lot #%d exhausted (%s)", lot.Id, lot.Vendor)
 		content = fmt.Sprintf(
 			"Credit lot #%d (%s) consumed $%.2f of its $%.2f face value and has been retired. "+
-				"Channel #%d is auto-disabled. Payable to the supplier for this lot: $%.2f.",
-			lot.Id, lot.Vendor, lot.ConsumedUSD, lot.FaceValueUSD, lot.ChannelId, lot.PayableUSD())
+				"Channel #%d is auto-disabled. %s",
+			lot.Id, lot.Vendor, lot.ConsumedUSD, lot.FaceValueUSD, lot.ChannelId, outstanding(lot))
 	case model.CreditLotEventExpired:
 		subject = fmt.Sprintf("Credit lot #%d expired (%s)", lot.Id, lot.Vendor)
 		content = fmt.Sprintf(
@@ -47,4 +47,19 @@ func notifyCreditLotEvent(lot model.CreditLot, event string) {
 		return
 	}
 	NotifyRootUser(fmt.Sprintf("credit_lot_%s_%d", event, lot.Id), subject, content)
+}
+
+// outstanding says what is still owed for a retired lot, which depends on how
+// it was acquired: a lot bought outright was paid for at activation and owes
+// nothing, a contributed key owes its owner the unpaid part of its dividend,
+// and an operator-entered lot settles on consumption as it always did.
+func outstanding(lot model.CreditLot) string {
+	if lot.IsRevenueShare() {
+		return fmt.Sprintf("Revenue share still owed to the contributor: $%.2f of $%.2f earned on $%.2f of revenue.",
+			lot.UnpaidShareUSD(), lot.EarnedShareUSD(), lot.ShareRevenueUSD)
+	}
+	if payable := lot.PayableUSD(); payable > 0 {
+		return fmt.Sprintf("Still payable to the supplier for this lot: $%.2f.", payable)
+	}
+	return "It was bought outright and is paid for in full."
 }

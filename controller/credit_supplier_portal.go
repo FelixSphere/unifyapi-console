@@ -135,6 +135,13 @@ type portalLotView struct {
 	PaidUSD          float64 `json:"paid_usd"`
 	PaidAt           int64   `json:"paid_at"`
 	PayoutReference  string  `json:"payout_reference"`
+	// The dividend side of a contributed key. Zero on a lot bought outright.
+	DealType        string  `json:"deal_type"`
+	RevenueSharePct float64 `json:"revenue_share_pct"`
+	ShareRevenueUSD float64 `json:"share_revenue_usd"`
+	ShareEarnedUSD  float64 `json:"share_earned_usd"`
+	SharePaidUSD    float64 `json:"share_paid_usd"`
+	ShareUnpaidUSD  float64 `json:"share_unpaid_usd"`
 }
 
 func GetSupplierPortal(c *gin.Context) {
@@ -174,8 +181,11 @@ func GetSupplierPortal(c *gin.Context) {
 			RemainingUSD: lot.RemainingUSD(), PayableUSD: lot.PayableUSD(), UnpricedRequests: lot.UnpricedRequests,
 			ExpiresAt: lot.ExpiresAt, Status: lot.Status, StatusReason: lot.StatusReason, Source: lot.Source, RetiredAt: lot.RetiredAt, CreatedAt: lot.CreatedAt,
 			VerifiedAt: lot.VerifiedAt, PayoutMethod: lot.PayoutMethod,
-			PayoutUSD: terms.PayoutUSD(lot.FaceValueUSD, lot.AcquisitionRate, lot.PayoutMethod),
+			PayoutUSD: lot.PayoutUSD(terms),
 			PaidUSD:   lot.PaidUSD, PaidAt: lot.PaidAt, PayoutReference: lot.PayoutReference,
+			DealType: lot.DealType, RevenueSharePct: lot.RevenueSharePct,
+			ShareRevenueUSD: lot.ShareRevenueUSD, ShareEarnedUSD: lot.EarnedShareUSD(),
+			SharePaidUSD: lot.PaidShareUSD, ShareUnpaidUSD: lot.UnpaidShareUSD(),
 		})
 		if lot.Status == model.CreditLotStatusRejected {
 			continue
@@ -184,7 +194,7 @@ func GetSupplierPortal(c *gin.Context) {
 		consumed += lot.ConsumedUSD
 		remaining += lot.RemainingUSD()
 		if lot.Status == model.CreditLotStatusVerified {
-			awaiting += terms.PayoutUSD(lot.FaceValueUSD, lot.AcquisitionRate, lot.PayoutMethod)
+			awaiting += lot.PayoutUSD(terms)
 		}
 		paid += lot.PaidUSD
 	}
@@ -193,20 +203,28 @@ func GetSupplierPortal(c *gin.Context) {
 	totals["remaining_usd"] = remaining
 	totals["awaiting_payment_usd"] = awaiting
 	totals["paid_usd"] = paid
+	share := model.SumCreditShare(lots)
+	totals["share_revenue_usd"] = share.RevenueUSD
+	totals["share_earned_usd"] = share.EarnedUSD
+	totals["share_paid_usd"] = share.PaidUSD
+	totals["share_unpaid_usd"] = share.UnpaidUSD
+
+	payouts, err := model.ListCreditSharePayouts(model.CreditShareFilter{SupplierId: supplier.Id})
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
 		"supplier": portalSupplierView{
 			Id: supplier.Id, Name: supplier.Name, Code: supplier.Code, ContactEmail: supplier.ContactEmail,
 			Status: supplier.Status, StatusReason: supplier.StatusReason, Counterparty: supplier.CounterpartyKey(),
 		},
-		"lots":    views,
-		"totals":  totals,
-		"vendors": supplierVendorPresets(),
-		"terms": gin.H{
-			"buy_rates":             terms.BuyRates,
-			"min_face_usd":          terms.MinFaceUSD,
-			"platform_credit_bonus": terms.PlatformCreditBonus,
-		},
+		"lots":          views,
+		"totals":        totals,
+		"share_payouts": payouts,
+		"vendors":       supplierVendorPresets(),
+		"terms":         postedTerms(terms),
 	}})
 }
 
@@ -215,13 +233,23 @@ func GetSupplierPortal(c *gin.Context) {
 // GetSupplierTerms is the price list a seller sees before typing anything.
 func GetSupplierTerms(c *gin.Context) {
 	terms := model.GetCreditSupplyTerms()
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
+	data := postedTerms(terms)
+	data["channel_priority"] = terms.ChannelPriority
+	data["vendors"] = supplierVendorPresets()
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": data})
+}
+
+// postedTerms is the offer, and only the offer: both ways of handing us a key
+// and what each pays. Everything else about the terms is operator business.
+func postedTerms(terms model.CreditSupplyTerms) gin.H {
+	return gin.H{
 		"buy_rates":             terms.BuyRates,
 		"min_face_usd":          terms.MinFaceUSD,
 		"platform_credit_bonus": terms.PlatformCreditBonus,
-		"channel_priority":      terms.ChannelPriority,
-		"vendors":               supplierVendorPresets(),
-	}})
+		"revenue_share_rates":   terms.RevenueShareRates,
+		"revenue_share_basis":   terms.ShareBasis(),
+		"min_share_payout_usd":  terms.MinSharePayoutUSD,
+	}
 }
 
 // verifySupplierChannel makes one real request through the submitted key. It
@@ -296,7 +324,11 @@ func sellerFor(c *gin.Context) (*model.CreditSupplier, bool) {
 }
 
 type supplierLotSubmission struct {
-	Vendor          string   `json:"vendor"`
+	Vendor string `json:"vendor"`
+	// DealType chooses between selling the credits outright and contributing
+	// the key for a share of what it earns. Empty means a sale, which is what
+	// every caller meant before there was a choice.
+	DealType        string   `json:"deal_type"`
 	FaceValueUSD    float64  `json:"face_value_usd"`
 	AcquisitionRate float64  `json:"acquisition_rate"`
 	ExpiresAt       int64    `json:"expires_at"`
@@ -324,15 +356,38 @@ func SubmitSupplierLot(c *gin.Context) {
 		return
 	}
 	terms := model.GetCreditSupplyTerms()
-	rate, buying := terms.BuyRate(preset.Key)
-	if !buying {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "we are not buying " + preset.Label + " credits at the moment"})
+	dealType := strings.TrimSpace(req.DealType)
+	if dealType == "" {
+		dealType = model.CreditLotDealPurchase
+	}
+	var rate, sharePct float64
+	switch dealType {
+	case model.CreditLotDealPurchase:
+		posted, buying := terms.BuyRate(preset.Key)
+		if !buying {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "we are not buying " + preset.Label + " credits at the moment"})
+			return
+		}
+		rate = posted
+	case model.CreditLotDealRevenueShare:
+		posted, taking := terms.RevenueShareRate(preset.Key)
+		if !taking {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "we are not taking " + preset.Label + " keys on revenue-share terms at the moment"})
+			return
+		}
+		// Nothing is paid up front for a contributed key; the whole deal is
+		// the share of what it earns.
+		sharePct = posted
+	default:
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "choose whether to sell the credits or contribute the key for a share of what it earns"})
 		return
 	}
 	if req.FaceValueUSD < terms.MinFaceUSD {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": fmt.Sprintf("the smallest sale we accept is $%.0f of credit", terms.MinFaceUSD)})
 		return
 	}
+	// How they are paid, whichever deal it is: once for a sale, and each time
+	// we settle the dividend on a contributed key.
 	req.PayoutMethod = strings.TrimSpace(req.PayoutMethod)
 	req.PayoutAccount = strings.TrimSpace(req.PayoutAccount)
 	switch req.PayoutMethod {
@@ -394,12 +449,17 @@ func SubmitSupplierLot(c *gin.Context) {
 	}
 	lot := &model.CreditLot{
 		Vendor:          preset.Key,
+		DealType:        dealType,
 		FaceValueUSD:    req.FaceValueUSD,
 		AcquisitionRate: rate, // the posted rate, never the caller's number
+		RevenueSharePct: sharePct,
 		ExpiresAt:       req.ExpiresAt,
 		Note:            strings.TrimSpace(req.Note),
 		PayoutMethod:    req.PayoutMethod,
 		PayoutAccount:   req.PayoutAccount,
+	}
+	if dealType == model.CreditLotDealRevenueShare {
+		lot.RevenueShareBasis = terms.ShareBasis()
 	}
 	actor := optionChangeActor(c)
 	if err := model.SubmitSupplierCreditLot(supplier, channel, lot, actor); err != nil {
@@ -438,7 +498,8 @@ func SubmitSupplierLot(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
 		"lot_id": verified.Id, "channel_id": channel.Id, "status": verified.Status,
-		"payout_usd": terms.PayoutUSD(verified.FaceValueUSD, verified.AcquisitionRate, verified.PayoutMethod),
+		"deal_type": verified.DealType, "revenue_share_pct": verified.RevenueSharePct,
+		"payout_usd": verified.PayoutUSD(terms),
 	}})
 }
 

@@ -60,7 +60,9 @@ import {
   LOT_STATUS_LABELS,
   daysUntil,
   formatUSD,
+  purchasePriceUSD,
   remainingUSD,
+  unpaidShareUSD,
 } from './credit-supply-logic'
 import { CreditLotsPanel } from './credit-supply-lots'
 import { CreditSuppliersPanel } from './credit-supply-suppliers'
@@ -82,8 +84,15 @@ function attentionReason(
 ) {
   if (lot.status === 'pending') return t('Verifying the key')
   if (lot.status === 'verified') {
-    return t('Verified — pay {{amount}} to activate', {
-      amount: formatUSD(lot.face_value_usd * lot.acquisition_rate),
+    return purchasePriceUSD(lot) > 0
+      ? t('Verified — pay {{amount}} to activate', {
+          amount: formatUSD(purchasePriceUSD(lot)),
+        })
+      : t('Verified — accept it to start routing traffic through the key')
+  }
+  if (unpaidShareUSD(lot) > 0) {
+    return t('{{amount}} of revenue share owed to the contributor', {
+      amount: formatUSD(unpaidShareUSD(lot)),
     })
   }
   if (
@@ -137,6 +146,18 @@ function TermsCard() {
   })
   if (!current) return null
   const vendors = Object.keys(current.buy_rates).sort()
+  // Both offers are posted per vendor, and a vendor we buy from is one we
+  // could equally take a key from, so the buy list drives both.
+  const shareVendors = Array.from(
+    new Set([...vendors, ...Object.keys(current.revenue_share_rates ?? {})])
+  ).sort()
+  const setShare = (vendor: string, pct: string) => {
+    const value = Number(pct)
+    const rates = { ...(current.revenue_share_rates ?? {}) }
+    if (Number.isFinite(value) && value > 0) rates[vendor] = value / 100
+    else delete rates[vendor]
+    setDraft({ ...current, revenue_share_rates: rates })
+  }
   const setRate = (vendor: string, pct: string) => {
     const value = Number(pct)
     setDraft({
@@ -227,6 +248,81 @@ function TermsCard() {
             />
           </div>
         </div>
+        <div className='grid gap-3 border-t pt-3'>
+          <div>
+            <Label className='text-sm font-medium'>
+              {t('Contribution terms')}
+            </Label>
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'The other offer: a contributor hands us the key, we pay nothing up front, and they keep this share of what it earns for as long as it earns. Leave a vendor at 0 to stop taking its keys on these terms. A key already earning keeps the share it was taken on.'
+              )}
+            </p>
+          </div>
+          <div className='grid gap-3 sm:grid-cols-3'>
+            {shareVendors.map((vendor) => (
+              <div key={vendor} className='grid gap-1'>
+                <Label className='capitalize'>{vendor}</Label>
+                <div className='flex items-center gap-2'>
+                  <Input
+                    type='number'
+                    min={0}
+                    max={99}
+                    step={1}
+                    value={Math.round(
+                      (current.revenue_share_rates?.[vendor] ?? 0) * 100
+                    )}
+                    onChange={(event) => setShare(vendor, event.target.value)}
+                    data-testid={`revenue-share-${vendor}`}
+                  />
+                  <span className='text-muted-foreground text-sm'>%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className='grid gap-3 sm:grid-cols-3'>
+            <div className='grid gap-1'>
+              <Label>{t('Share of')}</Label>
+              <select
+                className='border-input bg-background h-9 rounded-md border px-3 text-sm'
+                value={current.revenue_share_basis ?? 'margin'}
+                onChange={(event) =>
+                  setDraft({
+                    ...current,
+                    revenue_share_basis: event.target.value as
+                      | 'revenue'
+                      | 'margin',
+                  })
+                }
+                data-testid='revenue-share-basis'
+              >
+                <option value='margin'>
+                  {t('Margin — revenue less what we paid up front')}
+                </option>
+                <option value='revenue'>
+                  {t('Revenue — everything the customer paid')}
+                </option>
+              </select>
+            </div>
+            <div className='grid gap-1'>
+              <Label>{t('Minimum payout (USD)')}</Label>
+              <Input
+                type='number'
+                min={0}
+                value={current.min_share_payout_usd ?? 0}
+                onChange={(event) =>
+                  setDraft({
+                    ...current,
+                    min_share_payout_usd: Number(event.target.value),
+                  })
+                }
+              />
+              <p className='text-muted-foreground text-xs'>
+                {t('Below this, a balance waits rather than being sent.')}
+              </p>
+            </div>
+          </div>
+        </div>
         <div className='flex justify-end gap-2'>
           <Button
             type='button'
@@ -301,7 +397,7 @@ export function CreditSupplySection() {
 
       {overview.data ? (
         <>
-          <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-5'>
+          <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-6'>
             <Headline
               label={t('Face value in pool')}
               value={formatUSD(overview.data.face_usd)}
@@ -335,9 +431,25 @@ export function CreditSupplySection() {
             <Headline
               label={t('Paid to suppliers')}
               value={formatUSD(overview.data.paid_usd)}
-              hint={t('{{consumed}} of it consumed so far', {
-                consumed: formatUSD(overview.data.payable_usd),
+              hint={
+                overview.data.payable_usd > 0
+                  ? t('{{payable}} still owed on lots not bought outright', {
+                      payable: formatUSD(overview.data.payable_usd),
+                    })
+                  : t('Every sale paid in full')
+              }
+            />
+            <Headline
+              label={t('Owed to contributors')}
+              value={formatUSD(overview.data.share?.unpaid_usd ?? 0)}
+              hint={t('{{earned}} earned on {{revenue}} of revenue', {
+                earned: formatUSD(overview.data.share?.earned_usd ?? 0),
+                revenue: formatUSD(overview.data.share?.revenue_usd ?? 0),
               })}
+              warn={
+                (overview.data.share?.unpaid_usd ?? 0) >=
+                Math.max(overview.data.min_share_payout_usd, 0.01)
+              }
             />
           </div>
 
@@ -365,7 +477,7 @@ export function CreditSupplySection() {
                 </CardTitle>
                 <CardDescription>
                   {t(
-                    'Pending submissions, lots at their low-water mark, and lots expiring within seven days.'
+                    'Pending submissions, lots at their low-water mark, lots expiring within seven days, and contributors owed more than the minimum payout.'
                   )}
                 </CardDescription>
               </CardHeader>
@@ -398,6 +510,7 @@ export function CreditSupplySection() {
                     <TableHead>{t('Consumed')}</TableHead>
                     <TableHead>{t('Remaining')}</TableHead>
                     <TableHead>{t('Payable')}</TableHead>
+                    <TableHead>{t('Share owed')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -418,6 +531,11 @@ export function CreditSupplySection() {
                       </TableCell>
                       <TableCell className='tabular-nums'>
                         {formatUSD(row.payable_usd)}
+                      </TableCell>
+                      <TableCell className='tabular-nums'>
+                        {row.share_unpaid_usd > 0
+                          ? formatUSD(row.share_unpaid_usd)
+                          : '—'}
                       </TableCell>
                     </TableRow>
                   ))}

@@ -95,10 +95,34 @@ func creditSupplyDay(timestamp int64) string {
 	return time.Unix(timestamp, 0).Format("2006-01-02")
 }
 
-// RecordCreditSupplyConsumption draws a lot down by one request. It never returns
-// an error because nothing about the customer's request depends on it; a
-// failure is logged and the lot is understated until the next request.
-func RecordCreditSupplyConsumption(channelId int, modelName string, promptTokens, cachedTokens, completionTokens int) {
+// CreditSupplyUsage is one relayed request as the credit supply sees it.
+type CreditSupplyUsage struct {
+	ChannelId        int
+	ModelName        string
+	PromptTokens     int
+	CachedTokens     int
+	CompletionTokens int
+	// QuotaCharged is what the customer was billed for this request, in quota
+	// units. It is the revenue a contributed key earns a share of; zero for
+	// free, internal or unbilled traffic, which earns nothing.
+	QuotaCharged int
+}
+
+// RevenueUSD is what the customer paid for the request, in dollars.
+func (u CreditSupplyUsage) RevenueUSD() float64 {
+	if u.QuotaCharged <= 0 || common.QuotaPerUnit <= 0 {
+		return 0
+	}
+	return float64(u.QuotaCharged) / common.QuotaPerUnit
+}
+
+// RecordCreditSupplyConsumption draws a lot down by one request, and accrues the
+// contributor's share of it when the key was contributed rather than bought. It
+// never returns an error because nothing about the customer's request depends
+// on it; a failure is logged and the lot is understated until the next request.
+func RecordCreditSupplyConsumption(usage CreditSupplyUsage) {
+	channelId, modelName := usage.ChannelId, usage.ModelName
+	promptTokens, cachedTokens, completionTokens := usage.PromptTokens, usage.CachedTokens, usage.CompletionTokens
 	if channelId <= 0 || DB == nil {
 		return
 	}
@@ -120,14 +144,32 @@ func RecordCreditSupplyConsumption(channelId int, modelName string, promptTokens
 		face = 0
 		updates["unpriced_requests"] = gorm.Expr("unpriced_requests + 1")
 	}
-	err := DB.Model(&CreditLot{}).
+	revenue := usage.RevenueUSD()
+	if lot.IsRevenueShare() {
+		// In the same statement as the draw-down: the dividend basis and the
+		// consumption it came from are one fact, and a crash between two
+		// statements would leave a contributor owed for traffic the lot does
+		// not admit to having served, or the reverse.
+		updates["share_revenue_usd"] = gorm.Expr("share_revenue_usd + ?", revenue)
+		updates["share_cost_usd"] = gorm.Expr("share_cost_usd + ?", face*lot.AcquisitionRate)
+	} else {
+		revenue = 0
+	}
+	result := DB.Model(&CreditLot{}).
 		Where("id = ? AND status = ?", lot.Id, CreditLotStatusActive).
-		Updates(updates).Error
-	if err != nil {
-		common.SysError(fmt.Sprintf("credit supply: draw-down on lot %d failed: %v", lot.Id, err))
+		Updates(updates)
+	if result.Error != nil {
+		common.SysError(fmt.Sprintf("credit supply: draw-down on lot %d failed: %v", lot.Id, result.Error))
 		return
 	}
-	recordCreditLotUsage(lot.Id, creditSupplyDay(now), face)
+	if result.RowsAffected == 0 {
+		// The lot stopped being active between the cached lookup and here --
+		// retired or suspended, usually by another instance inside the cache
+		// TTL. Nothing was drawn, so nothing may be charted as drawn.
+		invalidateChannelLot(channelId)
+		return
+	}
+	recordCreditLotUsage(lot.Id, creditSupplyDay(now), face, revenue)
 
 	var fresh CreditLot
 	if err := DB.First(&fresh, "id = ?", lot.Id).Error; err != nil || fresh.Status != CreditLotStatusActive {
@@ -152,13 +194,14 @@ func RecordCreditSupplyConsumption(channelId int, modelName string, promptTokens
 // insert rather than a dialect-specific upsert: this has to run identically on
 // SQLite, MySQL and PostgreSQL, and a lost race on the insert is simply
 // retried as an update.
-func recordCreditLotUsage(lotId int, day string, face float64) {
+func recordCreditLotUsage(lotId int, day string, face, revenue float64) {
 	for attempt := 0; attempt < 2; attempt++ {
 		result := DB.Model(&CreditLotUsage{}).
 			Where("lot_id = ? AND day = ?", lotId, day).
 			Updates(map[string]interface{}{
-				"requests": gorm.Expr("requests + 1"),
-				"face_usd": gorm.Expr("face_usd + ?", face),
+				"requests":    gorm.Expr("requests + 1"),
+				"face_usd":    gorm.Expr("face_usd + ?", face),
+				"revenue_usd": gorm.Expr("revenue_usd + ?", revenue),
 			})
 		if result.Error != nil {
 			common.SysError(fmt.Sprintf("credit supply: daily usage update for lot %d failed: %v", lotId, result.Error))
@@ -167,12 +210,15 @@ func recordCreditLotUsage(lotId int, day string, face float64) {
 		if result.RowsAffected > 0 {
 			return
 		}
-		err := DB.Create(&CreditLotUsage{LotId: lotId, Day: day, Requests: 1, FaceUSD: face}).Error
+		err := DB.Create(&CreditLotUsage{LotId: lotId, Day: day, Requests: 1, FaceUSD: face, RevenueUSD: revenue}).Error
 		if err == nil {
 			return
 		}
 		// Unique violation from a concurrent first request of the day: loop
 		// once more and take the update path.
+		if attempt == 1 {
+			common.SysError(fmt.Sprintf("credit supply: daily usage insert for lot %d failed twice: %v", lotId, err))
+		}
 	}
 }
 

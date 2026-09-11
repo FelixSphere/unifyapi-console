@@ -392,8 +392,14 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	// UNIFYAPI-FORK: draw the supplier credit lot down before anything can
 	// return early. Pool accounting protects the supplier's balance and must
 	// run even when consume logging itself is switched off.
-	RecordCreditSupplyConsumption(params.ChannelId, params.ModelName,
-		params.PromptTokens, cachedTokensFromOther(params.Other), params.CompletionTokens)
+	RecordCreditSupplyConsumption(CreditSupplyUsage{
+		ChannelId:        params.ChannelId,
+		ModelName:        params.ModelName,
+		PromptTokens:     params.PromptTokens,
+		CachedTokens:     cachedTokensFromOther(params.Other),
+		CompletionTokens: params.CompletionTokens,
+		QuotaCharged:     params.Quota,
+	})
 	if !common.LogConsumeEnabled {
 		return
 	}

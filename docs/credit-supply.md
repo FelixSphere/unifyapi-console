@@ -1,13 +1,22 @@
 # Credit supply
 
 The credit supply is the **supply side** of the console. Third parties who hold
-vendor credits (OpenAI, Anthropic, Google, OpenRouter, ...) sell us the right to
-consume them; we route customer traffic through their key and pay them for what
-was consumed. Operators manage it in **System Settings → Billing → Credit
-Pool**; suppliers see their own slice in the **Supplier portal**.
+vendor credits (OpenAI, Anthropic, Google, OpenRouter, ...) let us consume them
+and we route customer traffic through their key. There are two deals, and one
+pipeline serves both:
 
-Nothing in the pool moves money. Payouts are recorded as vendor settlements and
-executed outside the system.
+- **Sell the credits.** One payment, at the posted rate, made before a single
+  request goes through the key.
+- **Contribute the key.** Nothing up front; the owner keeps a share of
+  everything it earns, settled as it builds up. See
+  [Contributed keys](#contributed-keys-a-share-of-what-they-earn).
+
+Operators manage it in **System Settings → Billing → Credit Supply**;
+contributors see their own slice in the **Supplier portal**.
+
+Payment in **platform credit** is booked here, into the payee's wallet, inside
+the transaction that records it. An **external** transfer is recorded, not
+moved: the operator has already sent it and enters the reference.
 
 ## Vocabulary
 
@@ -16,8 +25,9 @@ executed outside the system.
 | **Supplier** | A counterparty we buy credits from. Settled under `supplier:<code>`. |
 | **Lot** | One tranche of credits from one supplier for one vendor, bound to one channel. |
 | **Face value** | What the lot is worth at the vendor's **official list price**. This is the denomination the vendor's own balance decrements in, so it is what we draw down. |
-| **Acquisition rate** | What we pay per $1 of face value consumed, in (0, 1]. 0.45 means we buy at 45 cents on the dollar. |
-| **Payable** | `consumed face value × acquisition rate`. What we owe the supplier. |
+| **Acquisition rate** | What we pay per $1 of face value, in (0, 1]. 0.45 means we buy at 45 cents on the dollar. 0 is legal only on a contributed key, which is not bought at all. |
+| **Payable** | `consumed face value × acquisition rate − already paid`. What we *still* owe. A lot bought outright is paid in full at activation, so it is 0 however much of it is consumed; only operator-entered lots that were never paid up front accrue here. |
+| **Deal** | `purchase` (bought outright, one payment) or `revenue_share` (contributed, paid a dividend as it earns). See "Contributed keys" below. |
 
 ## How a lot flows
 
@@ -51,6 +61,10 @@ pending ──approve──▶ active ──(consumed ≥ face)──▶ exhaust
   increments the lot's `unpriced_requests`. The lot is then understated until
   the model is catalogued; the admin screen flags it.
 - `low_water_usd` fires one notification when remaining falls to or below it.
+- A draw-down that finds the lot no longer active -- retired or suspended on
+  another instance while this one still had it cached -- draws nothing, and
+  writes nothing to the daily ledger either. `credit_lot_usages` and
+  `consumed_usd` are two views of the same traffic and have to agree.
 
 ## Settlement
 
@@ -75,6 +89,8 @@ Root-only, under `/api/credit-supply`:
 - `GET /overview` — pool totals, per-vendor breakdown, items needing attention.
 - `GET|POST /suppliers`, `PUT /suppliers/:id`
 - `GET /lots?supplier_id=&status=`, `POST /lots`, `PUT /lots/:id`
+- `POST /suppliers/:id/share-payout` `{ "method": "platform_credit|external", "reference": "...", "force": false }`
+- `GET /share-payouts?supplier_id=&lot_id=`
 - `POST /lots/:id/transition` `{ "to": "active|suspended|rejected" }`
 - `GET /lots/:id/usage?days=30` — daily draw-down.
 
@@ -104,8 +120,13 @@ The operator posts the terms once, in Billing → Credit Supply → *Buy terms*
 | `min_face_usd` | 100 | smallest sale accepted |
 | `platform_credit_bonus` | 0 | extra paid when the seller takes platform credit |
 
-A lot snapshots the rate it was submitted under; changing terms never
-reprices a sale already made. A vendor with no rate is refused, not bought at 0.
+A lot snapshots the rate **and the platform-credit bonus** it was submitted
+under; changing terms never reprices a sale already made. A vendor with no rate
+is refused, not bought at 0. (`payout_quote_multiplier` holds `1 + bonus` rather
+than the bonus: a zero bonus is the common case, and GORM omits a zero-valued
+field from an INSERT, so a column whose "not set" value is also a real value
+cannot tell the two apart. 0 means a lot from before the snapshot existed, and
+follows the live terms as it always did.)
 
 ### The seller's flow, one form
 
@@ -155,7 +176,106 @@ only operator-entered lots keep the direct `pending → active` path.
   expiry retires the lot and disables the channel automatically.
 - Cost basis = the rate we paid, so Profit and reconciliation are already right.
 - Suppliers are paid **once**, at activation. `IssueSettlement` refuses a vendor
-  statement for a `supplier:` counterparty so nobody pays twice.
+  statement for a `supplier:` counterparty so nobody pays twice. For the same
+  reason `PayableUSD` nets off what was paid: a bought lot owes nothing as it
+  is consumed, and a screen that says otherwise invoices the same credits twice.
+- A paid lot's face value and rate are frozen. Raising the face value would hand
+  over credits nobody paid for, and rewriting the rate would rewrite the cost
+  basis of traffic already reconciled; more credit from the same seller is a new
+  sale. An operator-entered lot that was never paid keeps the old behaviour,
+  where raising the face value is how an exhausted lot comes back.
+
+## Contributed keys: a share of what they earn
+
+The second deal. Instead of selling us the credits, the owner **contributes the
+key** and keeps a share of everything it earns, for as long as it earns -- a
+dividend rather than a sale. Nothing is paid up front, so nothing is at risk if
+the key never serves a request, and there is no cap if it serves a great many.
+
+The operator posts these terms next to the buy rates
+(Billing → Credit Supply → *Buy terms*):
+
+| term | default | meaning |
+|---|---|---|
+| `revenue_share_rates.anthropic` | 0.50 | the contributor keeps half of what their Anthropic key earns |
+| `revenue_share_basis` | `margin` | what that share is a share **of** -- see below |
+| `min_share_payout_usd` | 20 | we settle once the balance reaches this |
+
+A vendor absent from `revenue_share_rates` is not taken on these terms; an empty
+map closes the offer entirely. Like the buy rate, the share and the basis are
+**snapshotted onto the lot**, so re-posting the terms never reprices a key that
+is already earning.
+
+### What the share is a share of
+
+- `revenue` — everything customers paid for traffic that key served.
+- `margin` — that, less what we paid for the credits up front
+  (`drawn face value × acquisition rate`), floored at zero.
+
+With nothing paid up front the two are identical, which is why `margin` is the
+default: it is the reading that cannot overpay. The difference only matters for
+the mixed deal, where a contributed key also carries an acquisition rate above
+zero -- a smaller payment up front **plus** a share of what is left.
+
+### How it accrues
+
+`RecordCreditSupplyConsumption` adds the request's revenue (the `quota` the
+customer was charged, converted to dollars) and its up-front cost to the lot
+**in the same statement as the draw-down**: one fact, one write. The share
+itself is never accumulated, it is derived --
+
+```
+basis  = revenue − cost            (margin)   or   revenue        (revenue)
+earned = max(basis, 0) × share_pct
+owed   = earned − paid_share_usd
+```
+
+-- so the only stored figure is `paid_share_usd`, which only ever goes up, by
+exactly what was paid. There is no running balance that can drift away from the
+traffic that produced it, and a loss-making request cannot be floored at zero on
+its own and paid for anyway.
+
+### Lifecycle
+
+A contributed key is submitted, verified and attested exactly like a sale. It
+diverges at activation: there is no payment, so `PayCreditLot` refuses it
+(`ErrCreditLotNothingToPay`) and the operator **accepts** it instead, from
+`verified` to `active` -- still with the right-to-transfer confirmation, which
+is the one question activation exists to ask.
+
+```
+pending ──verify ok──▶ verified ──accept──▶ active ──▶ exhausted | expired
+   │                      │                   │
+   └──verify failed──▶ rejected ◀──reject─────┘   active ⇄ suspended
+```
+
+### Settlement
+
+`POST /api/credit-supply/suppliers/:id/share-payout` `{method, reference, force}`
+settles everything a contributor is owed across **all** of their keys in one
+transaction: one `credit_share_payouts` row per lot sharing a `batch`, a
+`share_paid` event on each lot, and -- for `platform_credit` -- the money in
+their wallet inside the same transaction. Rejected lots are excluded; every
+other status is included, because traffic a retired key served is still owed
+for. `force` pays a balance below the posted minimum: the minimum is a promise
+to the contributor about when we will pay, not a reason to refuse an operator
+who has decided to.
+
+### What this does NOT do to pricing
+
+Activation writes the acquisition rate into `ChannelCostRatio`. A contributed
+key has no acquisition rate, and `ChannelCostRatio` refuses a zero multiplier
+(a free upstream would make every margin infinite), so **nothing is written**
+and the channel keeps the default 1 -- its traffic is costed at the vendor's
+list price.
+
+That understates our margin rather than inflating it, which is the safe
+direction, but it is an understatement: the real cost of that traffic is the
+dividend, and a dividend is a fraction of *revenue*, not a multiple of *list
+price*, so it cannot be expressed as a channel cost ratio at all. What is
+actually owed is on the lot and in the Credit Supply overview
+(`share.unpaid_usd`), not in Profit or reconciliation. Do not add the two
+together.
 
 ## Audit trail and attestations
 

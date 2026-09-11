@@ -25,7 +25,7 @@ func setupCreditSupplyTestDB(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&Channel{}, &Ability{}, &Option{}, &PricingConfigHistory{},
-		&CreditSupplier{}, &CreditLot{}, &CreditLotUsage{}, &CreditLotEvent{}, &User{},
+		&CreditSupplier{}, &CreditLot{}, &CreditLotUsage{}, &CreditLotEvent{}, &CreditSharePayout{}, &User{}, &Log{},
 	))
 	previous := DB
 	previousType := common.MainDatabaseType()
@@ -33,8 +33,20 @@ func setupCreditSupplyTestDB(t *testing.T) {
 	previousHook := CreditLotEventHook
 	previousMemoryCache := common.MemoryCacheEnabled
 	previousOptionMap := common.OptionMap
+	// The posted terms are process-wide state. A test that changes them must
+	// not decide what the next one reads.
+	previousTerms := CreditSupplyTerms2JSONString()
+	previousLogDB := LOG_DB
+	previousRedis := common.RedisEnabled
 	common.OptionMap = map[string]string{}
 	DB = db
+	// Paying a contributor in platform credit writes a top-up log, which goes
+	// through LOG_DB and the user cache. Neither is reachable from a unit test
+	// unless it is pointed somewhere, and leaving them to whatever another
+	// test in the package happened to set is how a suite starts depending on
+	// its own order.
+	LOG_DB = db
+	common.RedisEnabled = false
 	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
 	common.MemoryCacheEnabled = false
 	require.NoError(t, ratio_setting.UpdateChannelCostRatioByJSONString(`{}`))
@@ -44,10 +56,13 @@ func setupCreditSupplyTestDB(t *testing.T) {
 	channelLotCache.Unlock()
 	t.Cleanup(func() {
 		DB = previous
+		LOG_DB = previousLogDB
+		common.RedisEnabled = previousRedis
 		common.OptionMap = previousOptionMap
 		common.SetMainDatabaseType(previousType)
 		common.MemoryCacheEnabled = previousMemoryCache
 		CreditLotEventHook = previousHook
+		require.NoError(t, UpdateCreditSupplyTermsByJSONString(previousTerms))
 		require.NoError(t, ratio_setting.UpdateChannelCostRatioByJSONString(previousCost))
 		invalidateChannelSupplierIndex()
 	})
@@ -182,6 +197,31 @@ func TestCreditLotTransitionsFollowTheLifecycle(t *testing.T) {
 		Updates(map[string]interface{}{"status": CreditLotStatusExhausted, "consumed_usd": 100}).Error)
 	_, err = TransitionCreditLot(lot.Id, approve("test"))
 	require.ErrorIs(t, err, ErrCreditLotTransition)
+	// ...and this one was bought outright, so "something left to draw" cannot
+	// be manufactured by raising the face value: that would hand over credits
+	// nobody paid for. More credit from the same seller is a new sale.
+	require.ErrorIs(t, UpdateCreditLot(lot.Id, &CreditLot{
+		Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 250, AcquisitionRate: 0.6,
+	}, "test"), ErrCreditLotPaidFaceValue)
+}
+
+// The operator-entered lot is the one that is settled on consumption rather
+// than bought up front, so its face value is an estimate the operator corrects
+// -- and correcting it upwards is how an exhausted lot comes back.
+func TestAnUnpaidLotIsReactivatedByRaisingItsFaceValue(t *testing.T) {
+	setupCreditSupplyTestDB(t)
+	supplier := seedSupplier(t, "acme")
+	seedSupplierChannel(t, 7)
+	lot := &CreditLot{
+		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7,
+		FaceValueUSD: 100, AcquisitionRate: 0.6, Status: CreditLotStatusActive,
+	}
+	require.NoError(t, CreateCreditLot(lot, "test"))
+	require.NoError(t, DB.Model(&CreditLot{}).Where("id = ?", lot.Id).
+		Updates(map[string]interface{}{"status": CreditLotStatusExhausted, "consumed_usd": 100}).Error)
+
+	_, err := TransitionCreditLot(lot.Id, approve("test"))
+	require.ErrorIs(t, err, ErrCreditLotTransition, "nothing left to draw")
 	require.NoError(t, UpdateCreditLot(lot.Id, &CreditLot{
 		Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 250, AcquisitionRate: 0.6,
 	}, "test"))
@@ -189,6 +229,7 @@ func TestCreditLotTransitionsFollowTheLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, CreditLotStatusActive, reactivated.Status)
 	assert.InDelta(t, 150, reactivated.RemainingUSD(), 1e-9)
+	assert.InDelta(t, 100*0.6, reactivated.PayableUSD(), 1e-9, "consumption still accrues on an unpaid lot")
 }
 
 func TestConsumptionDrawsDownAtListPriceAndRetiresOnExhaustion(t *testing.T) {
@@ -214,7 +255,7 @@ func TestConsumptionDrawsDownAtListPriceAndRetiresOnExhaustion(t *testing.T) {
 
 	// One million prompt tokens on the bound channel: draws exactly the list
 	// price, not the discounted upstream cost.
-	RecordCreditSupplyConsumption(7, "claude-sonnet-5", 1_000_000, 0, 0)
+	RecordCreditSupplyConsumption(CreditSupplyUsage{ChannelId: 7, ModelName: "claude-sonnet-5", PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	fresh, err := GetCreditLotById(lot.Id)
 	require.NoError(t, err)
 	assert.InDelta(t, listPrice, fresh.ConsumedUSD, 1e-9)
@@ -224,25 +265,25 @@ func TestConsumptionDrawsDownAtListPriceAndRetiresOnExhaustion(t *testing.T) {
 
 	// Traffic on an unrelated channel is not the supplier's.
 	seedSupplierChannel(t, 8)
-	RecordCreditSupplyConsumption(8, "claude-sonnet-5", 1_000_000, 0, 0)
+	RecordCreditSupplyConsumption(CreditSupplyUsage{ChannelId: 8, ModelName: "claude-sonnet-5", PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	fresh, _ = GetCreditLotById(lot.Id)
 	assert.InDelta(t, listPrice, fresh.ConsumedUSD, 1e-9)
 
 	// A model the catalogue cannot price draws nothing and is counted.
-	RecordCreditSupplyConsumption(7, "definitely-not-a-model", 1_000_000, 0, 0)
+	RecordCreditSupplyConsumption(CreditSupplyUsage{ChannelId: 7, ModelName: "definitely-not-a-model", PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	fresh, _ = GetCreditLotById(lot.Id)
 	assert.InDelta(t, listPrice, fresh.ConsumedUSD, 1e-9)
 	assert.EqualValues(t, 1, fresh.UnpricedRequests)
 
 	// Second million crosses the low-water mark: one notification, once.
-	RecordCreditSupplyConsumption(7, "claude-sonnet-5", 1_000_000, 0, 0)
-	RecordCreditSupplyConsumption(7, "claude-sonnet-5", 1, 0, 0)
+	RecordCreditSupplyConsumption(CreditSupplyUsage{ChannelId: 7, ModelName: "claude-sonnet-5", PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
+	RecordCreditSupplyConsumption(CreditSupplyUsage{ChannelId: 7, ModelName: "claude-sonnet-5", PromptTokens: 1, CachedTokens: 0, CompletionTokens: 0})
 	fresh, _ = GetCreditLotById(lot.Id)
 	assert.Equal(t, []string{CreditLotEventLowWater}, events)
 	assert.NotZero(t, fresh.LowWaterNotifiedAt)
 
 	// Third million exhausts the lot: retired, channel auto-disabled, one event.
-	RecordCreditSupplyConsumption(7, "claude-sonnet-5", 1_000_000, 0, 0)
+	RecordCreditSupplyConsumption(CreditSupplyUsage{ChannelId: 7, ModelName: "claude-sonnet-5", PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	fresh, _ = GetCreditLotById(lot.Id)
 	assert.Equal(t, CreditLotStatusExhausted, fresh.Status)
 	assert.NotZero(t, fresh.RetiredAt)
@@ -254,7 +295,7 @@ func TestConsumptionDrawsDownAtListPriceAndRetiresOnExhaustion(t *testing.T) {
 
 	// Further traffic on the retired channel is ignored, not double-counted.
 	consumedAtRetirement := fresh.ConsumedUSD
-	RecordCreditSupplyConsumption(7, "claude-sonnet-5", 1_000_000, 0, 0)
+	RecordCreditSupplyConsumption(CreditSupplyUsage{ChannelId: 7, ModelName: "claude-sonnet-5", PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	fresh, _ = GetCreditLotById(lot.Id)
 	assert.InDelta(t, consumedAtRetirement, fresh.ConsumedUSD, 1e-9)
 	assert.Len(t, events, 2)
@@ -284,7 +325,7 @@ func TestConsumptionOnAnExpiredLotRetiresItWithoutDrawing(t *testing.T) {
 	require.NoError(t, DB.Model(&CreditLot{}).Where("id = ?", lot.Id).Update("expires_at", common.GetTimestamp()-1).Error)
 	invalidateChannelLot(7)
 
-	RecordCreditSupplyConsumption(7, "claude-sonnet-5", 1_000_000, 0, 0)
+	RecordCreditSupplyConsumption(CreditSupplyUsage{ChannelId: 7, ModelName: "claude-sonnet-5", PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	fresh, err := GetCreditLotById(lot.Id)
 	require.NoError(t, err)
 	assert.Equal(t, CreditLotStatusExpired, fresh.Status)
@@ -447,7 +488,7 @@ func TestRetirementLeavesAnAuditEvent(t *testing.T) {
 	listPrice, _ := ratio_setting.ListPriceUSD("claude-sonnet-5", 1_000_000, 0, 0)
 	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: listPrice / 2, AcquisitionRate: 0.5, Status: CreditLotStatusActive}
 	require.NoError(t, CreateCreditLot(lot, "root"))
-	RecordCreditSupplyConsumption(7, "claude-sonnet-5", 1_000_000, 0, 0)
+	RecordCreditSupplyConsumption(CreditSupplyUsage{ChannelId: 7, ModelName: "claude-sonnet-5", PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	events, err := GetCreditLotEvents(lot.Id, 0)
 	require.NoError(t, err)
 	require.Len(t, events, 2)
