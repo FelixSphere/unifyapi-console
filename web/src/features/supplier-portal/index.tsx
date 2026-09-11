@@ -84,6 +84,7 @@ export function SupplierPortal() {
     return {
       requests: rows.reduce((sum, row) => sum + row.requests, 0),
       face: rows.reduce((sum, row) => sum + row.face_usd, 0),
+      revenue: rows.reduce((sum, row) => sum + (row.revenue_usd ?? 0), 0),
       peak: rows.reduce((max, row) => Math.max(max, row.face_usd), 0),
     }
   }, [usage.data])
@@ -145,6 +146,30 @@ export function SupplierPortal() {
                       </div>
                     </div>
                   ))}
+                {Object.entries(activeTerms.revenue_share_rates ?? {}).length >
+                0 ? (
+                  <div className='bg-muted/40 rounded-lg p-3 sm:col-span-3'>
+                    <div className='text-muted-foreground text-xs'>
+                      {t('Or keep the credits and take a share')}
+                    </div>
+                    <div className='text-sm'>
+                      {t(
+                        'Contribute the key instead of selling it: nothing is paid up front, and you keep {{rates}} of what it earns, settled as it builds up.',
+                        {
+                          rates: Object.entries(
+                            activeTerms.revenue_share_rates ?? {}
+                          )
+                            .sort(([a], [b]) => a.localeCompare(b))
+                            .map(
+                              ([vendor, share]) =>
+                                `${VENDOR_LABELS[vendor] ?? vendor} ${Math.round(share * 100)}%`
+                            )
+                            .join(' · '),
+                        }
+                      )}
+                    </div>
+                  </div>
+                ) : null}
                 {activeTerms.platform_credit_bonus > 0 ? (
                   <p className='text-muted-foreground text-xs sm:col-span-3'>
                     {t(
@@ -178,7 +203,14 @@ export function SupplierPortal() {
                 ) : null}
               </div>
 
-              <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-5'>
+              <div
+                className={
+                  data.totals.share_earned_usd > 0 ||
+                  data.totals.share_revenue_usd > 0
+                    ? 'grid gap-3 sm:grid-cols-2 lg:grid-cols-6'
+                    : 'grid gap-3 sm:grid-cols-2 lg:grid-cols-5'
+                }
+              >
                 <Headline
                   label={t('Sold')}
                   value={formatUSD(data.totals.face_usd)}
@@ -204,6 +236,16 @@ export function SupplierPortal() {
                   value={formatUSD(data.totals.remaining_usd)}
                   hint={t('Still to be drawn')}
                 />
+                {data.totals.share_earned_usd > 0 ||
+                data.totals.share_revenue_usd > 0 ? (
+                  <Headline
+                    label={t('Earned from contributed keys')}
+                    value={formatUSD(data.totals.share_earned_usd)}
+                    hint={t('{{unpaid}} of it not yet settled', {
+                      unpaid: formatUSD(data.totals.share_unpaid_usd),
+                    })}
+                  />
+                ) : null}
               </div>
 
               <Card>
@@ -256,7 +298,18 @@ export function SupplierPortal() {
                             </div>
                           </TableCell>
                           <TableCell className='tabular-nums'>
-                            {formatRate(lot.acquisition_rate)}
+                            {lot.deal_type === 'revenue_share' ? (
+                              <>
+                                <div>
+                                  {Math.round(lot.revenue_share_pct * 100)}%
+                                </div>
+                                <div className='text-muted-foreground text-xs'>
+                                  {t('of what it earns')}
+                                </div>
+                              </>
+                            ) : (
+                              formatRate(lot.acquisition_rate)
+                            )}
                           </TableCell>
                           <TableCell className='tabular-nums'>
                             <PaymentCell lot={lot} />
@@ -306,6 +359,11 @@ export function SupplierPortal() {
                         requests: usageTotals.requests.toLocaleString(),
                         face: formatUSD(usageTotals.face),
                       })}
+                      {usageTotals.revenue > 0
+                        ? ` · ${t('{{revenue}} of revenue served', {
+                            revenue: formatUSD(usageTotals.revenue),
+                          })}`
+                        : null}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className='grid gap-1.5'>
@@ -343,7 +401,7 @@ export function SupplierPortal() {
                     <CardTitle className='text-base'>{t('Payments')}</CardTitle>
                     <CardDescription>
                       {t(
-                        'One payment per sale, made before your credits are used.'
+                        'One payment per sale, made before your credits are used. Contributed keys are settled as they earn.'
                       )}
                     </CardDescription>
                   </CardHeader>
@@ -372,7 +430,35 @@ export function SupplierPortal() {
                         </span>
                       </div>
                     ))}
-                    {payments.length === 0 ? (
+                    {(data.share_payouts ?? []).map((payout) => (
+                      <div
+                        key={`share-${payout.id}`}
+                        className='flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2 text-sm'
+                      >
+                        <span>
+                          {t('Revenue share on key #{{id}}', {
+                            id: payout.lot_id,
+                          })}
+                          <span className='text-muted-foreground'>
+                            {' '}
+                            ·{' '}
+                            {new Date(
+                              payout.created_at * 1000
+                            ).toLocaleDateString()}
+                          </span>
+                        </span>
+                        <span className='flex items-center gap-2 tabular-nums'>
+                          {formatUSD(payout.amount_usd)}
+                          <Badge variant='outline'>
+                            {payout.method === 'platform_credit'
+                              ? t('Platform credit')
+                              : payout.reference || t('Transfer')}
+                          </Badge>
+                        </span>
+                      </div>
+                    ))}
+                    {payments.length === 0 &&
+                    (data.share_payouts ?? []).length === 0 ? (
                       <p className='text-muted-foreground text-sm'>
                         {t('No payments yet.')}
                       </p>

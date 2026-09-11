@@ -49,10 +49,57 @@ export function remainingUSD(
   return Math.max(lot.face_value_usd - lot.consumed_usd, 0)
 }
 
+// What is still owed for a lot: consumption at the acquisition rate, less
+// whatever was already paid. A sale bought outright is paid in full at
+// activation, so it owes nothing however much of it is consumed afterwards;
+// only operator-entered lots that were never paid up front accrue here.
+// Mirrors model.CreditLot.PayableUSD.
 export function payableUSD(
-  lot: Pick<CreditLot, 'consumed_usd' | 'acquisition_rate'>
+  lot: Pick<CreditLot, 'consumed_usd' | 'acquisition_rate' | 'paid_usd'>
 ) {
-  return lot.consumed_usd * lot.acquisition_rate
+  return Math.max(lot.consumed_usd * lot.acquisition_rate - lot.paid_usd, 0)
+}
+
+// -- contributed keys --------------------------------------------------------
+//
+// These three mirror model.CreditLot.ShareBasisUSD / EarnedShareUSD /
+// UnpaidShareUSD. The server is the authority; the screen recomputes them only
+// so a row can show a total without a second round trip.
+
+type ShareFields = Pick<
+  CreditLot,
+  | 'deal_type'
+  | 'revenue_share_pct'
+  | 'revenue_share_basis'
+  | 'share_revenue_usd'
+  | 'share_cost_usd'
+  | 'paid_share_usd'
+>
+
+export function isRevenueShare(lot: Pick<CreditLot, 'deal_type'>) {
+  return lot.deal_type === 'revenue_share'
+}
+
+export function shareBasisUSD(lot: ShareFields) {
+  if (!isRevenueShare(lot)) return 0
+  const basis =
+    lot.revenue_share_basis === 'revenue'
+      ? lot.share_revenue_usd
+      : lot.share_revenue_usd - lot.share_cost_usd
+  return Math.max(basis, 0)
+}
+
+export function earnedShareUSD(lot: ShareFields) {
+  return shareBasisUSD(lot) * lot.revenue_share_pct
+}
+
+// Half a cent and below is rounding noise, not a debt -- the same threshold the
+// server refuses to pay out on.
+export const SHARE_CENT_THRESHOLD = 0.005
+
+export function unpaidShareUSD(lot: ShareFields) {
+  const unpaid = earnedShareUSD(lot) - lot.paid_share_usd
+  return unpaid < SHARE_CENT_THRESHOLD ? 0 : unpaid
 }
 
 // What the sale costs us at the rate it was submitted with.
@@ -141,7 +188,15 @@ export function availableTransitions(
         { to: 'rejected', labelKey: 'Reject', destructive: true },
       ]
     case 'verified':
-      // The primary action here is Pay & activate, rendered separately.
+      // A sale is activated by paying for it -- Pay & activate is rendered
+      // separately. A contributed key has no purchase price, so accepting it
+      // is the whole decision and it happens here.
+      if (purchasePriceUSD(lot) <= 0) {
+        return [
+          { to: 'active', labelKey: 'Accept' },
+          { to: 'rejected', labelKey: 'Reject', destructive: true },
+        ]
+      }
       return [{ to: 'rejected', labelKey: 'Reject', destructive: true }]
     case 'active':
       return [{ to: 'suspended', labelKey: 'Suspend', destructive: true }]

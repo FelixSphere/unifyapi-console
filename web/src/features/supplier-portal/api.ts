@@ -17,6 +17,10 @@ export type SupplierVendorPreset = {
   models: string[]
 }
 
+// Two ways to hand us a key: sell the credits outright, or contribute the key
+// and keep a share of what it earns. Mirrors model.CreditLotDeal*.
+export type SupplierDeal = 'purchase' | 'revenue_share'
+
 export type SupplierLot = {
   id: number
   vendor: string
@@ -40,6 +44,13 @@ export type SupplierLot = {
   paid_usd: number
   paid_at: number
   payout_reference: string
+  // The dividend side of a contributed key; zeroes on a sale.
+  deal_type: SupplierDeal
+  revenue_share_pct: number
+  share_revenue_usd: number
+  share_earned_usd: number
+  share_paid_usd: number
+  share_unpaid_usd: number
 }
 
 // The posted terms: what we pay per dollar of each vendor's credit.
@@ -47,6 +58,24 @@ export type SupplierTerms = {
   buy_rates: Record<string, number>
   min_face_usd: number
   platform_credit_bonus: number
+  // The other offer: keep the key, keep a share of what it earns.
+  revenue_share_rates: Record<string, number>
+  revenue_share_basis: 'revenue' | 'margin'
+  min_share_payout_usd: number
+}
+
+// One dividend payment, as the contributor sees it.
+export type SupplierSharePayout = {
+  id: number
+  lot_id: number
+  batch: string
+  amount_usd: number
+  earned_to_date_usd: number
+  revenue_to_date_usd: number
+  share_pct: number
+  method: 'platform_credit' | 'external'
+  reference: string
+  created_at: number
 }
 
 export type SupplierPortalData = {
@@ -66,7 +95,12 @@ export type SupplierPortalData = {
     remaining_usd: number
     awaiting_payment_usd: number
     paid_usd: number
+    share_revenue_usd: number
+    share_earned_usd: number
+    share_paid_usd: number
+    share_unpaid_usd: number
   }
+  share_payouts: SupplierSharePayout[]
   vendors: SupplierVendorPreset[]
   terms: SupplierTerms
 }
@@ -75,6 +109,9 @@ export type SupplierDailyUsage = {
   day: string
   requests: number
   face_usd: number
+  // What customers paid for that day's traffic, which is what a contributed
+  // key's share is calculated from.
+  revenue_usd: number
 }
 
 export type SupplierStatementLine = {
@@ -110,6 +147,7 @@ export async function getSupplierTerms() {
 
 export type SupplierLotSubmission = {
   vendor: string
+  deal_type: SupplierDeal
   face_value_usd: number
   expires_at: number
   payout_method: 'platform_credit' | 'external'
@@ -168,6 +206,8 @@ export async function submitSupplierLot(submission: SupplierLotSubmission) {
         lot_id: number
         channel_id: number
         status: CreditLotStatus
+        deal_type: SupplierDeal
+        revenue_share_pct: number
         payout_usd?: number
       }>
     >('/api/supplier/lots', submission)
@@ -186,4 +226,19 @@ export function payoutPreview(
   const bonus =
     method === 'platform_credit' ? 1 + (terms.platform_credit_bonus || 0) : 1
   return { rate, amount: faceUSD > 0 ? faceUSD * rate * bonus : 0 }
+}
+
+// sharePreview is what a contributor keeps, mirrored from the server's posted
+// terms so the form can name the deal before anything is submitted.
+export function sharePreview(terms: SupplierTerms, vendor: string) {
+  return terms.revenue_share_rates?.[vendor] ?? 0
+}
+
+// contributableVendors are the ones we currently take keys from on
+// revenue-share terms. An empty list means the offer is not open.
+export function contributableVendors(
+  terms: SupplierTerms,
+  vendors: SupplierVendorPreset[]
+) {
+  return vendors.filter((vendor) => sharePreview(terms, vendor.key) > 0)
 }
