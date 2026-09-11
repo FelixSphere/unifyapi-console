@@ -155,6 +155,15 @@ var unifyapiCatalog = []CatalogEntry{
 	// tier is what the relay bills, so that is what is recorded here.
 	{Model: "gpt-5.4", Vendor: "openai", InputUSD: 2.5, OutputUSD: 15, CacheReadUSD: 0.25, CacheWriteUSD: 0,
 		QuoteSource: "https://models.dev/api.json (openai/gpt-5.4)", QuoteDate: "2026-08-30"},
+	// Standard tier. OpenAI also publishes a higher band above a 272k context
+	// ($20/$75); the catalog carries one price per model, and the standard tier
+	// is what the relay bills, so that is what is recorded here.
+	//
+	// Unlike the rest of the OpenAI range this one has a published cache-write
+	// price, so it is the first OpenAI model whose cost depends on
+	// CacheWriteUSD being honoured.
+	{Model: "gpt-6-astra", Vendor: "openai", InputUSD: 10, OutputUSD: 50, CacheReadUSD: 1, CacheWriteUSD: 12.5,
+		QuoteSource: "https://models.dev/api.json (openai/gpt-6-astra)", QuoteDate: "2026-09-11"},
 	{Model: "gpt-image-2", Vendor: "openai", InputUSD: 5, OutputUSD: 30, CacheReadUSD: 1.25, CacheWriteUSD: 0},
 
 	// ---- Moonshot ----
