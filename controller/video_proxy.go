@@ -157,21 +157,21 @@ func VideoProxy(c *gin.Context) {
 
 	req.URL, err = url.Parse(videoURL)
 	if err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to parse URL %s: %s", videoURL, err.Error()))
+		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to parse URL %s: %s", redactURLSecrets(videoURL), err.Error()))
 		videoProxyError(c, http.StatusInternalServerError, "server_error", "Failed to create proxy request")
 		return
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to fetch video from %s: %s", videoURL, err.Error()))
+		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to fetch video from %s: %s", redactURLSecrets(videoURL), err.Error()))
 		videoProxyError(c, http.StatusBadGateway, "server_error", "Failed to fetch video content")
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Upstream returned status %d for %s", resp.StatusCode, videoURL))
+		logger.LogError(c.Request.Context(), fmt.Sprintf("Upstream returned status %d for %s", resp.StatusCode, redactURLSecrets(videoURL)))
 		videoProxyError(c, http.StatusBadGateway, "server_error",
 			fmt.Sprintf("Upstream service returned status %d", resp.StatusCode))
 		return
@@ -221,4 +221,30 @@ func writeVideoDataURL(c *gin.Context, dataURL string) error {
 	c.Writer.WriteHeader(http.StatusOK)
 	_, err = c.Writer.Write(videoBytes)
 	return err
+}
+
+// redactURLSecrets is for log lines only. The Gemini content URL carries the
+// channel's API key as a query parameter (ensureAPIKey appends ?key=...), and
+// every failure path here used to write that URL verbatim into the log -- one
+// failed fetch put an upstream credential into CloudWatch. The fetch itself
+// still uses the real URL; only what is printed changes. Unparseable input is
+// returned as-is rather than dropped, so a malformed URL stays diagnosable.
+func redactURLSecrets(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	query := parsed.Query()
+	changed := false
+	for name := range query {
+		if strings.EqualFold(name, "key") || strings.EqualFold(name, "api_key") || strings.EqualFold(name, "apikey") {
+			query.Set(name, "REDACTED")
+			changed = true
+		}
+	}
+	if !changed {
+		return raw
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
