@@ -32,14 +32,25 @@ func setupSupplierPortalTest(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&model.User{}, &model.Channel{}, &model.Ability{}, &model.Option{}, &model.PricingConfigHistory{},
-		&model.CreditSupplier{}, &model.CreditLot{}, &model.CreditLotUsage{}, &model.CreditLotEvent{}, &model.Settlement{}, &model.Log{},
+		&model.CreditSupplier{}, &model.CreditLot{}, &model.CreditLotUsage{}, &model.CreditLotEvent{}, &model.CreditSharePayout{}, &model.Settlement{}, &model.Log{},
 	))
 	previousDB := model.DB
 	previousType := common.MainDatabaseType()
 	previousOptionMap := common.OptionMap
 	previousMemoryCache := common.MemoryCacheEnabled
 	previousCost := ratio_setting.ChannelCostRatio2JSONString()
+	// Redis is on by default in this binary and no server is reachable from a
+	// unit test, so anything that reaches the user cache -- RecordLog on a
+	// platform-credit payout, for one -- panics. Without this the file only
+	// passes when some other test in the package happens to have turned Redis
+	// off first, which is not a property a test should depend on.
+	previousRedis := common.RedisEnabled
+	common.RedisEnabled = false
+	previousLogDB := model.LOG_DB
 	model.DB = db
+	// RecordLog writes through LOG_DB, which production points at the same
+	// handle unless a separate log database is configured.
+	model.LOG_DB = db
 	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
 	common.OptionMap = map[string]string{}
 	common.MemoryCacheEnabled = false
@@ -49,6 +60,8 @@ func setupSupplierPortalTest(t *testing.T) {
 		common.SetMainDatabaseType(previousType)
 		common.OptionMap = previousOptionMap
 		common.MemoryCacheEnabled = previousMemoryCache
+		common.RedisEnabled = previousRedis
+		model.LOG_DB = previousLogDB
 		require.NoError(t, ratio_setting.UpdateChannelCostRatioByJSONString(previousCost))
 	})
 }
@@ -212,9 +225,9 @@ func TestSupplierSeesOnlyTheirOwnStatementsAndUsage(t *testing.T) {
 	for _, lot := range []*model.CreditLot{lotA, lotB, lotOther} {
 		require.NoError(t, model.CreateCreditLot(lot, "test"))
 	}
-	model.RecordCreditSupplyConsumption(1, "claude-sonnet-5", 1_000_000, 0, 0)
-	model.RecordCreditSupplyConsumption(2, "claude-sonnet-5", 1_000_000, 0, 0)
-	model.RecordCreditSupplyConsumption(3, "claude-sonnet-5", 1_000_000, 0, 0)
+	model.RecordCreditSupplyConsumption(model.CreditSupplyUsage{ChannelId: 1, ModelName: "claude-sonnet-5", PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
+	model.RecordCreditSupplyConsumption(model.CreditSupplyUsage{ChannelId: 2, ModelName: "claude-sonnet-5", PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
+	model.RecordCreditSupplyConsumption(model.CreditSupplyUsage{ChannelId: 3, ModelName: "claude-sonnet-5", PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 
 	c, recorder = portalContext(t, 42, http.MethodGet, "/api/supplier/usage?days=7", "")
 	GetSupplierUsage(c)
@@ -354,4 +367,90 @@ func TestExternalPayoutNeedsAReferenceAndBooksNoCredit(t *testing.T) {
 	assert.Equal(t, "WISE-20260905-0042", paid.PayoutReference)
 	user, _ := model.GetUserById(7, false)
 	assert.Zero(t, user.Quota, "cash was sent outside; no platform credit is booked")
+}
+
+// UNIFYAPI-FORK: the second way to hand us a key -- contribute it and take a
+// share of what it earns instead of selling it. See docs/credit-supply.md.
+func TestContributingAKeyTakesAShareInsteadOfAPayment(t *testing.T) {
+	setupSupplierPortalTest(t)
+	require.NoError(t, model.DB.Create(&model.User{Id: 42, Username: "acme", DisplayName: "Acme Labs"}).Error)
+	previous := verifySupplierChannel
+	t.Cleanup(func() { verifySupplierChannel = previous })
+	verifySupplierChannel = func(*model.Channel, string, int) (verificationUsage, error) { return verificationUsage{}, nil }
+	previousTerms := model.CreditSupplyTerms2JSONString()
+	t.Cleanup(func() { require.NoError(t, model.UpdateCreditSupplyTermsByJSONString(previousTerms)) })
+	require.NoError(t, model.UpdateCreditSupplyTermsByJSONString(
+		`{"buy_rates":{"anthropic":0.2},"revenue_share_rates":{"anthropic":0.5},"min_face_usd":100,"min_share_payout_usd":20}`))
+
+	// The posted terms carry both offers, so the seller can compare before typing.
+	c, recorder := portalContext(t, 42, http.MethodGet, "/api/supplier/terms", "")
+	GetSupplierTerms(c)
+	terms := decode(t, recorder)["data"].(map[string]any)
+	assert.InDelta(t, 0.5, terms["revenue_share_rates"].(map[string]any)["anthropic"], 1e-9)
+	assert.Equal(t, "margin", terms["revenue_share_basis"])
+	assert.InDelta(t, 20.0, terms["min_share_payout_usd"], 1e-9)
+
+	// A vendor we take on one basis but not the other is refused on its own terms.
+	c, recorder = portalContext(t, 42, http.MethodPost, "/api/supplier/lots", `{
+		"vendor":"openai","deal_type":"revenue_share","face_value_usd":1000,
+		"upstream_key":"sk-proj-x","payout_method":"platform_credit","transfer_rights_confirmed":true
+	}`)
+	SubmitSupplierLot(c)
+	assert.Equal(t, false, decode(t, recorder)["success"], "no posted share for OpenAI")
+
+	c, recorder = portalContext(t, 42, http.MethodPost, "/api/supplier/lots", `{
+		"vendor":"anthropic","deal_type":"revenue_share","face_value_usd":1000,
+		"upstream_key":"sk-ant-contributed","models":["claude-sonnet-5"],
+		"payout_method":"platform_credit","transfer_rights_confirmed":true
+	}`)
+	SubmitSupplierLot(c)
+	payload := decode(t, recorder)
+	require.Equal(t, true, payload["success"], recorder.Body.String())
+	data := payload["data"].(map[string]any)
+	assert.Equal(t, "revenue_share", data["deal_type"])
+	assert.InDelta(t, 0.5, data["revenue_share_pct"], 1e-9)
+	assert.Zero(t, data["payout_usd"], "nothing is paid up front for a contributed key")
+
+	lot, err := model.GetCreditLotById(int(data["lot_id"].(float64)))
+	require.NoError(t, err)
+	assert.Zero(t, lot.AcquisitionRate, "we did not buy these credits")
+	assert.InDelta(t, 0.5, lot.RevenueSharePct, 1e-9, "the posted share, frozen on the lot")
+	assert.Equal(t, model.CreditShareBasisMargin, lot.RevenueShareBasis)
+
+	// The operator accepts it -- no payment step -- and traffic starts earning.
+	_, err = model.TransitionCreditLot(lot.Id, model.CreditLotTransition{
+		To: model.CreditLotStatusActive, Actor: "root", TransferRightsConfirmed: true,
+	})
+	require.NoError(t, err)
+	model.RecordCreditSupplyConsumption(model.CreditSupplyUsage{
+		ChannelId: lot.ChannelId, ModelName: "claude-sonnet-5",
+		PromptTokens: 1000, QuotaCharged: int(80 * common.QuotaPerUnit),
+	})
+
+	c, recorder = portalContext(t, 42, http.MethodGet, "/api/supplier/me", "")
+	GetSupplierPortal(c)
+	payload = decode(t, recorder)
+	require.Equal(t, true, payload["success"], recorder.Body.String())
+	totals := payload["data"].(map[string]any)["totals"].(map[string]any)
+	assert.InDelta(t, 80.0, totals["share_revenue_usd"], 1e-9)
+	assert.InDelta(t, 40.0, totals["share_earned_usd"], 1e-9)
+	assert.InDelta(t, 40.0, totals["share_unpaid_usd"], 1e-9)
+	assert.NotContains(t, recorder.Body.String(), "sk-ant-contributed", "the key stays write-only")
+
+	// The operator settles it, once, for exactly what was owed.
+	supplier, err := model.GetCreditSupplierByUserId(42)
+	require.NoError(t, err)
+	c, recorder = portalContext(t, 1, http.MethodPost,
+		"/api/credit-supply/suppliers/"+strconv.Itoa(supplier.Id)+"/share-payout", `{"method":"platform_credit"}`)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(supplier.Id)}}
+	PaySupplierShare(c)
+	payload = decode(t, recorder)
+	require.Equal(t, true, payload["success"], recorder.Body.String())
+	assert.InDelta(t, 40.0, payload["data"].(map[string]any)["amount_usd"], 1e-9)
+
+	c, recorder = portalContext(t, 1, http.MethodPost,
+		"/api/credit-supply/suppliers/"+strconv.Itoa(supplier.Id)+"/share-payout", `{"method":"platform_credit"}`)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(supplier.Id)}}
+	PaySupplierShare(c)
+	assert.Equal(t, http.StatusConflict, recorder.Code, "a settled balance cannot be settled again")
 }

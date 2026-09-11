@@ -45,13 +45,40 @@ describe('credit supply operator surface', () => {
     assert.match(section, /payCreditLot/)
     assert.match(section, /Pay & activate/)
     assert.match(section, /reference: payReference\.trim\(\)/)
+    const lots = readFileSync(join(HERE, '../credit-supply-lots.tsx'), 'utf8')
+    // Pay & activate is offered exactly when there is a price to pay, which is
+    // what keeps a sale from being activated for nothing. A contributed key
+    // has no price, and is accepted instead -- see the next test.
+    assert.match(lots, /status === 'verified' &&\s+purchasePriceUSD\(lot\) > 0/)
+  })
+
+  test('a contributed key is accepted, and accepting still asks the compliance question', () => {
     const logic = readFileSync(join(HERE, '../credit-supply-logic.ts'), 'utf8')
-    // availableTransitions offers no `to: 'active'` from `verified`.
     const verifiedCase = logic.slice(
       logic.indexOf("case 'verified':", logic.indexOf('availableTransitions')),
       logic.indexOf("case 'active':", logic.indexOf('availableTransitions'))
     )
-    assert.doesNotMatch(verifiedCase, /to: 'active'/)
+    // Only the branch with no purchase price offers activation.
+    assert.match(verifiedCase, /purchasePriceUSD\(lot\) <= 0/)
+    assert.match(verifiedCase, /to: 'active'/)
+    const lots = readFileSync(join(HERE, '../credit-supply-lots.tsx'), 'utf8')
+    assert.match(
+      lots,
+      /lot\.status === 'pending' \|\| lot\.status === 'verified'/,
+      'activating a submission opens the right-to-transfer dialog either way'
+    )
+  })
+
+  test('a contributor can be paid their share from the suppliers tab', () => {
+    const suppliers = readFileSync(
+      join(HERE, '../credit-supply-suppliers.tsx'),
+      'utf8'
+    )
+    assert.match(suppliers, /paySupplierShare/)
+    assert.match(suppliers, /unpaidShareUSD/)
+    // The operator posts the other half of the offer too.
+    assert.match(section, /revenue_share_rates/)
+    assert.match(section, /revenue_share_basis/)
   })
 
   test('the buy terms are posted from the operator screen', () => {

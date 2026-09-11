@@ -246,6 +246,8 @@ func SetApiRouter(router *gin.Engine) {
 			creditSupplyRoute.GET("/lots/:id/usage", controller.GetCreditLotUsage)
 			creditSupplyRoute.GET("/lots/:id/events", controller.GetCreditLotEvents)
 			creditSupplyRoute.POST("/lots/:id/pay", controller.PayCreditLot)
+			creditSupplyRoute.POST("/suppliers/:id/share-payout", controller.PaySupplierShare)
+			creditSupplyRoute.GET("/share-payouts", controller.GetCreditSharePayouts)
 		}
 		// UNIFYAPI-FORK: supplier portal -- an ordinary login mapped to a
 		// supplier by CreditSupplier.UserId. See controller/credit_supplier_portal.go.

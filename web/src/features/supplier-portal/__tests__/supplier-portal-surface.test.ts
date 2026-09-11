@@ -66,6 +66,17 @@ describe('supplier portal surface', () => {
     )
   })
 
+  test('the same form takes the other deal: contribute the key for a share', () => {
+    // One form, two deals -- there is no second dialog to keep in step.
+    assert.match(dialog, /deal_type: form\.deal/)
+    assert.match(dialog, /contributableVendors/)
+    // The share is posted like the buy rate: never typed by the contributor.
+    assert.doesNotMatch(dialog, /revenue_share_pct:/)
+    // A contributor is told what they are agreeing to before they agree.
+    assert.match(dialog, /nothing is paid up front/i)
+    assert.match(page, /share_unpaid_usd/)
+  })
+
   test('the duplicate contribution module is gone', () => {
     const ops = readFileSync(join(HERE, '../../ops/index.tsx'), 'utf8')
     assert.doesNotMatch(ops, /CreditContributions/)
