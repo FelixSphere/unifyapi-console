@@ -41,8 +41,14 @@ type UsageRow struct {
 	Requests         int64
 	PromptTokens     int64
 	CachedTokens     int64
+	CacheWriteTokens int64
 	CompletionTokens int64
-	Quota            int64 // quota actually deducted from the customer
+	// UsageSemantic decides whether PromptTokens already contains the cache
+	// buckets. Grouped on rather than aggregated: it is a property of the
+	// upstream, so it is constant within a model+channel bucket, and folding
+	// two conventions into one row would make the cost unpriceable.
+	UsageSemantic string
+	Quota         int64 // quota actually deducted from the customer
 }
 
 // ReconcileQuery bounds a reconciliation run.
@@ -92,6 +98,8 @@ type reconcileScanRow struct {
 	Requests         int64
 	PromptTokens     int64
 	CachedTokens     int64
+	CacheWriteTokens int64
+	UsageSemantic    string
 	CompletionTokens int64
 	Quota            int64
 }
@@ -123,11 +131,13 @@ func FetchReconcileUsage(query ReconcileQuery) ([]UsageRow, bool, error) {
 			COUNT(*) AS requests,
 			COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
 			COALESCE(SUM(cached_tokens), 0) AS cached_tokens,
+			COALESCE(SUM(cache_write_tokens), 0) AS cache_write_tokens,
+			usage_semantic,
 			COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
 			COALESCE(SUM(quota), 0) AS quota`).
 		Where("type = ?", LogTypeConsume).
 		Where("created_at >= ? AND created_at < ?", query.StartTimestamp, query.EndTimestamp).
-		Group(dayExpr + ", model_name, " + quoteColumn("group") + ", username, user_id, channel_id, channel_base_url")
+		Group(dayExpr + ", model_name, " + quoteColumn("group") + ", username, user_id, channel_id, channel_base_url, usage_semantic")
 
 	if query.ModelName != "" {
 		tx = tx.Where("model_name = ?", query.ModelName)
@@ -185,6 +195,8 @@ func FetchReconcileUsage(query ReconcileQuery) ([]UsageRow, bool, error) {
 			Requests:         row.Requests,
 			PromptTokens:     row.PromptTokens,
 			CachedTokens:     row.CachedTokens,
+			CacheWriteTokens: row.CacheWriteTokens,
+			UsageSemantic:    row.UsageSemantic,
 			CompletionTokens: row.CompletionTokens,
 			Quota:            row.Quota,
 		})

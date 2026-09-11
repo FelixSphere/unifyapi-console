@@ -197,7 +197,7 @@ func TestConsumptionDrawsDownAtListPriceAndRetiresOnExhaustion(t *testing.T) {
 	seedSupplierChannel(t, 7)
 	// Set a cost ratio deliberately different from the acquisition rate so
 	// the test can tell list price from upstream cost.
-	listPrice, ok := ratio_setting.ListPriceUSD("claude-sonnet-5", 1_000_000, 0, 0)
+	listPrice, ok := ratio_setting.ListPriceUSD("claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	require.True(t, ok, "the test model must be in the compiled catalogue")
 	require.Greater(t, listPrice, 0.0)
 
@@ -214,7 +214,7 @@ func TestConsumptionDrawsDownAtListPriceAndRetiresOnExhaustion(t *testing.T) {
 
 	// One million prompt tokens on the bound channel: draws exactly the list
 	// price, not the discounted upstream cost.
-	RecordCreditSupplyConsumption(7, "claude-sonnet-5", 1_000_000, 0, 0)
+	RecordCreditSupplyConsumption(7, "claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	fresh, err := GetCreditLotById(lot.Id)
 	require.NoError(t, err)
 	assert.InDelta(t, listPrice, fresh.ConsumedUSD, 1e-9)
@@ -224,25 +224,25 @@ func TestConsumptionDrawsDownAtListPriceAndRetiresOnExhaustion(t *testing.T) {
 
 	// Traffic on an unrelated channel is not the supplier's.
 	seedSupplierChannel(t, 8)
-	RecordCreditSupplyConsumption(8, "claude-sonnet-5", 1_000_000, 0, 0)
+	RecordCreditSupplyConsumption(8, "claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	fresh, _ = GetCreditLotById(lot.Id)
 	assert.InDelta(t, listPrice, fresh.ConsumedUSD, 1e-9)
 
 	// A model the catalogue cannot price draws nothing and is counted.
-	RecordCreditSupplyConsumption(7, "definitely-not-a-model", 1_000_000, 0, 0)
+	RecordCreditSupplyConsumption(7, "definitely-not-a-model", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	fresh, _ = GetCreditLotById(lot.Id)
 	assert.InDelta(t, listPrice, fresh.ConsumedUSD, 1e-9)
 	assert.EqualValues(t, 1, fresh.UnpricedRequests)
 
 	// Second million crosses the low-water mark: one notification, once.
-	RecordCreditSupplyConsumption(7, "claude-sonnet-5", 1_000_000, 0, 0)
-	RecordCreditSupplyConsumption(7, "claude-sonnet-5", 1, 0, 0)
+	RecordCreditSupplyConsumption(7, "claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
+	RecordCreditSupplyConsumption(7, "claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1, CachedTokens: 0, CompletionTokens: 0})
 	fresh, _ = GetCreditLotById(lot.Id)
 	assert.Equal(t, []string{CreditLotEventLowWater}, events)
 	assert.NotZero(t, fresh.LowWaterNotifiedAt)
 
 	// Third million exhausts the lot: retired, channel auto-disabled, one event.
-	RecordCreditSupplyConsumption(7, "claude-sonnet-5", 1_000_000, 0, 0)
+	RecordCreditSupplyConsumption(7, "claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	fresh, _ = GetCreditLotById(lot.Id)
 	assert.Equal(t, CreditLotStatusExhausted, fresh.Status)
 	assert.NotZero(t, fresh.RetiredAt)
@@ -254,7 +254,7 @@ func TestConsumptionDrawsDownAtListPriceAndRetiresOnExhaustion(t *testing.T) {
 
 	// Further traffic on the retired channel is ignored, not double-counted.
 	consumedAtRetirement := fresh.ConsumedUSD
-	RecordCreditSupplyConsumption(7, "claude-sonnet-5", 1_000_000, 0, 0)
+	RecordCreditSupplyConsumption(7, "claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	fresh, _ = GetCreditLotById(lot.Id)
 	assert.InDelta(t, consumedAtRetirement, fresh.ConsumedUSD, 1e-9)
 	assert.Len(t, events, 2)
@@ -284,7 +284,7 @@ func TestConsumptionOnAnExpiredLotRetiresItWithoutDrawing(t *testing.T) {
 	require.NoError(t, DB.Model(&CreditLot{}).Where("id = ?", lot.Id).Update("expires_at", common.GetTimestamp()-1).Error)
 	invalidateChannelLot(7)
 
-	RecordCreditSupplyConsumption(7, "claude-sonnet-5", 1_000_000, 0, 0)
+	RecordCreditSupplyConsumption(7, "claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	fresh, err := GetCreditLotById(lot.Id)
 	require.NoError(t, err)
 	assert.Equal(t, CreditLotStatusExpired, fresh.Status)
@@ -380,12 +380,12 @@ func TestListPriceIgnoresChannelPurchasingRatio(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, ratio_setting.UpdateChannelCostRatioByJSONString(previous)) })
 	require.NoError(t, ratio_setting.UpdateChannelCostRatioByJSONString(`{"7":0.25}`))
 
-	list, ok := ratio_setting.ListPriceUSD("claude-sonnet-5", 1_000_000, 200_000, 100_000)
+	list, ok := ratio_setting.ListPriceUSD("claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 200_000, CompletionTokens: 100_000})
 	require.True(t, ok)
-	cost, ok := ratio_setting.UpstreamCostUSD("claude-sonnet-5", 7, 1_000_000, 200_000, 100_000)
+	cost, ok := ratio_setting.UpstreamCostUSD("claude-sonnet-5", 7, ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 200_000, CompletionTokens: 100_000})
 	require.True(t, ok)
 	assert.InDelta(t, list*0.25, cost, 1e-9)
-	_, ok = ratio_setting.ListPriceUSD("not-a-model", 1, 0, 0)
+	_, ok = ratio_setting.ListPriceUSD("not-a-model", ratio_setting.TokenUsage{PromptTokens: 1, CachedTokens: 0, CompletionTokens: 0})
 	assert.False(t, ok)
 }
 
@@ -444,10 +444,10 @@ func TestRetirementLeavesAnAuditEvent(t *testing.T) {
 	setupCreditSupplyTestDB(t)
 	supplier := seedSupplier(t, "acme")
 	seedSupplierChannel(t, 7)
-	listPrice, _ := ratio_setting.ListPriceUSD("claude-sonnet-5", 1_000_000, 0, 0)
+	listPrice, _ := ratio_setting.ListPriceUSD("claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: listPrice / 2, AcquisitionRate: 0.5, Status: CreditLotStatusActive}
 	require.NoError(t, CreateCreditLot(lot, "root"))
-	RecordCreditSupplyConsumption(7, "claude-sonnet-5", 1_000_000, 0, 0)
+	RecordCreditSupplyConsumption(7, "claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	events, err := GetCreditLotEvents(lot.Id, 0)
 	require.NoError(t, err)
 	require.Len(t, events, 2)

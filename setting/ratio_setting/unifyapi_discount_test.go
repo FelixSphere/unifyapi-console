@@ -198,7 +198,7 @@ func TestUpstreamCostUsesOfficialPriceNotTheDiscountedOne(t *testing.T) {
 	// A deep customer discount must not make our own cost look cheaper.
 	require.NoError(t, UpdateModelDiscountByJSONString(`{"gpt-4o": 0.1}`))
 
-	cost, ok := UpstreamCostUSD("gpt-4o", 1, 1_000_000, 0, 0)
+	cost, ok := UpstreamCostUSD("gpt-4o", 1, TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	require.True(t, ok)
 	require.InDelta(t, 2.50, cost, 1e-9,
 		"cost is what the vendor charges us; a customer discount is irrelevant to it")
@@ -209,9 +209,9 @@ func TestUpstreamCostClampsCachedTokensToPromptTokens(t *testing.T) {
 
 	// A malformed row claiming more cached tokens than prompt tokens must not
 	// produce a negative fresh-token count and a nonsense cost.
-	cost, ok := UpstreamCostUSD("gpt-4o", 1, 1000, 5000, 0)
+	cost, ok := UpstreamCostUSD("gpt-4o", 1, TokenUsage{PromptTokens: 1000, CachedTokens: 5000, CompletionTokens: 0})
 	require.True(t, ok)
-	atFullCache, _ := UpstreamCostUSD("gpt-4o", 1, 1000, 1000, 0)
+	atFullCache, _ := UpstreamCostUSD("gpt-4o", 1, TokenUsage{PromptTokens: 1000, CachedTokens: 1000, CompletionTokens: 0})
 	require.InDelta(t, atFullCache, cost, 1e-12)
 	require.Greater(t, cost, 0.0)
 }
@@ -226,13 +226,13 @@ func TestUpstreamCostChargesFullInputWhenNoCachePriceExists(t *testing.T) {
 	require.True(t, ok)
 	require.Zero(t, entry.CacheReadUSD, "fixture assumption: this model has no cache price")
 
-	cost, priced := UpstreamCostUSD("gemini-3-pro-image", 1, 1_000_000, 1_000_000, 0)
+	cost, priced := UpstreamCostUSD("gemini-3-pro-image", 1, TokenUsage{PromptTokens: 1_000_000, CachedTokens: 1_000_000, CompletionTokens: 0})
 	require.True(t, priced)
 	require.InDelta(t, 2.0, cost, 1e-9, "$2/1M input, cached or not")
 }
 
 func TestUpstreamCostReportsUnknownModel(t *testing.T) {
-	_, ok := UpstreamCostUSD("gpt-4-32k", 1, 1_000_000, 0, 1_000_000)
+	_, ok := UpstreamCostUSD("gpt-4-32k", 1, TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 1_000_000})
 	require.False(t, ok, "an uncostable model must be reported, never counted as free")
 }
 

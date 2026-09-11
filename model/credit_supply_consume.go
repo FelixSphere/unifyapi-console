@@ -98,7 +98,7 @@ func creditSupplyDay(timestamp int64) string {
 // RecordCreditSupplyConsumption draws a lot down by one request. It never returns
 // an error because nothing about the customer's request depends on it; a
 // failure is logged and the lot is understated until the next request.
-func RecordCreditSupplyConsumption(channelId int, modelName string, promptTokens, cachedTokens, completionTokens int) {
+func RecordCreditSupplyConsumption(channelId int, modelName string, usage ratio_setting.TokenUsage) {
 	if channelId <= 0 || DB == nil {
 		return
 	}
@@ -112,7 +112,7 @@ func RecordCreditSupplyConsumption(channelId int, modelName string, promptTokens
 		return
 	}
 
-	face, priced := ratio_setting.ListPriceUSD(modelName, int64(promptTokens), int64(cachedTokens), int64(completionTokens))
+	face, priced := ratio_setting.ListPriceUSD(modelName, usage)
 	updates := map[string]interface{}{"updated_at": now}
 	if priced {
 		updates["consumed_usd"] = gorm.Expr("consumed_usd + ?", face)
