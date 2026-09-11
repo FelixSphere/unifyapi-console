@@ -34,7 +34,7 @@ package ratio_setting
 
 // PricingSnapshotDate is the day the official prices below were last verified
 // against models.dev. scripts/pricing-drift compares against it.
-const PricingSnapshotDate = "2026-09-02"
+const PricingSnapshotDate = "2026-09-11"
 
 // CatalogEntry is one model's official vendor list price. Prices are USD per
 // 1M tokens, exactly as the vendor publishes them. A zero CacheReadUSD or
@@ -155,6 +155,20 @@ var unifyapiCatalog = []CatalogEntry{
 	// tier is what the relay bills, so that is what is recorded here.
 	{Model: "gpt-5.4", Vendor: "openai", InputUSD: 2.5, OutputUSD: 15, CacheReadUSD: 0.25, CacheWriteUSD: 0,
 		QuoteSource: "https://models.dev/api.json (openai/gpt-5.4)", QuoteDate: "2026-08-30"},
+	// Served by channel 186 and previously uncatalogued, so its upstream cost
+	// modelled as zero. Standard tier only, as for the rest of the range;
+	// OpenAI also publishes a band above a 272k context ($8/$30).
+	{Model: "gpt-5.6-sol", Vendor: "openai", InputUSD: 4, OutputUSD: 20, CacheReadUSD: 0.4, CacheWriteUSD: 5,
+		QuoteSource: "https://models.dev/api.json (openai/gpt-5.6-sol)", QuoteDate: "2026-09-11"},
+	// Standard tier. OpenAI also publishes a higher band above a 272k context
+	// ($20/$75); the catalog carries one price per model, and the standard tier
+	// is what the relay bills, so that is what is recorded here.
+	//
+	// Unlike the rest of the OpenAI range this one has a published cache-write
+	// price, so it is the first OpenAI model whose cost depends on
+	// CacheWriteUSD being honoured.
+	{Model: "gpt-6-astra", Vendor: "openai", InputUSD: 10, OutputUSD: 50, CacheReadUSD: 1, CacheWriteUSD: 12.5,
+		QuoteSource: "https://models.dev/api.json (openai/gpt-6-astra)", QuoteDate: "2026-09-11"},
 	{Model: "gpt-image-2", Vendor: "openai", InputUSD: 5, OutputUSD: 30, CacheReadUSD: 1.25, CacheWriteUSD: 0},
 
 	// ---- Moonshot ----
