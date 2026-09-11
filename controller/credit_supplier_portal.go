@@ -428,7 +428,13 @@ func SubmitSupplierLot(c *gin.Context) {
 	// did not happen.
 	// Same pricing path as customer draw-down (RecordCreditSupplyConsumption):
 	// list price with cached reads at the vendor's cache-read rate.
-	verificationUSD, _ := ratio_setting.ListPriceUSD(testModel, int64(usage.PromptTokens), int64(usage.CachedTokens), int64(usage.CompletionTokens))
+	// The verification call is a plain OpenAI-format probe, so its prompt count
+	// already contains any cached reads; no semantic marker is needed.
+	verificationUSD, _ := ratio_setting.ListPriceUSD(testModel, ratio_setting.TokenUsage{
+		PromptTokens:     int64(usage.PromptTokens),
+		CachedTokens:     int64(usage.CachedTokens),
+		CompletionTokens: int64(usage.CompletionTokens),
+	})
 	verified, err := model.MarkCreditLotVerified(lot.Id, "system",
 		fmt.Sprintf("key answered a %s request (%d in, %d of them cached / %d out tokens, $%.6f at list price, drawn from the lot)", testModel, usage.PromptTokens, usage.CachedTokens, usage.CompletionTokens, verificationUSD),
 		verificationUSD)

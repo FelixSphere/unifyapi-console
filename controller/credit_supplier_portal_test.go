@@ -212,9 +212,9 @@ func TestSupplierSeesOnlyTheirOwnStatementsAndUsage(t *testing.T) {
 	for _, lot := range []*model.CreditLot{lotA, lotB, lotOther} {
 		require.NoError(t, model.CreateCreditLot(lot, "test"))
 	}
-	model.RecordCreditSupplyConsumption(1, "claude-sonnet-5", 1_000_000, 0, 0)
-	model.RecordCreditSupplyConsumption(2, "claude-sonnet-5", 1_000_000, 0, 0)
-	model.RecordCreditSupplyConsumption(3, "claude-sonnet-5", 1_000_000, 0, 0)
+	model.RecordCreditSupplyConsumption(1, "claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
+	model.RecordCreditSupplyConsumption(2, "claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
+	model.RecordCreditSupplyConsumption(3, "claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 
 	c, recorder = portalContext(t, 42, http.MethodGet, "/api/supplier/usage?days=7", "")
 	GetSupplierUsage(c)
@@ -223,7 +223,7 @@ func TestSupplierSeesOnlyTheirOwnStatementsAndUsage(t *testing.T) {
 	days := payload["data"].([]any)
 	require.Len(t, days, 1)
 	assert.EqualValues(t, 2, days[0].(map[string]any)["requests"])
-	list, _ := ratio_setting.ListPriceUSD("claude-sonnet-5", 1_000_000, 0, 0)
+	list, _ := ratio_setting.ListPriceUSD("claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	assert.InDelta(t, 2*list, days[0].(map[string]any)["face_usd"], 1e-9)
 }
 
@@ -295,8 +295,8 @@ func TestSellingIsDirectVerifiedAndPaidBeforeUse(t *testing.T) {
 	channel, err := model.GetChannelById(lot.ChannelId, false)
 	require.NoError(t, err)
 	assert.Equal(t, common.ChannelStatusManuallyDisabled, channel.Status, "nothing is consumed before payment")
-	withCache, _ := ratio_setting.ListPriceUSD(testedModel, 1_000_000, 400_000, 0)
-	noCache, _ := ratio_setting.ListPriceUSD(testedModel, 1_000_000, 0, 0)
+	withCache, _ := ratio_setting.ListPriceUSD(testedModel, ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 400_000, CompletionTokens: 0})
+	noCache, _ := ratio_setting.ListPriceUSD(testedModel, ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	assert.Greater(t, withCache, 0.0)
 	assert.Less(t, withCache, noCache, "the catalogue prices cached reads below fresh input for this model")
 	assert.InDelta(t, withCache, lot.ConsumedUSD, 1e-9, "the verification is drawn from the lot on the same cache-aware list-price path as customer traffic")

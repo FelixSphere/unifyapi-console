@@ -105,7 +105,7 @@ func TestUpstreamCostIsOfficialPriceTimesThePurchasingRatio(t *testing.T) {
 
 	for _, entry := range sweepableCatalog(t) {
 		t.Run(entry.Model, func(t *testing.T) {
-			cost, priced := ratio_setting.UpstreamCostUSD(entry.Model, channel, 1_000_000, 0, 1_000_000)
+			cost, priced := ratio_setting.UpstreamCostUSD(entry.Model, channel, ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 1_000_000})
 			require.True(t, priced, "%s has a catalog row but cannot be costed", entry.Model)
 			require.InDelta(t, (entry.InputUSD+entry.OutputUSD)*0.6, cost, 1e-9,
 				"%s: cost must be the vendor's price times the purchasing ratio", entry.Model)
@@ -128,10 +128,10 @@ func TestACustomerDiscountNeverMovesUpstreamCost(t *testing.T) {
 
 	for _, entry := range sweepableCatalog(t) {
 		withDiscount(t, `{}`)
-		before, _ := ratio_setting.UpstreamCostUSD(entry.Model, channel, 1_000_000, 0, 1_000_000)
+		before, _ := ratio_setting.UpstreamCostUSD(entry.Model, channel, ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 1_000_000})
 
 		withDiscount(t, `{"`+entry.Model+`":0.1}`)
-		after, _ := ratio_setting.UpstreamCostUSD(entry.Model, channel, 1_000_000, 0, 1_000_000)
+		after, _ := ratio_setting.UpstreamCostUSD(entry.Model, channel, ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 1_000_000})
 
 		require.InDelta(t, before, after, 1e-12,
 			"%s: a 90%% customer discount changed the modelled UPSTREAM cost. "+

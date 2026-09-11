@@ -239,8 +239,7 @@ func statementAmount(row model.UsageRow, kind StatementKind) (amount float64, pr
 		// disagree with the deduction the customer already saw.
 		return RevenueUSD(row.Quota), true
 	}
-	return ratio_setting.UpstreamCostUSD(
-		row.Model, row.ChannelID, row.PromptTokens, row.CachedTokens, row.CompletionTokens)
+	return ratio_setting.UpstreamCostUSD(row.Model, row.ChannelID, usageOf(row))
 }
 
 func statementParty(row model.UsageRow, kind StatementKind) (key, label, group string) {
