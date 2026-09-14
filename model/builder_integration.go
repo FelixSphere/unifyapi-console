@@ -10,7 +10,10 @@ package model
 
 import (
 	"errors"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -33,6 +36,65 @@ type BuilderIdentity struct {
 var ErrBuilderLinkRequired = errors.New("existing account ownership verification required")
 var ErrBuilderUnavailable = errors.New("builder account unavailable")
 
+// BuilderProgramSelector keeps program names separate from legacy registration codes.
+type BuilderProgramSelector struct {
+	ProgramName     string
+	PartnershipCode string
+}
+
+func ValidBuilderProgramName(name string) bool {
+	if name == "" || !utf8.ValidString(name) || utf8.RuneCountInString(name) > 120 || strings.Trim(name, "\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff") != name {
+		return false
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// ResolveBuilderProgram selects exactly one existing program and its default customer.
+// Compare names in Go as database collations may be case/accent insensitive.
+func ResolveBuilderProgram(tx *gorm.DB, selector BuilderProgramSelector, lock bool) (*PartnershipOffer, error) {
+	if selector.ProgramName == "" {
+		if selector.PartnershipCode == "" {
+			return nil, ErrPartnershipProgramUnavailable
+		}
+		return getPartnershipOfferByCode(tx, selector.PartnershipCode, lock)
+	}
+	if selector.PartnershipCode != "" || !ValidBuilderProgramName(selector.ProgramName) {
+		return nil, ErrPartnershipProgramUnavailable
+	}
+	query := tx
+	if lock {
+		query = lockForUpdate(tx)
+	}
+	var candidates []PartnershipProgram
+	if err := query.Where("name = ?", selector.ProgramName).Find(&candidates).Error; err != nil {
+		return nil, err
+	}
+	var matches []PartnershipProgram
+	for _, candidate := range candidates {
+		if candidate.Name == selector.ProgramName {
+			matches = append(matches, candidate)
+		}
+	}
+	if len(matches) != 1 || !partnershipProgramActive(&matches[0], time.Now().Unix()) {
+		return nil, ErrPartnershipProgramUnavailable
+	}
+	program := matches[0]
+	var customers []PartnershipCustomer
+	if err := query.Where("program_id = ? AND is_default = ? AND removed_at = ?", program.Id, true, 0).Find(&customers).Error; err != nil {
+		return nil, err
+	}
+	if len(customers) != 1 || !customers[0].Enabled {
+		return nil, ErrPartnershipProgramUnavailable
+	}
+	customer := customers[0]
+	return &PartnershipOffer{Program: program, CustomerId: customer.Id, CustomerName: customer.Name, CustomerCode: customer.Code, CustomerGroup: customer.Group}, nil
+}
+
 func GetBuilderIdentity(subject string) (*BuilderIdentity, *User, error) {
 	var link BuilderIdentity
 	if err := DB.Where("subject = ?", subject).First(&link).Error; err != nil {
@@ -51,7 +113,19 @@ func GetBuilderIdentity(subject string) (*BuilderIdentity, *User, error) {
 // ConnectBuilderIdentity requires the caller to have verified the Builder email.
 // An existing UnifyAPI account additionally requires its management credential.
 func ConnectBuilderIdentity(subject, email, code, managementToken string) (*BuilderIdentity, error) {
+	return ConnectBuilderIdentityWithProgram(subject, email, BuilderProgramSelector{PartnershipCode: code}, managementToken)
+}
+
+func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderProgramSelector, managementToken string) (*BuilderIdentity, error) {
+	offer, err := ResolveBuilderProgram(DB, selector, false)
+	if err != nil {
+		return nil, err
+	}
+
 	if link, _, err := GetBuilderIdentity(subject); err == nil {
+		if link.ProgramId != offer.Program.Id || link.CustomerId != offer.CustomerId {
+			return nil, ErrPartnershipProgramUnavailable
+		}
 		return link, nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
@@ -65,15 +139,18 @@ func ConnectBuilderIdentity(subject, email, code, managementToken string) (*Buil
 		existingID = owner.Id
 	}
 	var link BuilderIdentity
-	err := DB.Transaction(func(tx *gorm.DB) error {
+	err = DB.Transaction(func(tx *gorm.DB) error {
 		return withNormalizedEmailLock(tx, email, func(tx *gorm.DB) error {
-			if err := tx.Where("subject = ?", subject).First(&link).Error; err == nil {
-				return nil
-			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			offer, err := ResolveBuilderProgram(tx, selector, true)
+			if err != nil {
 				return err
 			}
-			offer, err := getPartnershipOfferByCode(tx, code, true)
-			if err != nil {
+			if err := tx.Where("subject = ?", subject).First(&link).Error; err == nil {
+				if link.ProgramId != offer.Program.Id || link.CustomerId != offer.CustomerId {
+					return ErrPartnershipProgramUnavailable
+				}
+				return nil
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
 			var user User
@@ -211,9 +288,13 @@ func BuilderGrantStatus(link *BuilderIdentity) (bool, error) {
 // ClaimBuilderTeamGrant treats the immutable, unique Builder subject as the
 // team owner. No product identifier participates in grant uniqueness.
 func ClaimBuilderTeamGrant(subject, code string) error {
+	return ClaimBuilderTeamGrantWithProgram(subject, BuilderProgramSelector{PartnershipCode: code})
+}
+
+func ClaimBuilderTeamGrantWithProgram(subject string, selector BuilderProgramSelector) error {
 	var userID int
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		offer, err := getPartnershipOfferByCode(tx, code, true)
+		offer, err := ResolveBuilderProgram(tx, selector, true)
 		if err != nil {
 			return err
 		}
@@ -222,11 +303,11 @@ func ClaimBuilderTeamGrant(subject, code string) error {
 			return err
 		}
 		userID = link.UserId
-		if link.GrantClaimedAt > 0 {
-			return nil
-		}
 		if offer.Program.Id != link.ProgramId || offer.CustomerId != link.CustomerId {
 			return ErrBuilderUnavailable
+		}
+		if link.GrantClaimedAt > 0 {
+			return nil
 		}
 		var user User
 		if err := lockForUpdate(tx).First(&user, link.UserId).Error; err != nil {

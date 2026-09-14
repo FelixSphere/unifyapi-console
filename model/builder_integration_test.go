@@ -210,3 +210,121 @@ func TestBuilderTeamGrantRejectsChangedOfferOrDisabledAccount(t *testing.T) {
 		})
 	}
 }
+
+func TestBuilderProgramNameConnectAndGrant(t *testing.T) {
+	setupPartnershipTestDB(t)
+	require.NoError(t, DB.AutoMigrate(&BuilderIdentity{}, &Token{}))
+	program := PartnershipProgram{Name: "Builder_hub_2026_Sep_Batch", Code: "legacy-builders", Group: "partner", GrantQuota: 5000000, GrantLimit: 1, Enabled: true}
+	require.NoError(t, CreatePartnershipProgram(&program))
+	require.NoError(t, DB.Create(&PartnershipCustomer{ProgramId: program.Id, Name: "Other customer", Code: "non-default", Group: "default", Enabled: true}).Error)
+	selector := BuilderProgramSelector{ProgramName: program.Name}
+	link, err := ConnectBuilderIdentityWithProgram("named-owner", "named@example.invalid", selector, "")
+	require.NoError(t, err)
+	assert.Equal(t, program.Id, link.ProgramId)
+	assert.Positive(t, link.CustomerId)
+	quota, err := GetUserQuota(link.UserId, true)
+	require.NoError(t, err)
+	assert.Zero(t, quota)
+	reused, err := ConnectBuilderIdentity("named-owner", "named@example.invalid", program.Code, "")
+	require.NoError(t, err)
+	assert.Equal(t, link.Id, reused.Id)
+	require.NoError(t, ClaimBuilderTeamGrantWithProgram(link.Subject, selector))
+	require.NoError(t, ClaimBuilderTeamGrantWithProgram(link.Subject, selector))
+	quota, err = GetUserQuota(link.UserId, true)
+	require.NoError(t, err)
+	assert.Equal(t, 5000000, quota)
+	require.NoError(t, DB.First(&program, program.Id).Error)
+	assert.Equal(t, 1, program.ClaimedCount)
+	other := PartnershipProgram{Name: "Other", Code: "other", Group: "partner", GrantQuota: 5000000, GrantLimit: 1, Enabled: true}
+	require.NoError(t, CreatePartnershipProgram(&other))
+	_, err = ConnectBuilderIdentityWithProgram(link.Subject, "named@example.invalid", BuilderProgramSelector{ProgramName: other.Name}, "")
+	require.Error(t, err)
+	require.Error(t, ClaimBuilderTeamGrantWithProgram(link.Subject, BuilderProgramSelector{ProgramName: other.Name}))
+}
+
+func TestBuilderProgramNameFailsClosed(t *testing.T) {
+	for _, scenario := range []string{"missing", "duplicate", "disabled", "future", "expired", "no-default", "disabled-default", "removed-default", "multiple-defaults", "case-mismatch", "code-as-name", "both-selectors"} {
+		t.Run(scenario, func(t *testing.T) {
+			setupPartnershipTestDB(t)
+			require.NoError(t, DB.AutoMigrate(&BuilderIdentity{}, &Token{}))
+			program := PartnershipProgram{Name: "Exact Name", Code: "legacy-code", Group: "partner", Enabled: true}
+			require.NoError(t, CreatePartnershipProgram(&program))
+			selector := BuilderProgramSelector{ProgramName: program.Name}
+			switch scenario {
+			case "missing":
+				selector.ProgramName = "missing"
+			case "duplicate":
+				require.NoError(t, CreatePartnershipProgram(&PartnershipProgram{Name: program.Name, Code: "duplicate", Group: "partner", Enabled: true}))
+			case "disabled":
+				require.NoError(t, DB.Model(&program).Update("enabled", false).Error)
+			case "future":
+				require.NoError(t, DB.Model(&program).Update("starts_at", int64(4102444800)).Error)
+			case "expired":
+				require.NoError(t, DB.Model(&program).Update("ends_at", 1).Error)
+			case "no-default":
+				require.NoError(t, DB.Where("program_id = ?", program.Id).Delete(&PartnershipCustomer{}).Error)
+			case "disabled-default":
+				require.NoError(t, DB.Model(&PartnershipCustomer{}).Where("program_id = ?", program.Id).Update("enabled", false).Error)
+			case "removed-default":
+				require.NoError(t, DB.Model(&PartnershipCustomer{}).Where("program_id = ?", program.Id).Update("removed_at", 1).Error)
+			case "multiple-defaults":
+				require.NoError(t, DB.Create(&PartnershipCustomer{ProgramId: program.Id, Name: "Duplicate", Code: "dup-default", Group: "default", IsDefault: true, Enabled: true}).Error)
+			case "case-mismatch":
+				selector.ProgramName = "exact name"
+			case "code-as-name":
+				selector.ProgramName = program.Code
+			case "both-selectors":
+				selector.PartnershipCode = program.Code
+			}
+			_, err := ConnectBuilderIdentityWithProgram("owner", "owner@example.invalid", selector, "")
+			require.ErrorIs(t, err, ErrPartnershipProgramUnavailable)
+			var count int64
+			require.NoError(t, DB.Model(&BuilderIdentity{}).Count(&count).Error)
+			assert.Zero(t, count)
+		})
+	}
+}
+
+func TestBuilderProgramNameDoesNotResolveCustomerCodeCollision(t *testing.T) {
+	setupPartnershipTestDB(t)
+	first := PartnershipProgram{Name: "target-name", Code: "first-code", Group: "partner", Enabled: true}
+	second := PartnershipProgram{Name: "Other", Code: "target-name", Group: "partner", Enabled: true}
+	require.NoError(t, CreatePartnershipProgram(&first))
+	require.NoError(t, CreatePartnershipProgram(&second))
+	offer, err := ResolveBuilderProgram(DB, BuilderProgramSelector{ProgramName: first.Name}, false)
+	require.NoError(t, err)
+	assert.Equal(t, first.Id, offer.Program.Id)
+	legacy, err := ResolveBuilderProgram(DB, BuilderProgramSelector{PartnershipCode: second.Code}, false)
+	require.NoError(t, err)
+	assert.Equal(t, second.Id, legacy.Program.Id)
+}
+
+func TestBuilderNamedProgramPreservesExistingFundsAndAtomicGrant(t *testing.T) {
+	setupPartnershipTestDB(t)
+	require.NoError(t, DB.AutoMigrate(&BuilderIdentity{}, &Token{}))
+	program := PartnershipProgram{Name: "Named Builders", Code: "named-builders", Group: "partner", GrantQuota: 5000000, GrantLimit: 1, Enabled: true}
+	require.NoError(t, CreatePartnershipProgram(&program))
+	proof := "management-test-credential"
+	user := User{Username: "existing", Email: "existing@example.invalid", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", Quota: 12345, AccessToken: &proof}
+	require.NoError(t, DB.Create(&user).Error)
+	selector := BuilderProgramSelector{ProgramName: program.Name}
+	_, err := ConnectBuilderIdentityWithProgram("owner", user.Email, selector, "")
+	require.ErrorIs(t, err, ErrBuilderLinkRequired)
+	link, err := ConnectBuilderIdentityWithProgram("owner", user.Email, selector, proof)
+	require.NoError(t, err)
+	require.NoError(t, DB.First(&user, user.Id).Error)
+	assert.Equal(t, "default", user.Group)
+	assert.Equal(t, 12345, user.Quota)
+	require.NoError(t, DB.Exec("CREATE TRIGGER fail_named_grant BEFORE UPDATE OF quota ON users BEGIN SELECT RAISE(ABORT, 'injected failure'); END").Error)
+	require.Error(t, ClaimBuilderTeamGrantWithProgram(link.Subject, selector))
+	require.NoError(t, DB.First(&program, program.Id).Error)
+	assert.Zero(t, program.ClaimedCount)
+	stored, _, err := GetBuilderIdentity(link.Subject)
+	require.NoError(t, err)
+	assert.Zero(t, stored.GrantClaimedAt)
+	require.NoError(t, DB.Exec("DROP TRIGGER fail_named_grant").Error)
+	require.NoError(t, ClaimBuilderTeamGrantWithProgram(link.Subject, selector))
+	quota, err := GetUserQuota(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 5012345, quota)
+}

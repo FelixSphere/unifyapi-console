@@ -29,6 +29,7 @@ import (
 type builderRequest struct {
 	Subject         string `json:"subject"`
 	PartnershipCode string `json:"partnership_code"`
+	ProgramName     string `json:"program_name"`
 	Email           string `json:"email"`
 	EmailVerified   bool   `json:"email_verified"`
 	ManagementToken string `json:"management_token"`
@@ -40,7 +41,8 @@ type builderRequest struct {
 func readBuilderRequest(c *gin.Context) (*builderRequest, error) {
 	secret := os.Getenv("BUILDER_INTEGRATION_SECRET")
 	code := os.Getenv("BUILDER_INTEGRATION_PARTNERSHIP_CODE")
-	if len(secret) < 32 || code == "" {
+	name := os.Getenv("BUILDER_INTEGRATION_PROGRAM_NAME")
+	if len(secret) < 32 || (code == "") == (name == "") || (name != "" && !model.ValidBuilderProgramName(name)) {
 		return nil, errors.New("integration disabled")
 	}
 	timestamp := c.GetHeader("X-Builder-Timestamp")
@@ -67,7 +69,7 @@ func readBuilderRequest(c *gin.Context) (*builderRequest, error) {
 	if err := common.Unmarshal(body, &request); err != nil {
 		return nil, err
 	}
-	if request.Subject == "" || len(request.Subject) > 128 || request.PartnershipCode != code {
+	if request.Subject == "" || len(request.Subject) > 128 || request.PartnershipCode != code || request.ProgramName != name {
 		return nil, errors.New("invalid identity or program")
 	}
 	return &request, nil
@@ -82,13 +84,26 @@ func BuilderIntegration(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"code": "UNIFY_UNAUTHORIZED"})
 		return
 	}
+	selector := model.BuilderProgramSelector{ProgramName: request.ProgramName, PartnershipCode: request.PartnershipCode}
+	var offer *model.PartnershipOffer
+	if request.ProgramName != "" {
+		offer, err = model.ResolveBuilderProgram(model.DB, selector, false)
+		if err != nil {
+			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_PROGRAM_UNAVAILABLE"})
+			return
+		}
+	}
 	if c.Param("action") == "connect" {
 		_, emailErr := mail.ParseAddress(request.Email)
 		if !request.EmailVerified || request.Email == "" || len(request.Email) > 254 || emailErr != nil {
 			c.JSON(http.StatusForbidden, gin.H{"code": "UNIFY_EMAIL_UNVERIFIED"})
 			return
 		}
-		_, err := model.ConnectBuilderIdentity(request.Subject, request.Email, request.PartnershipCode, request.ManagementToken)
+		_, err := model.ConnectBuilderIdentityWithProgram(request.Subject, request.Email, selector, request.ManagementToken)
+		if request.ProgramName != "" && errors.Is(err, model.ErrPartnershipProgramUnavailable) {
+			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_PROGRAM_UNAVAILABLE"})
+			return
+		}
 		if errors.Is(err, model.ErrBuilderLinkRequired) {
 			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_LINK_REQUIRED"})
 			return
@@ -113,13 +128,17 @@ func BuilderIntegration(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"code": "UNIFY_ACCOUNT_UNAVAILABLE"})
 		return
 	}
+	if offer != nil && (link.ProgramId != offer.Program.Id || link.CustomerId != offer.CustomerId) {
+		c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_PROGRAM_UNAVAILABLE"})
+		return
+	}
 	switch c.Param("action") {
 	case "claim":
 		if !request.OwnerEligible {
 			c.JSON(http.StatusForbidden, gin.H{"code": "UNIFY_OWNER_REQUIRED"})
 			return
 		}
-		if err := model.ClaimBuilderTeamGrant(request.Subject, request.PartnershipCode); err != nil {
+		if err := model.ClaimBuilderTeamGrantWithProgram(request.Subject, selector); err != nil {
 			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_GRANT_UNAVAILABLE"})
 			return
 		}
