@@ -1,10 +1,10 @@
 # Builder API integration bridge
 
-Release scope: the opt-in v1 account/grant bridge using one configured customer registration code. The program/team target below is future work, not part of this release. Builder must document this limitation in its integration PR before enabling the bridge.
+Release scope: the opt-in v1 account/grant bridge using either one configured exact Program name (its default customer) or a legacy customer registration code. The program/team target below is future work, not part of this release. Builder must document this limitation in its integration PR before enabling the bridge.
 
 ## Clarified target: program, team and customer group
 
-Status: agreed relationship; not yet implemented by the current bridge.
+Status: exact Program name selection is implemented; per-team customer mapping remains future work.
 
 UnifyAPI must already contain the named partnership program. For local testing,
 the program name is `Builder Local Test`. Builder's server will supply that
@@ -20,15 +20,14 @@ A Pricing Group controls pricing/model access; it does not by itself establish
 a shared balance or permission to spend the owner's funds. The confirmed grant
 rule remains USD 10 once per team, shared across the owner's products.
 
-The current code still signs a configured customer registration code and links
-individual users to that offer. It does not yet transmit a team object, resolve
-a program by name, or provision a distinct customer/Pricing Group for each team.
+The bridge links individual users to the configured offer. Name mode selects the
+existing Program default customer. It does not transmit a team object or provision
+a distinct customer/Pricing Group for each team.
 Do not describe this v1 release as a completed implementation of that target.
 
 ### Remaining implementation and product decisions
 
 - Define and validate the signed user/team/program contract on both servers.
-- Resolve only an existing, active program; define an unambiguous name lookup.
 - Persist an idempotent team-to-customer/Pricing Group mapping.
 - Decide whether users belonging to multiple teams select an active team.
 - Decide whether ordinary members may view or spend team credit, or only owners.
@@ -48,10 +47,39 @@ Builder subject is the durable team identity; products cannot reset the grant.
 Builder's API verifies its normal Firebase session and verified email. It signs
 `POST\n/path\nunix_timestamp\nexact_body` using HMAC-SHA256, sending the signature
 as hexadecimal in `X-Builder-Signature` and the time in `X-Builder-Timestamp`.
-Assertions expire after 30 seconds. The configured code is authoritative.
+Assertions expire after 30 seconds. The configured selector is authoritative.
 
-Set `BUILDER_INTEGRATION_SECRET` (minimum 32 characters) and
-`BUILDER_INTEGRATION_PARTNERSHIP_CODE`. Missing settings disable the route.
+Set `BUILDER_INTEGRATION_SECRET` (minimum 32 characters) and exactly one of:
+
+- `BUILDER_INTEGRATION_PROGRAM_NAME=Builder_hub_2026_Sep_Batch`, with signed JSON
+  `program_name` matching exactly; or
+- `BUILDER_INTEGRATION_PARTNERSHIP_CODE`, with signed JSON `partnership_code`
+  matching the existing customer registration code.
+
+Builder uses `BUILDER_UNIFY_PROGRAM_NAME` for name mode, retaining its own
+`BUILDER_UNIFY_SECRET`. Never configure both selector settings. Missing/both
+settings, wrong mode/value, invalid names or invalid signatures return HTTP 401
+`UNIFY_UNAUTHORIZED`. There is no name/code fallback or lowercasing. Names are
+1–120 Unicode code points, unchanged by JavaScript `trim()`, without Unicode Cc
+controls; internal spaces and case are preserved.
+
+Name lookup compares exact strings after the database query, independently of
+case/accent-insensitive collations. It requires exactly one matching Program
+(including disabled matches in ambiguity checks), an active date window and
+exactly one non-removed, enabled default customer. Missing/duplicate/inactive
+Programs or unusable defaults return HTTP 409 `UNIFY_PROGRAM_UNAVAILABLE`.
+All name-mode actions validate this offer; existing identities cannot switch
+Program/customer when configuration changes. Name resolution never creates a
+Program/customer and does not fall back to a public registration code.
+
+Production Builder origin is `https://app.unifyapi.ai` (no `/v1` suffix);
+inference base is `https://app.unifyapi.ai/v1`, and the signed bridge is
+`https://app.unifyapi.ai/api/builder/v1/{action}`. Deploy this backend before
+switching Builder to name mode; coordinate both selector settings without
+changing the shared HMAC protocol. Existing identities selecting the same
+default customer reuse their account/key and cannot claim another grant.
+No schema migration or automatic production configuration is included.
+
 The existing global API rate limit still applies; reads do not consume the
 shared login/registration critical-rate bucket.
 
@@ -115,3 +143,11 @@ No live payment or production grant was issued during implementation.
 Only `/api/builder/v1/:action` is implemented. There is no v2 endpoint, program-name lookup, per-team customer provisioning, member wallet sharing, multi-team selection, or automatic account/group/fund migration. Builder must assert verified identity and owner eligibility server-side; it must not share an owner credential with ordinary members. Grant uniqueness is the linked owner subject/user, shared by that owner's products.
 
 Stripe availability and checkout use the existing full payment configuration/compliance gate. Deploying this code does not configure or enable the bridge: missing `BUILDER_INTEGRATION_SECRET` or `BUILDER_INTEGRATION_PARTNERSHIP_CODE` keeps it disabled. Deployment does not confirm payment compliance. The additive identity/grant receipt table must be retained on rollback; disabling the bridge does not reverse grants or revoke issued inference keys. Revoke those keys separately if required.
+
+Program-name change validation (2026-09-14): focused Builder and Partnership
+model/controller tests passed, plus `go vet ./model ./controller`. Coverage
+includes signed selector/config conflicts, Unicode length/whitespace validation,
+exact-name and code collisions, missing/duplicate/inactive programs, default
+customer rejection, cross-mode identity reuse, preservation of existing funds
+and group, and rollback/retry without duplicate launch grants. Tests use SQLite;
+MySQL/PostgreSQL runtime validation and live Stripe/provider checks were not run.
