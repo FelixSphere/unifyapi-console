@@ -7,6 +7,7 @@ import (
 	"net/smtp"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -75,7 +76,40 @@ func newSMTPClient(addr string) (*smtp.Client, error) {
 	return client, nil
 }
 
+// emailDeliveryRecorder is set by the model layer at startup. common cannot
+// import model without a cycle, so the recorder is injected rather than called
+// directly. Every SendEmail caller is covered by the wrapper below, so a new
+// call site cannot forget to record.
+var emailDeliveryRecorder atomic.Pointer[func(receiver string, purpose string, err error)]
+
+// SetEmailDeliveryRecorder installs the recorder. Safe to call before or after
+// mail starts flowing; until it is set, sends simply go unrecorded.
+func SetEmailDeliveryRecorder(record func(receiver string, purpose string, err error)) {
+	if record == nil {
+		emailDeliveryRecorder.Store(nil)
+		return
+	}
+	emailDeliveryRecorder.Store(&record)
+}
+
+// SendEmail sends one message and records whether the mail server accepted it.
+// Acceptance is not delivery: a message accepted here can still bounce or be
+// filed as spam. What is recorded is only what send time can observe.
 func SendEmail(subject string, receiver string, content string) error {
+	return SendEmailForPurpose("", subject, receiver, content)
+}
+
+// SendEmailForPurpose is SendEmail with a label for the recorded attempt, so an
+// operator can tell a failed verification code from a failed billing notice.
+func SendEmailForPurpose(purpose string, subject string, receiver string, content string) error {
+	err := sendEmail(subject, receiver, content)
+	if recorder := emailDeliveryRecorder.Load(); recorder != nil {
+		(*recorder)(receiver, purpose, err)
+	}
+	return err
+}
+
+func sendEmail(subject string, receiver string, content string) error {
 	if SMTPFrom == "" { // for compatibility
 		SMTPFrom = SMTPAccount
 	}

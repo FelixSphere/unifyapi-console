@@ -314,6 +314,12 @@ func InitResources() error {
 		common.FatalLog("failed to initialize database: " + err.Error())
 		return err
 	}
+
+	// Record whether the mail server accepted each message. common cannot import
+	// model, so the recorder is injected once the database is up.
+	common.SetEmailDeliveryRecorder(func(receiver string, purpose string, sendErr error) {
+		model.RecordEmailDelivery(receiver, purpose, sendErr)
+	})
 	if err = authz.Init(model.DB); err != nil {
 		common.FatalLog("failed to initialize authorization: " + err.Error())
 		return err
