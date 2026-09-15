@@ -225,14 +225,17 @@ export function usePricingColumns(
               {newUserInput !== null && newUserOutput !== null ? (
                 <>
                   <span
-                    className='font-mono text-sm font-semibold text-emerald-600 tabular-nums dark:text-emerald-400'
+                    className='font-mono text-base font-black text-emerald-600 tabular-nums dark:text-emerald-400'
                     data-new-user-price
                   >
                     {stripTrailingZeros(newUserInput)}
                     <span className='text-muted-foreground/40 mx-1'>/</span>
                     {stripTrailingZeros(newUserOutput)}
                   </span>
-                  <span className='text-muted-foreground/50 ml-2 font-mono text-xs tabular-nums line-through'>
+                  <span
+                    className='text-muted-foreground ml-2 font-mono text-xs tabular-nums'
+                    data-list-price
+                  >
                     {inputPrice}
                     <span className='mx-0.5'>/</span>
                     {outputPrice}

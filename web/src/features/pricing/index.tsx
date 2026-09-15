@@ -16,11 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Link } from '@tanstack/react-router'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
 import { PageTransition } from '@/components/page-transition'
+import { Button } from '@/components/ui/button'
 
 import {
   LoadingSkeleton,
@@ -192,14 +194,32 @@ export function Pricing() {
               })}
             </p>
             {maxDefaultPercentOff > 0 && (
-              <p
-                className='mt-3 text-base font-bold text-emerald-600 sm:text-lg dark:text-emerald-400'
+              <div
+                className='mx-auto mt-5 max-w-2xl rounded-2xl bg-gradient-to-r from-emerald-500 via-green-500 to-lime-400 p-[3px] shadow-xl shadow-emerald-500/30'
                 data-default-discount-headline
               >
-                {t('New users get up to {{percent}}% off by default', {
-                  percent: maxDefaultPercentOff,
-                })}
-              </p>
+                <div className='flex flex-col items-center gap-3 rounded-[13px] bg-gradient-to-r from-emerald-600 to-green-500 px-5 py-4 text-white sm:flex-row sm:justify-between sm:px-7 sm:py-5'>
+                  <div className='text-center sm:text-left'>
+                    <div className='text-2xl leading-none font-black tracking-tight sm:text-3xl'>
+                      {t('New users get up to {{percent}}% off by default', {
+                        percent: maxDefaultPercentOff,
+                      })}
+                    </div>
+                    <div className='mt-1.5 text-sm font-medium text-emerald-50/90 sm:text-base'>
+                      {t(
+                        'Every model marked below is already discounted for new accounts. No code needed.'
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    size='lg'
+                    className='shrink-0 rounded-xl bg-white font-bold text-emerald-700 shadow-md hover:bg-emerald-50'
+                    render={<Link to='/sign-up' />}
+                  >
+                    {t('Sign up and save')}
+                  </Button>
+                </div>
+              </div>
             )}
             <p className='text-muted-foreground/60 mx-auto mt-2 max-w-2xl text-xs leading-relaxed sm:text-sm'>
               {t(
