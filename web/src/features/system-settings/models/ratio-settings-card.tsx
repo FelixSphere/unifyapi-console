@@ -171,6 +171,26 @@ export function RatioSettingsCard({
   titleKey = 'Pricing Ratios',
   visibleTabs = ['models', 'groups', 'tool-prices', 'upstream-sync'],
 }: RatioSettingsCardProps) {
+  // section-registry builds these props with a fresh object on every render of
+  // the settings page, and the page re-renders whenever the options query
+  // refetches (a save on any card, window focus once staleTime lapses). The
+  // reset effects below used to key on object identity, so every one of those
+  // re-renders reset both forms to the SAVED values and discarded whatever the
+  // operator had typed but not yet saved -- a Group Pricing row named `default`
+  // vanished this way on 2026-09-15. Key on the values instead: a real change in
+  // saved settings still resets, an equal-but-new object does not.
+  const modelDefaultsSignature = JSON.stringify(modelDefaults)
+  const stableModelDefaults = useMemo(
+    () => modelDefaults,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by value on purpose
+    [modelDefaultsSignature]
+  )
+  const groupDefaultsSignature = JSON.stringify(groupDefaults)
+  const stableGroupDefaults = useMemo(
+    () => groupDefaults,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by value on purpose
+    [groupDefaultsSignature]
+  )
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
   const queryClient = useQueryClient()
@@ -264,65 +284,79 @@ export function RatioSettingsCard({
 
   useEffect(() => {
     modelNormalizedDefaults.current = {
-      ModelPrice: normalizeJsonString(modelDefaults.ModelPrice),
-      ModelRatio: normalizeJsonString(modelDefaults.ModelRatio),
-      CacheRatio: normalizeJsonString(modelDefaults.CacheRatio),
-      CreateCacheRatio: normalizeJsonString(modelDefaults.CreateCacheRatio),
-      CompletionRatio: normalizeJsonString(modelDefaults.CompletionRatio),
-      ImageRatio: normalizeJsonString(modelDefaults.ImageRatio),
-      AudioRatio: normalizeJsonString(modelDefaults.AudioRatio),
-      AudioCompletionRatio: normalizeJsonString(
-        modelDefaults.AudioCompletionRatio
+      ModelPrice: normalizeJsonString(stableModelDefaults.ModelPrice),
+      ModelRatio: normalizeJsonString(stableModelDefaults.ModelRatio),
+      CacheRatio: normalizeJsonString(stableModelDefaults.CacheRatio),
+      CreateCacheRatio: normalizeJsonString(
+        stableModelDefaults.CreateCacheRatio
       ),
-      ExposeRatioEnabled: modelDefaults.ExposeRatioEnabled,
-      BillingMode: normalizeJsonString(modelDefaults.BillingMode),
-      BillingExpr: normalizeJsonString(modelDefaults.BillingExpr),
+      CompletionRatio: normalizeJsonString(stableModelDefaults.CompletionRatio),
+      ImageRatio: normalizeJsonString(stableModelDefaults.ImageRatio),
+      AudioRatio: normalizeJsonString(stableModelDefaults.AudioRatio),
+      AudioCompletionRatio: normalizeJsonString(
+        stableModelDefaults.AudioCompletionRatio
+      ),
+      ExposeRatioEnabled: stableModelDefaults.ExposeRatioEnabled,
+      BillingMode: normalizeJsonString(stableModelDefaults.BillingMode),
+      BillingExpr: normalizeJsonString(stableModelDefaults.BillingExpr),
     }
     setSavedModelValues(modelNormalizedDefaults.current)
 
     modelForm.reset({
-      ...modelDefaults,
-      ModelPrice: formatJsonForTextarea(modelDefaults.ModelPrice),
-      ModelRatio: formatJsonForTextarea(modelDefaults.ModelRatio),
-      CacheRatio: formatJsonForTextarea(modelDefaults.CacheRatio),
-      CreateCacheRatio: formatJsonForTextarea(modelDefaults.CreateCacheRatio),
-      CompletionRatio: formatJsonForTextarea(modelDefaults.CompletionRatio),
-      ImageRatio: formatJsonForTextarea(modelDefaults.ImageRatio),
-      AudioRatio: formatJsonForTextarea(modelDefaults.AudioRatio),
-      AudioCompletionRatio: formatJsonForTextarea(
-        modelDefaults.AudioCompletionRatio
+      ...stableModelDefaults,
+      ModelPrice: formatJsonForTextarea(stableModelDefaults.ModelPrice),
+      ModelRatio: formatJsonForTextarea(stableModelDefaults.ModelRatio),
+      CacheRatio: formatJsonForTextarea(stableModelDefaults.CacheRatio),
+      CreateCacheRatio: formatJsonForTextarea(
+        stableModelDefaults.CreateCacheRatio
       ),
-      BillingMode: formatJsonForTextarea(modelDefaults.BillingMode),
-      BillingExpr: formatJsonForTextarea(modelDefaults.BillingExpr),
+      CompletionRatio: formatJsonForTextarea(
+        stableModelDefaults.CompletionRatio
+      ),
+      ImageRatio: formatJsonForTextarea(stableModelDefaults.ImageRatio),
+      AudioRatio: formatJsonForTextarea(stableModelDefaults.AudioRatio),
+      AudioCompletionRatio: formatJsonForTextarea(
+        stableModelDefaults.AudioCompletionRatio
+      ),
+      BillingMode: formatJsonForTextarea(stableModelDefaults.BillingMode),
+      BillingExpr: formatJsonForTextarea(stableModelDefaults.BillingExpr),
     })
-  }, [modelDefaults, modelForm])
+  }, [stableModelDefaults, modelForm])
 
   useEffect(() => {
     groupNormalizedDefaults.current = {
-      GroupRatio: normalizeJsonString(groupDefaults.GroupRatio),
-      TopupGroupRatio: normalizeJsonString(groupDefaults.TopupGroupRatio),
-      UserUsableGroups: normalizeJsonString(groupDefaults.UserUsableGroups),
-      GroupGroupRatio: normalizeJsonString(groupDefaults.GroupGroupRatio),
-      AutoGroups: normalizeJsonString(groupDefaults.AutoGroups),
-      MaxTokenAutoGroups: groupDefaults.MaxTokenAutoGroups,
-      DefaultUseAutoGroup: groupDefaults.DefaultUseAutoGroup,
+      GroupRatio: normalizeJsonString(stableGroupDefaults.GroupRatio),
+      TopupGroupRatio: normalizeJsonString(stableGroupDefaults.TopupGroupRatio),
+      UserUsableGroups: normalizeJsonString(
+        stableGroupDefaults.UserUsableGroups
+      ),
+      GroupGroupRatio: normalizeJsonString(stableGroupDefaults.GroupGroupRatio),
+      AutoGroups: normalizeJsonString(stableGroupDefaults.AutoGroups),
+      MaxTokenAutoGroups: stableGroupDefaults.MaxTokenAutoGroups,
+      DefaultUseAutoGroup: stableGroupDefaults.DefaultUseAutoGroup,
       GroupSpecialUsableGroup: normalizeJsonString(
-        groupDefaults.GroupSpecialUsableGroup
+        stableGroupDefaults.GroupSpecialUsableGroup
       ),
     }
 
     groupForm.reset({
-      ...groupDefaults,
-      GroupRatio: formatJsonForTextarea(groupDefaults.GroupRatio),
-      TopupGroupRatio: formatJsonForTextarea(groupDefaults.TopupGroupRatio),
-      UserUsableGroups: formatJsonForTextarea(groupDefaults.UserUsableGroups),
-      GroupGroupRatio: formatJsonForTextarea(groupDefaults.GroupGroupRatio),
-      AutoGroups: formatJsonForTextarea(groupDefaults.AutoGroups),
+      ...stableGroupDefaults,
+      GroupRatio: formatJsonForTextarea(stableGroupDefaults.GroupRatio),
+      TopupGroupRatio: formatJsonForTextarea(
+        stableGroupDefaults.TopupGroupRatio
+      ),
+      UserUsableGroups: formatJsonForTextarea(
+        stableGroupDefaults.UserUsableGroups
+      ),
+      GroupGroupRatio: formatJsonForTextarea(
+        stableGroupDefaults.GroupGroupRatio
+      ),
+      AutoGroups: formatJsonForTextarea(stableGroupDefaults.AutoGroups),
       GroupSpecialUsableGroup: formatJsonForTextarea(
-        groupDefaults.GroupSpecialUsableGroup
+        stableGroupDefaults.GroupSpecialUsableGroup
       ),
     })
-  }, [groupDefaults, groupForm])
+  }, [stableGroupDefaults, groupForm])
 
   const saveModelRatios = useCallback(
     async (values: ModelFormValues) => {
