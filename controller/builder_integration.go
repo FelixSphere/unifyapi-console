@@ -40,9 +40,7 @@ type builderRequest struct {
 
 func readBuilderRequest(c *gin.Context) (*builderRequest, error) {
 	secret := os.Getenv("BUILDER_INTEGRATION_SECRET")
-	code := os.Getenv("BUILDER_INTEGRATION_PARTNERSHIP_CODE")
-	name := os.Getenv("BUILDER_INTEGRATION_PROGRAM_NAME")
-	if len(secret) < 32 || (code == "") == (name == "") || (name != "" && !model.ValidBuilderProgramName(name)) {
+	if len(secret) < 32 {
 		return nil, errors.New("integration disabled")
 	}
 	timestamp := c.GetHeader("X-Builder-Timestamp")
@@ -69,14 +67,24 @@ func readBuilderRequest(c *gin.Context) (*builderRequest, error) {
 	if err := common.Unmarshal(body, &request); err != nil {
 		return nil, err
 	}
-	if request.Subject == "" || len(request.Subject) > 128 || request.PartnershipCode != code || request.ProgramName != name {
+	if request.Subject == "" || len(request.Subject) > 128 || (request.PartnershipCode == "") == (request.ProgramName == "") {
 		return nil, errors.New("invalid identity or program")
+	}
+	if request.ProgramName != "" {
+		// The signed name selects business data, not deployment configuration.
+		// BuilderIntegration resolves it against the database before any action.
+		if !model.ValidBuilderProgramName(request.ProgramName) {
+			return nil, errors.New("invalid program name")
+		}
+	} else if request.PartnershipCode != os.Getenv("BUILDER_INTEGRATION_PARTNERSHIP_CODE") {
+		// Preserve the existing pinned customer-code contract for legacy callers.
+		return nil, errors.New("invalid partnership code")
 	}
 	return &request, nil
 }
 
 // BuilderIntegration accepts only server-signed assertions, never a browser's
-// claimed email or user id. The integration is disabled without both settings.
+// claimed email or user id. The integration is disabled without its secret.
 func BuilderIntegration(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	request, err := readBuilderRequest(c)
