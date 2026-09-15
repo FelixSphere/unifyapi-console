@@ -20,7 +20,11 @@ import { formatCurrencyFromUSD } from '@/lib/currency'
 
 import { QUOTA_TYPE_VALUES, TOKEN_UNIT_DIVISORS } from '../constants'
 import type { PricingModel, TokenUnit, PriceType } from '../types'
-import { getConfiguredGroupRatio, getDisplayGroupRatio } from './model-helpers'
+import {
+  getConfiguredGroupRatio,
+  getDefaultGroupDiscount,
+  getDisplayGroupRatio,
+} from './model-helpers'
 
 // ----------------------------------------------------------------------------
 // Price Calculation Utilities
@@ -164,6 +168,41 @@ export function formatPrice(
     usdExchangeRate
   )
 
+  const price = priceInUSD / TOKEN_UNIT_DIVISORS[tokenUnit]
+  return formatCurrencyFromUSD(price, {
+    digitsLarge: 4,
+    digitsSmall: 6,
+    abbreviate: false,
+  })
+}
+
+/**
+ * The price a NEW user pays: the same published price pipeline as formatPrice,
+ * multiplied by the `default` group's final ratio. Returns null when the model
+ * carries no new-user discount, so callers render the list price alone.
+ */
+export function formatDefaultGroupPrice(
+  model: PricingModel,
+  type: PriceType,
+  tokenUnit: TokenUnit,
+  showWithRecharge = false,
+  priceRate = 1,
+  usdExchangeRate = 1,
+  selectedGroup?: string
+): string | null {
+  if (model.quota_type === QUOTA_TYPE_VALUES.REQUEST) return null
+  const discount = getDefaultGroupDiscount(model)
+  if (!discount) return null
+
+  const displayGroupRatio = getDisplayGroupRatio(model, selectedGroup)
+  let priceInUSD =
+    calculateTokenPrice(model, type, displayGroupRatio) * discount.ratio
+  priceInUSD = applyRechargeRate(
+    priceInUSD,
+    showWithRecharge,
+    priceRate,
+    usdExchangeRate
+  )
   const price = priceInUSD / TOKEN_UNIT_DIVISORS[tokenUnit]
   return formatCurrencyFromUSD(price, {
     digitsLarge: 4,

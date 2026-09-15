@@ -60,6 +60,7 @@ func GetPricing(c *gin.Context) {
 
 	usableGroup = service.GetUserUsableGroups(group)
 	pricing = filterPricingByUsableGroups(pricing, usableGroup)
+	pricing = applyDefaultGroupModelPricing(pricing)
 	// check groupRatio contains usableGroup
 	for group := range ratio_setting.GetGroupRatioCopy() {
 		if _, ok := usableGroup[group]; !ok {
@@ -77,6 +78,26 @@ func GetPricing(c *gin.Context) {
 		"auto_groups":        service.GetUserAutoGroup(group),
 		"pricing_version":    "a42d372ccf0b5dd13ecf71203521f9d2",
 	})
+}
+
+// applyDefaultGroupModelPricing annotates every row with the `default` group's
+// per-model multiplier -- the price a brand-new user pays. Unlike the customer
+// annotation above it does not depend on who is asking: anonymous visitors and
+// every logged-in group see the identical value, which is what lets Model
+// Square advertise "xx% off by default" without becoming a per-viewer quote.
+// ModelRatio (the published list price) is never rewritten; the discount is a
+// separate field the client renders beside it.
+func applyDefaultGroupModelPricing(pricing []model.Pricing) []model.Pricing {
+	out := make([]model.Pricing, len(pricing))
+	copy(out, pricing)
+	for i := range out {
+		ratio, ok := ratio_setting.GetGroupModelDiscount(model.DefaultUserGroup, out[i].ModelName)
+		if !ok {
+			continue
+		}
+		out[i].DefaultGroupModelRatio = &ratio
+	}
+	return out
 }
 
 // applyCustomerGroupModelPricing returns request-owned rows. GetPricing caches

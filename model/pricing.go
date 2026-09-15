@@ -15,6 +15,10 @@ import (
 	"github.com/QuantumNous/new-api/types"
 )
 
+// DefaultUserGroup is the group every new registration lands in: Register
+// sets none, so the users.group column default applies.
+const DefaultUserGroup = "default"
+
 type Pricing struct {
 	PriceUnit              string                  `json:"price_unit,omitempty"`
 	ModelName              string                  `json:"model_name"`
@@ -40,6 +44,14 @@ type Pricing struct {
 	// CustomerGroupModelRatio is a negotiated FINAL multiplier over the
 	// official catalog price for the authenticated user's group and this model.
 	CustomerGroupModelRatio *float64 `json:"customer_group_model_ratio,omitempty"`
+
+	// DefaultGroupModelRatio is the FINAL multiplier the `default` group -- every
+	// new registration -- pays for this model, when the operator has set one.
+	// It is the same for every viewer, anonymous included: it is the public
+	// "new-user price", not anyone's contract. Model Square renders it as
+	// "xx% off by default" next to the official price. Absent means new users
+	// pay list for this model.
+	DefaultGroupModelRatio *float64 `json:"default_group_model_ratio,omitempty"`
 }
 
 type PricingVendor struct {

@@ -35,6 +35,7 @@ import {
 import { EXCLUDED_GROUPS, VIEW_MODES } from './constants'
 import { useFilters } from './hooks/use-filters'
 import { usePricingData } from './hooks/use-pricing-data'
+import { getMaxDefaultGroupPercentOff } from './lib/model-helpers'
 
 export function Pricing() {
   const { t } = useTranslation()
@@ -97,6 +98,10 @@ export function Pricing() {
     [models, selectedModelName]
   )
 
+  const maxDefaultPercentOff = useMemo(
+    () => getMaxDefaultGroupPercentOff(models ?? []),
+    [models]
+  )
   const availableGroups = useMemo(
     () =>
       Object.keys(usableGroup || {}).filter(
@@ -186,6 +191,16 @@ export function Pricing() {
                 count: models?.length || 0,
               })}
             </p>
+            {maxDefaultPercentOff > 0 && (
+              <p
+                className='mt-3 text-base font-bold text-emerald-600 sm:text-lg dark:text-emerald-400'
+                data-default-discount-headline
+              >
+                {t('New users get up to {{percent}}% off by default', {
+                  percent: maxDefaultPercentOff,
+                })}
+              </p>
+            )}
             <p className='text-muted-foreground/60 mx-auto mt-2 max-w-2xl text-xs leading-relaxed sm:text-sm'>
               {t(
                 'Discover curated AI models, compare pricing and capabilities, and choose the right model for every scenario.'
