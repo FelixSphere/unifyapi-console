@@ -31,7 +31,11 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/about", controller.GetAbout)
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
-		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
+		// UNIFYAPI-FORK: the marketing site (www.unifyapi.ai) reads the public
+		// catalogue cross-origin to advertise the new-user price. Same rows an
+		// anonymous visitor gets; CORS only lets a browser on another origin
+		// read a response it could already fetch with curl.
+		apiRouter.GET("/pricing", middleware.CORS(), middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
 		apiRouter.POST("/builder/v1/:action", controller.BuilderIntegration)
 		apiRouter.GET("/partnership/:code", middleware.DisableCache(), controller.GetPublicPartnershipProgram)
 		apiRouter.POST("/partnership/:code/connect", middleware.UserAuth(), middleware.DisableCache(), controller.ConnectExistingUserToPartnership)
