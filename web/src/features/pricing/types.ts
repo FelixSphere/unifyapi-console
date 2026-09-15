@@ -60,6 +60,12 @@ export type PricingModel = {
   /** Final multiplier over official price negotiated for this user's group. */
   customer_group_model_ratio?: number
   /**
+   * Final multiplier the `default` group (every new registration) pays for
+   * this model. Public and identical for every viewer -- it is the advertised
+   * new-user price, not the viewer's contract. Absent = new users pay list.
+   */
+  default_group_model_ratio?: number
+  /**
    * Optional model metadata fields reserved for backend-provided catalog data.
    * Keep them data-driven; do not synthesize display values on the client.
    */

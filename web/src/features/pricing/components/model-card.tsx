@@ -20,6 +20,7 @@ import { ChevronRight, Copy } from 'lucide-react'
 import { memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Badge } from '@/components/ui/badge'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
@@ -30,8 +31,15 @@ import {
   getDynamicPricingSummary,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
-import { isTokenBasedModel } from '../lib/model-helpers'
-import { formatPrice, formatRequestPrice } from '../lib/price'
+import {
+  getDefaultGroupDiscount,
+  isTokenBasedModel,
+} from '../lib/model-helpers'
+import {
+  formatDefaultGroupPrice,
+  formatPrice,
+  formatRequestPrice,
+} from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
 import { ModelPerfBadge, type ModelPerfBadgeData } from './model-perf-badge'
@@ -56,6 +64,48 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const showRechargePrice = props.showRechargePrice ?? false
   const isTokenBased = isTokenBasedModel(props.model)
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
+  const defaultDiscount = getDefaultGroupDiscount(props.model)
+
+  // One price slot: the list price, or -- when new users pay less -- the
+  // new-user price in front with the list price struck through behind it.
+  const renderTokenPrice = (type: 'input' | 'output' | 'cache') => {
+    const list = formatPrice(
+      props.model,
+      type,
+      tokenUnit,
+      showRechargePrice,
+      priceRate,
+      usdExchangeRate,
+      props.selectedGroup
+    )
+    const newUser = formatDefaultGroupPrice(
+      props.model,
+      type,
+      tokenUnit,
+      showRechargePrice,
+      priceRate,
+      usdExchangeRate,
+      props.selectedGroup
+    )
+    if (newUser === null) {
+      return (
+        <span className='text-foreground font-mono font-semibold'>{list}</span>
+      )
+    }
+    return (
+      <>
+        <span
+          className='font-mono font-bold text-emerald-600 dark:text-emerald-400'
+          data-new-user-price
+        >
+          {newUser}
+        </span>{' '}
+        <span className='text-muted-foreground/60 font-mono text-xs line-through'>
+          {list}
+        </span>
+      </>
+    )
+  }
   const tags = parseTags(props.model.tags)
   const groups = props.model.enable_groups || []
   const endpoints = props.model.supported_endpoint_types || []
@@ -131,47 +181,14 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     priceSummary = (
       <>
         <span className='text-muted-foreground whitespace-nowrap'>
-          {t('Input')}{' '}
-          <span className='text-foreground font-mono font-semibold'>
-            {formatPrice(
-              props.model,
-              'input',
-              tokenUnit,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate,
-              props.selectedGroup
-            )}
-          </span>
+          {t('Input')} {renderTokenPrice('input')}
         </span>
         <span className='text-muted-foreground whitespace-nowrap'>
-          {t('Output')}{' '}
-          <span className='text-foreground font-mono font-semibold'>
-            {formatPrice(
-              props.model,
-              'output',
-              tokenUnit,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate,
-              props.selectedGroup
-            )}
-          </span>
+          {t('Output')} {renderTokenPrice('output')}
         </span>
         {hasCachedPrice && (
           <span className='text-muted-foreground whitespace-nowrap'>
-            {t('Cached')}{' '}
-            <span className='text-foreground font-mono font-semibold'>
-              {formatPrice(
-                props.model,
-                'cache',
-                tokenUnit,
-                showRechargePrice,
-                priceRate,
-                usdExchangeRate,
-                props.selectedGroup
-              )}
-            </span>
+            {t('Cached')} {renderTokenPrice('cache')}
           </span>
         )}
       </>
@@ -211,9 +228,21 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             )}
           </div>
           <div className='min-w-0'>
-            <h3 className='text-foreground truncate font-mono text-[15px] leading-tight font-bold'>
-              {props.model.model_name}
-            </h3>
+            <div className='flex min-w-0 items-center gap-2'>
+              <h3 className='text-foreground truncate font-mono text-[15px] leading-tight font-bold'>
+                {props.model.model_name}
+              </h3>
+              {defaultDiscount && (
+                <Badge
+                  className='shrink-0 bg-emerald-600 text-white hover:bg-emerald-600 dark:bg-emerald-500'
+                  data-default-discount-badge
+                >
+                  {t('{{percent}}% off by default', {
+                    percent: defaultDiscount.percentOff,
+                  })}
+                </Badge>
+              )}
+            </div>
             <div className='mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm sm:mt-1 sm:gap-x-3'>
               {priceSummary}
             </div>

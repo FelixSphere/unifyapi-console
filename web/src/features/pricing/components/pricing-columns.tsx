@@ -36,6 +36,7 @@ import {
 import { parseTags } from '../lib/filters'
 import { isTokenBasedModel } from '../lib/model-helpers'
 import {
+  formatDefaultGroupPrice,
   formatPrice,
   formatRequestPrice,
   stripTrailingZeros,
@@ -200,13 +201,50 @@ export function usePricingColumns(
             )
           )
 
+          const newUserInput = formatDefaultGroupPrice(
+            model,
+            'input',
+            tokenUnit,
+            showRechargePrice,
+            priceRate,
+            usdExchangeRate,
+            selectedGroup
+          )
+          const newUserOutput = formatDefaultGroupPrice(
+            model,
+            'output',
+            tokenUnit,
+            showRechargePrice,
+            priceRate,
+            usdExchangeRate,
+            selectedGroup
+          )
+
           return (
             <div className='max-w-full min-w-0'>
-              <span className='font-mono text-sm tabular-nums'>
-                {inputPrice}
-                <span className='text-muted-foreground/40 mx-1'>/</span>
-                {outputPrice}
-              </span>
+              {newUserInput !== null && newUserOutput !== null ? (
+                <>
+                  <span
+                    className='font-mono text-sm font-semibold text-emerald-600 tabular-nums dark:text-emerald-400'
+                    data-new-user-price
+                  >
+                    {stripTrailingZeros(newUserInput)}
+                    <span className='text-muted-foreground/40 mx-1'>/</span>
+                    {stripTrailingZeros(newUserOutput)}
+                  </span>
+                  <span className='text-muted-foreground/50 ml-2 font-mono text-xs tabular-nums line-through'>
+                    {inputPrice}
+                    <span className='mx-0.5'>/</span>
+                    {outputPrice}
+                  </span>
+                </>
+              ) : (
+                <span className='font-mono text-sm tabular-nums'>
+                  {inputPrice}
+                  <span className='text-muted-foreground/40 mx-1'>/</span>
+                  {outputPrice}
+                </span>
+              )}
               <div className='text-muted-foreground/50 text-[10px]'>
                 / {tokenUnitLabel} tokens
               </div>

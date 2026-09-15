@@ -3,6 +3,8 @@
   "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "仅为估算。最终货币与金额由 Stripe 在支付页按其实时汇率确定。",
   "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe 会在支付页按其实时汇率换算，以那里显示的金额为准。",
   "translation": {
+    "{{percent}}% off by default": "新用户默认立减 {{percent}}%",
+    "New users get up to {{percent}}% off by default": "新用户默认最高享 {{percent}}% 折扣",
     "A new version of the console is available.": "控制台有新版本可用。",
     "Reload the page to continue with the latest version.": "请刷新页面以使用最新版本。",
     "Reload": "刷新",

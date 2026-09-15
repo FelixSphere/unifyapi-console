@@ -119,3 +119,35 @@ export function replaceModelInPath(path: string, modelName: string): string {
 export function isTokenBasedModel(model: PricingModel): boolean {
   return model.quota_type === QUOTA_TYPE_VALUES.TOKEN
 }
+
+export type DefaultGroupDiscount = {
+  /** Final multiplier over the official price, in (0, 1). */
+  ratio: number
+  /** Whole-number percentage off, e.g. 10 for a 0.9 multiplier. */
+  percentOff: number
+}
+
+/**
+ * The discount the `default` group -- every new registration -- gets on this
+ * model, if the operator has set one below list. Reads the public
+ * `default_group_model_ratio` field only; never the viewer's own contract, so
+ * every visitor to Model Square sees the same badge.
+ */
+export function getDefaultGroupDiscount(
+  model: PricingModel
+): DefaultGroupDiscount | null {
+  const ratio = model.default_group_model_ratio
+  if (typeof ratio !== 'number' || !Number.isFinite(ratio)) return null
+  if (ratio <= 0 || ratio >= 1) return null
+  return { ratio, percentOff: Math.round((1 - ratio) * 100) }
+}
+
+/** The largest new-user discount across the catalogue, for the page headline. */
+export function getMaxDefaultGroupPercentOff(models: PricingModel[]): number {
+  let max = 0
+  for (const model of models) {
+    const discount = getDefaultGroupDiscount(model)
+    if (discount && discount.percentOff > max) max = discount.percentOff
+  }
+  return max
+}
