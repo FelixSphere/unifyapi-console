@@ -66,12 +66,18 @@ func ResolveBuilderProgram(tx *gorm.DB, selector BuilderProgramSelector, lock bo
 	if selector.PartnershipCode != "" || !ValidBuilderProgramName(selector.ProgramName) {
 		return nil, ErrPartnershipProgramUnavailable
 	}
-	query := tx
-	if lock {
-		query = lockForUpdate(tx)
+	// Each lookup needs its own statement. lockForUpdate returns a non-clone
+	// handle, so sharing one across both Find calls leaks the first query's
+	// resolved table and conditions into the second.
+	query := func() *gorm.DB {
+		session := tx.Session(&gorm.Session{})
+		if lock {
+			return lockForUpdate(session)
+		}
+		return session
 	}
 	var candidates []PartnershipProgram
-	if err := query.Where("name = ?", selector.ProgramName).Find(&candidates).Error; err != nil {
+	if err := query().Where("name = ?", selector.ProgramName).Find(&candidates).Error; err != nil {
 		return nil, err
 	}
 	var matches []PartnershipProgram
@@ -85,7 +91,7 @@ func ResolveBuilderProgram(tx *gorm.DB, selector BuilderProgramSelector, lock bo
 	}
 	program := matches[0]
 	var customers []PartnershipCustomer
-	if err := query.Where("program_id = ? AND is_default = ? AND removed_at = ?", program.Id, true, 0).Find(&customers).Error; err != nil {
+	if err := query().Where("program_id = ? AND is_default = ? AND removed_at = ?", program.Id, true, 0).Find(&customers).Error; err != nil {
 		return nil, err
 	}
 	if len(customers) != 1 || !customers[0].Enabled {
