@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -109,19 +110,21 @@ func TestBuilderProgramNameAssertionContract(t *testing.T) {
 		name, configured, sent, code, sentCode string
 		valid                                  bool
 	}{
-		{name: "exact", configured: "Builder_hub_2026_Sep_Batch", sent: "Builder_hub_2026_Sep_Batch", valid: true},
-		{name: "unicode boundary", configured: strings.Repeat("界", 120), sent: strings.Repeat("界", 120), valid: true},
-		{name: "too long", configured: strings.Repeat("界", 121), sent: strings.Repeat("界", 121)},
-		{name: "spaces", configured: "Builder Local Test", sent: "Builder Local Test", valid: true},
-		{name: "whitespace", configured: " name", sent: " name"},
-		{name: "control", configured: "name\nline", sent: "name\nline"},
-		{name: "missing", configured: "Program"},
-		{name: "case", configured: "Program", sent: "program"},
-		{name: "both configured", configured: "Program", sent: "Program", code: "code", sentCode: "code"},
-		{name: "both sent", configured: "Program", sent: "Program", sentCode: "code"},
-		{name: "no fallback", configured: "Program", sentCode: "Program"},
+		{name: "request selects program without environment", sent: "Builder_hub_2026_Sep_Batch", valid: true},
+		{name: "obsolete name setting is ignored", configured: "Old Program", sent: "New Program", valid: true},
+		{name: "legacy code setting does not pin name mode", code: "legacy", sent: "Program", valid: true},
+		{name: "unicode boundary", sent: strings.Repeat("界", 120), valid: true},
+		{name: "too long", sent: strings.Repeat("界", 121)},
+		{name: "spaces", sent: "Builder Local Test", valid: true},
+		{name: "whitespace", sent: " name"},
+		{name: "control", sent: "name\nline"},
+		{name: "missing"},
+		{name: "configured name is not a fallback", configured: "Program"},
+		{name: "case preserved for database lookup", sent: "program", valid: true},
+		{name: "both sent", sent: "Program", sentCode: "code"},
 		{name: "legacy", code: "legacy", sentCode: "legacy", valid: true},
-		{name: "name in legacy", code: "legacy", sentCode: "legacy", sent: "Program"},
+		{name: "legacy mismatch", code: "legacy", sentCode: "other"},
+		{name: "legacy unconfigured", sentCode: "legacy"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			secret := "test-secret-with-at-least-32-characters"
@@ -154,7 +157,7 @@ func TestBuilderMissingProgramReturnsStableErrorForEveryAction(t *testing.T) {
 	setupPartnershipControllerTest(t)
 	secret := "test-secret-with-at-least-32-characters"
 	t.Setenv("BUILDER_INTEGRATION_SECRET", secret)
-	t.Setenv("BUILDER_INTEGRATION_PROGRAM_NAME", "Missing Program")
+	t.Setenv("BUILDER_INTEGRATION_PROGRAM_NAME", "")
 	t.Setenv("BUILDER_INTEGRATION_PARTNERSHIP_CODE", "")
 	for _, action := range []string{"connect", "workspace", "claim", "credit-status", "key", "checkout"} {
 		t.Run(action, func(t *testing.T) {
@@ -174,5 +177,73 @@ func TestBuilderMissingProgramReturnsStableErrorForEveryAction(t *testing.T) {
 			assert.JSONEq(t, `{"code":"UNIFY_PROGRAM_UNAVAILABLE"}`, recorder.Body.String())
 			assert.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
 		})
+	}
+}
+
+func TestBuilderSignedProgramConnectUsesDatabaseWithoutSelectorEnvironment(t *testing.T) {
+	setupPartnershipControllerTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.User{}, &model.Tenant{}, &model.BuilderIdentity{}, &model.Token{}))
+	secret := "test-secret-with-at-least-32-characters"
+	t.Setenv("BUILDER_INTEGRATION_SECRET", secret)
+	t.Setenv("BUILDER_INTEGRATION_PROGRAM_NAME", "")
+	t.Setenv("BUILDER_INTEGRATION_PARTNERSHIP_CODE", "")
+	program := model.PartnershipProgram{Name: "Builder_hub_2026_Sep_Batch", Code: "builders", Group: "partner", Enabled: true}
+	require.NoError(t, model.CreatePartnershipProgram(&program))
+	other := model.PartnershipProgram{Name: "Other Program", Code: "other", Group: "partner", Enabled: true}
+	require.NoError(t, model.CreatePartnershipProgram(&other))
+	var customer model.PartnershipCustomer
+	require.NoError(t, model.DB.Where("program_id = ? AND is_default = ?", program.Id, true).First(&customer).Error)
+
+	for _, tt := range []struct {
+		name, action, program, signedProgram string
+		status                               int
+		response                             string
+	}{
+		{"unconnected workspace", "workspace", program.Name, program.Name, 200, `{"connected":false}`},
+		{"tampered program", "connect", other.Name, program.Name, 401, `{"code":"UNIFY_UNAUTHORIZED"}`},
+		{"connect", "connect", program.Name, program.Name, 200, `{"connected":true}`},
+		{"retry", "connect", program.Name, program.Name, 200, `{"connected":true}`},
+		{"case mismatch", "workspace", "builder_hub_2026_sep_batch", "builder_hub_2026_sep_batch", 409, `{"code":"UNIFY_PROGRAM_UNAVAILABLE"}`},
+		{"cannot switch program", "connect", other.Name, other.Name, 409, `{"code":"UNIFY_PROGRAM_UNAVAILABLE"}`},
+		{"cannot read another program", "workspace", other.Name, other.Name, 409, `{"code":"UNIFY_PROGRAM_UNAVAILABLE"}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			input := map[string]any{"subject": "new-builder-user", "program_name": tt.signedProgram, "email": "new-builder@example.invalid", "email_verified": true}
+			signedBody, err := common.Marshal(input)
+			require.NoError(t, err)
+			input["program_name"] = tt.program
+			body, err := common.Marshal(input)
+			require.NoError(t, err)
+			path := "/api/builder/v1/" + tt.action
+			timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+			mac := hmac.New(sha256.New, []byte(secret))
+			mac.Write([]byte("POST\n" + path + "\n" + timestamp + "\n"))
+			mac.Write(signedBody)
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Params = gin.Params{{Key: "action", Value: tt.action}}
+			c.Request = httptest.NewRequest("POST", path, strings.NewReader(string(body)))
+			c.Request.Header.Set("X-Builder-Timestamp", timestamp)
+			c.Request.Header.Set("X-Builder-Signature", hex.EncodeToString(mac.Sum(nil)))
+			BuilderIntegration(c)
+			require.Equal(t, tt.status, recorder.Code, recorder.Body.String())
+			assert.JSONEq(t, tt.response, recorder.Body.String())
+		})
+	}
+	link, user, err := model.GetBuilderIdentity("new-builder-user")
+	require.NoError(t, err)
+	assert.Equal(t, program.Id, link.ProgramId)
+	assert.Equal(t, customer.Id, link.CustomerId)
+	assert.Equal(t, customer.Group, user.Group)
+	assert.Zero(t, user.Quota)
+	var enrollment model.PartnershipEnrollment
+	require.NoError(t, model.DB.Where("user_id = ?", user.Id).First(&enrollment).Error)
+	assert.Equal(t, program.Id, enrollment.ProgramId)
+	assert.Equal(t, customer.Id, enrollment.CustomerId)
+	assert.Zero(t, enrollment.GrantedQuota)
+	for _, table := range []any{&model.User{}, &model.BuilderIdentity{}, &model.Token{}, &model.PartnershipEnrollment{}} {
+		var count int64
+		require.NoError(t, model.DB.Model(table).Count(&count).Error)
+		assert.EqualValues(t, 1, count)
 	}
 }

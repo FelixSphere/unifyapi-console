@@ -1,6 +1,6 @@
 # Builder API integration bridge
 
-Release scope: the opt-in v1 account/grant bridge using either one configured exact Program name (its default customer) or a legacy customer registration code. The program/team target below is future work, not part of this release. Builder must document this limitation in its integration PR before enabling the bridge.
+Release scope: the opt-in v1 account/grant bridge using either an exact Program name from the signed request (its default customer) or a configured legacy customer registration code. The program/team target below is future work, not part of this release. Builder must document this limitation in its integration PR before enabling the bridge.
 
 ## Clarified target: program, team and customer group
 
@@ -47,21 +47,30 @@ Builder subject is the durable team identity; products cannot reset the grant.
 Builder's API verifies its normal Firebase session and verified email. It signs
 `POST\n/path\nunix_timestamp\nexact_body` using HMAC-SHA256, sending the signature
 as hexadecimal in `X-Builder-Signature` and the time in `X-Builder-Timestamp`.
-Assertions expire after 30 seconds. The configured selector is authoritative.
+Assertions expire after 30 seconds. The HMAC credential authenticates Builder's
+backend; never expose it to the browser. The trusted backend selects an existing
+Program in the signed request, and therefore this credential can select any
+valid Program in the database. It is not a credential scoped to one Program.
 
-Set `BUILDER_INTEGRATION_SECRET` (minimum 32 characters) and exactly one of:
+For name mode, set only `BUILDER_INTEGRATION_SECRET` (minimum 32 characters) on
+UnifyAPI. Send, for example:
 
-- `BUILDER_INTEGRATION_PROGRAM_NAME=Builder_hub_2026_Sep_Batch`, with signed JSON
-  `program_name` matching exactly; or
-- `BUILDER_INTEGRATION_PARTNERSHIP_CODE`, with signed JSON `partnership_code`
-  matching the existing customer registration code.
+```json
+{"subject":"<builder-user-id>","program_name":"Builder_hub_2026_Sep_Batch","range":"30d"}
+```
 
-Builder uses `BUILDER_UNIFY_PROGRAM_NAME` for name mode, retaining its own
-`BUILDER_UNIFY_SECRET`. Never configure both selector settings. Missing/both
-settings, wrong mode/value, invalid names or invalid signatures return HTTP 401
-`UNIFY_UNAUTHORIZED`. There is no name/code fallback or lowercasing. Names are
-1–120 Unicode code points, unchanged by JavaScript `trim()`, without Unicode Cc
-controls; internal spaces and case are preserved.
+`BUILDER_INTEGRATION_PROGRAM_NAME` is no longer read or required on UnifyAPI;
+any old value has no effect. Program selection is business data resolved against
+the database, not a deployment-level name match. Builder may retain its own
+`BUILDER_UNIFY_PROGRAM_NAME` setting to construct the signed request.
+
+Legacy code mode remains compatible: set `BUILDER_INTEGRATION_PARTNERSHIP_CODE`
+and send the matching `partnership_code`. This legacy setting does not restrict
+name-mode requests. Send exactly one nonempty selector; missing/both selectors,
+invalid names, missing/short secrets, invalid signatures and legacy code
+mismatches return HTTP 401 `UNIFY_UNAUTHORIZED`. There is no name/code fallback
+or lowercasing. Names are 1–120 Unicode code points, unchanged by JavaScript
+`trim()`, without Unicode Cc controls; internal spaces and case are preserved.
 
 Name lookup compares exact strings after the database query, independently of
 case/accent-insensitive collations. It requires exactly one matching Program
@@ -69,14 +78,14 @@ case/accent-insensitive collations. It requires exactly one matching Program
 exactly one non-removed, enabled default customer. Missing/duplicate/inactive
 Programs or unusable defaults return HTTP 409 `UNIFY_PROGRAM_UNAVAILABLE`.
 All name-mode actions validate this offer; existing identities cannot switch
-Program/customer when configuration changes. Name resolution never creates a
-Program/customer and does not fall back to a public registration code.
+Program/customer when the request selects a different Program. Name resolution
+never creates a Program/customer and does not fall back to a public registration code.
 
 Production Builder origin is `https://app.unifyapi.ai` (no `/v1` suffix);
 inference base is `https://app.unifyapi.ai/v1`, and the signed bridge is
 `https://app.unifyapi.ai/api/builder/v1/{action}`. Deploy this backend before
-switching Builder to name mode; coordinate both selector settings without
-changing the shared HMAC protocol. Existing identities selecting the same
+switching Builder to name mode; include the selector in the signed request
+without changing the shared HMAC protocol. Existing identities selecting the same
 default customer reuse their account/key and cannot claim another grant.
 No schema migration or automatic production configuration is included.
 
@@ -89,7 +98,7 @@ signed webhook remain owned by the existing Stripe implementation.
 
 ## Account behavior
 
-New accounts get the configured partnership customer group and zero initial
+New accounts get the selected Program default customer group and zero initial
 credit. An enrollment records attribution without consuming grant capacity.
 Existing accounts require proof using their existing management token and a
 matching verified email; their group and balance remain unchanged. A management
@@ -119,7 +128,7 @@ configuration, live user grant or Stripe payment was changed.
 ## Team launch grant
 
 Builder's backend asserts active product ownership in the signed claim request.
-A browser cannot choose the owner, grant amount or group. The active configured
+A browser cannot choose the owner, grant amount or group. The active selected
 offer must match the original identity's program/customer, have grant quota
 equal to USD 10 in quota units, and have remaining capacity.
 
@@ -128,7 +137,8 @@ program slot, credits the owner's existing billing entity and records the quota
 and timestamp on BuilderIdentity. A unique subject and unique user prevent
 cross-product and concurrent duplicate grants. Prior partnership signup grants
 also count as claimed. Failed quota writes roll back the capacity and receipt.
-Changing server configuration never creates another identity or receipt.
+Changing the requested Program never creates another identity or receipt for
+an already linked subject.
 
 The workspace credit feed includes launch receipts (negative identity IDs) and
 Stripe top-ups (positive IDs). Membership and product transfers do not transfer
@@ -140,9 +150,9 @@ No live payment or production grant was issued during implementation.
 
 ## Limited v1 release boundary
 
-Only `/api/builder/v1/:action` is implemented. There is no v2 endpoint, program-name lookup, per-team customer provisioning, member wallet sharing, multi-team selection, or automatic account/group/fund migration. Builder must assert verified identity and owner eligibility server-side; it must not share an owner credential with ordinary members. Grant uniqueness is the linked owner subject/user, shared by that owner's products.
+Only `/api/builder/v1/:action` is implemented. There is no v2 endpoint, per-team customer provisioning, member wallet sharing, multi-team selection, or automatic account/group/fund migration. Builder must assert verified identity and owner eligibility server-side; it must not share an owner credential with ordinary members. Grant uniqueness is the linked owner subject/user, shared by that owner's products.
 
-Stripe availability and checkout use the existing full payment configuration/compliance gate. Deploying this code does not configure or enable the bridge: missing `BUILDER_INTEGRATION_SECRET` or `BUILDER_INTEGRATION_PARTNERSHIP_CODE` keeps it disabled. Deployment does not confirm payment compliance. The additive identity/grant receipt table must be retained on rollback; disabling the bridge does not reverse grants or revoke issued inference keys. Revoke those keys separately if required.
+Stripe availability and checkout use the existing full payment configuration/compliance gate. A missing or short `BUILDER_INTEGRATION_SECRET` keeps the bridge disabled. An installation with a valid secret can accept signed name-mode requests after this upgrade, even if neither selector environment variable is configured. Legacy code mode still requires its configured code. Deployment does not confirm payment compliance. The additive identity/grant receipt table must be retained on rollback; disabling the bridge does not reverse grants or revoke issued inference keys. Revoke those keys separately if required.
 
 Program-name change validation (2026-09-14): focused Builder and Partnership
 model/controller tests passed, plus `go vet ./model ./controller`. Coverage
@@ -151,3 +161,19 @@ exact-name and code collisions, missing/duplicate/inactive programs, default
 customer rejection, cross-mode identity reuse, preservation of existing funds
 and group, and rollback/retry without duplicate launch grants. Tests use SQLite;
 MySQL/PostgreSQL runtime validation and live Stripe/provider checks were not run.
+
+
+## Request-selected Program correction (2026-09-15)
+
+UnifyAPI now resolves the signed `program_name` from the database without an
+UnifyAPI Program environment variable. The existing HMAC secret remains the
+server trust boundary. No tables, grants, existing account groups or deployment
+configuration are changed. Reverting to the previous application restores its
+selector-environment requirement, so name-mode calls can return 401 again on a
+secret-only installation; existing enrollments and keys remain stored.
+
+Regression coverage includes secret-only workspace/connect requests, persisted
+Program/default-customer enrollment, retry idempotency, signed-body tampering,
+exact-name rejection and protection against switching an existing identity's
+Program. Local tests do not establish a hosted release or a paid provider/Stripe
+transaction.
