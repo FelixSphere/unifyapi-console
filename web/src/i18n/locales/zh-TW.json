@@ -3,6 +3,8 @@
   "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "僅為估算。最終貨幣與金額由 Stripe 在支付頁按其即時匯率決定。",
   "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe 會在支付頁按其即時匯率換算，以該頁顯示的金額為準。",
   "translation": {
+    "Every model marked below is already discounted for new accounts. No code needed.": "下方帶標記的模型對新帳戶已自動打折，無需優惠碼。",
+    "Sign up and save": "註冊即享優惠",
     "{{percent}}% off by default": "新用戶預設立減 {{percent}}%",
     "New users get up to {{percent}}% off by default": "新用戶預設最高享 {{percent}}% 折扣",
     "A new version of the console is available.": "控制台有新版本可用。",

@@ -140,6 +140,7 @@ async function render(m: PricingModel) {
     badge: container.querySelector('[data-default-discount-badge]'),
     newUserPrices: container.querySelectorAll('[data-new-user-price]'),
     struck: container.querySelectorAll('.line-through'),
+    listPrices: container.querySelectorAll('[data-list-price]'),
     cleanup: async () => {
       await act(async () => root.unmount())
       container.remove()
@@ -153,7 +154,7 @@ async function render(m: PricingModel) {
 describe('ModelCard new-user discount', () => {
   afterAll(() => domWindow.close())
 
-  test('a 0.9 default ratio shows a 10% badge and the new-user price with list struck through', async () => {
+  test('a 0.9 default ratio shows a 10% badge and the new-user price beside the intact list price', async () => {
     const r = await render(model({ default_group_model_ratio: 0.9 }))
     assert.ok(r.badge, 'badge rendered')
     assert.match(r.badge!.textContent ?? '', /10% off by default/)
@@ -164,13 +165,19 @@ describe('ModelCard new-user discount', () => {
     )
     assert.ok(r.text.includes('$2.25'), 'new-user input price $2.25 is shown')
     assert.ok(r.text.includes('$9'), 'new-user output price $9 is shown')
-    assert.ok(
-      r.struck.length >= 2,
-      'the list prices are still shown, struck through'
+    assert.equal(
+      r.struck.length,
+      0,
+      'the list price is the baseline and must never be struck through'
+    )
+    assert.equal(
+      r.listPrices.length,
+      2,
+      'the list price stays beside the new-user price for input and output'
     )
     assert.ok(
       r.text.includes('$2.5'),
-      'the published list price is still on the card'
+      'the published list price is still on the card, intact'
     )
     await r.cleanup()
   })

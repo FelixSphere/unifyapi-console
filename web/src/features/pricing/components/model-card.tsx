@@ -20,7 +20,6 @@ import { ChevronRight, Copy } from 'lucide-react'
 import { memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Badge } from '@/components/ui/badge'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
@@ -95,12 +94,13 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     return (
       <>
         <span
-          className='font-mono font-bold text-emerald-600 dark:text-emerald-400'
+          className='font-mono text-base font-black text-emerald-600 sm:text-lg dark:text-emerald-400'
           data-new-user-price
         >
           {newUser}
-        </span>{' '}
-        <span className='text-muted-foreground/60 font-mono text-xs line-through'>
+        </span>
+        <span className='text-muted-foreground/50 mx-1'>·</span>
+        <span className='text-muted-foreground font-mono' data-list-price>
           {list}
         </span>
       </>
@@ -228,21 +228,21 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             )}
           </div>
           <div className='min-w-0'>
-            <div className='flex min-w-0 items-center gap-2'>
-              <h3 className='text-foreground truncate font-mono text-[15px] leading-tight font-bold'>
-                {props.model.model_name}
-              </h3>
-              {defaultDiscount && (
-                <Badge
-                  className='shrink-0 bg-emerald-600 text-white hover:bg-emerald-600 dark:bg-emerald-500'
+            <h3 className='text-foreground truncate font-mono text-[15px] leading-tight font-bold'>
+              {props.model.model_name}
+            </h3>
+            {defaultDiscount && (
+              <div className='mt-1.5'>
+                <span
+                  className='inline-flex items-center rounded-full bg-gradient-to-r from-emerald-500 to-lime-400 px-2.5 py-1 text-[11px] leading-none font-black tracking-wide whitespace-nowrap text-white uppercase shadow-md shadow-emerald-500/40'
                   data-default-discount-badge
                 >
                   {t('{{percent}}% off by default', {
                     percent: defaultDiscount.percentOff,
                   })}
-                </Badge>
-              )}
-            </div>
+                </span>
+              </div>
+            )}
             <div className='mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm sm:mt-1 sm:gap-x-3'>
               {priceSummary}
             </div>

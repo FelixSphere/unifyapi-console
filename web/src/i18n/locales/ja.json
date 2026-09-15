@@ -3,6 +3,8 @@
   "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "概算です。最終的な通貨と金額は、Stripe が決済ページでその時のレートに基づいて決定します。",
   "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe が決済ページでその時のレートに換算します。実際の請求額はそちらの金額です。",
   "translation": {
+    "Every model marked below is already discounted for new accounts. No code needed.": "下記のマーク付きモデルは新規アカウントで自動的に割引されます。コード不要。",
+    "Sign up and save": "登録してお得に",
     "{{percent}}% off by default": "新規ユーザーは既定で {{percent}}% オフ",
     "New users get up to {{percent}}% off by default": "新規ユーザーは既定で最大 {{percent}}% オフ",
     "A new version of the console is available.": "コンソールの新しいバージョンが利用可能です。",
