@@ -150,3 +150,17 @@ export interface ManageUserQuotaPayload {
 // ============================================================================
 
 export type UsersDialogType = 'create' | 'update' | 'delete'
+
+/**
+ * The most recent send attempt for one address. Recorded at send time, so
+ * `accepted` means the mail server took the message -- not that it arrived.
+ */
+export interface EmailDeliveryState {
+  email: string
+  last_status: 'accepted' | 'rejected'
+  last_attempt_at: number
+  last_purpose: string
+  last_error: string
+  attempts: number
+  rejections: number
+}
