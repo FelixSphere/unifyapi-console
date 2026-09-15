@@ -158,6 +158,20 @@ func BuilderIntegration(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"code": "UNIFY_ACCOUNT_UNAVAILABLE"})
 		return
 	}
+	// connect validates the email while provisioning. Every other action only
+	// identified the subject, so a signed address was never checked against the
+	// account it resolves to. Verify it when supplied, so the caller's claim
+	// about who this is has to agree with the linked account on every call.
+	if request.Email != "" {
+		if !request.EmailVerified {
+			c.JSON(http.StatusForbidden, gin.H{"code": "UNIFY_EMAIL_UNVERIFIED"})
+			return
+		}
+		if model.NormalizeEmail(request.Email) != model.NormalizeEmail(user.Email) {
+			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_EMAIL_MISMATCH"})
+			return
+		}
+	}
 	if offer != nil && (link.ProgramId != offer.Program.Id || link.CustomerId != offer.CustomerId) {
 		// Naming a team this identity is not enrolled in is a customer conflict,
 		// not a missing program. Reads must not silently answer for another team.

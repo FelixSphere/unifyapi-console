@@ -11,6 +11,8 @@ package model
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -81,4 +83,36 @@ func TestResolveBuilderProgramSelectsNamedCustomer(t *testing.T) {
 		}, false)
 		assert.ErrorIs(t, err, ErrPartnershipCustomerUnavailable)
 	})
+}
+
+// The named-customer lookup runs inside connect's locked transaction, which is
+// exactly where a shared statement broke account creation before. Guard the new
+// path against the same class of bug: the store stays SQLite so rows are real,
+// while the database type is switched so lockForUpdate takes its locking branch.
+func TestResolveBuilderProgramSelectsNamedCustomerUnderLock(t *testing.T) {
+	setupPartnershipTestDB(t)
+	program := PartnershipProgram{Name: "Builder_hub_2026_Sep_Batch", Code: "builders", Group: "partner", Enabled: true}
+	require.NoError(t, CreatePartnershipProgram(&program))
+	require.NoError(t, CreatePartnershipCustomer(program.Id, &PartnershipCustomer{
+		Name: "Acme Robotics", Code: "acme-robotics", Group: "vip", Enabled: true,
+	}))
+
+	for _, databaseType := range []common.DatabaseType{common.DatabaseTypePostgreSQL, common.DatabaseTypeMySQL} {
+		t.Run(string(databaseType), func(t *testing.T) {
+			previousType := common.MainDatabaseType()
+			common.SetMainDatabaseType(databaseType)
+			t.Cleanup(func() { common.SetMainDatabaseType(previousType) })
+
+			offer, err := ResolveBuilderProgram(DB, BuilderProgramSelector{
+				ProgramName: program.Name, CustomerName: "Acme Robotics",
+			}, true)
+			require.NoError(t, err)
+			assert.Equal(t, "vip", offer.CustomerGroup)
+
+			// The default path must stay correct under lock too.
+			offer, err = ResolveBuilderProgram(DB, BuilderProgramSelector{ProgramName: program.Name}, true)
+			require.NoError(t, err)
+			assert.Equal(t, "partner", offer.CustomerGroup)
+		})
+	}
 }

@@ -49,7 +49,7 @@ func TestBuilderConnectRoutesToNamedCustomer(t *testing.T) {
 		Name: "Acme Robotics", Code: "acme-robotics", Group: "acme_robotics", Enabled: true,
 	}))
 
-	call := func(t *testing.T, action, subject, customerName string) *httptest.ResponseRecorder {
+	callWith := func(t *testing.T, action, subject, customerName string, mutate func(map[string]any)) *httptest.ResponseRecorder {
 		t.Helper()
 		input := map[string]any{
 			"subject": subject, "program_name": program.Name,
@@ -57,6 +57,9 @@ func TestBuilderConnectRoutesToNamedCustomer(t *testing.T) {
 		}
 		if customerName != "" {
 			input["customer_name"] = customerName
+		}
+		if mutate != nil {
+			mutate(input)
 		}
 		body, err := common.Marshal(input)
 		require.NoError(t, err)
@@ -73,6 +76,10 @@ func TestBuilderConnectRoutesToNamedCustomer(t *testing.T) {
 		c.Request.Header.Set("X-Builder-Signature", hex.EncodeToString(mac.Sum(nil)))
 		BuilderIntegration(c)
 		return recorder
+	}
+	call := func(t *testing.T, action, subject, customerName string) *httptest.ResponseRecorder {
+		t.Helper()
+		return callWith(t, action, subject, customerName, nil)
 	}
 
 	t.Run("named team is enrolled into its own customer", func(t *testing.T) {
@@ -120,5 +127,56 @@ func TestBuilderConnectRoutesToNamedCustomer(t *testing.T) {
 		recorder := call(t, "workspace", "acme-user", "Builder_hub_2026_Sep_Batch")
 		assert.Equal(t, 409, recorder.Code)
 		assert.JSONEq(t, `{"code":"UNIFY_CUSTOMER_CONFLICT"}`, recorder.Body.String())
+	})
+
+	// The signed email is the caller's claim about who this subject is. connect
+	// checked it while provisioning; every other action took the subject on
+	// trust. Verify it wherever it is supplied.
+	t.Run("a signed email must match the linked account", func(t *testing.T) {
+		recorder := callWith(t, "workspace", "acme-user", "Acme Robotics", func(input map[string]any) {
+			input["email"] = "someone-else@example.invalid"
+		})
+		assert.Equal(t, 409, recorder.Code)
+		assert.JSONEq(t, `{"code":"UNIFY_EMAIL_MISMATCH"}`, recorder.Body.String())
+	})
+
+	t.Run("an unverified email is refused even when it matches", func(t *testing.T) {
+		recorder := callWith(t, "workspace", "acme-user", "Acme Robotics", func(input map[string]any) {
+			input["email_verified"] = false
+		})
+		assert.Equal(t, 403, recorder.Code)
+		assert.JSONEq(t, `{"code":"UNIFY_EMAIL_UNVERIFIED"}`, recorder.Body.String())
+	})
+
+	// Assert on the email decision itself rather than the whole action, so the
+	// result does not depend on what a workspace read goes on to do.
+	t.Run("email comparison ignores case and surrounding form", func(t *testing.T) {
+		recorder := callWith(t, "credit-status", "acme-user", "Acme Robotics", func(input map[string]any) {
+			input["email"] = " ACME-USER@Example.Invalid "
+		})
+		assert.NotContains(t, recorder.Body.String(), "UNIFY_EMAIL_MISMATCH")
+		assert.NotContains(t, recorder.Body.String(), "UNIFY_EMAIL_UNVERIFIED")
+	})
+
+	// Omitting the field keeps older callers working, so this ships dormant.
+	t.Run("omitting the email leaves existing callers unaffected", func(t *testing.T) {
+		recorder := callWith(t, "credit-status", "acme-user", "Acme Robotics", func(input map[string]any) {
+			delete(input, "email")
+			delete(input, "email_verified")
+		})
+		assert.NotContains(t, recorder.Body.String(), "UNIFY_EMAIL_MISMATCH")
+		assert.NotContains(t, recorder.Body.String(), "UNIFY_EMAIL_UNVERIFIED")
+	})
+
+	t.Run("reconnecting the same team is idempotent", func(t *testing.T) {
+		before, _, err := model.GetBuilderIdentity("acme-user")
+		require.NoError(t, err)
+		recorder := call(t, "connect", "acme-user", "Acme Robotics")
+		require.Equal(t, 200, recorder.Code, recorder.Body.String())
+		after, user, err := model.GetBuilderIdentity("acme-user")
+		require.NoError(t, err)
+		assert.Equal(t, before.Id, after.Id, "no second identity")
+		assert.Equal(t, before.CustomerId, after.CustomerId)
+		assert.Equal(t, "acme_robotics", user.Group)
 	})
 }
