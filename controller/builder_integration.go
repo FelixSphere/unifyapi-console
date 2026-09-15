@@ -30,6 +30,7 @@ type builderRequest struct {
 	Subject         string `json:"subject"`
 	PartnershipCode string `json:"partnership_code"`
 	ProgramName     string `json:"program_name"`
+	CustomerName    string `json:"customer_name"`
 	Email           string `json:"email"`
 	EmailVerified   bool   `json:"email_verified"`
 	ManagementToken string `json:"management_token"`
@@ -83,6 +84,19 @@ func readBuilderRequest(c *gin.Context) (*builderRequest, error) {
 	return &request, nil
 }
 
+// builderProgramConflictCode keeps "the team cannot be used" distinct from "the
+// program cannot be used", so a caller can tell which selector failed.
+func builderProgramConflictCode(err error) string {
+	switch {
+	case errors.Is(err, model.ErrPartnershipCustomerConflict):
+		return "UNIFY_CUSTOMER_CONFLICT"
+	case errors.Is(err, model.ErrPartnershipCustomerUnavailable):
+		return "UNIFY_CUSTOMER_UNAVAILABLE"
+	default:
+		return "UNIFY_PROGRAM_UNAVAILABLE"
+	}
+}
+
 // BuilderIntegration accepts only server-signed assertions, never a browser's
 // claimed email or user id. The integration is disabled without its secret.
 func BuilderIntegration(c *gin.Context) {
@@ -92,12 +106,18 @@ func BuilderIntegration(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"code": "UNIFY_UNAUTHORIZED"})
 		return
 	}
-	selector := model.BuilderProgramSelector{ProgramName: request.ProgramName, PartnershipCode: request.PartnershipCode}
+	// A malformed team name is the caller's mistake, not a missing customer, so
+	// it is reported as a bad request rather than a conflict.
+	if request.CustomerName != "" && !model.ValidBuilderProgramName(request.CustomerName) {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "UNIFY_CUSTOMER_INVALID"})
+		return
+	}
+	selector := model.BuilderProgramSelector{ProgramName: request.ProgramName, PartnershipCode: request.PartnershipCode, CustomerName: request.CustomerName}
 	var offer *model.PartnershipOffer
 	if request.ProgramName != "" {
 		offer, err = model.ResolveBuilderProgram(model.DB, selector, false)
 		if err != nil {
-			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_PROGRAM_UNAVAILABLE"})
+			c.JSON(http.StatusConflict, gin.H{"code": builderProgramConflictCode(err)})
 			return
 		}
 	}
@@ -108,8 +128,10 @@ func BuilderIntegration(c *gin.Context) {
 			return
 		}
 		_, err := model.ConnectBuilderIdentityWithProgram(request.Subject, request.Email, selector, request.ManagementToken)
-		if request.ProgramName != "" && errors.Is(err, model.ErrPartnershipProgramUnavailable) {
-			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_PROGRAM_UNAVAILABLE"})
+		if request.ProgramName != "" && (errors.Is(err, model.ErrPartnershipProgramUnavailable) ||
+			errors.Is(err, model.ErrPartnershipCustomerUnavailable) ||
+			errors.Is(err, model.ErrPartnershipCustomerConflict)) {
+			c.JSON(http.StatusConflict, gin.H{"code": builderProgramConflictCode(err)})
 			return
 		}
 		if errors.Is(err, model.ErrBuilderLinkRequired) {
@@ -137,7 +159,13 @@ func BuilderIntegration(c *gin.Context) {
 		return
 	}
 	if offer != nil && (link.ProgramId != offer.Program.Id || link.CustomerId != offer.CustomerId) {
-		c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_PROGRAM_UNAVAILABLE"})
+		// Naming a team this identity is not enrolled in is a customer conflict,
+		// not a missing program. Reads must not silently answer for another team.
+		code := "UNIFY_PROGRAM_UNAVAILABLE"
+		if request.CustomerName != "" {
+			code = "UNIFY_CUSTOMER_CONFLICT"
+		}
+		c.JSON(http.StatusConflict, gin.H{"code": code})
 		return
 	}
 	switch c.Param("action") {

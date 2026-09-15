@@ -36,10 +36,23 @@ type BuilderIdentity struct {
 var ErrBuilderLinkRequired = errors.New("existing account ownership verification required")
 var ErrBuilderUnavailable = errors.New("builder account unavailable")
 
+// ErrPartnershipCustomerUnavailable separates "this named customer cannot be
+// used" from "this program cannot be used", so a caller naming a team that is
+// missing, ambiguous or disabled is told which of the two failed.
+var ErrPartnershipCustomerUnavailable = errors.New("partnership customer unavailable")
+
+// ErrPartnershipCustomerConflict marks an identity already enrolled with a
+// different customer. Repointing it moves a person's usage to another invoice,
+// so it is an administrative act rather than a side effect of a request field.
+var ErrPartnershipCustomerConflict = errors.New("partnership customer conflict")
+
 // BuilderProgramSelector keeps program names separate from legacy registration codes.
+// CustomerName selects one customer within the program; without it the program's
+// default customer is used, which is the behaviour every existing caller relies on.
 type BuilderProgramSelector struct {
 	ProgramName     string
 	PartnershipCode string
+	CustomerName    string
 }
 
 func ValidBuilderProgramName(name string) bool {
@@ -61,10 +74,18 @@ func ResolveBuilderProgram(tx *gorm.DB, selector BuilderProgramSelector, lock bo
 		if selector.PartnershipCode == "" {
 			return nil, ErrPartnershipProgramUnavailable
 		}
+		// A customer name selects within a program, so it has no meaning for the
+		// legacy code lookup, which already resolves one specific customer.
+		if selector.CustomerName != "" {
+			return nil, ErrPartnershipCustomerUnavailable
+		}
 		return getPartnershipOfferByCode(tx, selector.PartnershipCode, lock)
 	}
 	if selector.PartnershipCode != "" || !ValidBuilderProgramName(selector.ProgramName) {
 		return nil, ErrPartnershipProgramUnavailable
+	}
+	if selector.CustomerName != "" && !ValidBuilderProgramName(selector.CustomerName) {
+		return nil, ErrPartnershipCustomerUnavailable
 	}
 	// Each lookup needs its own statement. lockForUpdate returns a non-clone
 	// handle, so sharing one across both Find calls leaks the first query's
@@ -90,15 +111,42 @@ func ResolveBuilderProgram(tx *gorm.DB, selector BuilderProgramSelector, lock bo
 		return nil, ErrPartnershipProgramUnavailable
 	}
 	program := matches[0]
-	var customers []PartnershipCustomer
-	if err := query().Where("program_id = ? AND is_default = ? AND removed_at = ?", program.Id, true, 0).Find(&customers).Error; err != nil {
+	customer, err := resolveProgramCustomer(query, program.Id, selector.CustomerName)
+	if err != nil {
 		return nil, err
 	}
-	if len(customers) != 1 || !customers[0].Enabled {
-		return nil, ErrPartnershipProgramUnavailable
-	}
-	customer := customers[0]
 	return &PartnershipOffer{Program: program, CustomerId: customer.Id, CustomerName: customer.Name, CustomerCode: customer.Code, CustomerGroup: customer.Group}, nil
+}
+
+// resolveProgramCustomer selects one live customer inside a program: the one
+// named, or the program default when no name is given. Names are not unique in
+// the schema, so an ambiguous name is refused rather than resolved arbitrarily.
+// Compare in Go, as database collations may be case or accent insensitive.
+func resolveProgramCustomer(query func() *gorm.DB, programId int, name string) (*PartnershipCustomer, error) {
+	if name == "" {
+		var customers []PartnershipCustomer
+		if err := query().Where("program_id = ? AND is_default = ? AND removed_at = ?", programId, true, 0).Find(&customers).Error; err != nil {
+			return nil, err
+		}
+		if len(customers) != 1 || !customers[0].Enabled {
+			return nil, ErrPartnershipProgramUnavailable
+		}
+		return &customers[0], nil
+	}
+	var candidates []PartnershipCustomer
+	if err := query().Where("program_id = ? AND name = ? AND removed_at = ?", programId, name, 0).Find(&candidates).Error; err != nil {
+		return nil, err
+	}
+	var matches []PartnershipCustomer
+	for _, candidate := range candidates {
+		if candidate.Name == name {
+			matches = append(matches, candidate)
+		}
+	}
+	if len(matches) != 1 || !matches[0].Enabled {
+		return nil, ErrPartnershipCustomerUnavailable
+	}
+	return &matches[0], nil
 }
 
 func GetBuilderIdentity(subject string) (*BuilderIdentity, *User, error) {
@@ -122,6 +170,16 @@ func ConnectBuilderIdentity(subject, email, code, managementToken string) (*Buil
 	return ConnectBuilderIdentityWithProgram(subject, email, BuilderProgramSelector{PartnershipCode: code}, managementToken)
 }
 
+// enrollmentMismatch reports an identity bound to a different customer. When the
+// caller named a customer the conflict is about that team, so it is reported
+// separately from a program-level failure.
+func enrollmentMismatch(selector BuilderProgramSelector) error {
+	if selector.CustomerName != "" {
+		return ErrPartnershipCustomerConflict
+	}
+	return ErrPartnershipProgramUnavailable
+}
+
 func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderProgramSelector, managementToken string) (*BuilderIdentity, error) {
 	offer, err := ResolveBuilderProgram(DB, selector, false)
 	if err != nil {
@@ -130,7 +188,7 @@ func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderPr
 
 	if link, _, err := GetBuilderIdentity(subject); err == nil {
 		if link.ProgramId != offer.Program.Id || link.CustomerId != offer.CustomerId {
-			return nil, ErrPartnershipProgramUnavailable
+			return nil, enrollmentMismatch(selector)
 		}
 		return link, nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -153,7 +211,7 @@ func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderPr
 			}
 			if err := tx.Where("subject = ?", subject).First(&link).Error; err == nil {
 				if link.ProgramId != offer.Program.Id || link.CustomerId != offer.CustomerId {
-					return ErrPartnershipProgramUnavailable
+					return enrollmentMismatch(selector)
 				}
 				return nil
 			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
