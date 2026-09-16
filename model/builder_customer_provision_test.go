@@ -132,3 +132,44 @@ func TestARegistrationCodeIsDerivedFromAnyTeamName(t *testing.T) {
 			"derived code %q from %q must satisfy the registration pattern", code, tc.name)
 	}
 }
+
+// A pricing group is defined by three settings. Writing only the billing ratio
+// leaves a half-registered group: it bills, but it has no top-up ratio, is not
+// user-selectable, and never appears in the Customer model prices editor -- so
+// nobody can ever price a model for that team. That is what shipped, and this
+// is what it should have been.
+func TestAProvisionedGroupIsRegisteredEverywhereAGroupHasToBe(t *testing.T) {
+	setupGroupRatioProvisionTest(t)
+	require.NoError(t, EnsurePartnershipGroupRatio("Nusa Labs"))
+
+	read := func(key string) map[string]any {
+		var option Option
+		require.NoError(t, DB.Where("key = ?", key).First(&option).Error)
+		out := map[string]any{}
+		require.NoError(t, common.Unmarshal([]byte(option.Value), &out))
+		return out
+	}
+
+	assert.Contains(t, read("GroupRatio"), "Nusa Labs", "billing ratio")
+	assert.Contains(t, read("TopupGroupRatio"), "Nusa Labs", "top-up ratio -- shows as 'Not set' without this")
+	usable := read("UserUsableGroups")
+	assert.Contains(t, usable, "Nusa Labs", "user-selectable -- the group is invisible in the pricing editor without this")
+	assert.Equal(t, "Nusa Labs", usable["Nusa Labs"], "labelled with its own name")
+}
+
+// The same merge hazard applies to all three maps: each replaces rather than
+// merges on save, so provisioning a second team must not drop the first.
+func TestProvisioningASecondTeamKeepsTheFirstInEverySetting(t *testing.T) {
+	setupGroupRatioProvisionTest(t)
+	require.NoError(t, EnsurePartnershipGroupRatio("Nusa Labs"))
+	require.NoError(t, EnsurePartnershipGroupRatio("Acme Robotics"))
+
+	for _, key := range []string{"GroupRatio", "TopupGroupRatio", "UserUsableGroups"} {
+		var option Option
+		require.NoError(t, DB.Where("key = ?", key).First(&option).Error)
+		out := map[string]any{}
+		require.NoError(t, common.Unmarshal([]byte(option.Value), &out))
+		assert.Contains(t, out, "Nusa Labs", "%s lost the first team", key)
+		assert.Contains(t, out, "Acme Robotics", "%s missing the second team", key)
+	}
+}
