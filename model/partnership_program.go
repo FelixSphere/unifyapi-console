@@ -61,10 +61,14 @@ type PartnershipCustomer struct {
 	Code      string `json:"code" gorm:"type:varchar(64);not null;uniqueIndex"`
 	Group     string `json:"group" gorm:"type:varchar(64);not null;uniqueIndex:idx_partnership_customer_group"`
 	IsDefault bool   `json:"is_default" gorm:"not null;default:false;index"`
-	Enabled   bool   `json:"enabled" gorm:"not null;default:true;index"`
-	RemovedAt int64  `json:"removed_at" gorm:"not null;default:0;index"`
-	CreatedAt int64  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt int64  `json:"updated_at" gorm:"autoUpdateTime"`
+	// TenantId owns this customer's wallet. Every member of the team points at
+	// it, which is what makes the team's credit one balance rather than one
+	// balance each. Zero means the legacy per-member wallet.
+	TenantId  int   `json:"tenant_id" gorm:"not null;default:0;index"`
+	Enabled   bool  `json:"enabled" gorm:"not null;default:true;index"`
+	RemovedAt int64 `json:"removed_at" gorm:"not null;default:0;index"`
+	CreatedAt int64 `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt int64 `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 type PartnershipEnrollment struct {
