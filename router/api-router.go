@@ -229,6 +229,7 @@ func SetApiRouter(router *gin.Engine) {
 			partnershipRoute.POST("/", controller.CreatePartnershipProgram)
 			partnershipRoute.PUT("/:id", controller.UpdatePartnershipProgram)
 			partnershipRoute.DELETE("/:id", controller.DeletePartnershipProgram)
+			partnershipRoute.POST("/customer-pools/backfill", controller.BackfillCustomerPools)
 		}
 		partnershipProgramRoute := apiRouter.Group("/partnership-programs")
 		partnershipProgramRoute.Use(middleware.RootAuth())

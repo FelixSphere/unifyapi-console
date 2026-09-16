@@ -209,3 +209,29 @@ func RemovePartnershipCustomer(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }
+
+// BackfillCustomerPools moves members enrolled in a customer onto that
+// customer's wallet, carrying their balance.
+//
+// It defaults to a dry run. Moving where real money lives should be something
+// the operator asks for twice: once to see the numbers, once to apply them.
+func BackfillCustomerPools(c *gin.Context) {
+	apply := c.Query("apply") == "true"
+	result, err := model.BackfillCustomerPools(!apply)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"dry_run":        !apply,
+			"customers":      result.Customers,
+			"members_moved":  result.MembersMoved,
+			"quota_carried":  result.QuotaCarried,
+			"already_pooled": result.AlreadyPooled,
+			"skipped":        result.Skipped,
+		},
+	})
+}

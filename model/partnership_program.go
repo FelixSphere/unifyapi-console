@@ -64,11 +64,16 @@ type PartnershipCustomer struct {
 	// TenantId owns this customer's wallet. Every member of the team points at
 	// it, which is what makes the team's credit one balance rather than one
 	// balance each. Zero means the legacy per-member wallet.
-	TenantId  int   `json:"tenant_id" gorm:"not null;default:0;index"`
-	Enabled   bool  `json:"enabled" gorm:"not null;default:true;index"`
-	RemovedAt int64 `json:"removed_at" gorm:"not null;default:0;index"`
-	CreatedAt int64 `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt int64 `json:"updated_at" gorm:"autoUpdateTime"`
+	TenantId int `json:"tenant_id" gorm:"not null;default:0;index"`
+	// GrantClaimedAt records that this customer has taken the program's
+	// registration grant. The grant belongs to the customer, so it is claimed
+	// once per customer however many members join.
+	GrantClaimedAt int64 `json:"grant_claimed_at" gorm:"not null;default:0;index"`
+	GrantedQuota   int   `json:"granted_quota" gorm:"not null;default:0"`
+	Enabled        bool  `json:"enabled" gorm:"not null;default:true;index"`
+	RemovedAt      int64 `json:"removed_at" gorm:"not null;default:0;index"`
+	CreatedAt      int64 `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt      int64 `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 type PartnershipEnrollment struct {
@@ -755,7 +760,15 @@ func (user *User) InsertForPartnershipWithTx(tx *gorm.DB, code string) (int, err
 			return err
 		}
 
-		if offer.Program.GrantQuota > 0 && offer.Program.ClaimedCount < offer.Program.GrantLimit {
+		// The grant belongs to the team. A team that has already taken it does
+		// not take it again when its next member registers.
+		team, err := teamGrantHolder(tx, offer)
+		if err != nil {
+			return err
+		}
+		teamAlreadyClaimed := team != nil && team.GrantClaimedAt > 0
+
+		if !teamAlreadyClaimed && offer.Program.GrantQuota > 0 && offer.Program.ClaimedCount < offer.Program.GrantLimit {
 			result := tx.Model(&PartnershipProgram{}).
 				Where("id = ? AND claimed_count < grant_limit", offer.Program.Id).
 				UpdateColumn("claimed_count", gorm.Expr("claimed_count + 1"))
@@ -765,6 +778,11 @@ func (user *User) InsertForPartnershipWithTx(tx *gorm.DB, code string) (int, err
 			if result.RowsAffected == 1 {
 				grantedQuota = offer.Program.GrantQuota
 				user.Quota = grantedQuota
+				if team != nil {
+					if err := recordTeamGrantClaim(tx, team.Id, grantedQuota); err != nil {
+						return err
+					}
+				}
 			}
 		}
 		if poolTenantId != 0 {
