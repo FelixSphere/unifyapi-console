@@ -72,7 +72,8 @@ const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
 const { createInstance } = await import('i18next')
 const { I18nextProvider, initReactI18next } = await import('react-i18next')
-const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
+const { QueryClient, QueryClientProvider } =
+  await import('@tanstack/react-query')
 const { useUsersColumns } = await import('../users-columns')
 type User = import('../../types').User
 type ColumnDef = import('@tanstack/react-table').ColumnDef<User>
