@@ -44,6 +44,10 @@ export const userSchema = z.object({
   email: z.string().optional(),
   quota: z.number(),
   used_quota: z.number(),
+  // A customer is one wallet, so `quota` is the customer's balance repeated on
+  // every member's row. These say whose it is.
+  shared_wallet: z.string().optional(),
+  shared_wallet_members: z.number().optional(),
   request_count: z.number(),
   group: z.string(),
   aff_code: z.string().optional(),
