@@ -9,6 +9,7 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 package model
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -118,7 +119,79 @@ func EnsurePartnershipGroupRatio(group string) error {
 	RecordPricingConfigChange("GroupRatio", previous, merged, "builder-bridge", "auto-provision-team")
 	// Publish to the in-memory setting only after the row is committed, so a
 	// rolled-back transaction cannot leave a group priced in memory alone.
-	return updateOptionMap("GroupRatio", merged)
+	if err := updateOptionMap("GroupRatio", merged); err != nil {
+		return err
+	}
+	// A pricing group is defined by three settings, not one. Writing only the
+	// billing ratio leaves a half-registered group: it bills correctly, but it
+	// has no top-up ratio, is not user-selectable, and never appears in the
+	// Customer model prices editor -- so nobody can ever price a model for that
+	// team. Register it completely or not at all.
+	if err := ensureTopupGroupRatio(group); err != nil {
+		return err
+	}
+	return ensureUserUsableGroup(group)
+}
+
+// ensureTopupGroupRatio gives the group the same top-up ratio a hand-created
+// one gets, leaving an existing value alone.
+func ensureTopupGroupRatio(group string) error {
+	return ensureGroupSettingEntry("TopupGroupRatio", group, func(raw map[string]any) bool {
+		if _, exists := raw[group]; exists {
+			return false
+		}
+		raw[group] = builderProvisionedGroupRatio
+		return true
+	})
+}
+
+// ensureUserUsableGroup makes the group selectable and visible, labelled with
+// its own name, which is what an operator sees in the pricing screens.
+func ensureUserUsableGroup(group string) error {
+	return ensureGroupSettingEntry("UserUsableGroups", group, func(raw map[string]any) bool {
+		if _, exists := raw[group]; exists {
+			return false
+		}
+		raw[group] = group
+		return true
+	})
+}
+
+// ensureGroupSettingEntry merges one key into a settings map under the same
+// integrity lock, snapshotting the previous value first. Every map here
+// replaces rather than merges on save, so a read-modify-write outside the lock
+// would let two teams each persist a map missing the other.
+func ensureGroupSettingEntry(key, group string, add func(map[string]any) bool) error {
+	var merged, previous string
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
+			var option Option
+			err := tx.Where("key = ?", key).First(&option).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			raw := map[string]any{}
+			if option.Value != "" {
+				if err := common.Unmarshal([]byte(option.Value), &raw); err != nil {
+					return fmt.Errorf("parse %s: %w", key, err)
+				}
+			}
+			if !add(raw) {
+				return nil
+			}
+			encoded, err := common.Marshal(raw)
+			if err != nil {
+				return err
+			}
+			previous, merged = option.Value, string(encoded)
+			return saveOptionValue(tx, key, merged)
+		})
+	})
+	if err != nil || merged == "" {
+		return err
+	}
+	RecordPricingConfigChange(key, previous, merged, "builder-bridge", "auto-provision-team")
+	return updateOptionMap(key, merged)
 }
 
 // ensureBuilderCustomerTx finds the named customer inside a program, creating
