@@ -34,6 +34,7 @@ type CustomerPoolBackfillResult struct {
 // real money lives and is not something to run blind.
 func BackfillCustomerPools(dryRun bool) (*CustomerPoolBackfillResult, error) {
 	result := &CustomerPoolBackfillResult{}
+	var moved []movedMember
 	var customers []PartnershipCustomer
 	if err := DB.Where("is_default = ? AND removed_at = ?", false, 0).
 		Find(&customers).Error; err != nil {
@@ -96,8 +97,10 @@ func BackfillCustomerPools(dryRun bool) (*CustomerPoolBackfillResult, error) {
 				}
 				result.MembersMoved++
 				result.QuotaCarried += carried
-				_ = invalidateUserCache(user.Id)
-				_ = invalidateBillingQuotaCache(BillingEntity{UserId: user.Id, TenantId: tenantId})
+				// Caches are cleared after the transaction commits, not here.
+				// Clearing them inside it lets a concurrent read repopulate the
+				// pre-commit balance, which nothing would then clear again.
+				moved = append(moved, movedMember{UserId: user.Id, TenantId: tenantId})
 			}
 			if dryRun {
 				return errDryRun
@@ -108,7 +111,18 @@ func BackfillCustomerPools(dryRun bool) (*CustomerPoolBackfillResult, error) {
 			return nil, err
 		}
 	}
+	for _, member := range moved {
+		_ = invalidateUserCache(member.UserId)
+		_ = invalidateBillingQuotaCache(BillingEntity{UserId: member.UserId, TenantId: member.TenantId})
+	}
 	return result, nil
+}
+
+// movedMember is a member whose caches need clearing once their move has
+// actually committed.
+type movedMember struct {
+	UserId   int
+	TenantId int
 }
 
 // errDryRun rolls a dry run back without reporting a failure.
