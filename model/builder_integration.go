@@ -358,14 +358,25 @@ func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderPr
 				if count > 0 {
 					return ErrBuilderLinkRequired
 				}
-				user = User{Username: "builder_" + common.GetRandomString(12), Email: NormalizeEmail(email), DisplayName: "Builder", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: offer.CustomerGroup, Quota: 0, AffCode: common.GetRandomString(4)}
+				// The team's wallet, not this member's. Every member of the
+				// team shares it, so the team's credit is one balance.
+				teamTenantId, err := ensureCustomerTenant(tx, offer)
+				if err != nil {
+					return err
+				}
+				user = User{Username: "builder_" + common.GetRandomString(12), Email: NormalizeEmail(email), DisplayName: "Builder", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: offer.CustomerGroup, Quota: 0, AffCode: common.GetRandomString(4), TenantId: teamTenantId}
 				if err := user.prepareForInsert(tx); err != nil {
 					return err
 				}
 				if err := tx.Create(&user).Error; err != nil {
 					return err
 				}
-				if _, err := EnsureTenantForUserTx(tx, user.Id); err != nil {
+				if teamTenantId == 0 {
+					// A pre-customer program: keep the per-member wallet.
+					if _, err := EnsureTenantForUserTx(tx, user.Id); err != nil {
+						return err
+					}
+				} else if err := claimTeamTenantOwner(tx, teamTenantId, user.Id); err != nil {
 					return err
 				}
 			}

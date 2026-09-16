@@ -323,3 +323,58 @@ func resolveProgramByName(tx *gorm.DB, name string) (*PartnershipProgram, error)
 	}
 	return &matches[0], nil
 }
+
+// ensureCustomerTenant returns the tenant that owns a team's wallet, creating
+// it the first time one of its members connects.
+//
+// This is what makes a team's credit one balance instead of one balance each.
+// getBillingQuotaFromDB already reads and writes the Tenant row rather than
+// the User row whenever a user has a tenant, so pointing every member of a
+// team at the same tenant is the whole mechanism -- there is no splitting and
+// no redistribution to do.
+//
+// Two cases deliberately keep the per-member wallet they have always had:
+//
+//   - A program with no customer row, which predates customers entirely.
+//   - The program's default customer. That is a catch-all bucket, not a team:
+//     it holds everyone who arrived without a team name, and those people have
+//     nothing to do with each other. Pooling them would let strangers spend
+//     each other's credit.
+func ensureCustomerTenant(tx *gorm.DB, offer *PartnershipOffer) (int, error) {
+	if offer == nil || offer.CustomerId <= 0 {
+		return 0, nil
+	}
+	var customer PartnershipCustomer
+	if err := lockForUpdate(tx).First(&customer, offer.CustomerId).Error; err != nil {
+		return 0, err
+	}
+	if customer.IsDefault {
+		return 0, nil
+	}
+	if customer.TenantId != 0 {
+		return customer.TenantId, nil
+	}
+	tenant := &Tenant{
+		Name:   customer.Name,
+		Slug:   slugFromName("team-" + customer.Code),
+		Status: TenantStatusEnabled,
+		Group:  customer.Group,
+	}
+	if err := CreateTenantWithTx(tx, tenant); err != nil {
+		return 0, err
+	}
+	if err := tx.Model(&PartnershipCustomer{}).Where("id = ?", customer.Id).
+		Update("tenant_id", tenant.Id).Error; err != nil {
+		return 0, err
+	}
+	return tenant.Id, nil
+}
+
+// claimTeamTenantOwner names the first member to connect as the tenant's
+// owner. The tenant is created before any member exists, so it starts
+// ownerless; leaving it that way would hide the team from views that key on
+// the owner.
+func claimTeamTenantOwner(tx *gorm.DB, tenantId, userId int) error {
+	return tx.Model(&Tenant{}).Where("id = ? AND owner_id = ?", tenantId, 0).
+		Update("owner_id", userId).Error
+}
