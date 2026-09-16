@@ -77,6 +77,14 @@ export async function savePartnershipProgram(input: {
   return response.data
 }
 
+export async function deletePartnershipProgram(programId: number) {
+  const response = await api.delete<Envelope<{ enrolled_members: number }>>(
+    `/api/partnership/${programId}`
+  )
+  if (!response.data.success) throw new Error(response.data.message)
+  return response.data
+}
+
 export async function savePartnershipCustomer(input: {
   programId: number
   id?: number

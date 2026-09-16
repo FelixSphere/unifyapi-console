@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -44,6 +45,7 @@ type PartnershipProgram struct {
 	Enabled      bool                  `json:"enabled" gorm:"not null;default:false;index"`
 	StartsAt     int64                 `json:"starts_at" gorm:"not null;default:0"`
 	EndsAt       int64                 `json:"ends_at" gorm:"not null;default:0"`
+	RemovedAt    int64                 `json:"removed_at" gorm:"not null;default:0;index"`
 	CreatedAt    int64                 `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt    int64                 `json:"updated_at" gorm:"autoUpdateTime"`
 	Customers    []PartnershipCustomer `json:"customers,omitempty" gorm:"foreignKey:ProgramId"`
@@ -136,13 +138,13 @@ func GetPartnershipPrograms() ([]PartnershipProgram, error) {
 	var programs []PartnershipProgram
 	err := DB.Preload("Customers", func(db *gorm.DB) *gorm.DB {
 		return db.Where("removed_at = ?", 0).Order("is_default DESC, created_at ASC, id ASC")
-	}).Order("created_at DESC, id DESC").Find(&programs).Error
+	}).Where("removed_at = ?", 0).Order("created_at DESC, id DESC").Find(&programs).Error
 	return programs, err
 }
 
 func GetPartnershipProgramByCode(code string) (*PartnershipProgram, error) {
 	var program PartnershipProgram
-	err := DB.Where("code = ?", NormalizePartnershipCode(code)).First(&program).Error
+	err := DB.Where("code = ? AND removed_at = ?", NormalizePartnershipCode(code), 0).First(&program).Error
 	return &program, err
 }
 
@@ -158,7 +160,7 @@ func initializePartnershipCustomers() error {
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
 		var programs []PartnershipProgram
-		if err := tx.Find(&programs).Error; err != nil {
+		if err := tx.Where("removed_at = ?", 0).Find(&programs).Error; err != nil {
 			return err
 		}
 		for _, program := range programs {
@@ -379,20 +381,68 @@ func RemovePartnershipCustomer(programId, customerId int) error {
 	})
 }
 
+// DeletePartnershipProgram retires a program and reports how many members
+// were enrolled in it, so the caller can say what the removal affected rather
+// than reporting a silent success.
+//
+// This is a soft delete, the same shape RemovePartnershipCustomer uses. A
+// program is the thing usage, grants and invoices are attributed through, and
+// a row that has billed real money must stay readable after the operator has
+// finished with it. What disappears is the operator's view of it: the program
+// leaves the console list, its registration links stop working, and its name
+// becomes free for a new program to take.
+//
+// Removal also clears Enabled. Several read paths already refuse a program
+// that is not active, so clearing it makes those paths correct without each
+// one having to learn what removal means.
+func DeletePartnershipProgram(programId int) (int64, error) {
+	if programId <= 0 {
+		return 0, errors.New("invalid partnership program id")
+	}
+	var enrolled int64
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
+			var program PartnershipProgram
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ? AND removed_at = ?", programId, 0).
+				First(&program).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&PartnershipEnrollment{}).
+				Where("program_id = ?", programId).Count(&enrolled).Error; err != nil {
+				return err
+			}
+			return tx.Model(&program).Updates(map[string]any{
+				"enabled": false, "removed_at": time.Now().Unix(),
+			}).Error
+		})
+	})
+	if err != nil {
+		return 0, err
+	}
+	return enrolled, nil
+}
+
 // Program codes and customer codes share one public URL namespace. The two
 // tables intentionally duplicate a Program's code for its default customer,
 // so callers may exclude that exact pair while still rejecting every other
 // cross-table collision.
 func validatePartnershipCodeAvailable(tx *gorm.DB, code string, programId, customerId int) error {
-	var programCount int64
+	var clashes []PartnershipProgram
 	programQuery := tx.Model(&PartnershipProgram{}).Where("code = ?", code)
 	if programId > 0 {
 		programQuery = programQuery.Where("id <> ?", programId)
 	}
-	if err := programQuery.Count(&programCount).Error; err != nil {
+	if err := programQuery.Find(&clashes).Error; err != nil {
 		return err
 	}
-	if programCount > 0 {
+	if len(clashes) > 0 {
+		// The code is unique at the database level, so a removed program keeps
+		// holding its code and no new program can take it. Say that plainly:
+		// the operator cannot see the row that is in the way.
+		if clashes[0].RemovedAt != 0 {
+			return fmt.Errorf("registration code %q belongs to the removed program %q; choose another code", code, clashes[0].Name)
+		}
 		return fmt.Errorf("registration code %q is already in use", code)
 	}
 
@@ -585,6 +635,59 @@ func validateActivePartnershipGroups(db *gorm.DB, groups map[string]struct{}) er
 	for _, customer := range customers {
 		if _, ok := groups[customer.Group]; !ok {
 			return fmt.Errorf("group %q is used by an enabled partnership customer; disable or move the customer first", customer.Group)
+		}
+	}
+	return protectPopulatedGroupsOfRemovedPrograms(db, groups)
+}
+
+// Removing a program releases its pricing group, which is what the operator
+// wants for a program that was created by mistake. It is not what they want
+// when members are still billing under that group: deleting the group would
+// leave those accounts pointing at a price that no longer exists, and nothing
+// else would report it.
+//
+// So a released group is only truly free once it is empty.
+func protectPopulatedGroupsOfRemovedPrograms(db *gorm.DB, groups map[string]struct{}) error {
+	candidates := map[string]struct{}{}
+	consider := func(group string) {
+		if _, kept := groups[group]; !kept {
+			candidates[group] = struct{}{}
+		}
+	}
+
+	var removed []PartnershipProgram
+	if err := db.Where("removed_at <> ?", 0).Find(&removed).Error; err != nil {
+		return err
+	}
+	for _, program := range removed {
+		consider(program.Group)
+	}
+
+	if db.Migrator().HasTable(&PartnershipCustomer{}) {
+		var customers []PartnershipCustomer
+		if err := db.Table("partnership_customers AS pc").Select("pc.*").
+			Joins("JOIN partnership_programs AS pp ON pp.id = pc.program_id").
+			Where("pp.removed_at <> ?", 0).Find(&customers).Error; err != nil {
+			return err
+		}
+		for _, customer := range customers {
+			consider(customer.Group)
+		}
+	}
+
+	names := make([]string, 0, len(candidates))
+	for group := range candidates {
+		names = append(names, group)
+	}
+	sort.Strings(names)
+	for _, group := range names {
+		var members int64
+		if err := db.Model(&User{}).Where(map[string]any{"group": group}).
+			Count(&members).Error; err != nil {
+			return err
+		}
+		if members > 0 {
+			return fmt.Errorf("group %q still has %d member(s) from a removed partnership program; move them to another group before deleting it", group, members)
 		}
 	}
 	return nil
