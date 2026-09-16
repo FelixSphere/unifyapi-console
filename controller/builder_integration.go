@@ -219,9 +219,20 @@ func BuilderIntegration(c *gin.Context) {
 			return
 		}
 	}
+	// A binding to a program that no longer exists is dangling, not a conflict,
+	// and it must not make an account unreadable. connect heals it; every other
+	// action answers from the binding on record, which is the only authority
+	// left once the old program is gone.
 	if offer != nil && link.ProgramId != offer.Program.Id {
-		c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_PROGRAM_UNAVAILABLE"})
-		return
+		stillThere, existsErr := model.PartnershipProgramExists(link.ProgramId)
+		if existsErr != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"code": "UNIFY_READ_FAILED"})
+			return
+		}
+		if stillThere {
+			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_PROGRAM_UNAVAILABLE"})
+			return
+		}
 	}
 	// Only refuse on the customer where the caller is actually asking to be
 	// enrolled in one. Comparing a read against the program default would

@@ -218,6 +218,58 @@ func enrolledElsewhere(link *BuilderIdentity, offer *PartnershipOffer) bool {
 	return link.ProgramId != offer.Program.Id
 }
 
+// programStillExists reports whether the program an identity is bound to is
+// still there.
+//
+// A binding that points at a deleted program is dangling, not a conflict.
+// Refusing it locks the person out permanently with no self-service path:
+// they cannot reach the old program, and the address they would reconnect
+// with is already held by the account that binding belongs to. Only an
+// administrator could rescue them, which is how this reached production.
+func programStillExists(tx *gorm.DB, programId int) (bool, error) {
+	var count int64
+	if err := tx.Model(&PartnershipProgram{}).Where("id = ?", programId).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// PartnershipProgramExists reports whether a program id is still present, so
+// callers outside this package can tell a dangling binding from a conflict.
+func PartnershipProgramExists(programId int) (bool, error) {
+	return programStillExists(DB, programId)
+}
+
+// rebindDanglingIdentity moves an identity whose program is gone onto the
+// program resolving now, together with the member's pricing group.
+//
+// This is the one case where repointing is right. Everywhere else it is
+// refused, because moving somebody between live customers moves their usage
+// onto another invoice.
+func rebindDanglingIdentity(tx *gorm.DB, link *BuilderIdentity, offer *PartnershipOffer) error {
+	if err := tx.Model(&BuilderIdentity{}).Where("id = ?", link.Id).
+		Updates(map[string]any{"program_id": offer.Program.Id, "customer_id": offer.CustomerId}).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&User{}).Where("id = ?", link.UserId).
+		Update("group", offer.CustomerGroup).Error; err != nil {
+		return err
+	}
+	var enrollment PartnershipEnrollment
+	err := tx.Where("program_id = ? AND user_id = ?", offer.Program.Id, link.UserId).First(&enrollment).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return tx.Create(&PartnershipEnrollment{
+			ProgramId: offer.Program.Id, CustomerId: offer.CustomerId,
+			CustomerGroup: offer.CustomerGroup, UserId: link.UserId,
+		}).Error
+	}
+	if err != nil {
+		return err
+	}
+	return tx.Model(&PartnershipEnrollment{}).Where("id = ?", enrollment.Id).
+		Updates(map[string]any{"customer_id": offer.CustomerId, "customer_group": offer.CustomerGroup}).Error
+}
+
 func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderProgramSelector, managementToken string) (*BuilderIdentity, error) {
 	offer, err := ResolveBuilderProgram(DB, selector, false)
 	if err != nil {
@@ -225,10 +277,16 @@ func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderPr
 	}
 
 	if link, _, err := GetBuilderIdentity(subject); err == nil {
-		if enrolledElsewhere(link, offer) {
+		if !enrolledElsewhere(link, offer) {
+			return link, nil
+		}
+		// Let the transaction decide: it can tell a live conflict from a
+		// dangling binding, and heal the second.
+		if exists, err := programStillExists(DB, link.ProgramId); err != nil {
+			return nil, err
+		} else if exists {
 			return nil, ErrPartnershipProgramUnavailable
 		}
-		return link, nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
@@ -252,7 +310,14 @@ func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderPr
 			}
 			if err := tx.Where("subject = ?", subject).First(&link).Error; err == nil {
 				if enrolledElsewhere(&link, offer) {
-					return ErrPartnershipProgramUnavailable
+					exists, err := programStillExists(tx, link.ProgramId)
+					if err != nil {
+						return err
+					}
+					if exists {
+						return ErrPartnershipProgramUnavailable
+					}
+					return rebindDanglingIdentity(tx, &link, offer)
 				}
 				return nil
 			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
