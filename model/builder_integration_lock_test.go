@@ -53,3 +53,51 @@ func TestResolveBuilderProgramDoesNotShareLockedStatement(t *testing.T) {
 		})
 	}
 }
+
+// Four different refusals used to arrive as one opaque error, which Builder Hub
+// then rendered as "you do not have permission". A staff account, a disabled
+// account and a bad ownership proof need completely different responses from
+// the person reading them.
+//
+// Each still satisfies the general contract, so callers that only ask "is this
+// account usable" are unaffected.
+func TestEachRefusalSaysWhichOneItIs(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		user    *User
+		want    error
+		refused bool
+	}{
+		{"an administrator is not a self-serve billing subject",
+			&User{Role: common.RoleAdminUser, Status: common.UserStatusEnabled}, ErrBuilderStaffAccount, true},
+		{"root is refused for the same reason",
+			&User{Role: common.RoleRootUser, Status: common.UserStatusEnabled}, ErrBuilderStaffAccount, true},
+		{"a disabled account is a different problem with a different fix",
+			&User{Role: common.RoleCommonUser, Status: common.UserStatusDisabled}, ErrBuilderAccountDisabled, true},
+		{"an ordinary enabled account is not refused at all",
+			&User{Role: common.RoleCommonUser, Status: common.UserStatusEnabled}, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			refusal := builderAccountRefusal(tc.user)
+			if !tc.refused {
+				assert.NoError(t, refusal)
+				return
+			}
+			require.Error(t, refusal)
+			assert.ErrorIs(t, refusal, tc.want, "the specific reason must be recoverable")
+			assert.ErrorIs(t, refusal, ErrBuilderUnavailable,
+				"and the general contract must still hold for callers that only ask whether it is usable")
+		})
+	}
+}
+
+// A staff refusal and a bad proof are distinguishable from each other, not just
+// from success -- otherwise splitting them buys nothing.
+func TestRefusalsAreDistinguishableFromEachOther(t *testing.T) {
+	staff := builderAccountRefusal(&User{Role: common.RoleRootUser, Status: common.UserStatusEnabled})
+	disabled := builderAccountRefusal(&User{Role: common.RoleCommonUser, Status: common.UserStatusDisabled})
+
+	assert.NotErrorIs(t, staff, ErrBuilderAccountDisabled)
+	assert.NotErrorIs(t, disabled, ErrBuilderStaffAccount)
+	assert.NotErrorIs(t, staff, ErrBuilderOwnershipProof)
+}

@@ -10,6 +10,7 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"unicode"
@@ -35,6 +36,36 @@ type BuilderIdentity struct {
 
 var ErrBuilderLinkRequired = errors.New("existing account ownership verification required")
 var ErrBuilderUnavailable = errors.New("builder account unavailable")
+
+// One opaque error used to cover a staff account, a disabled account, a
+// mismatched management token and a plain lookup failure. They need completely
+// different responses -- "use another address", "contact support", "your token
+// is wrong" -- and the caller could not tell them apart, so every one of them
+// reached the user as "you do not have permission".
+//
+// A staff account is refused on purpose: an administrator is not a self-serve
+// billing subject, and binding one would make the same identity both the
+// operator of the console and a customer inside it.
+// Each wraps ErrBuilderUnavailable, so callers that only care that the account
+// is unusable keep working unchanged, while callers that can act on the reason
+// can now tell these apart.
+var ErrBuilderStaffAccount = fmt.Errorf("administrator accounts cannot be linked to Builder: %w", ErrBuilderUnavailable)
+var ErrBuilderAccountDisabled = fmt.Errorf("the linked account is disabled: %w", ErrBuilderUnavailable)
+var ErrBuilderOwnershipProof = fmt.Errorf("management token does not prove ownership of that address: %w", ErrBuilderUnavailable)
+
+// builderAccountRefusal says which of those applies to a user record.
+func builderAccountRefusal(user *User) error {
+	if user == nil {
+		return ErrBuilderUnavailable
+	}
+	if IsStaffRole(user.Role) {
+		return ErrBuilderStaffAccount
+	}
+	if user.Status != common.UserStatusEnabled {
+		return ErrBuilderAccountDisabled
+	}
+	return nil
+}
 
 // ErrPartnershipCustomerUnavailable separates "this named customer cannot be
 // used" from "this program cannot be used", so a caller naming a team that is
@@ -158,8 +189,8 @@ func GetBuilderIdentity(subject string) (*BuilderIdentity, *User, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if user.Status != common.UserStatusEnabled || IsStaffRole(user.Role) {
-		return nil, nil, ErrBuilderUnavailable
+	if refusal := builderAccountRefusal(user); refusal != nil {
+		return nil, nil, refusal
 	}
 	return &link, user, nil
 }
@@ -204,8 +235,11 @@ func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderPr
 	var existingID int
 	if managementToken != "" {
 		owner, err := ValidateAccessToken(managementToken)
-		if err != nil || owner == nil || NormalizeEmail(owner.Email) != NormalizeEmail(email) || owner.Status != common.UserStatusEnabled || IsStaffRole(owner.Role) {
-			return nil, ErrBuilderUnavailable
+		if err != nil || owner == nil || NormalizeEmail(owner.Email) != NormalizeEmail(email) {
+			return nil, ErrBuilderOwnershipProof
+		}
+		if refusal := builderAccountRefusal(owner); refusal != nil {
+			return nil, refusal
 		}
 		existingID = owner.Id
 	}
@@ -229,8 +263,11 @@ func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderPr
 				if err := lockForUpdate(tx).First(&user, existingID).Error; err != nil {
 					return err
 				}
-				if user.Status != common.UserStatusEnabled || IsStaffRole(user.Role) || NormalizeEmail(user.Email) != NormalizeEmail(email) {
-					return ErrBuilderUnavailable
+				if NormalizeEmail(user.Email) != NormalizeEmail(email) {
+					return ErrBuilderOwnershipProof
+				}
+				if refusal := builderAccountRefusal(&user); refusal != nil {
+					return refusal
 				}
 			} else {
 				var count int64
