@@ -286,7 +286,7 @@ func SendEmailVerification(c *gin.Context) {
 	common.RegisterVerificationCodeWithKey(email, code, common.EmailVerificationPurpose)
 	// UNIFYAPI-BRAND: English copy, see email_templates_unifyapi.go
 	subject, content := unifyapiVerificationEmail(code)
-	err := common.SendEmail(subject, email, content)
+	err := common.SendEmailForPurpose("verification", subject, email, content)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -310,7 +310,7 @@ func SendPasswordResetEmail(c *gin.Context) {
 		link := fmt.Sprintf("%s/user/reset?email=%s&token=%s", system_setting.ServerAddress, email, code)
 		// UNIFYAPI-BRAND: English copy, see email_templates_unifyapi.go
 		subject, content := unifyapiPasswordResetEmail(link)
-		err := common.SendEmail(subject, email, content)
+		err := common.SendEmailForPurpose("password-reset", subject, email, content)
 		if err != nil {
 			logger.LogError(c.Request.Context(), fmt.Sprintf("failed to send password reset email to %s: %s", email, err.Error()))
 		}

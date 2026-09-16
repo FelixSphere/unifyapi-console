@@ -20,6 +20,7 @@ import type { PermissionCatalog } from '@/lib/admin-permissions'
 import { api } from '@/lib/api'
 
 import type {
+  EmailDeliveryState,
   User,
   GetUsersParams,
   GetUsersResponse,
@@ -217,4 +218,18 @@ export async function adminUnbindCustomOAuth(
     `/api/user/${userId}/oauth/bindings/${providerId}`
   )
   return res.data
+}
+
+/**
+ * Addresses whose most recent send was refused by the mail server, most recent
+ * first. Only failures are returned, so the payload stays small enough to mark
+ * up a page of users without a request per row.
+ */
+export async function getUnreachableEmails(
+  limit = 500
+): Promise<EmailDeliveryState[]> {
+  const res = await api.get('/api/user/unreachable-emails', {
+    params: { limit },
+  })
+  return res.data?.data ?? []
 }

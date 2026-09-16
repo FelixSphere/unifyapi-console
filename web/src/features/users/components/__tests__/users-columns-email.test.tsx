@@ -72,6 +72,8 @@ const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
 const { createInstance } = await import('i18next')
 const { I18nextProvider, initReactI18next } = await import('react-i18next')
+const { QueryClient, QueryClientProvider } =
+  await import('@tanstack/react-query')
 const { useUsersColumns } = await import('../users-columns')
 type User = import('../../types').User
 type ColumnDef = import('@tanstack/react-table').ColumnDef<User>
@@ -84,6 +86,19 @@ await i18n.use(initReactI18next).init({
 ;(
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true
+
+// The columns hook asks the API which addresses the mail server last
+// refused. That lookup is not what this file is about: give it a client
+// that never fetches, so the column definitions render in isolation.
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false, enabled: false } },
+})
+
+const Providers = ({ children }: { children: React.ReactNode }) => (
+  <QueryClientProvider client={queryClient}>
+    <I18nextProvider i18n={i18n}>{children}</I18nextProvider>
+  </QueryClientProvider>
+)
 
 const user = (over: Partial<User> = {}): User =>
   ({
@@ -120,9 +135,9 @@ async function renderCell(column: ColumnDef, u: User) {
     (cell as (props: unknown) => React.ReactNode)({ row, column, table: {} })
   await act(async () => {
     root.render(
-      <I18nextProvider i18n={i18n}>
+      <Providers>
         <Cell />
-      </I18nextProvider>
+      </Providers>
     )
   })
   const text = container.textContent ?? ''
@@ -141,9 +156,9 @@ async function columns(): Promise<ColumnDef[]> {
   const root = createRoot(container)
   await act(async () => {
     root.render(
-      <I18nextProvider i18n={i18n}>
+      <Providers>
         <Probe />
-      </I18nextProvider>
+      </Providers>
     )
   })
   await act(async () => root.unmount())
