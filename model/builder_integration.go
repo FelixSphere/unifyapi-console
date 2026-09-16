@@ -170,14 +170,21 @@ func ConnectBuilderIdentity(subject, email, code, managementToken string) (*Buil
 	return ConnectBuilderIdentityWithProgram(subject, email, BuilderProgramSelector{PartnershipCode: code}, managementToken)
 }
 
-// enrollmentMismatch reports an identity bound to a different customer. When the
-// caller named a customer the conflict is about that team, so it is reported
-// separately from a program-level failure.
-func enrollmentMismatch(selector BuilderProgramSelector) error {
-	if selector.CustomerName != "" {
-		return ErrPartnershipCustomerConflict
-	}
-	return ErrPartnershipProgramUnavailable
+// enrolledElsewhere reports an identity bound to a different PROGRAM, which is
+// a genuine dead end -- nothing here can serve it.
+//
+// A different CUSTOMER inside the same program is not an error. Connect is
+// idempotent: it means "make sure this subject has an account", and the
+// account already exists. Refusing locked out every identity that connected
+// before team names started arriving, since they are all enrolled in the
+// program default while the Builder side now names their team.
+//
+// The protection this replaces was against silently repointing an enrollment.
+// That is preserved by leaving the enrollment alone, not by failing the call.
+// Moving a person between customers moves their usage onto another invoice and
+// stays an administrative act.
+func enrolledElsewhere(link *BuilderIdentity, offer *PartnershipOffer) bool {
+	return link.ProgramId != offer.Program.Id
 }
 
 func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderProgramSelector, managementToken string) (*BuilderIdentity, error) {
@@ -187,8 +194,8 @@ func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderPr
 	}
 
 	if link, _, err := GetBuilderIdentity(subject); err == nil {
-		if link.ProgramId != offer.Program.Id || link.CustomerId != offer.CustomerId {
-			return nil, enrollmentMismatch(selector)
+		if enrolledElsewhere(link, offer) {
+			return nil, ErrPartnershipProgramUnavailable
 		}
 		return link, nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -210,8 +217,8 @@ func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderPr
 				return err
 			}
 			if err := tx.Where("subject = ?", subject).First(&link).Error; err == nil {
-				if link.ProgramId != offer.Program.Id || link.CustomerId != offer.CustomerId {
-					return enrollmentMismatch(selector)
+				if enrolledElsewhere(&link, offer) {
+					return ErrPartnershipProgramUnavailable
 				}
 				return nil
 			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
