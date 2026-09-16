@@ -318,3 +318,51 @@ func TestAnExistingAccountKeepsWorkingWhenTeamNamesStartArriving(t *testing.T) {
 		assert.Equal(t, "partner", user.Group, "nor the member's pricing group")
 	})
 }
+
+// A binding whose program was deleted must not make the account unreadable.
+// connect heals it, but a read has to answer in the meantime -- refusing meant
+// the console showed nothing at all and the person could not even see the
+// account they already had.
+func TestAReadSurvivesABindingToADeletedProgram(t *testing.T) {
+	setupPartnershipControllerTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.User{}, &model.Tenant{}, &model.BuilderIdentity{}, &model.Token{}))
+	secret := "test-secret-with-at-least-32-characters"
+	t.Setenv("BUILDER_INTEGRATION_SECRET", secret)
+	t.Setenv("BUILDER_INTEGRATION_PROGRAM_NAME", "")
+	t.Setenv("BUILDER_INTEGRATION_PARTNERSHIP_CODE", "")
+
+	program := model.PartnershipProgram{Name: "Builder_hub_2026_Sep_Batch", Code: "builders", Group: "partner", Enabled: true}
+	require.NoError(t, model.CreatePartnershipProgram(&program))
+	var customer model.PartnershipCustomer
+	require.NoError(t, model.DB.Where("program_id = ? AND is_default = ?", program.Id, true).First(&customer).Error)
+
+	user := model.User{Username: "builder_orphan", Email: "orphan@example.invalid", Role: 1, Status: 1}
+	require.NoError(t, model.DB.Create(&user).Error)
+	require.NoError(t, model.DB.Create(&model.BuilderIdentity{
+		Subject: "orphan-subject", UserId: user.Id,
+		ProgramId: 987654, CustomerId: 999, TokenId: 1, // a program that is not there
+	}).Error)
+
+	body, err := common.Marshal(map[string]any{
+		"subject": "orphan-subject", "program_name": program.Name,
+	})
+	require.NoError(t, err)
+	path := "/api/builder/v1/credit-status"
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte("POST\n" + path + "\n" + timestamp + "\n"))
+	mac.Write(body)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Params = gin.Params{{Key: "action", Value: "credit-status"}}
+	c.Request = httptest.NewRequest("POST", path, strings.NewReader(string(body)))
+	c.Request.Header.Set("X-Builder-Timestamp", timestamp)
+	c.Request.Header.Set("X-Builder-Signature", hex.EncodeToString(mac.Sum(nil)))
+	BuilderIntegration(c)
+
+	// The point is the program check, not whether credit-status can read a
+	// synthetic fixture: it must not refuse the account over a binding whose
+	// program is gone.
+	assert.NotEqual(t, 409, recorder.Code, recorder.Body.String())
+	assert.NotContains(t, recorder.Body.String(), "UNIFY_PROGRAM_UNAVAILABLE")
+}

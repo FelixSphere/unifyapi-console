@@ -173,3 +173,73 @@ func TestProvisioningASecondTeamKeepsTheFirstInEverySetting(t *testing.T) {
 		assert.Contains(t, out, "Acme Robotics", "%s missing the second team", key)
 	}
 }
+
+// An identity bound to a program that no longer exists is dangling, not a
+// conflict. Refusing it locked the person out permanently: they cannot reach
+// the deleted program, and the address they would reconnect with is already
+// held by the very account that binding belongs to. Only an administrator
+// could rescue them -- which is how this reached production.
+//
+// A live different program is still refused, because moving somebody between
+// programs moves their usage onto another invoice.
+func TestABindingToADeletedProgramHealsItself(t *testing.T) {
+	setupGroupRatioProvisionTest(t)
+	require.NoError(t, DB.AutoMigrate(&User{}, &Tenant{}, &BuilderIdentity{}, &Token{}))
+
+	program := PartnershipProgram{Name: "Current Program", Code: "current", Group: "partner", Enabled: true}
+	require.NoError(t, CreatePartnershipProgram(&program))
+	var customer PartnershipCustomer
+	require.NoError(t, DB.Where("program_id = ? AND is_default = ?", program.Id, true).First(&customer).Error)
+
+	user := User{Username: "builder_stale", Email: "stale@example.invalid", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "orphaned"}
+	require.NoError(t, DB.Create(&user).Error)
+	// Bound to a program id that is not in the table at all.
+	const deletedProgramId = 987654
+	require.NoError(t, DB.Create(&BuilderIdentity{
+		Subject: "stale-subject", UserId: user.Id,
+		ProgramId: deletedProgramId, CustomerId: 999, TokenId: 1,
+	}).Error)
+
+	link, err := ConnectBuilderIdentityWithProgram("stale-subject", "stale@example.invalid",
+		BuilderProgramSelector{ProgramName: program.Name}, "")
+	require.NoError(t, err, "a dangling binding must not lock the account out")
+	require.NotNil(t, link)
+
+	var healed BuilderIdentity
+	require.NoError(t, DB.Where("subject = ?", "stale-subject").First(&healed).Error)
+	assert.Equal(t, program.Id, healed.ProgramId, "rebound to the program that resolves now")
+	assert.Equal(t, customer.Id, healed.CustomerId)
+
+	var moved User
+	require.NoError(t, DB.First(&moved, user.Id).Error)
+	assert.Equal(t, customer.Group, moved.Group, "the member's pricing group follows the rebinding")
+
+	var enrollment PartnershipEnrollment
+	require.NoError(t, DB.Where("program_id = ? AND user_id = ?", program.Id, user.Id).First(&enrollment).Error)
+	assert.Equal(t, customer.Id, enrollment.CustomerId, "and the enrollment is repaired too")
+}
+
+// The guard that matters is kept: a binding to a program that still exists is
+// a real conflict and must not be silently repointed.
+func TestABindingToALiveOtherProgramIsStillRefused(t *testing.T) {
+	setupGroupRatioProvisionTest(t)
+	require.NoError(t, DB.AutoMigrate(&User{}, &Tenant{}, &BuilderIdentity{}, &Token{}))
+
+	other := PartnershipProgram{Name: "Other Program", Code: "other", Group: "partner", Enabled: true}
+	require.NoError(t, CreatePartnershipProgram(&other))
+	require.NoError(t, EnsurePartnershipGroupRatio("second"))
+	current := PartnershipProgram{Name: "Current Program", Code: "current", Group: "second", Enabled: true}
+	require.NoError(t, CreatePartnershipProgram(&current))
+
+	user := User{Username: "builder_live", Email: "live@example.invalid", Role: common.RoleCommonUser, Status: common.UserStatusEnabled}
+	require.NoError(t, DB.Create(&user).Error)
+	require.NoError(t, DB.Create(&BuilderIdentity{
+		Subject: "live-subject", UserId: user.Id,
+		ProgramId: other.Id, CustomerId: 1, TokenId: 1,
+	}).Error)
+
+	_, err := ConnectBuilderIdentityWithProgram("live-subject", "live@example.invalid",
+		BuilderProgramSelector{ProgramName: current.Name}, "")
+	assert.ErrorIs(t, err, ErrPartnershipProgramUnavailable,
+		"moving somebody between live programs moves their usage to another invoice")
+}
