@@ -32,6 +32,13 @@ import (
 func TestBuilderConnectRoutesToNamedCustomer(t *testing.T) {
 	setupPartnershipControllerTest(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.User{}, &model.Tenant{}, &model.BuilderIdentity{}, &model.Token{}))
+	// Provisioning writes Group Pricing, which snapshots the previous value and
+	// republishes the option cache. Both need to exist for the write to land.
+	require.NoError(t, model.DB.AutoMigrate(&model.PricingConfigHistory{}))
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+		t.Cleanup(func() { common.OptionMap = nil })
+	}
 	secret := "test-secret-with-at-least-32-characters"
 	t.Setenv("BUILDER_INTEGRATION_SECRET", secret)
 	t.Setenv("BUILDER_INTEGRATION_PROGRAM_NAME", "")
@@ -101,12 +108,45 @@ func TestBuilderConnectRoutesToNamedCustomer(t *testing.T) {
 		assert.Equal(t, "partner", user.Group)
 	})
 
-	t.Run("an unknown team is refused, not absorbed into the default", func(t *testing.T) {
-		recorder := call(t, "connect", "orphan-user", "No Such Team")
-		assert.Equal(t, 409, recorder.Code)
-		assert.JSONEq(t, `{"code":"UNIFY_CUSTOMER_UNAVAILABLE"}`, recorder.Body.String())
-		_, _, err := model.GetBuilderIdentity("orphan-user")
-		assert.Error(t, err, "nothing may be provisioned for an unresolvable team")
+	// A team that does not exist here yet is created, not refused. It is never
+	// absorbed into the program default, which would bill it to another team.
+	t.Run("an unknown team is provisioned as its own customer", func(t *testing.T) {
+		recorder := call(t, "connect", "newcomer", "Nusa Labs")
+		require.Equal(t, 200, recorder.Code, recorder.Body.String())
+
+		link, user, err := model.GetBuilderIdentity("newcomer")
+		require.NoError(t, err)
+		var customer model.PartnershipCustomer
+		require.NoError(t, model.DB.First(&customer, link.CustomerId).Error)
+		assert.Equal(t, "Nusa Labs", customer.Name, "the signed name is kept verbatim")
+		assert.False(t, customer.IsDefault, "a provisioned team must never become the program default")
+		assert.Equal(t, customer.Group, user.Group, "the member joins their own team's pricing group")
+		assert.NotEqual(t, "partner", user.Group, "and not the program default group")
+
+		// List price. Inheriting a cohort discount by merely existing would
+		// give away margin nobody agreed to.
+		assert.InDelta(t, 1, ratio_setting.GetGroupRatio(customer.Group), 1e-9)
+	})
+
+	// Reconnecting must not create a second customer or reprice the first.
+	t.Run("provisioning the same team twice is idempotent", func(t *testing.T) {
+		before := call(t, "connect", "newcomer-two", "Nusa Labs")
+		require.Equal(t, 200, before.Code, before.Body.String())
+		var count int64
+		require.NoError(t, model.DB.Model(&model.PartnershipCustomer{}).
+			Where("name = ?", "Nusa Labs").Count(&count).Error)
+		assert.EqualValues(t, 1, count, "one team, one customer, however many members join")
+	})
+
+	// A read must never provision: a typo on a read would otherwise leave a
+	// stray customer and an empty invoice behind.
+	t.Run("a read never provisions a team", func(t *testing.T) {
+		recorder := call(t, "credit-status", "acme-user", "Typo Team")
+		assert.Equal(t, 200, recorder.Code, recorder.Body.String())
+		var count int64
+		require.NoError(t, model.DB.Model(&model.PartnershipCustomer{}).
+			Where("name = ?", "Typo Team").Count(&count).Error)
+		assert.Zero(t, count, "a read must not create anything")
 	})
 
 	t.Run("a malformed team name is a bad request", func(t *testing.T) {

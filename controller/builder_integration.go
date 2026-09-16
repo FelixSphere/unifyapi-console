@@ -130,6 +130,17 @@ func BuilderIntegration(c *gin.Context) {
 	var offer *model.PartnershipOffer
 	if request.ProgramName != "" {
 		offer, err = model.ResolveBuilderProgram(model.DB, selector, false)
+		// A team the Builder side names but that does not exist here is created
+		// rather than refused. Only on enrollment: a read never provisions, so
+		// a typo on a read cannot leave a stray customer and an empty invoice
+		// behind.
+		if enrollmentName != "" && errors.Is(err, model.ErrPartnershipCustomerUnavailable) {
+			if provisionErr := model.ProvisionBuilderCustomer(request.ProgramName, enrollmentName); provisionErr != nil {
+				c.JSON(http.StatusConflict, gin.H{"code": builderProgramConflictCode(provisionErr)})
+				return
+			}
+			offer, err = model.ResolveBuilderProgram(model.DB, selector, false)
+		}
 		if err != nil {
 			c.JSON(http.StatusConflict, gin.H{"code": builderProgramConflictCode(err)})
 			return
