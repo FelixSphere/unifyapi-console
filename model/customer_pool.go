@@ -11,6 +11,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -97,4 +98,35 @@ func JoinCustomerPool(userId, tenantId int) error {
 	_ = invalidateUserCache(userId)
 	_ = invalidateBillingQuotaCache(BillingEntity{UserId: userId, TenantId: tenantId})
 	return nil
+}
+
+// teamGrantHolder returns the customer that owns a program's grant for this
+// offer, or nil when the grant is still a per-member one.
+//
+// The grant belongs to the team, so it is claimed once per team however many
+// people join. Two cases keep the older per-member behaviour, and they are the
+// same two that keep a per-member wallet: a program with no customer row, and
+// the program's default customer, which is a catch-all of unrelated people
+// rather than a team.
+func teamGrantHolder(tx *gorm.DB, offer *PartnershipOffer) (*PartnershipCustomer, error) {
+	if offer == nil || offer.CustomerId <= 0 {
+		return nil, nil
+	}
+	var customer PartnershipCustomer
+	if err := lockForUpdate(tx).First(&customer, offer.CustomerId).Error; err != nil {
+		return nil, err
+	}
+	if customer.IsDefault {
+		return nil, nil
+	}
+	return &customer, nil
+}
+
+// recordTeamGrantClaim marks the team's single claim.
+func recordTeamGrantClaim(tx *gorm.DB, customerId, quota int) error {
+	return tx.Model(&PartnershipCustomer{}).Where("id = ?", customerId).
+		Updates(map[string]any{
+			"grant_claimed_at": time.Now().Unix(),
+			"granted_quota":    quota,
+		}).Error
 }

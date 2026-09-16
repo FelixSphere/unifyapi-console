@@ -523,6 +523,16 @@ func ClaimBuilderTeamGrantWithProgram(subject string, selector BuilderProgramSel
 		if enrollment.GrantedQuota > 0 {
 			return nil
 		}
+		// The grant belongs to the team, not to whoever happens to click
+		// first. A team that has already taken it does not take it again,
+		// however many members join afterwards.
+		team, err := teamGrantHolder(tx, offer)
+		if err != nil {
+			return err
+		}
+		if team != nil && team.GrantClaimedAt > 0 {
+			return nil
+		}
 		quota, err := common.QuotaFromFloatStrict(10 * common.QuotaPerUnit)
 		if err != nil || quota <= 0 || offer.Program.GrantQuota != quota {
 			return ErrBuilderUnavailable
@@ -539,6 +549,11 @@ func ClaimBuilderTeamGrantWithProgram(subject string, selector BuilderProgramSel
 		}
 		if err := tx.Model(&enrollment).Update("granted_quota", quota).Error; err != nil {
 			return err
+		}
+		if team != nil {
+			if err := recordTeamGrantClaim(tx, team.Id, quota); err != nil {
+				return err
+			}
 		}
 		return tx.Model(&link).Updates(map[string]any{"grant_quota": quota, "grant_claimed_at": time.Now().Unix()}).Error
 	})
