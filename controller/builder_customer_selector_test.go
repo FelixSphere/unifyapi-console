@@ -155,12 +155,27 @@ func TestBuilderConnectRoutesToNamedCustomer(t *testing.T) {
 		assert.JSONEq(t, `{"code":"UNIFY_CUSTOMER_INVALID"}`, recorder.Body.String())
 	})
 
-	// Moving a person between teams changes which invoice their usage lands on,
-	// so the bridge refuses it rather than repointing the enrollment silently.
-	t.Run("claiming a different team than the one enrolled conflicts", func(t *testing.T) {
+	// Connect is idempotent. An identity that already has an account keeps the
+	// customer it is enrolled in, whatever team the caller now names, and the
+	// call succeeds. Refusing here locked out every account that connected
+	// before team names started arriving -- they are all in the program
+	// default while the Builder side names their team.
+	//
+	// Nothing is repointed: moving a person between customers moves their
+	// usage onto another invoice and stays an administrative act.
+	t.Run("connecting again keeps the enrollment and does not fail", func(t *testing.T) {
+		before, _, err := model.GetBuilderIdentity("acme-user")
+		require.NoError(t, err)
+
 		recorder := call(t, "connect", "acme-user", "Builder_hub_2026_Sep_Batch")
-		assert.Equal(t, 409, recorder.Code)
-		assert.JSONEq(t, `{"code":"UNIFY_CUSTOMER_CONFLICT"}`, recorder.Body.String())
+		require.Equal(t, 200, recorder.Code, recorder.Body.String())
+
+		after, user, err := model.GetBuilderIdentity("acme-user")
+		require.NoError(t, err)
+		assert.Equal(t, before.CustomerId, after.CustomerId,
+			"naming another team must not move the enrollment")
+		assert.Equal(t, "acme_robotics", user.Group,
+			"nor move the member's pricing group")
 	})
 
 	// A read is answered from the enrollment on the link, not from the team the
@@ -287,12 +302,19 @@ func TestAnExistingAccountKeepsWorkingWhenTeamNamesStartArriving(t *testing.T) {
 		assert.Equal(t, 200, recorder.Code, recorder.Body.String())
 	})
 
-	// The protection that matters is still there: enrollment cannot be moved by
-	// naming a different team, because that would move the person's usage to
-	// another invoice.
-	t.Run("enrollment still cannot be repointed by naming another team", func(t *testing.T) {
+	// The protection that matters is still there, and it is now the stronger
+	// form: naming another team does not move the enrollment. It no longer
+	// fails either, because failing locked these accounts out entirely.
+	t.Run("naming another team leaves the enrollment where it is", func(t *testing.T) {
+		before, _, err := model.GetBuilderIdentity("legacy-user")
+		require.NoError(t, err)
+
 		recorder := call(t, "connect", "legacy-user", "Acme Robotics")
-		assert.Equal(t, 409, recorder.Code)
-		assert.JSONEq(t, `{"code":"UNIFY_CUSTOMER_CONFLICT"}`, recorder.Body.String())
+		require.Equal(t, 200, recorder.Code, recorder.Body.String())
+
+		after, user, err := model.GetBuilderIdentity("legacy-user")
+		require.NoError(t, err)
+		assert.Equal(t, before.CustomerId, after.CustomerId, "the enrollment must not move")
+		assert.Equal(t, "partner", user.Group, "nor the member's pricing group")
 	})
 }
