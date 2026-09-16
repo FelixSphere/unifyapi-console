@@ -112,7 +112,21 @@ func BuilderIntegration(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "UNIFY_CUSTOMER_INVALID"})
 		return
 	}
-	selector := model.BuilderProgramSelector{ProgramName: request.ProgramName, PartnershipCode: request.PartnershipCode, CustomerName: request.CustomerName}
+	// The team name decides which customer an account is ENROLLED in, so it is
+	// only consulted where enrollment is established. A read must never fail
+	// because the caller named a team: the account already exists and the
+	// customer that owns it is recorded on the link, which is the authority.
+	//
+	// Without this, turning the selector on from the Builder side locks out
+	// every account that connected before teams existed -- they are enrolled in
+	// the program default, the named team resolves to something else or to
+	// nothing at all, and even reading a workspace answers 409.
+	enrollmentName := ""
+	switch c.Param("action") {
+	case "connect", "claim":
+		enrollmentName = request.CustomerName
+	}
+	selector := model.BuilderProgramSelector{ProgramName: request.ProgramName, PartnershipCode: request.PartnershipCode, CustomerName: enrollmentName}
 	var offer *model.PartnershipOffer
 	if request.ProgramName != "" {
 		offer, err = model.ResolveBuilderProgram(model.DB, selector, false)
@@ -172,14 +186,15 @@ func BuilderIntegration(c *gin.Context) {
 			return
 		}
 	}
-	if offer != nil && (link.ProgramId != offer.Program.Id || link.CustomerId != offer.CustomerId) {
-		// Naming a team this identity is not enrolled in is a customer conflict,
-		// not a missing program. Reads must not silently answer for another team.
-		code := "UNIFY_PROGRAM_UNAVAILABLE"
-		if request.CustomerName != "" {
-			code = "UNIFY_CUSTOMER_CONFLICT"
-		}
-		c.JSON(http.StatusConflict, gin.H{"code": code})
+	if offer != nil && link.ProgramId != offer.Program.Id {
+		c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_PROGRAM_UNAVAILABLE"})
+		return
+	}
+	// Only refuse on the customer where the caller is actually asking to be
+	// enrolled in one. Comparing a read against the program default would
+	// reject every account that legitimately belongs to a team.
+	if offer != nil && enrollmentName != "" && link.CustomerId != offer.CustomerId {
+		c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_CUSTOMER_CONFLICT"})
 		return
 	}
 	switch c.Param("action") {
