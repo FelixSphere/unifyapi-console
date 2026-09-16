@@ -586,6 +586,18 @@ func ConnectExistingUserToPartnership(userId int, code string) (*PartnershipConn
 		if user.Group != offer.CustomerGroup {
 			return ErrPartnershipCustomerMismatch
 		}
+		poolTenantId, err := ensureCustomerTenant(tx, offer)
+		if err != nil {
+			return err
+		}
+		if poolTenantId != 0 {
+			if err := JoinCustomerPoolTx(tx, user.Id, poolTenantId); err != nil {
+				return err
+			}
+			if err := claimTeamTenantOwner(tx, poolTenantId, user.Id); err != nil {
+				return err
+			}
+		}
 		var enrollment PartnershipEnrollment
 		err = tx.Where("program_id = ? AND user_id = ?", offer.Program.Id, user.Id).First(&enrollment).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -735,6 +747,14 @@ func (user *User) InsertForPartnershipWithTx(tx *gorm.DB, code string) (int, err
 			user.SetSetting(dto.UserSetting{})
 		}
 
+		// A customer is one wallet. Registering into one joins that wallet
+		// rather than opening a private one, the same as connecting over the
+		// bridge does.
+		poolTenantId, err := ensureCustomerTenant(tx, offer)
+		if err != nil {
+			return err
+		}
+
 		if offer.Program.GrantQuota > 0 && offer.Program.ClaimedCount < offer.Program.GrantLimit {
 			result := tx.Model(&PartnershipProgram{}).
 				Where("id = ? AND claimed_count < grant_limit", offer.Program.Id).
@@ -747,8 +767,25 @@ func (user *User) InsertForPartnershipWithTx(tx *gorm.DB, code string) (int, err
 				user.Quota = grantedQuota
 			}
 		}
+		if poolTenantId != 0 {
+			// The grant belongs to the customer, so it goes into the customer's
+			// wallet rather than sitting in a column nothing spends from.
+			user.TenantId = poolTenantId
+			user.Quota = 0
+		}
 		if err := tx.Create(user).Error; err != nil {
 			return err
+		}
+		if poolTenantId != 0 {
+			if grantedQuota != 0 {
+				if err := tx.Model(&Tenant{}).Where("id = ?", poolTenantId).
+					Update("quota", gorm.Expr("quota + ?", grantedQuota)).Error; err != nil {
+					return err
+				}
+			}
+			if err := claimTeamTenantOwner(tx, poolTenantId, user.Id); err != nil {
+				return err
+			}
 		}
 		return tx.Create(&PartnershipEnrollment{
 			ProgramId: offer.Program.Id, CustomerId: offer.CustomerId,

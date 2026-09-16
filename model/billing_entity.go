@@ -241,6 +241,34 @@ func FillEffectiveQuotas(users []*User) error {
 	for _, row := range rows {
 		quotaByTenant[row.Id] = row.Quota
 	}
+	// A wallet with more than one member is a customer's, not a person's. The
+	// same balance then appears on every member's row, which reads as that
+	// many times the money unless the row says whose it is.
+	var shared []struct {
+		TenantId int
+		Name     string
+		Members  int
+	}
+	if err := DB.Model(&User{}).
+		Select("users.tenant_id AS tenant_id, tenants.name AS name, COUNT(*) AS members").
+		Joins("JOIN tenants ON tenants.id = users.tenant_id").
+		Where("users.tenant_id IN ?", tenantIds).
+		Group("users.tenant_id, tenants.name").
+		Having("COUNT(*) > 1").
+		Scan(&shared).Error; err != nil {
+		return err
+	}
+	sharedByTenant := make(map[int]struct {
+		Name    string
+		Members int
+	}, len(shared))
+	for _, row := range shared {
+		sharedByTenant[row.TenantId] = struct {
+			Name    string
+			Members int
+		}{Name: row.Name, Members: row.Members}
+	}
+
 	for _, user := range users {
 		if user == nil || user.TenantId <= 0 {
 			continue
@@ -249,6 +277,10 @@ func FillEffectiveQuotas(users []*User) error {
 		// alone rather than zeroing the display.
 		if quota, ok := quotaByTenant[user.TenantId]; ok {
 			user.Quota = quota
+		}
+		if pool, ok := sharedByTenant[user.TenantId]; ok {
+			user.SharedWallet = pool.Name
+			user.SharedWalletMembers = pool.Members
 		}
 	}
 	return nil

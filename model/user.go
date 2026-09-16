@@ -115,6 +115,12 @@ type User struct {
 	// user is its own billing entity and behaves exactly as upstream does.
 	// See model/tenant.go and BRANDING.md.
 	TenantId int `json:"tenant_id" gorm:"type:int;default:0;column:tenant_id;index"`
+	// UNIFYAPI-BRAND: a customer is one wallet and every member draws on it, so
+	// the balance shown against each member is the same number -- the
+	// customer's, not that member's share. These say so, and are filled by
+	// FillEffectiveQuotas rather than stored.
+	SharedWallet        string `json:"shared_wallet,omitempty" gorm:"-:all"`
+	SharedWalletMembers int    `json:"shared_wallet_members,omitempty" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
