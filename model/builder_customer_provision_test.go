@@ -243,3 +243,48 @@ func TestABindingToALiveOtherProgramIsStillRefused(t *testing.T) {
 	assert.ErrorIs(t, err, ErrPartnershipProgramUnavailable,
 		"moving somebody between live programs moves their usage to another invoice")
 }
+
+// Removing a program is a soft delete: the row stays, so past invoices remain
+// attributable. That makes it a different shape from the hard-deleted case
+// above, and the account left behind must still heal rather than be stranded
+// pointing at a program the operator can no longer see.
+func TestABindingToARemovedProgramHealsItself(t *testing.T) {
+	setupGroupRatioProvisionTest(t)
+	require.NoError(t, DB.AutoMigrate(&User{}, &Tenant{}, &BuilderIdentity{}, &Token{}))
+
+	retired := PartnershipProgram{Name: "Retired Program", Code: "retired", Group: "partner", Enabled: true}
+	require.NoError(t, CreatePartnershipProgram(&retired))
+	replacement := PartnershipProgram{Name: "Current Program", Code: "current", Group: "vip", Enabled: true}
+	require.NoError(t, CreatePartnershipProgram(&replacement))
+	var customer PartnershipCustomer
+	require.NoError(t, DB.Where("program_id = ? AND is_default = ?", replacement.Id, true).First(&customer).Error)
+
+	user := User{Username: "builder_retired", Email: "retired@example.invalid",
+		Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "partner"}
+	require.NoError(t, DB.Create(&user).Error)
+	require.NoError(t, DB.Create(&BuilderIdentity{
+		Subject: "retired-subject", UserId: user.Id,
+		ProgramId: retired.Id, CustomerId: 999, TokenId: 1,
+	}).Error)
+
+	_, err := DeletePartnershipProgram(retired.Id)
+	require.NoError(t, err)
+
+	var stillThere PartnershipProgram
+	require.NoError(t, DB.First(&stillThere, retired.Id).Error,
+		"the removed program's row must still exist, or this is not testing a soft delete")
+
+	link, err := ConnectBuilderIdentityWithProgram("retired-subject", "retired@example.invalid",
+		BuilderProgramSelector{ProgramName: replacement.Name}, "")
+	require.NoError(t, err, "a binding to a removed program must not lock the account out")
+	require.NotNil(t, link)
+
+	var healed BuilderIdentity
+	require.NoError(t, DB.Where("subject = ?", "retired-subject").First(&healed).Error)
+	assert.Equal(t, replacement.Id, healed.ProgramId, "rebound to the program that resolves now")
+	assert.Equal(t, customer.Id, healed.CustomerId)
+
+	var moved User
+	require.NoError(t, DB.First(&moved, user.Id).Error)
+	assert.Equal(t, customer.Group, moved.Group, "the member's pricing group follows the rebinding")
+}

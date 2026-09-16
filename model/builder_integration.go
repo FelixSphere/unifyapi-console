@@ -138,7 +138,8 @@ func ResolveBuilderProgram(tx *gorm.DB, selector BuilderProgramSelector, lock bo
 		return session
 	}
 	var candidates []PartnershipProgram
-	if err := query().Where("name = ?", selector.ProgramName).Find(&candidates).Error; err != nil {
+	if err := query().Where("name = ? AND removed_at = ?", selector.ProgramName, 0).
+		Find(&candidates).Error; err != nil {
 		return nil, err
 	}
 	var matches []PartnershipProgram
@@ -242,7 +243,8 @@ func enrolledElsewhere(link *BuilderIdentity, offer *PartnershipOffer) bool {
 // administrator could rescue them, which is how this reached production.
 func programStillExists(tx *gorm.DB, programId int) (bool, error) {
 	var count int64
-	if err := tx.Model(&PartnershipProgram{}).Where("id = ?", programId).Count(&count).Error; err != nil {
+	if err := tx.Model(&PartnershipProgram{}).
+		Where("id = ? AND removed_at = ?", programId, 0).Count(&count).Error; err != nil {
 		return false, err
 	}
 	return count > 0, nil

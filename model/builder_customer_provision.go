@@ -304,7 +304,7 @@ func ProvisionBuilderCustomer(programName, customerName string) error {
 // because database collations may be case or accent insensitive.
 func resolveProgramByName(tx *gorm.DB, name string) (*PartnershipProgram, error) {
 	var candidates []PartnershipProgram
-	if err := tx.Where("name = ?", name).Find(&candidates).Error; err != nil {
+	if err := tx.Where("name = ? AND removed_at = ?", name, 0).Find(&candidates).Error; err != nil {
 		return nil, err
 	}
 	var matches []PartnershipProgram

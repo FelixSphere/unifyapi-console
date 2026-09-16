@@ -171,6 +171,27 @@ func UpdatePartnershipCustomer(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }
 
+func DeletePartnershipProgram(c *gin.Context) {
+	programId, err := strconv.Atoi(c.Param("id"))
+	if err != nil || programId <= 0 {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid partnership program id"})
+		return
+	}
+	enrolled, err := model.DeletePartnershipProgram(programId)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "partnership program not found"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	// Removing a program reassigns its members the next time they connect.
+	// Report how many there were, so the operator is told what it touched
+	// instead of being shown an unqualified success.
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{"enrolled_members": enrolled}})
+}
+
 func RemovePartnershipCustomer(c *gin.Context) {
 	programId, programErr := strconv.Atoi(c.Param("id"))
 	customerId, customerErr := strconv.Atoi(c.Param("customerId"))

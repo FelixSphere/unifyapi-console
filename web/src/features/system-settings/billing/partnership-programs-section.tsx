@@ -42,6 +42,7 @@ import {
 import { SettingsSection } from '../components/settings-section'
 import {
   getPartnershipPrograms,
+  deletePartnershipProgram,
   removePartnershipCustomer,
   savePartnershipCustomer,
   savePartnershipProgram,
@@ -111,6 +112,8 @@ export function PartnershipProgramsSection({
     useState<PartnershipProgram | null>(null)
   const [editingCustomer, setEditingCustomer] =
     useState<PartnershipCustomer | null>(null)
+  const [removingProgram, setRemovingProgram] =
+    useState<PartnershipProgram | null>(null)
   const [removingCustomer, setRemovingCustomer] = useState<{
     program: PartnershipProgram
     customer: PartnershipCustomer
@@ -145,6 +148,24 @@ export function PartnershipProgramsSection({
     onSuccess: () => {
       toast.success(t('Partnership customer saved'))
       setCustomerDialogOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['partnership-programs'] })
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
+
+  const removeProgramMutation = useMutation({
+    mutationFn: deletePartnershipProgram,
+    onSuccess: (response) => {
+      const members = response.data?.enrolled_members ?? 0
+      toast.success(
+        members > 0
+          ? t(
+              'Program removed. {{count}} enrolled member(s) will be reassigned the next time they connect.',
+              { count: members }
+            )
+          : t('Program removed')
+      )
+      setRemovingProgram(null)
       queryClient.invalidateQueries({ queryKey: ['partnership-programs'] })
     },
     onError: (error: Error) => toast.error(error.message),
@@ -395,6 +416,15 @@ export function PartnershipProgramsSection({
                     >
                       <Pencil className='size-4' />
                     </Button>
+                    <Button
+                      type='button'
+                      size='icon-sm'
+                      variant='ghost'
+                      aria-label={t('Remove program')}
+                      onClick={() => setRemovingProgram(program)}
+                    >
+                      <Trash2 className='size-4' />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -602,6 +632,44 @@ export function PartnershipProgramsSection({
           </div>
         </div>
       </Dialog>
+
+      <AlertDialog
+        open={removingProgram !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemovingProgram(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('Remove partnership program?')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                'This removes {{program}} from the console and stops its registration links. Existing users, balances, usage, and invoice history are not deleted. Members enrolled in it are reassigned the next time they connect.',
+                { program: removingProgram?.name ?? '' }
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeProgramMutation.isPending}>
+              {t('Cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant='destructive'
+              disabled={
+                removeProgramMutation.isPending || removingProgram === null
+              }
+              onClick={() => {
+                if (!removingProgram) return
+                removeProgramMutation.mutate(removingProgram.id)
+              }}
+            >
+              {t('Remove')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={removingCustomer !== null}
