@@ -174,7 +174,10 @@ func TestBuilderMissingProgramReturnsStableErrorForEveryAction(t *testing.T) {
 			c.Request.Header.Set("X-Builder-Signature", hex.EncodeToString(mac.Sum(nil)))
 			BuilderIntegration(c)
 			assert.Equal(t, 409, recorder.Code)
-			assert.JSONEq(t, `{"code":"UNIFY_PROGRAM_UNAVAILABLE"}`, recorder.Body.String())
+			// The code stays stable across every action -- that is what this
+			// test guards. The reason is additive and names which of the four
+			// program failures this is.
+			assert.JSONEq(t, `{"code":"UNIFY_PROGRAM_UNAVAILABLE","reason":"program_name_not_found"}`, recorder.Body.String())
 			assert.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
 		})
 	}
@@ -203,7 +206,7 @@ func TestBuilderSignedProgramConnectUsesDatabaseWithoutSelectorEnvironment(t *te
 		{"tampered program", "connect", other.Name, program.Name, 401, `{"code":"UNIFY_UNAUTHORIZED"}`},
 		{"connect", "connect", program.Name, program.Name, 200, `{"connected":true}`},
 		{"retry", "connect", program.Name, program.Name, 200, `{"connected":true}`},
-		{"case mismatch", "workspace", "builder_hub_2026_sep_batch", "builder_hub_2026_sep_batch", 409, `{"code":"UNIFY_PROGRAM_UNAVAILABLE"}`},
+		{"case mismatch", "workspace", "builder_hub_2026_sep_batch", "builder_hub_2026_sep_batch", 409, `{"code":"UNIFY_PROGRAM_UNAVAILABLE","reason":"program_name_not_found"}`},
 		{"cannot switch program", "connect", other.Name, other.Name, 409, `{"code":"UNIFY_PROGRAM_UNAVAILABLE"}`},
 		{"cannot read another program", "workspace", other.Name, other.Name, 409, `{"code":"UNIFY_PROGRAM_UNAVAILABLE"}`},
 	} {

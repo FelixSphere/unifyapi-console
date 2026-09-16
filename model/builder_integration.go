@@ -49,6 +49,15 @@ var ErrBuilderUnavailable = errors.New("builder account unavailable")
 // Each wraps ErrBuilderUnavailable, so callers that only care that the account
 // is unusable keep working unchanged, while callers that can act on the reason
 // can now tell these apart.
+// The program lookup had one error for four different situations: no program
+// by that name, several, one that is disabled, and one outside its schedule.
+// A caller seeing "program unavailable" could not tell a typo in configuration
+// from an expired campaign, and the commonest cause by far -- the configured
+// name simply not matching -- looked identical to an outage.
+var ErrPartnershipProgramNotFound = fmt.Errorf("no partnership program has that name: %w", ErrPartnershipProgramUnavailable)
+var ErrPartnershipProgramAmbiguous = fmt.Errorf("several partnership programs share that name: %w", ErrPartnershipProgramUnavailable)
+var ErrPartnershipProgramInactive = fmt.Errorf("the partnership program is disabled or outside its schedule: %w", ErrPartnershipProgramUnavailable)
+
 var ErrBuilderStaffAccount = fmt.Errorf("administrator accounts cannot be linked to Builder: %w", ErrBuilderUnavailable)
 var ErrBuilderAccountDisabled = fmt.Errorf("the linked account is disabled: %w", ErrBuilderUnavailable)
 var ErrBuilderOwnershipProof = fmt.Errorf("management token does not prove ownership of that address: %w", ErrBuilderUnavailable)
@@ -138,8 +147,13 @@ func ResolveBuilderProgram(tx *gorm.DB, selector BuilderProgramSelector, lock bo
 			matches = append(matches, candidate)
 		}
 	}
-	if len(matches) != 1 || !partnershipProgramActive(&matches[0], time.Now().Unix()) {
-		return nil, ErrPartnershipProgramUnavailable
+	switch {
+	case len(matches) == 0:
+		return nil, ErrPartnershipProgramNotFound
+	case len(matches) > 1:
+		return nil, ErrPartnershipProgramAmbiguous
+	case !partnershipProgramActive(&matches[0], time.Now().Unix()):
+		return nil, ErrPartnershipProgramInactive
 	}
 	program := matches[0]
 	customer, err := resolveProgramCustomer(query, program.Id, selector.CustomerName)
