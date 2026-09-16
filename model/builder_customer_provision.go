@@ -313,8 +313,13 @@ func resolveProgramByName(tx *gorm.DB, name string) (*PartnershipProgram, error)
 			matches = append(matches, candidate)
 		}
 	}
-	if len(matches) != 1 || !partnershipProgramActive(&matches[0], time.Now().Unix()) {
-		return nil, ErrPartnershipProgramUnavailable
+	switch {
+	case len(matches) == 0:
+		return nil, ErrPartnershipProgramNotFound
+	case len(matches) > 1:
+		return nil, ErrPartnershipProgramAmbiguous
+	case !partnershipProgramActive(&matches[0], time.Now().Unix()):
+		return nil, ErrPartnershipProgramInactive
 	}
 	return &matches[0], nil
 }

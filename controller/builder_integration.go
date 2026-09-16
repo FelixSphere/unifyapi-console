@@ -97,6 +97,43 @@ func builderProgramConflictCode(err error) string {
 	}
 }
 
+// builderProgramReason names why a program could not be used, carried beside
+// the code rather than replacing it.
+//
+// The code stays exactly as it was on purpose: Builder Hub matches
+// UNIFY_PROGRAM_UNAVAILABLE exactly, and renaming it would drop those
+// responses into its generic upstream-failure branch, turning a precise 409
+// into an opaque 502. The reason is additive, so an old caller is unaffected
+// and a new one can tell a misconfigured name from an expired campaign.
+func builderProgramReason(err error) string {
+	switch {
+	case errors.Is(err, model.ErrPartnershipProgramNotFound):
+		// The commonest cause by far, and the one that looks like an outage
+		// while being a configuration mistake: the configured program name
+		// matches nothing here.
+		return "program_name_not_found"
+	case errors.Is(err, model.ErrPartnershipProgramAmbiguous):
+		return "program_name_ambiguous"
+	case errors.Is(err, model.ErrPartnershipProgramInactive):
+		return "program_disabled_or_out_of_schedule"
+	case errors.Is(err, model.ErrPartnershipCustomerUnavailable):
+		return "team_not_available"
+	case errors.Is(err, model.ErrPartnershipCustomerConflict):
+		return "enrolled_with_another_team"
+	default:
+		return ""
+	}
+}
+
+// builderConflictBody carries the stable code plus, when known, the reason.
+func builderConflictBody(err error) gin.H {
+	body := gin.H{"code": builderProgramConflictCode(err)}
+	if reason := builderProgramReason(err); reason != "" {
+		body["reason"] = reason
+	}
+	return body
+}
+
 // BuilderIntegration accepts only server-signed assertions, never a browser's
 // claimed email or user id. The integration is disabled without its secret.
 func BuilderIntegration(c *gin.Context) {
@@ -136,13 +173,13 @@ func BuilderIntegration(c *gin.Context) {
 		// behind.
 		if enrollmentName != "" && errors.Is(err, model.ErrPartnershipCustomerUnavailable) {
 			if provisionErr := model.ProvisionBuilderCustomer(request.ProgramName, enrollmentName); provisionErr != nil {
-				c.JSON(http.StatusConflict, gin.H{"code": builderProgramConflictCode(provisionErr)})
+				c.JSON(http.StatusConflict, builderConflictBody(provisionErr))
 				return
 			}
 			offer, err = model.ResolveBuilderProgram(model.DB, selector, false)
 		}
 		if err != nil {
-			c.JSON(http.StatusConflict, gin.H{"code": builderProgramConflictCode(err)})
+			c.JSON(http.StatusConflict, builderConflictBody(err))
 			return
 		}
 	}
@@ -156,7 +193,7 @@ func BuilderIntegration(c *gin.Context) {
 		if request.ProgramName != "" && (errors.Is(err, model.ErrPartnershipProgramUnavailable) ||
 			errors.Is(err, model.ErrPartnershipCustomerUnavailable) ||
 			errors.Is(err, model.ErrPartnershipCustomerConflict)) {
-			c.JSON(http.StatusConflict, gin.H{"code": builderProgramConflictCode(err)})
+			c.JSON(http.StatusConflict, builderConflictBody(err))
 			return
 		}
 		if errors.Is(err, model.ErrBuilderLinkRequired) {

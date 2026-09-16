@@ -366,3 +366,65 @@ func TestAReadSurvivesABindingToADeletedProgram(t *testing.T) {
 	assert.NotEqual(t, 409, recorder.Code, recorder.Body.String())
 	assert.NotContains(t, recorder.Body.String(), "UNIFY_PROGRAM_UNAVAILABLE")
 }
+
+// A misconfigured program name and a genuinely unusable program answered
+// identically. That cost a full day: the caller's configuration pointed at a
+// name no program had, and the response was indistinguishable from an outage
+// on this side, so the search went everywhere except the one field that was
+// wrong.
+//
+// The code stays UNIFY_PROGRAM_UNAVAILABLE on purpose -- Builder Hub matches
+// it exactly, and renaming it would drop these into its generic upstream
+// failure branch, turning a precise 409 into an opaque 502.
+func TestAMisconfiguredProgramNameSaysSo(t *testing.T) {
+	setupPartnershipControllerTest(t)
+	secret := "test-secret-with-at-least-32-characters"
+	t.Setenv("BUILDER_INTEGRATION_SECRET", secret)
+	t.Setenv("BUILDER_INTEGRATION_PROGRAM_NAME", "")
+	t.Setenv("BUILDER_INTEGRATION_PARTNERSHIP_CODE", "")
+
+	live := model.PartnershipProgram{Name: "Builder_hub_2026_Sep_Batch", Code: "builders", Group: "partner", Enabled: true}
+	require.NoError(t, model.CreatePartnershipProgram(&live))
+
+	ask := func(t *testing.T, programName string) map[string]any {
+		t.Helper()
+		body, err := common.Marshal(map[string]any{"subject": "cfg-probe", "program_name": programName})
+		require.NoError(t, err)
+		path := "/api/builder/v1/workspace"
+		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write([]byte("POST\n" + path + "\n" + timestamp + "\n"))
+		mac.Write(body)
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Params = gin.Params{{Key: "action", Value: "workspace"}}
+		c.Request = httptest.NewRequest("POST", path, strings.NewReader(string(body)))
+		c.Request.Header.Set("X-Builder-Timestamp", timestamp)
+		c.Request.Header.Set("X-Builder-Signature", hex.EncodeToString(mac.Sum(nil)))
+		BuilderIntegration(c)
+		out := map[string]any{}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &out))
+		out["_status"] = recorder.Code
+		return out
+	}
+
+	// The exact shape of today's outage: a name nothing matches.
+	t.Run("a name no program has", func(t *testing.T) {
+		got := ask(t, "UnifyAPI")
+		assert.EqualValues(t, 409, got["_status"])
+		assert.Equal(t, "UNIFY_PROGRAM_UNAVAILABLE", got["code"], "the code must stay stable for existing callers")
+		assert.Equal(t, "program_name_not_found", got["reason"], "and the reason must name the real problem")
+	})
+
+	// A program that exists but is switched off is a different situation with a
+	// different fix, and must not look like a typo.
+	t.Run("a program that is disabled", func(t *testing.T) {
+		require.NoError(t, model.DB.Model(&model.PartnershipProgram{}).
+			Where("id = ?", live.Id).Update("enabled", false).Error)
+		got := ask(t, live.Name)
+		assert.Equal(t, "UNIFY_PROGRAM_UNAVAILABLE", got["code"])
+		assert.Equal(t, "program_disabled_or_out_of_schedule", got["reason"])
+		assert.NotEqual(t, "program_name_not_found", got["reason"],
+			"a switched-off campaign must not be reported as a configuration typo")
+	})
+}
