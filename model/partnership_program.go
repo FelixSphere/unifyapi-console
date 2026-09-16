@@ -111,8 +111,11 @@ func ValidatePartnershipProgram(program *PartnershipProgram) error {
 	program.Name = strings.TrimSpace(program.Name)
 	program.Code = NormalizePartnershipCode(program.Code)
 	program.Group = strings.TrimSpace(program.Group)
-	if program.Name == "" || !partnershipCodePattern.MatchString(program.Code) || program.Group == "" {
-		return errors.New("name, valid code, and group are required")
+	// An empty Group is how an operator says this program has no default
+	// customer. Members then have to arrive with a team name, and nothing
+	// lands in a shared catch-all whose usage cannot be told apart.
+	if program.Name == "" || !partnershipCodePattern.MatchString(program.Code) {
+		return errors.New("name and a valid code are required")
 	}
 	if program.GrantQuota < 0 || program.GrantLimit < 0 {
 		return errors.New("grant quota and limit cannot be negative")
@@ -177,6 +180,11 @@ func initializePartnershipCustomers() error {
 			err := tx.Where("program_id = ? AND is_default = ? AND removed_at = ?", program.Id, true, 0).
 				First(&customer).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
+				if program.Group == "" {
+					// The operator asked this program not to have a default
+					// customer. The upgrade must not hand one back.
+					continue
+				}
 				customer = PartnershipCustomer{
 					ProgramId: program.Id, Name: program.Name, Code: program.Code,
 					Group: program.Group, IsDefault: true, Enabled: true,
@@ -207,14 +215,19 @@ func CreatePartnershipProgram(program *PartnershipProgram) error {
 	program.ClaimedCount = 0
 	return DB.Transaction(func(tx *gorm.DB) error {
 		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
-			if err := validatePartnershipProgramGroup(tx, program.Group); err != nil {
-				return err
+			if program.Group != "" {
+				if err := validatePartnershipProgramGroup(tx, program.Group); err != nil {
+					return err
+				}
 			}
 			if err := validatePartnershipCodeAvailable(tx, program.Code, 0, 0); err != nil {
 				return err
 			}
 			if err := tx.Create(program).Error; err != nil {
 				return err
+			}
+			if program.Group == "" {
+				return nil
 			}
 			return tx.Create(&PartnershipCustomer{
 				ProgramId: program.Id, Name: program.Name, Code: program.Code,
@@ -233,8 +246,10 @@ func UpdatePartnershipProgram(id int, input *PartnershipProgram) error {
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
 		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
-			if err := validatePartnershipProgramGroup(tx, input.Group); err != nil {
-				return err
+			if input.Group != "" {
+				if err := validatePartnershipProgramGroup(tx, input.Group); err != nil {
+					return err
+				}
 			}
 			var current PartnershipProgram
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, id).Error; err != nil {
@@ -264,6 +279,17 @@ func UpdatePartnershipProgram(id int, input *PartnershipProgram) error {
 				"ends_at":     input.EndsAt,
 			}).Error; err != nil {
 				return err
+			}
+			if input.Group == "" {
+				// No default customer for this program. An existing one is
+				// retired rather than deleted, so any usage already billed
+				// through it stays attributable.
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil
+				}
+				return tx.Model(&defaultCustomer).Updates(map[string]any{
+					"enabled": false, "removed_at": time.Now().Unix(),
+				}).Error
 			}
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return tx.Create(&PartnershipCustomer{
@@ -639,6 +665,10 @@ func validateActivePartnershipGroups(db *gorm.DB, groups map[string]struct{}) er
 		return err
 	}
 	for _, program := range programs {
+		if program.Group == "" {
+			// No default customer, so this program holds no group open.
+			continue
+		}
 		if _, ok := groups[program.Group]; !ok {
 			return fmt.Errorf("group %q is used by an enabled partnership program; disable or move the program first", program.Group)
 		}

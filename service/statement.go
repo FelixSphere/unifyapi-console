@@ -242,6 +242,10 @@ func statementAmount(row model.UsageRow, kind StatementKind) (amount float64, pr
 	return ratio_setting.UpstreamCostUSD(row.Model, row.ChannelID, usageOf(row))
 }
 
+// systemDefaultGroup is the pricing group every account starts in. It is a
+// starting point, not a customer.
+const systemDefaultGroup = "default"
+
 func statementParty(row model.UsageRow, kind StatementKind) (key, label, group string) {
 	if kind == StatementKindCustomer {
 		billingGroup := row.BillingGroup
@@ -249,6 +253,22 @@ func statementParty(row model.UsageRow, kind StatementKind) (key, label, group s
 			// Deleted/missing users cannot be resolved against today's account
 			// table. Their historical usage must still be billed somewhere.
 			billingGroup = row.UserGroup
+		}
+		// The system default group is not a customer. It is where accounts sit
+		// when they belong to nobody in particular, so billing it as one
+		// counterparty would put unrelated people on a single invoice with no
+		// way to tell their usage apart. Each of them is their own.
+		//
+		// Deliberately only this group. Every other pricing group is somebody's
+		// customer, and re-keying those would split invoices that already
+		// carry real money.
+		if billingGroup == systemDefaultGroup {
+			key = strconv.Itoa(row.UserID)
+			label = row.Username
+			if label == "" {
+				label = "user " + key
+			}
+			return key, label, billingGroup
 		}
 		if billingGroup != "" {
 			return model.CustomerPricingGroupKey(billingGroup), billingGroup, billingGroup
