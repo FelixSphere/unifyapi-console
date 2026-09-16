@@ -123,10 +123,12 @@ func TestBuilderConnectRoutesToNamedCustomer(t *testing.T) {
 		assert.JSONEq(t, `{"code":"UNIFY_CUSTOMER_CONFLICT"}`, recorder.Body.String())
 	})
 
-	t.Run("a read for the wrong team conflicts instead of answering", func(t *testing.T) {
-		recorder := call(t, "workspace", "acme-user", "Builder_hub_2026_Sep_Batch")
-		assert.Equal(t, 409, recorder.Code)
-		assert.JSONEq(t, `{"code":"UNIFY_CUSTOMER_CONFLICT"}`, recorder.Body.String())
+	// A read is answered from the enrollment on the link, not from the team the
+	// caller happened to name. Refusing here would lock out every account that
+	// connected before teams existed, which is what it did in DEV.
+	t.Run("a read is answered from the enrollment, whatever team is named", func(t *testing.T) {
+		recorder := call(t, "credit-status", "acme-user", "Builder_hub_2026_Sep_Batch")
+		assert.Equal(t, 200, recorder.Code, recorder.Body.String())
 	})
 
 	// The signed email is the caller's claim about who this subject is. connect
@@ -178,5 +180,79 @@ func TestBuilderConnectRoutesToNamedCustomer(t *testing.T) {
 		assert.Equal(t, before.Id, after.Id, "no second identity")
 		assert.Equal(t, before.CustomerId, after.CustomerId)
 		assert.Equal(t, "acme_robotics", user.Group)
+	})
+}
+
+// Turning the selector on from the Builder side must not lock out accounts
+// that connected before teams existed. They are enrolled in the program
+// default; the team name now arriving on every call resolves to a different
+// customer, or -- before any team is provisioned -- to none at all.
+//
+// Reads answered 409 for exactly this reason in DEV. The account exists, its
+// owner is on the link, and naming a team cannot change that.
+func TestAnExistingAccountKeepsWorkingWhenTeamNamesStartArriving(t *testing.T) {
+	setupPartnershipControllerTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.User{}, &model.Tenant{}, &model.BuilderIdentity{}, &model.Token{}))
+	secret := "test-secret-with-at-least-32-characters"
+	t.Setenv("BUILDER_INTEGRATION_SECRET", secret)
+	t.Setenv("BUILDER_INTEGRATION_PROGRAM_NAME", "")
+	t.Setenv("BUILDER_INTEGRATION_PARTNERSHIP_CODE", "")
+
+	const groups = `{"partner":0.9,"acme_robotics":1}`
+	require.NoError(t, model.DB.Model(&model.Option{}).Where("key = ?", "GroupRatio").Update("value", groups).Error)
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(groups))
+
+	program := model.PartnershipProgram{Name: "Builder_hub_2026_Sep_Batch", Code: "builders", Group: "partner", Enabled: true}
+	require.NoError(t, model.CreatePartnershipProgram(&program))
+
+	call := func(t *testing.T, action, subject, customerName string) *httptest.ResponseRecorder {
+		t.Helper()
+		input := map[string]any{
+			"subject": subject, "program_name": program.Name,
+			"email": subject + "@example.invalid", "email_verified": true,
+		}
+		if customerName != "" {
+			input["customer_name"] = customerName
+		}
+		body, err := common.Marshal(input)
+		require.NoError(t, err)
+		path := "/api/builder/v1/" + action
+		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write([]byte("POST\n" + path + "\n" + timestamp + "\n"))
+		mac.Write(body)
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Params = gin.Params{{Key: "action", Value: action}}
+		c.Request = httptest.NewRequest("POST", path, strings.NewReader(string(body)))
+		c.Request.Header.Set("X-Builder-Timestamp", timestamp)
+		c.Request.Header.Set("X-Builder-Signature", hex.EncodeToString(mac.Sum(nil)))
+		BuilderIntegration(c)
+		return recorder
+	}
+
+	// Connected before teams existed: no name sent, enrolled in the default.
+	require.Equal(t, 200, call(t, "connect", "legacy-user", "").Code)
+
+	t.Run("a read survives a team that is not provisioned yet", func(t *testing.T) {
+		recorder := call(t, "credit-status", "legacy-user", "Not Provisioned Yet")
+		assert.Equal(t, 200, recorder.Code, recorder.Body.String())
+	})
+
+	t.Run("a read survives a team the account is not enrolled in", func(t *testing.T) {
+		require.NoError(t, model.CreatePartnershipCustomer(program.Id, &model.PartnershipCustomer{
+			Name: "Acme Robotics", Code: "acme-robotics", Group: "acme_robotics", Enabled: true,
+		}))
+		recorder := call(t, "credit-status", "legacy-user", "Acme Robotics")
+		assert.Equal(t, 200, recorder.Code, recorder.Body.String())
+	})
+
+	// The protection that matters is still there: enrollment cannot be moved by
+	// naming a different team, because that would move the person's usage to
+	// another invoice.
+	t.Run("enrollment still cannot be repointed by naming another team", func(t *testing.T) {
+		recorder := call(t, "connect", "legacy-user", "Acme Robotics")
+		assert.Equal(t, 409, recorder.Code)
+		assert.JSONEq(t, `{"code":"UNIFY_CUSTOMER_CONFLICT"}`, recorder.Body.String())
 	})
 }
