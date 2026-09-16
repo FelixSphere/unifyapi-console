@@ -163,6 +163,21 @@ func BuilderIntegration(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_LINK_REQUIRED"})
 			return
 		}
+		// Say which refusal this is. All three used to arrive as one generic
+		// 403, which reached the user as "you do not have permission" and told
+		// nobody what to do next.
+		if errors.Is(err, model.ErrBuilderStaffAccount) {
+			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_ACCOUNT_NOT_ELIGIBLE"})
+			return
+		}
+		if errors.Is(err, model.ErrBuilderAccountDisabled) {
+			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_ACCOUNT_DISABLED"})
+			return
+		}
+		if errors.Is(err, model.ErrBuilderOwnershipProof) {
+			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_OWNERSHIP_UNPROVEN"})
+			return
+		}
 		if err != nil {
 			c.JSON(http.StatusForbidden, gin.H{"code": "UNIFY_CONNECT_FAILED"})
 			return
@@ -180,7 +195,14 @@ func BuilderIntegration(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"code": "UNIFY_ACCOUNT_UNAVAILABLE"})
+		code := "UNIFY_ACCOUNT_UNAVAILABLE"
+		switch {
+		case errors.Is(err, model.ErrBuilderStaffAccount):
+			code = "UNIFY_ACCOUNT_NOT_ELIGIBLE"
+		case errors.Is(err, model.ErrBuilderAccountDisabled):
+			code = "UNIFY_ACCOUNT_DISABLED"
+		}
+		c.JSON(http.StatusForbidden, gin.H{"code": code})
 		return
 	}
 	// connect validates the email while provisioning. Every other action only
