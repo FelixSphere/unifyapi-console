@@ -1,10 +1,11 @@
 {
-  "Approx. to pay:": "Примерно к оплате:",
-  "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Только оценка. Итоговую валюту и сумму Stripe определяет при оплате по своему текущему курсу.",
-  "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe пересчитает по своему текущему курсу на странице оплаты — списана будет та сумма.",
   "translation": {
+    "Approx. to pay:": "Примерно к оплате:",
+    "By user": "По пользователям",
+    "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Только оценка. Итоговую валюту и сумму Stripe определяет при оплате по своему текущему курсу.",
     "Every model marked below is already discounted for new accounts. No code needed.": "Все отмеченные ниже модели уже со скидкой для новых аккаунтов. Промокод не нужен.",
     "Sign up and save": "Зарегистрируйтесь и экономьте",
+    "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe пересчитает по своему текущему курсу на странице оплаты — списана будет та сумма.",
     "{{percent}}% off by default": "Скидка {{percent}}% по умолчанию",
     "New users get up to {{percent}}% off by default": "Новые пользователи получают скидку до {{percent}}% по умолчанию",
     "A new version of the console is available.": "Доступна новая версия консоли.",

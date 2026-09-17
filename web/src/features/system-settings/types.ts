@@ -672,6 +672,18 @@ export type StatementLine = {
   unpriced?: boolean
 }
 
+/** One login's share of a customer statement. Keyed on the log's user id, so a
+ *  login deleted since still appears -- its spend was still the customer's. */
+export type StatementUserLine = {
+  user_id: number
+  username: string
+  requests: number
+  prompt_tokens: number
+  cached_tokens: number
+  completion_tokens: number
+  amount_usd: number
+}
+
 export type Statement = {
   kind: StatementKind
   counterparty: string
@@ -680,6 +692,8 @@ export type Statement = {
   period_start: string
   period_end: string
   lines: StatementLine[]
+  /** Customer side only: the same total broken down by login. */
+  users?: StatementUserLine[]
   requests: number
   prompt_tokens: number
   cached_tokens: number
