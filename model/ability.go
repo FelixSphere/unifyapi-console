@@ -195,7 +195,9 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 	models_ := strings.Split(channel.Models, ",")
-	groups_ := strings.Split(channel.Group, ",")
+	// UNIFYAPI-FORK: every pricing group routes through every channel; see
+	// unifyapi_pricing_group_channel_access.go.
+	groups_ := channel.routingGroups(routingPricingGroups())
 	abilitySet := make(map[string]struct{})
 	abilities := make([]Ability, 0, len(models_))
 	for _, model := range models_ {
@@ -267,7 +269,9 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 
 	// Then add new abilities
 	models_ := strings.Split(channel.Models, ",")
-	groups_ := strings.Split(channel.Group, ",")
+	// UNIFYAPI-FORK: every pricing group routes through every channel; see
+	// unifyapi_pricing_group_channel_access.go.
+	groups_ := channel.routingGroups(routingPricingGroups())
 	abilitySet := make(map[string]struct{})
 	abilities := make([]Ability, 0, len(models_))
 	for _, model := range models_ {

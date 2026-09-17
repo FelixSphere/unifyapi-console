@@ -50,12 +50,20 @@ func InitChannelCache() {
 	for group := range groups {
 		newGroup2model2channels[group] = make(map[string][]int)
 	}
+	// UNIFYAPI-FORK: every pricing group routes through every channel; see
+	// unifyapi_pricing_group_channel_access.go.
+	pricingGroups := routingPricingGroups()
 	for _, channel := range channels {
 		if channel.Status != common.ChannelStatusEnabled {
 			continue // skip disabled channels
 		}
-		groups := strings.Split(channel.Group, ",")
+		groups := channel.routingGroups(pricingGroups)
 		for _, group := range groups {
+			// A pricing group may have no ability row yet (added since the
+			// last grant, or on a slave); the union still routes it.
+			if _, ok := newGroup2model2channels[group]; !ok {
+				newGroup2model2channels[group] = make(map[string][]int)
+			}
 			models := strings.Split(channel.Models, ",")
 			for _, model := range models {
 				if _, ok := newGroup2model2channels[group][model]; !ok {

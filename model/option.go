@@ -367,7 +367,24 @@ func UpdateOptionAs(key, value, actor string) error {
 	return updateOptionAs(key, value, actor)
 }
 
-func updateOptionMap(key string, value string) (err error) {
+// updateOptionMap publishes a saved option into memory. Group Pricing is the
+// one key with a side effect outside the option maps: a new pricing group must
+// be able to route through every channel, so its ability rows are added once
+// the map is published. That runs after the option lock is released, because
+// it writes to the database and rebuilds the channel cache.
+func updateOptionMap(key string, value string) error {
+	if err := updateOptionMapLocked(key, value); err != nil {
+		return err
+	}
+	if key == "GroupRatio" {
+		if _, err := GrantAllChannelsToPricingGroups(); err != nil {
+			common.SysError("grant pricing groups on channels after Group Pricing save: " + err.Error())
+		}
+	}
+	return nil
+}
+
+func updateOptionMapLocked(key string, value string) (err error) {
 	if key == retiredThemeOptionKey {
 		common.OptionMapRWMutex.Lock()
 		delete(common.OptionMap, key)
