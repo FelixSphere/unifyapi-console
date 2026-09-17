@@ -121,6 +121,7 @@ export function BinancePayDialog({
   const expiredLocally = current.expires_at > 0 && remaining <= 0
   const amountLabel = `${current.pay_amount} ${current.currency}`
   const addresses = current.deposit_addresses ?? []
+  const hasPayId = !!current.receiver_id
 
   return (
     <Dialog
@@ -132,9 +133,15 @@ export function BinancePayDialog({
           {t('Pay with Binance Pay')}
         </span>
       }
-      description={t(
-        'Send the exact amount below from your Binance app. Your balance is credited automatically once the transfer is seen.'
-      )}
+      description={
+        hasPayId
+          ? t(
+              'Send the exact amount below from your Binance app. Your balance is credited automatically once the transfer is seen.'
+            )
+          : t(
+              'Send the exact amount below to one of the addresses. Your balance is credited automatically once the deposit is confirmed.'
+            )
+      }
       contentHeight='auto'
       bodyClassName='space-y-4'
       footer={
@@ -201,35 +208,42 @@ export function BinancePayDialog({
             )}
           </p>
 
-          <CopyRow label={t('Recipient Pay ID')} value={current.receiver_id} />
-          {current.receiver_nickname && (
-            <p className='text-muted-foreground text-xs'>
-              {t('Binance should show the recipient as')}{' '}
-              <span className='text-foreground font-medium'>
-                {current.receiver_nickname}
-              </span>
-            </p>
-          )}
-
-          <ol className='text-muted-foreground list-decimal space-y-1 pl-5 text-xs'>
-            <li>{t('Open the Binance app and go to Pay, then Send.')}</li>
-            <li>{t('Enter the recipient Pay ID above.')}</li>
-            <li>
-              {t('Choose {{currency}} and enter the exact amount.', {
-                currency: current.currency,
-              })}
-            </li>
-            <li>
-              {t(
-                'Confirm the transfer. Binance Pay transfers are free and instant.'
+          {hasPayId && (
+            <>
+              <CopyRow
+                label={t('Recipient Pay ID')}
+                value={current.receiver_id}
+              />
+              {current.receiver_nickname && (
+                <p className='text-muted-foreground text-xs'>
+                  {t('Binance should show the recipient as')}{' '}
+                  <span className='text-foreground font-medium'>
+                    {current.receiver_nickname}
+                  </span>
+                </p>
               )}
-            </li>
-          </ol>
+
+              <ol className='text-muted-foreground list-decimal space-y-1 pl-5 text-xs'>
+                <li>{t('Open the Binance app and go to Pay, then Send.')}</li>
+                <li>{t('Enter the recipient Pay ID above.')}</li>
+                <li>
+                  {t('Choose {{currency}} and enter the exact amount.', {
+                    currency: current.currency,
+                  })}
+                </li>
+                <li>
+                  {t(
+                    'Confirm the transfer. Binance Pay transfers are free and instant.'
+                  )}
+                </li>
+              </ol>
+            </>
+          )}
 
           {addresses.length > 0 && (
             <div className='space-y-2 border-t pt-3'>
               <div className='text-muted-foreground text-[11px] tracking-wider uppercase'>
-                {t('Or send on-chain to')}
+                {hasPayId ? t('Or send on-chain to') : t('Send on-chain to')}
               </div>
               {addresses.map((entry) => (
                 <CopyRow
