@@ -269,3 +269,42 @@ func TestTheDryRunPromisesWhatTheRealRunMovesForAMixedCustomer(t *testing.T) {
 	assert.Equal(t, 5_000_000, balanceOf(t, byHand.Id))
 	assert.Equal(t, before, totalCredit(t), "not a unit of credit created or lost")
 }
+
+// Production's shape on 2026-09-17: wallet-backed logins whose users.quota
+// column still holds credit nothing can see or spend (ycwtest 4,993,289;
+// Aaron 5,000,000). The operator ruled that residue is the customer's. A moved
+// login already carried its column (#116); an adopted one must too, or the two
+// members of one customer are treated differently for no reason.
+func TestAResidueInAnAdoptedLoginsColumnIsSweptIntoTheWallet(t *testing.T) {
+	setupCustomerWalletSpec(t)
+	ycw := legacySoloWallet(t, "ycwtest", "UnifyAI", 9_997_277)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", ycw.Id).Update("quota", 4_993_289).Error)
+	aaron := legacySoloWallet(t, "Aaron", "UnifyAI", 3_669_055)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", aaron.Id).Update("quota", 5_000_000).Error)
+	before := totalCredit(t)
+
+	dry, err := BackfillCustomerPools(true)
+	require.NoError(t, err)
+	assert.Equal(t, 1, dry.Customers)
+	assert.Equal(t, 1, dry.MembersMoved, "Aaron moves onto ycwtest's wallet")
+	assert.Equal(t, 1, dry.Swept, "ycwtest stays, but the credit in his column is swept in")
+	assert.Equal(t, 4_993_289+3_669_055+5_000_000, dry.QuotaCarried, "the dry run declares every unit that will change hands")
+	assert.Equal(t, before, totalCredit(t))
+
+	done, err := BackfillCustomerPools(false)
+	require.NoError(t, err)
+	assert.Equal(t, dry.QuotaCarried, done.QuotaCarried)
+	assert.Equal(t, dry.Swept, done.Swept)
+	assert.Equal(t, 9_997_277+4_993_289+3_669_055+5_000_000, balanceOf(t, ycw.Id), "UnifyAI's whole balance is now one number both members can spend")
+	assert.Equal(t, balanceOf(t, ycw.Id), balanceOf(t, aaron.Id))
+	var column User
+	require.NoError(t, DB.First(&column, ycw.Id).Error)
+	assert.Zero(t, column.Quota, "nothing is left stranded in the private column")
+	assert.Equal(t, before, totalCredit(t), "not a unit of credit created or lost")
+
+	again, err := BackfillCustomerPools(true)
+	require.NoError(t, err)
+	assert.Zero(t, again.Swept)
+	assert.Zero(t, again.MembersMoved)
+	assert.Equal(t, 2, again.AlreadyPooled)
+}
