@@ -208,13 +208,12 @@ export function PartnershipProgramsSection({
     if (
       !form.name.trim() ||
       !/^[a-z0-9][a-z0-9_-]{2,63}$/.test(form.code.trim().toLowerCase()) ||
-      !form.group ||
       !Number.isFinite(grantUSD) ||
       grantUSD < 0 ||
       !Number.isInteger(grantLimit) ||
       grantLimit < 0
     ) {
-      toast.error(t('Check the name, code, group, credit, and limit.'))
+      toast.error(t('Check the name, code, credit, and limit.'))
       return
     }
     const program: PartnershipProgramInput = {
@@ -497,12 +496,24 @@ export function PartnershipProgramsSection({
                 setForm({ ...form, group: event.target.value })
               }
             >
+              <NativeSelectOption value=''>
+                {t('None — members must arrive with a team')}
+              </NativeSelectOption>
               {groups.map((group) => (
                 <NativeSelectOption key={group} value={group}>
                   {partnershipGroupLabel(group, query.data?.groups[group])}
                 </NativeSelectOption>
               ))}
             </NativeSelect>
+            <span className='text-muted-foreground text-xs'>
+              {form.group
+                ? t(
+                    'Members who arrive without a team land in this group, and share one invoice.'
+                  )
+                : t(
+                    'No catch-all. This program holds no group open, and its usage is never pooled into a shared invoice.'
+                  )}
+            </span>
           </Field>
           <Field label={t('Registration credit (USD)')}>
             <Input
