@@ -21,6 +21,7 @@ import { parseCurrencyDisplayType } from '@/lib/currency'
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
+import { BinancePaySettingsSection } from '../integrations/binance-pay-settings-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
 import { ProfitSection } from '../models/profit-section'
 import { RatioSettingsCard } from '../models/ratio-settings-card'
@@ -233,6 +234,32 @@ const BILLING_SECTIONS = [
             settings['payment_setting.compliance_terms_version'] ?? '',
           confirmedAt: settings['payment_setting.compliance_confirmed_at'] ?? 0,
           confirmedBy: settings['payment_setting.compliance_confirmed_by'] ?? 0,
+        }}
+      />
+    ),
+  },
+  {
+    // UNIFYAPI-FORK: its own section so the upstream Payment Gateway form
+    // stays untouched. Sits between the gateways and the partner programs it
+    // is recommended to.
+    id: 'binance-pay',
+    titleKey: 'Binance Pay',
+    build: (settings: BillingSettings) => (
+      <BinancePaySettingsSection
+        defaultValues={{
+          BinancePayEnabled: settings.BinancePayEnabled ?? false,
+          BinancePayApiKey: settings.BinancePayApiKey ?? '',
+          BinancePaySecretKey: settings.BinancePaySecretKey ?? '',
+          BinancePayReceiverId: settings.BinancePayReceiverId ?? '',
+          BinancePayReceiverNickname: settings.BinancePayReceiverNickname ?? '',
+          BinancePayCurrency: settings.BinancePayCurrency ?? 'USDT',
+          BinancePayUnitPrice: settings.BinancePayUnitPrice ?? 1,
+          BinancePayMinTopUp: settings.BinancePayMinTopUp ?? 1,
+          BinancePayOrderTTLMinutes: settings.BinancePayOrderTTLMinutes ?? 60,
+          BinancePayDepositAddresses:
+            settings.BinancePayDepositAddresses ?? '[]',
+          BinancePayRecommendForPartners:
+            settings.BinancePayRecommendForPartners ?? true,
         }}
       />
     ),

@@ -22,6 +22,7 @@ import assert from 'node:assert/strict'
 import { PAYMENT_TYPES } from '../constants'
 import {
   dispatchSelectedPayment,
+  isBinancePayPayment,
   isStripePayment,
   isWaffoPayment,
   isWaffoPancakePayment,
@@ -34,6 +35,8 @@ describe('payment type classification', () => {
     assert.equal(isWaffoPancakePayment(PAYMENT_TYPES.WAFFO_PANCAKE), true)
     assert.equal(isWaffoPancakePayment(PAYMENT_TYPES.WAFFO), false)
     assert.equal(isStripePayment(PAYMENT_TYPES.STRIPE), true)
+    assert.equal(isBinancePayPayment(PAYMENT_TYPES.BINANCE_PAY), true)
+    assert.equal(isBinancePayPayment(PAYMENT_TYPES.STRIPE), false)
   })
 })
 
@@ -57,11 +60,39 @@ describe('payment dispatch', () => {
           calls.push('pancake')
           return false
         },
+        binancePay: async () => {
+          calls.push('binance')
+          return false
+        },
       }
     )
 
     assert.equal(success, true)
     assert.deepEqual(calls, ['waffo:120:3'])
+  })
+
+  test('routes Binance Pay to its own processor, never the epay form', async () => {
+    const calls: string[] = []
+    const success = await dispatchSelectedPayment(
+      { name: 'Binance Pay', type: PAYMENT_TYPES.BINANCE_PAY },
+      50,
+      null,
+      {
+        regular: async () => {
+          calls.push('regular')
+          return false
+        },
+        waffo: async () => false,
+        waffoPancake: async () => false,
+        binancePay: async (amount) => {
+          calls.push(`binance:${amount}`)
+          return true
+        },
+      }
+    )
+
+    assert.equal(success, true)
+    assert.deepEqual(calls, ['binance:50'])
   })
 
   test('does not create a Waffo order without a selected method index', async () => {
@@ -77,6 +108,7 @@ describe('payment dispatch', () => {
           return true
         },
         waffoPancake: async () => false,
+        binancePay: async () => false,
       }
     )
 

@@ -26,6 +26,7 @@ import { getSelf } from '@/lib/api'
 
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
+import { BinancePayDialog } from './components/dialogs/binance-pay-dialog'
 import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
 import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialog'
 import { TransferDialog } from './components/dialogs/transfer-dialog'
@@ -45,11 +46,13 @@ import {
   useCreemPayment,
   useWaffoPayment,
   useWaffoPancakePayment,
+  useBinancePayPayment,
 } from './hooks'
 import {
   getDefaultPaymentType,
   getMinTopupAmount,
   dispatchSelectedPayment,
+  isBinancePayPayment,
   isStripePayment,
 } from './lib'
 import type {
@@ -116,6 +119,15 @@ export function Wallet(props: WalletProps) {
   const { processing: waffoProcessing, processWaffoPayment } = useWaffoPayment()
   const { processing: pancakeProcessing, processWaffoPancakePayment } =
     useWaffoPancakePayment()
+  // UNIFYAPI-FORK: Binance Pay (personal account) has no redirect; the order
+  // carries transfer instructions shown in BinancePayDialog.
+  const {
+    processing: binancePayProcessing,
+    order: binancePayOrder,
+    processBinancePayPayment,
+    clearOrder: clearBinancePayOrder,
+  } = useBinancePayPayment()
+  const [binancePayDialogOpen, setBinancePayDialogOpen] = useState(false)
 
   // Fetch and refresh user data
   const fetchUser = useCallback(async () => {
@@ -167,6 +179,7 @@ export function Wallet(props: WalletProps) {
   // and Waffo return amounts in their own gateway currency, so labelling those
   // with the selected code would misstate what the user is about to be charged.
   const payingWithStripe = isStripePayment(getCurrentPaymentType())
+  const payingWithBinancePay = isBinancePayPayment(getCurrentPaymentType())
   const paymentCurrency = payingWithStripe ? selectedCurrency : undefined
 
   // The preset buttons price themselves client-side, so they must use the same
@@ -176,7 +189,9 @@ export function Wallet(props: WalletProps) {
     stripeCurrencies.find((entry) => entry.code === selectedCurrency)?.rate ?? 1
   const effectivePriceRatio = payingWithStripe
     ? ((status?.stripe_unit_price as number) ?? 1) * selectedCurrencyRate
-    : (status?.price as number) || 1
+    : payingWithBinancePay
+      ? topupInfo?.binance_pay_unit_price || 1
+      : (status?.price as number) || 1
 
   // Handle preset selection
   const handleSelectPreset = (preset: PresetAmount) => {
@@ -235,6 +250,13 @@ export function Wallet(props: WalletProps) {
         regular: processPayment,
         waffo: processWaffoPayment,
         waffoPancake: processWaffoPancakePayment,
+        binancePay: async (amount) => {
+          const created = await processBinancePayPayment(amount)
+          if (created) {
+            setBinancePayDialogOpen(true)
+          }
+          return created
+        },
       },
       selectedCurrency
     )
@@ -242,6 +264,13 @@ export function Wallet(props: WalletProps) {
     if (success) {
       setConfirmDialogOpen(false)
       await fetchUser()
+    }
+  }
+
+  const handleBinancePayDialogChange = (open: boolean) => {
+    setBinancePayDialogOpen(open)
+    if (!open) {
+      clearBinancePayOrder()
     }
   }
 
@@ -366,6 +395,12 @@ export function Wallet(props: WalletProps) {
                   enableWaffoPancakeTopup={
                     topupInfo?.enable_waffo_pancake_topup
                   }
+                  enableBinancePayTopup={topupInfo?.enable_binance_pay_topup}
+                  recommendedPaymentType={
+                    topupInfo?.binance_pay_recommended
+                      ? PAYMENT_TYPES.BINANCE_PAY
+                      : undefined
+                  }
                 />
               </div>
 
@@ -399,7 +434,12 @@ export function Wallet(props: WalletProps) {
         paymentCurrency={paymentCurrency}
         paymentMethod={selectedPaymentMethod}
         calculating={calculating}
-        processing={processing || waffoProcessing || pancakeProcessing}
+        processing={
+          processing ||
+          waffoProcessing ||
+          pancakeProcessing ||
+          binancePayProcessing
+        }
         discountRate={getDiscountRate()}
         usdExchangeRate={effectiveUsdExchangeRate}
       />
@@ -423,6 +463,13 @@ export function Wallet(props: WalletProps) {
         onConfirm={handleCreemConfirm}
         product={selectedCreemProduct}
         processing={creemProcessing}
+      />
+
+      <BinancePayDialog
+        open={binancePayDialogOpen && binancePayOrder !== null}
+        onOpenChange={handleBinancePayDialogChange}
+        order={binancePayOrder}
+        onPaid={() => void fetchUser()}
       />
     </>
   )

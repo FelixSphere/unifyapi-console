@@ -55,6 +55,7 @@ const (
 	PaymentMethodCreem        = "creem"
 	PaymentMethodWaffo        = "waffo"
 	PaymentMethodWaffoPancake = "waffo_pancake"
+	PaymentMethodBinancePay   = "binance_pay" // UNIFYAPI-FORK
 	PaymentMethodBalance      = "balance"
 )
 
@@ -64,6 +65,7 @@ const (
 	PaymentProviderCreem        = "creem"
 	PaymentProviderWaffo        = "waffo"
 	PaymentProviderWaffoPancake = "waffo_pancake"
+	PaymentProviderBinancePay   = "binance_pay" // UNIFYAPI-FORK
 	PaymentProviderBalance      = "balance"
 )
 

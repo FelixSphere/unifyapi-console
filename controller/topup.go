@@ -95,6 +95,32 @@ func GetTopUpInfo(c *gin.Context) {
 		}
 	}
 
+	// UNIFYAPI-FORK: Binance Pay (personal account). Recommended -- and listed
+	// first, so it becomes the default -- for Partnership Program customers.
+	enableBinancePay := isBinancePayTopUpEnabled()
+	binancePayRecommended := false
+	if enableBinancePay {
+		if setting.BinancePayRecommendForPartners {
+			if group, err := model.GetUserGroup(c.GetInt("id"), false); err == nil {
+				binancePayRecommended = model.IsPartnershipCustomerGroup(group)
+			}
+		}
+		hasBinancePay := false
+		for _, method := range payMethods {
+			if method["type"] == model.PaymentMethodBinancePay {
+				hasBinancePay = true
+				break
+			}
+		}
+		if !hasBinancePay {
+			if binancePayRecommended {
+				payMethods = append([]map[string]string{binancePayMethodEntry()}, payMethods...)
+			} else {
+				payMethods = append(payMethods, binancePayMethodEntry())
+			}
+		}
+	}
+
 	data := gin.H{
 		"enable_online_topup":              isEpayTopUpEnabled(),
 		"enable_stripe_topup":              isStripeTopUpEnabled(),
@@ -120,6 +146,9 @@ func GetTopUpInfo(c *gin.Context) {
 		"amount_options":          operation_setting.GetPaymentSetting().AmountOptions,
 		"discount":                operation_setting.GetPaymentSetting().AmountDiscount,
 		"topup_link":              common.TopUpLink,
+	}
+	for k, v := range binancePayInfoFields(enableBinancePay, binancePayRecommended) { // UNIFYAPI-FORK
+		data[k] = v
 	}
 	common.ApiSuccess(c, data)
 }

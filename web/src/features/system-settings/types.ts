@@ -329,6 +329,18 @@ export type BillingSettings = {
   // section (saved via /api/option/waffo-pancake/save).
   WaffoPancakeStoreID: string
   WaffoPancakeProductID: string
+  // UNIFYAPI-FORK: Binance Pay (personal account) gateway.
+  BinancePayEnabled: boolean
+  BinancePayApiKey: string
+  BinancePaySecretKey: string
+  BinancePayReceiverId: string
+  BinancePayReceiverNickname: string
+  BinancePayCurrency: string
+  BinancePayUnitPrice: number
+  BinancePayMinTopUp: number
+  BinancePayOrderTTLMinutes: number
+  BinancePayDepositAddresses: string
+  BinancePayRecommendForPartners: boolean
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number

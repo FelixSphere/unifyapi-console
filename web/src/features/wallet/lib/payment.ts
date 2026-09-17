@@ -116,6 +116,16 @@ export function isWaffoPancakePayment(paymentType: string): boolean {
   return paymentType === PAYMENT_TYPES.WAFFO_PANCAKE
 }
 
+/**
+ * Check if payment method is Binance Pay (personal account)
+ *
+ * Binance Pay has no checkout redirect: the order returns transfer
+ * instructions that the wallet shows in its own dialog.
+ */
+export function isBinancePayPayment(paymentType: string): boolean {
+  return paymentType === PAYMENT_TYPES.BINANCE_PAY
+}
+
 export interface PaymentProcessors {
   regular: (
     topupAmount: number,
@@ -124,6 +134,7 @@ export interface PaymentProcessors {
   ) => Promise<boolean>
   waffo: (topupAmount: number, payMethodIndex: number) => Promise<boolean>
   waffoPancake: (topupAmount: number) => Promise<boolean>
+  binancePay: (topupAmount: number) => Promise<boolean>
 }
 
 export async function dispatchSelectedPayment(
@@ -142,6 +153,10 @@ export async function dispatchSelectedPayment(
 
   if (isWaffoPancakePayment(paymentMethod.type)) {
     return processors.waffoPancake(topupAmount)
+  }
+
+  if (isBinancePayPayment(paymentMethod.type)) {
+    return processors.binancePay(topupAmount)
   }
 
   return processors.regular(topupAmount, paymentMethod.type, currency)
@@ -172,6 +187,10 @@ export function getDefaultPaymentType(topupInfo: TopupInfo | null): string {
     return PAYMENT_TYPES.WAFFO_PANCAKE
   }
 
+  if (topupInfo.enable_binance_pay_topup) {
+    return PAYMENT_TYPES.BINANCE_PAY
+  }
+
   return DEFAULT_PAYMENT_TYPE
 }
 
@@ -197,6 +216,10 @@ export function getMinTopupAmount(topupInfo: TopupInfo | null): number {
 
   if (topupInfo.enable_waffo_pancake_topup) {
     return topupInfo.waffo_pancake_min_topup || DEFAULT_MIN_TOPUP
+  }
+
+  if (topupInfo.enable_binance_pay_topup) {
+    return topupInfo.binance_pay_min_topup || DEFAULT_MIN_TOPUP
   }
 
   return DEFAULT_MIN_TOPUP

@@ -113,6 +113,8 @@ func main() {
 
 	// 数据看板
 	go model.UpdateQuotaData()
+	// UNIFYAPI-FORK: Binance Pay has no webhook; poll the receiving account.
+	go controller.RunBinancePayReconciler()
 
 	if os.Getenv("CHANNEL_UPDATE_FREQUENCY") != "" {
 		frequency, err := strconv.Atoi(os.Getenv("CHANNEL_UPDATE_FREQUENCY"))

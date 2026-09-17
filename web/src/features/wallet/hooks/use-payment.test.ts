@@ -47,6 +47,10 @@ describe('payment amount routing', () => {
           calls.push('pancake')
           return { success: true, data: '4' }
         },
+        binancePay: async () => {
+          calls.push('binance')
+          return { success: true, data: '5' }
+        },
       }
     )
 
@@ -65,6 +69,7 @@ describe('payment amount routing', () => {
       stripe: record('stripe'),
       waffo: record('waffo'),
       waffoPancake: record('waffoPancake'),
+      binancePay: record('binancePay'),
     }
 
     await requestPaymentAmount(10, PAYMENT_TYPES.STRIPE, 'MYR', calculators)
@@ -76,5 +81,29 @@ describe('payment amount routing', () => {
       { label: 'stripe', amount: 10, currency: 'MYR' },
       { label: 'regular', amount: 10 },
     ])
+  })
+
+  test('uses the dedicated Binance Pay amount calculator', async () => {
+    const requests: Record<string, unknown>[] = []
+    const record = (label: string) => async (request: AmountRequest) => {
+      requests.push({ label, ...request })
+      return { success: true, data: '20.40' }
+    }
+    const amount = await requestPaymentAmount(
+      20,
+      PAYMENT_TYPES.BINANCE_PAY,
+      'MYR',
+      {
+        regular: record('regular'),
+        stripe: record('stripe'),
+        waffo: record('waffo'),
+        waffoPancake: record('waffoPancake'),
+        binancePay: record('binancePay'),
+      }
+    )
+
+    assert.equal(amount, 20.4)
+    // Binance Pay is stablecoin-denominated; the Stripe currency never applies.
+    assert.deepEqual(requests, [{ label: 'binancePay', amount: 20 }])
   })
 })

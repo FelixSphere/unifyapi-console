@@ -118,6 +118,18 @@ func InitOptionMap() {
 	common.OptionMap["WaffoPancakeMinTopUp"] = strconv.Itoa(setting.WaffoPancakeMinTopUp)
 	common.OptionMap["WaffoPancakeStoreID"] = setting.WaffoPancakeStoreID
 	common.OptionMap["WaffoPancakeProductID"] = setting.WaffoPancakeProductID
+	// UNIFYAPI-FORK: Binance Pay (personal account) gateway.
+	common.OptionMap["BinancePayEnabled"] = strconv.FormatBool(setting.BinancePayEnabled)
+	common.OptionMap["BinancePayApiKey"] = setting.BinancePayApiKey
+	common.OptionMap["BinancePaySecretKey"] = setting.BinancePaySecretKey
+	common.OptionMap["BinancePayReceiverId"] = setting.BinancePayReceiverId
+	common.OptionMap["BinancePayReceiverNickname"] = setting.BinancePayReceiverNickname
+	common.OptionMap["BinancePayCurrency"] = setting.BinancePayCurrency
+	common.OptionMap["BinancePayUnitPrice"] = strconv.FormatFloat(setting.BinancePayUnitPrice, 'f', -1, 64)
+	common.OptionMap["BinancePayMinTopUp"] = strconv.Itoa(setting.BinancePayMinTopUp)
+	common.OptionMap["BinancePayOrderTTLMinutes"] = strconv.Itoa(setting.BinancePayOrderTTLMinutes)
+	common.OptionMap["BinancePayDepositAddresses"] = setting.BinancePayDepositAddresses
+	common.OptionMap["BinancePayRecommendForPartners"] = strconv.FormatBool(setting.BinancePayRecommendForPartners)
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
@@ -594,6 +606,29 @@ func updateOptionMap(key string, value string) (err error) {
 		setting.WaffoPancakeUnitPrice, _ = strconv.ParseFloat(value, 64)
 	case "WaffoPancakeMinTopUp":
 		setting.WaffoPancakeMinTopUp, _ = strconv.Atoi(value)
+	// UNIFYAPI-FORK: Binance Pay (personal account) gateway.
+	case "BinancePayEnabled":
+		setting.BinancePayEnabled = value == "true"
+	case "BinancePayApiKey":
+		setting.BinancePayApiKey = value
+	case "BinancePaySecretKey":
+		setting.BinancePaySecretKey = value
+	case "BinancePayReceiverId":
+		setting.BinancePayReceiverId = value
+	case "BinancePayReceiverNickname":
+		setting.BinancePayReceiverNickname = value
+	case "BinancePayCurrency":
+		setting.BinancePayCurrency = value
+	case "BinancePayUnitPrice":
+		setting.BinancePayUnitPrice, _ = strconv.ParseFloat(value, 64)
+	case "BinancePayMinTopUp":
+		setting.BinancePayMinTopUp, _ = strconv.Atoi(value)
+	case "BinancePayOrderTTLMinutes":
+		setting.BinancePayOrderTTLMinutes, _ = strconv.Atoi(value)
+	case "BinancePayDepositAddresses":
+		setting.BinancePayDepositAddresses = value
+	case "BinancePayRecommendForPartners":
+		setting.BinancePayRecommendForPartners = value == "true"
 	case "TopupGroupRatio":
 		err = common.UpdateTopupGroupRatioByJSONString(value)
 	case "GitHubClientId":

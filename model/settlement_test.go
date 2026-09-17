@@ -310,7 +310,7 @@ func TestCreditedQuotaMatchesEachProvider(t *testing.T) {
 
 	// Everything else: Amount is dollars.
 	for _, provider := range []string{
-		PaymentProviderEpay, PaymentProviderWaffo, PaymentProviderWaffoPancake, "",
+		PaymentProviderEpay, PaymentProviderWaffo, PaymentProviderWaffoPancake, PaymentProviderBinancePay, "",
 	} {
 		assert.InDelta(t, 20.0, creditedUSD(provider, 20, 137), 1e-9,
 			"provider %q must read Amount as dollars", provider)
