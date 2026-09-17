@@ -156,6 +156,40 @@ Pricing code decides what a customer is invoiced and what we owe a vendor. A def
 - In React components, use `useTranslation()` and call `t('English key')` for user-facing text.
 - Follow `web/AGENTS.md` for detailed frontend conventions, including TypeScript, component structure, styling, accessibility, testing, and build checks.
 
+### Releasing — you almost certainly do not do this
+
+**Merging to `main` publishes nothing.** Releases of this console belong to the
+**UnifyAI CI/CD agent**. Any agent may take work through review, get it green,
+and merge it. Turning that into a customer-visible release is a separate, owned
+decision. When your change is merged, say what is waiting to ship and stop.
+
+**Every release goes to staging first, is verified there, and only then reaches
+production.** Adopted 16 Sep 2026, after twelve consecutive releases of this
+repository went straight to production unverified — v0.1.62 through v0.1.74.
+One of them, v0.1.62, was a hotfix for a bug the release before it introduced.
+
+The mechanism lives in `FelixSphere/unifyapi`:
+
+```bash
+infra/scripts/console-staging-verify.sh unifyapi-vX.Y.Z
+infra/scripts/console-promote.sh        unifyapi-vX.Y.Z
+```
+
+`console-promote.sh` refuses production unless staging validated that exact tag
+and the same digest still sits behind it.
+
+Two consequences for what you write here:
+
+- **A migration is tested on staging against a real database.** Staging carries
+  a copy of production data, so a migration that only works on an empty schema
+  will be caught — but only if you say in the PR that there is one.
+- **A change that deletes or rewrites business data gets exercised on staging,
+  not read about.** Say so in the PR so the release owner knows to run it.
+
+The only exception is a genuine hotfix — a live outage, a security issue, data
+being lost. It takes `--hotfix "<reason>"`, which records the bypass. "I would
+like my feature to be live" is not a hotfix.
+
 ### Project Governance
 
 **Protected project information:** The following project-related information is strictly protected and MUST NOT be modified, deleted, replaced, or removed under any circumstances:
