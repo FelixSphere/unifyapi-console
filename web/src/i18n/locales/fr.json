@@ -1,10 +1,11 @@
 {
-  "Approx. to pay:": "À payer (env.) :",
-  "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Estimation seulement. Stripe fixe la devise et le montant définitifs au paiement, à son taux en direct.",
-  "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe convertit à son taux en direct sur la page de paiement ; c'est ce montant qui vous est débité.",
   "translation": {
+    "Approx. to pay:": "À payer (env.) :",
+    "By user": "Par utilisateur",
+    "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Estimation seulement. Stripe fixe la devise et le montant définitifs au paiement, à son taux en direct.",
     "Every model marked below is already discounted for new accounts. No code needed.": "Chaque modèle marqué ci-dessous est déjà remisé pour les nouveaux comptes. Aucun code requis.",
     "Sign up and save": "Inscrivez-vous et économisez",
+    "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe convertit à son taux en direct sur la page de paiement ; c'est ce montant qui vous est débité.",
     "{{percent}}% off by default": "{{percent}} % de réduction par défaut",
     "New users get up to {{percent}}% off by default": "Les nouveaux utilisateurs bénéficient jusqu'à {{percent}} % de réduction par défaut",
     "A new version of the console is available.": "Une nouvelle version de la console est disponible.",

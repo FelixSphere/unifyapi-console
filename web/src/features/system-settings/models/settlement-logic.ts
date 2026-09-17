@@ -257,6 +257,19 @@ export function statementIsBalanced(statement: Statement): boolean {
  * estimate. Collapsing them into a single wording is how a reader ends up
  * treating a modelled cost as a settled fact.
  */
+/** The per-user breakdown is a second grain of the same total, so it must add
+ *  up to it exactly as the model lines must. No breakdown at all -- the vendor
+ *  side, or a statement frozen before it existed -- balances trivially. */
+export function userLinesAreBalanced(statement: Statement): boolean {
+  if (!statement.users?.length) return true
+  const amount = statement.users.reduce((sum, u) => sum + u.amount_usd, 0)
+  const requests = statement.users.reduce((sum, u) => sum + u.requests, 0)
+  return (
+    Math.abs(amount - statement.amount_usd) <= 1e-8 &&
+    requests === statement.requests
+  )
+}
+
 export function deriveStatement(statement: Statement): StatementStep[] {
   if (statement.kind === 'customer') {
     return [

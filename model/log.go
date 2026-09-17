@@ -59,8 +59,15 @@ func sanitizeClickHouseLikePattern(input string) (string, error) {
 }
 
 type Log struct {
-	Id               int    `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2"`
-	UserId           int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
+	Id     int `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2"`
+	UserId int `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
+	// TenantId is the wallet this consumption was drawn from, stamped at write
+	// time. top_ups has carried one since the tenant model landed; consume logs
+	// did not, so attributing spend to a wallet meant joining through the
+	// login's CURRENT tenant_id -- which loses every row of a login deleted or
+	// moved since. 22.8M quota of one deleted login was unattributable in
+	// production for exactly that reason. 0 on rows written before this column.
+	TenantId         int    `json:"tenant_id" gorm:"index;default:0;column:tenant_id"`
 	CreatedAt        int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type"`
 	Type             int    `json:"type" gorm:"index:idx_created_at_type"`
 	Content          string `json:"content"`
@@ -488,8 +495,12 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			needRecordIp = true
 		}
 	}
+	// Resolved once here so the row records the wallet it was actually drawn
+	// from; the resolver is cached, and an unresolvable login stamps 0.
+	wallet, _ := ResolveBillingEntity(userId)
 	log := &Log{
 		UserId:           userId,
+		TenantId:         wallet.TenantId,
 		Username:         username,
 		CreatedAt:        createdAt,
 		Type:             LogTypeConsume,

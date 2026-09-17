@@ -34,6 +34,7 @@ import {
   recentPeriods,
   settlementState,
   statementIsBalanced,
+  userLinesAreBalanced,
   varianceVerdict,
 } from '../settlement-logic'
 
@@ -458,5 +459,68 @@ describe('formatSigned', () => {
   test('an over-invoice carries a plus', () => {
     assert.equal(formatSigned(120.5), '+$120.50')
     assert.equal(formatSigned(-120.5), '-$120.50')
+  })
+})
+
+describe('userLinesAreBalanced', () => {
+  test('users are a second grain of the same total and must add up to it', () => {
+    const s = statement({
+      requests: 7,
+      amount_usd: 17,
+      users: [
+        {
+          user_id: 15,
+          username: 'chatBI_test',
+          requests: 4,
+          prompt_tokens: 400,
+          cached_tokens: 0,
+          completion_tokens: 40,
+          amount_usd: 9,
+        },
+        {
+          user_id: 1,
+          username: 'Aaron',
+          requests: 3,
+          prompt_tokens: 150,
+          cached_tokens: 40,
+          completion_tokens: 15,
+          amount_usd: 8,
+        },
+      ],
+    })
+    assert.equal(userLinesAreBalanced(s), true)
+  })
+
+  test('no breakdown balances trivially: vendor side, or a statement frozen before it existed', () => {
+    assert.equal(userLinesAreBalanced(statement({ users: undefined })), true)
+    assert.equal(userLinesAreBalanced(statement({ users: [] })), true)
+  })
+
+  test('a breakdown that drifts from the total is flagged, on amount or on count', () => {
+    const base = {
+      requests: 2,
+      amount_usd: 5,
+      users: [
+        {
+          user_id: 1,
+          username: 'a',
+          requests: 2,
+          prompt_tokens: 0,
+          cached_tokens: 0,
+          completion_tokens: 0,
+          amount_usd: 4.5,
+        },
+      ],
+    }
+    assert.equal(userLinesAreBalanced(statement(base)), false)
+    assert.equal(
+      userLinesAreBalanced(
+        statement({
+          ...base,
+          users: [{ ...base.users[0], amount_usd: 5, requests: 1 }],
+        })
+      ),
+      false
+    )
   })
 })

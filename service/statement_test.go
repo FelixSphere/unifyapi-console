@@ -316,3 +316,67 @@ func TestParseStatementKind(t *testing.T) {
 	_, ok = ParseStatementKind("supplier")
 	require.False(t, ok)
 }
+
+// TestCustomerStatementBreaksDownByUser: the customer boundary is the pricing
+// group, but whoever pays the bill also asks which login spent what. Users and
+// model lines are two grains of the same total and must agree with it.
+func TestCustomerStatementBreaksDownByUser(t *testing.T) {
+	rows := []model.UsageRow{
+		{Model: "gpt-4o", UserID: 1, Username: "Aaron", BillingGroup: "UnifyAI",
+			Requests: 2, PromptTokens: 100, CachedTokens: 40, CompletionTokens: 10, Quota: usdToQuota(5)},
+		{Model: "claude-opus-5", UserID: 1, Username: "Aaron", BillingGroup: "UnifyAI",
+			Requests: 1, PromptTokens: 50, CompletionTokens: 5, Quota: usdToQuota(3)},
+		// A login deleted after the fact: no BillingGroup resolves, but the log
+		// row still carries the username and the spend was still the customer's.
+		{Model: "gpt-4o", UserID: 15, Username: "chatBI_test", UserGroup: "UnifyAI",
+			Requests: 4, PromptTokens: 400, CompletionTokens: 40, Quota: usdToQuota(9)},
+	}
+	statements := BuildStatements(rows, StatementKindCustomer, "2026-09-01", "2026-09-30")
+	require.Len(t, statements, 1)
+	s := statements[0]
+
+	require.Len(t, s.Users, 2)
+	// Largest spender first.
+	require.Equal(t, "chatBI_test", s.Users[0].Username)
+	require.EqualValues(t, 15, s.Users[0].UserID)
+	require.InDelta(t, 9, s.Users[0].AmountUSD, 1e-9)
+	require.EqualValues(t, 4, s.Users[0].Requests)
+
+	require.Equal(t, "Aaron", s.Users[1].Username)
+	require.InDelta(t, 8, s.Users[1].AmountUSD, 1e-9)
+	require.EqualValues(t, 3, s.Users[1].Requests)
+	require.EqualValues(t, 150, s.Users[1].PromptTokens)
+	require.EqualValues(t, 40, s.Users[1].CachedTokens)
+	require.EqualValues(t, 15, s.Users[1].CompletionTokens)
+
+	var byUser, byLine float64
+	for _, u := range s.Users {
+		byUser += u.AmountUSD
+	}
+	for _, l := range s.Lines {
+		byLine += l.AmountUSD
+	}
+	require.InDelta(t, s.AmountUSD, byUser, 1e-9)
+	require.InDelta(t, byLine, byUser, 1e-9)
+}
+
+// A login the log recorded with no username still gets a stable label rather
+// than a blank cell on the bill.
+func TestUserLineFallsBackToUserIDWhenUsernameIsMissing(t *testing.T) {
+	rows := []model.UsageRow{
+		{Model: "gpt-4o", UserID: 42, Username: "", UserGroup: "GenAI", Requests: 1, Quota: usdToQuota(1)},
+	}
+	statements := BuildStatements(rows, StatementKindCustomer, "2026-09-01", "2026-09-30")
+	require.Len(t, statements, 1)
+	require.Len(t, statements[0].Users, 1)
+	require.Equal(t, "user 42", statements[0].Users[0].Username)
+}
+
+func TestVendorStatementHasNoUserBreakdown(t *testing.T) {
+	rows := []model.UsageRow{
+		{Model: "gpt-4o", UserID: 1, Username: "Aaron", ChannelID: 1, Requests: 1, PromptTokens: 10, CompletionTokens: 1, Quota: usdToQuota(1)},
+	}
+	statements := BuildStatements(rows, StatementKindVendor, "2026-09-01", "2026-09-30")
+	require.Len(t, statements, 1)
+	require.Nil(t, statements[0].Users, "a supplier is owed for channels, not for who called them")
+}

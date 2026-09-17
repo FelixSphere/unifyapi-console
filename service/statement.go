@@ -103,6 +103,25 @@ type StatementLine struct {
 	Unpriced bool `json:"unpriced,omitempty"`
 }
 
+// StatementUserLine is one login's share of a customer statement.
+//
+// A customer with several logins asks "which of my people spent this" in the
+// same breath as "what did I pay for gpt-4o", so the bill carries both grains.
+// Keyed on the log's user id and labelled with the username the log recorded
+// at the time: a login deleted since still appears, because its usage was
+// still billed to the customer. (22.8M quota of one deleted login went
+// unattributable in production when this was joined through the live users
+// table instead.)
+type StatementUserLine struct {
+	UserID           int     `json:"user_id"`
+	Username         string  `json:"username"`
+	Requests         int64   `json:"requests"`
+	PromptTokens     int64   `json:"prompt_tokens"`
+	CachedTokens     int64   `json:"cached_tokens"`
+	CompletionTokens int64   `json:"completion_tokens"`
+	AmountUSD        float64 `json:"amount_usd"`
+}
+
 // Statement is one counterparty's activity for one period.
 type Statement struct {
 	Kind StatementKind `json:"kind"`
@@ -122,6 +141,10 @@ type Statement struct {
 	PeriodEnd   string `json:"period_end"`
 
 	Lines []StatementLine `json:"lines"`
+
+	// Users is the same total broken down by login. Customer side only: a
+	// supplier is owed for models on channels, not for who called them.
+	Users []StatementUserLine `json:"users,omitempty"`
 
 	Requests         int64   `json:"requests"`
 	PromptTokens     int64   `json:"prompt_tokens"`
@@ -150,6 +173,7 @@ func BuildStatements(rows []model.UsageRow, kind StatementKind, periodStart, per
 	type draft struct {
 		statement Statement
 		byModel   map[string]*StatementLine
+		byUser    map[int]*StatementUserLine
 		unpriced  map[string]bool
 	}
 
@@ -168,6 +192,7 @@ func BuildStatements(rows []model.UsageRow, kind StatementKind, periodStart, per
 					PeriodEnd:    periodEnd,
 				},
 				byModel:  map[string]*StatementLine{},
+				byUser:   map[int]*StatementUserLine{},
 				unpriced: map[string]bool{},
 			}
 			drafts[key] = entry
@@ -205,6 +230,23 @@ func BuildStatements(rows []model.UsageRow, kind StatementKind, periodStart, per
 			line.Unpriced = true
 		}
 
+		if kind == StatementKindCustomer {
+			userLine, ok := entry.byUser[row.UserID]
+			if !ok {
+				name := row.Username
+				if name == "" {
+					name = "user " + strconv.Itoa(row.UserID)
+				}
+				userLine = &StatementUserLine{UserID: row.UserID, Username: name}
+				entry.byUser[row.UserID] = userLine
+			}
+			userLine.Requests += row.Requests
+			userLine.PromptTokens += row.PromptTokens
+			userLine.CachedTokens += row.CachedTokens
+			userLine.CompletionTokens += row.CompletionTokens
+			userLine.AmountUSD += amount
+		}
+
 		entry.statement.Requests += row.Requests
 		entry.statement.PromptTokens += row.PromptTokens
 		entry.statement.CachedTokens += row.CachedTokens
@@ -216,6 +258,9 @@ func BuildStatements(rows []model.UsageRow, kind StatementKind, periodStart, per
 	for _, entry := range drafts {
 		statement := entry.statement
 		statement.Lines = sortedLines(entry.byModel)
+		if kind == StatementKindCustomer {
+			statement.Users = sortedUserLines(entry.byUser)
+		}
 		statement.UnpricedModels = sortedKeys(entry.unpriced)
 		out = append(out, statement)
 	}
@@ -284,6 +329,22 @@ func statementParty(row model.UsageRow, kind StatementKind) (key, label, group s
 
 	key, label = UpstreamVendor(row)
 	return key, label, ""
+}
+
+// sortedUserLines orders a customer's logins largest spender first -- the one
+// whose figure is worth checking -- with the id as a stable tiebreak.
+func sortedUserLines(byUser map[int]*StatementUserLine) []StatementUserLine {
+	out := make([]StatementUserLine, 0, len(byUser))
+	for _, line := range byUser {
+		out = append(out, *line)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].AmountUSD != out[j].AmountUSD {
+			return out[i].AmountUSD > out[j].AmountUSD
+		}
+		return out[i].UserID < out[j].UserID
+	})
+	return out
 }
 
 func sortedLines(byModel map[string]*StatementLine) []StatementLine {

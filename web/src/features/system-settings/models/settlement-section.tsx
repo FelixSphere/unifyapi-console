@@ -78,6 +78,7 @@ import {
   customerInvoiceUI,
   csvHref,
   deriveStatement,
+  userLinesAreBalanced,
   formatSigned,
   formatTokens,
   formatUSD,
@@ -1052,6 +1053,70 @@ function StatementDetail({ row }: { row: SettlementRow }) {
           </Table>
         </div>
       </div>
+
+      {!vendor && statement.users?.length ? (
+        <div>
+          <div className='text-muted-foreground mb-1 text-[10px] font-semibold tracking-wider uppercase'>
+            {t('By user')}
+          </div>
+          {!userLinesAreBalanced(statement) ? (
+            <Alert variant='destructive' className='mb-2'>
+              <AlertTriangle className='size-4' />
+              <AlertDescription className='text-xs'>
+                {t('Error')}: {t('By user')} ≠ {t('Total')}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <div className='overflow-x-auto rounded border'>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className='text-xs'>{t('Username')}</TableHead>
+                  <TableHead className='text-right text-xs'>
+                    {t('Requests')}
+                  </TableHead>
+                  <TableHead className='text-right text-xs'>
+                    {t('Input Tokens')}
+                  </TableHead>
+                  <TableHead className='text-right text-xs'>
+                    {t('Cached')}
+                  </TableHead>
+                  <TableHead className='text-right text-xs'>
+                    {t('Output Tokens')}
+                  </TableHead>
+                  <TableHead className='text-right text-xs'>
+                    {t('Amount')}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {statement.users.map((user) => (
+                  <TableRow key={user.user_id}>
+                    <TableCell className='font-mono text-xs'>
+                      {user.username}
+                    </TableCell>
+                    <TableCell className='text-right font-mono text-xs tabular-nums'>
+                      {user.requests.toLocaleString()}
+                    </TableCell>
+                    <TableCell className='text-right font-mono text-xs tabular-nums'>
+                      {formatTokens(user.prompt_tokens)}
+                    </TableCell>
+                    <TableCell className='text-right font-mono text-xs tabular-nums'>
+                      {formatTokens(user.cached_tokens)}
+                    </TableCell>
+                    <TableCell className='text-right font-mono text-xs tabular-nums'>
+                      {formatTokens(user.completion_tokens)}
+                    </TableCell>
+                    <TableCell className='text-right font-mono text-xs tabular-nums'>
+                      {formatUSD(user.amount_usd)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      ) : null}
 
       <div className='flex flex-col gap-1'>
         <div className='text-muted-foreground mb-1 text-[10px] font-semibold tracking-wider uppercase'>

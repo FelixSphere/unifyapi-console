@@ -1,10 +1,11 @@
 {
-  "Approx. to pay:": "Thanh toán ước tính:",
-  "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Chỉ là ước tính. Stripe quyết định loại tiền và số tiền cuối cùng khi thanh toán, theo tỷ giá của họ.",
-  "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe quy đổi theo tỷ giá của họ trên trang thanh toán; số tiền ở đó là số bạn bị trừ.",
   "translation": {
+    "Approx. to pay:": "Thanh toán ước tính:",
+    "By user": "Theo người dùng",
+    "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Chỉ là ước tính. Stripe quyết định loại tiền và số tiền cuối cùng khi thanh toán, theo tỷ giá của họ.",
     "Every model marked below is already discounted for new accounts. No code needed.": "Mọi mô hình được đánh dấu bên dưới đã được giảm giá cho tài khoản mới. Không cần mã.",
     "Sign up and save": "Đăng ký để tiết kiệm",
+    "Stripe converts at its own live rate on the payment page; the amount there is what you are charged.": "Stripe quy đổi theo tỷ giá của họ trên trang thanh toán; số tiền ở đó là số bạn bị trừ.",
     "{{percent}}% off by default": "Giảm {{percent}}% mặc định cho người dùng mới",
     "New users get up to {{percent}}% off by default": "Người dùng mới được giảm tới {{percent}}% mặc định",
     "A new version of the console is available.": "Đã có phiên bản mới của bảng điều khiển.",
