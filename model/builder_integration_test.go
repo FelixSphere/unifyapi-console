@@ -277,7 +277,22 @@ func TestBuilderProgramNameFailsClosed(t *testing.T) {
 				selector.PartnershipCode = program.Code
 			}
 			_, err := ConnectBuilderIdentityWithProgram("owner", "owner@example.invalid", selector, "")
-			require.ErrorIs(t, err, ErrPartnershipProgramUnavailable)
+			// Every scenario fails closed. Which refusal it is depends on what
+			// actually failed: a program with no catch-all customer is a legal
+			// state -- it is what clearing the program's group means -- and the
+			// program itself resolved perfectly well. Saying the customer is
+			// missing tells the caller to send a team name; saying the program
+			// is unavailable sends them looking at the program, which is fine.
+			//
+			// A default customer that exists but is disabled, or more than one
+			// of them, is a broken program and still says so.
+			switch scenario {
+			case "no-default", "removed-default":
+				require.ErrorIs(t, err, ErrPartnershipCustomerUnavailable)
+			default:
+				require.ErrorIs(t, err, ErrPartnershipProgramUnavailable)
+			}
+			// The property that matters in every case: nothing was created.
 			var count int64
 			require.NoError(t, DB.Model(&BuilderIdentity{}).Count(&count).Error)
 			assert.Zero(t, count)

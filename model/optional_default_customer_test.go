@@ -119,3 +119,60 @@ func TestAProgramWithAGroupStillGetsItsDefaultCustomer(t *testing.T) {
 	assert.Equal(t, "partner", customer.Group)
 	assert.True(t, customer.IsDefault)
 }
+
+// Clearing a program's group retires its default customer; giving it a group
+// again must bring the catch-all back. The lookup does not filter on
+// removed_at, so the retired row is found and was updated in place and left
+// retired -- clearing was a one-way door, and setting the group again did
+// nothing visible.
+//
+// Found in production: the group was restored to fix an outage and the outage
+// continued, because no default customer came back.
+func TestGivingAProgramAGroupAgainBringsBackItsCatchAll(t *testing.T) {
+	setupPartnershipTestDB(t)
+	program := &PartnershipProgram{
+		Name: "Builder hub", Code: "builder-hub", Group: "partner",
+		GrantQuota: 5000000, GrantLimit: 10, Enabled: true,
+	}
+	require.NoError(t, CreatePartnershipProgram(program))
+
+	cleared := *program
+	cleared.Group = ""
+	require.NoError(t, UpdatePartnershipProgram(program.Id, &cleared))
+	_, found := defaultCustomerOf(t, program.Id)
+	require.False(t, found, "the fixture must start with the catch-all retired")
+
+	restored := *program
+	restored.Group = "partner"
+	require.NoError(t, UpdatePartnershipProgram(program.Id, &restored))
+
+	customer, found := defaultCustomerOf(t, program.Id)
+	require.True(t, found, "the catch-all must come back")
+	assert.Equal(t, "partner", customer.Group)
+	assert.True(t, customer.Enabled)
+	assert.Zero(t, customer.RemovedAt)
+}
+
+// And it is the same row, so whatever was billed through it stays attached
+// rather than being split across an old retired customer and a new one.
+func TestTheRevivedCatchAllIsTheSameCustomerRow(t *testing.T) {
+	setupPartnershipTestDB(t)
+	program := &PartnershipProgram{
+		Name: "Builder hub", Code: "builder-hub", Group: "partner",
+		GrantQuota: 5000000, GrantLimit: 10, Enabled: true,
+	}
+	require.NoError(t, CreatePartnershipProgram(program))
+	before, found := defaultCustomerOf(t, program.Id)
+	require.True(t, found)
+
+	cleared := *program
+	cleared.Group = ""
+	require.NoError(t, UpdatePartnershipProgram(program.Id, &cleared))
+	restored := *program
+	restored.Group = "partner"
+	require.NoError(t, UpdatePartnershipProgram(program.Id, &restored))
+
+	after, found := defaultCustomerOf(t, program.Id)
+	require.True(t, found)
+	assert.Equal(t, before.Id, after.Id, "reviving must not mint a second customer")
+}

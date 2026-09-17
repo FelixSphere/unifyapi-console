@@ -173,6 +173,9 @@ func ResolveBuilderProgram(tx *gorm.DB, selector BuilderProgramSelector, lock bo
 	if err != nil {
 		return nil, err
 	}
+	if customer == nil {
+		return &PartnershipOffer{Program: program}, nil
+	}
 	return &PartnershipOffer{Program: program, CustomerId: customer.Id, CustomerName: customer.Name, CustomerCode: customer.Code, CustomerGroup: customer.Group}, nil
 }
 
@@ -185,6 +188,16 @@ func resolveProgramCustomer(query func() *gorm.DB, programId int, name string) (
 		var customers []PartnershipCustomer
 		if err := query().Where("program_id = ? AND is_default = ? AND removed_at = ?", programId, true, 0).Find(&customers).Error; err != nil {
 			return nil, err
+		}
+		// A program with no default customer is a legal state -- it is what
+		// clearing the program's group means. It is not a broken program, and
+		// reads must not fail because of it: a read needs the program, and the
+		// account's own customer is recorded on its link.
+		//
+		// Returning no customer rather than an error moves the refusal to the
+		// paths that actually need one, which is enrollment.
+		if len(customers) == 0 {
+			return nil, nil
 		}
 		if len(customers) != 1 || !customers[0].Enabled {
 			return nil, ErrPartnershipProgramUnavailable
@@ -304,12 +317,32 @@ func rebindDanglingIdentity(tx *gorm.DB, link *BuilderIdentity, offer *Partnersh
 		Updates(map[string]any{"customer_id": offer.CustomerId, "customer_group": offer.CustomerGroup}).Error
 }
 
+// enrollableOffer refuses an offer that resolved a program but no customer.
+//
+// A read is content with the program alone; enrolling is not. Writing an
+// account into a program with no customer would give it an empty pricing
+// group -- a member of nothing, on no price list -- so the refusal names the
+// customer, which is what is actually missing, rather than the program, which
+// resolved perfectly well.
+func enrollableOffer(offer *PartnershipOffer) error {
+	if offer == nil {
+		return ErrPartnershipProgramUnavailable
+	}
+	if offer.CustomerId <= 0 || offer.CustomerGroup == "" {
+		return ErrPartnershipCustomerUnavailable
+	}
+	return nil
+}
+
 func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderProgramSelector, managementToken string) (*BuilderIdentity, error) {
 	if IsArchivedBuilderSubject(subject) {
 		return nil, ErrBuilderUnavailable
 	}
 	offer, err := ResolveBuilderProgram(DB, selector, false)
 	if err != nil {
+		return nil, err
+	}
+	if err := enrollableOffer(offer); err != nil {
 		return nil, err
 	}
 
@@ -530,6 +563,9 @@ func ClaimBuilderTeamGrantWithProgram(subject string, selector BuilderProgramSel
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		offer, err := ResolveBuilderProgram(tx, selector, true)
 		if err != nil {
+			return err
+		}
+		if err := enrollableOffer(offer); err != nil {
 			return err
 		}
 		var link BuilderIdentity
