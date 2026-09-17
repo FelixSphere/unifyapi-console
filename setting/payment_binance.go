@@ -49,7 +49,44 @@ var (
 	// Show Binance Pay first, marked "Recommended", to users whose group is a
 	// Partnership Program customer (the reseller channel).
 	BinancePayRecommendForPartners bool = true
+	// Which Binance the receiving account lives on. Binance.US is a separate
+	// company with its own API host and no Binance Pay: there, payments can
+	// only arrive on-chain to a deposit address.
+	BinancePayPlatform string = BinancePayPlatformGlobal
+	// A payer who sends slightly MORE than the unique amount is still paying
+	// this order; accept it automatically when the overpayment is within this
+	// percentage and no other pending order fits. 0 disables.
+	BinancePayOverpayTolerancePercent float64 = 5
 )
+
+const (
+	BinancePayPlatformGlobal = "binance.com"
+	BinancePayPlatformUS     = "binance.us"
+)
+
+// GetBinancePayPlatform normalises the configured platform.
+func GetBinancePayPlatform() string {
+	switch strings.ToLower(strings.TrimSpace(BinancePayPlatform)) {
+	case BinancePayPlatformUS, "us", "binance-us", "api.binance.us":
+		return BinancePayPlatformUS
+	default:
+		return BinancePayPlatformGlobal
+	}
+}
+
+// BinancePayApiBaseURL is the REST host for the configured platform.
+func BinancePayApiBaseURL() string {
+	if GetBinancePayPlatform() == BinancePayPlatformUS {
+		return "https://api.binance.us"
+	}
+	return "https://api.binance.com"
+}
+
+// BinancePaySupportsPayTransfers reports whether the platform has Binance Pay
+// (user-to-user transfers by Pay ID). Binance.US does not.
+func BinancePaySupportsPayTransfers() bool {
+	return GetBinancePayPlatform() == BinancePayPlatformGlobal
+}
 
 type BinancePayDepositAddress struct {
 	Network string `json:"network"`

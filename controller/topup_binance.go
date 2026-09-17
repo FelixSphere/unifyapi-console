@@ -54,9 +54,24 @@ func isBinancePayTopUpEnabled() bool {
 	if !setting.BinancePayEnabled {
 		return false
 	}
-	return strings.TrimSpace(setting.BinancePayApiKey) != "" &&
-		strings.TrimSpace(setting.BinancePaySecretKey) != "" &&
-		strings.TrimSpace(setting.BinancePayReceiverId) != ""
+	if strings.TrimSpace(setting.BinancePayApiKey) == "" || strings.TrimSpace(setting.BinancePaySecretKey) == "" {
+		return false
+	}
+	// There must be at least one way to pay: a Pay ID (Binance Pay, not on
+	// Binance.US) or an on-chain deposit address.
+	if setting.BinancePaySupportsPayTransfers() && strings.TrimSpace(setting.BinancePayReceiverId) != "" {
+		return true
+	}
+	return len(setting.GetBinancePayDepositAddresses()) > 0
+}
+
+// binancePayReceiverIdForPayers is the Pay ID shown to payers -- none on a
+// platform without Binance Pay, so the wallet shows on-chain instructions only.
+func binancePayReceiverIdForPayers() string {
+	if !setting.BinancePaySupportsPayTransfers() {
+		return ""
+	}
+	return strings.TrimSpace(setting.BinancePayReceiverId)
 }
 
 func binancePayOrderTTL() time.Duration {
@@ -141,7 +156,8 @@ func binancePayOrderView(topUp *model.TopUp) gin.H {
 		"amount":                topUp.Amount,
 		"pay_amount":            model.FormatBinancePayMoney(topUp.Money),
 		"currency":              setting.GetBinancePayCurrency(),
-		"receiver_id":           strings.TrimSpace(setting.BinancePayReceiverId),
+		"platform":              setting.GetBinancePayPlatform(),
+		"receiver_id":           binancePayReceiverIdForPayers(),
 		"receiver_nickname":     strings.TrimSpace(setting.BinancePayReceiverNickname),
 		"deposit_addresses":     setting.GetBinancePayDepositAddresses(),
 		"created_at":            topUp.CreateTime,
@@ -268,7 +284,7 @@ var (
 	binancePayLastReconcile time.Time
 	// binancePayHistoryReaderFactory is swapped by tests.
 	binancePayHistoryReaderFactory = func() service.BinanceHistoryReader {
-		return service.NewBinanceClient(setting.BinancePayApiKey, setting.BinancePaySecretKey, "")
+		return service.NewBinanceClient(setting.BinancePayApiKey, setting.BinancePaySecretKey, setting.BinancePayApiBaseURL())
 	}
 )
 
@@ -369,40 +385,83 @@ func reconcileBinancePay(ctx context.Context, reader service.BinanceHistoryReade
 	}
 
 	matched := 0
-	for _, order := range pending {
-		want := decimal.NewFromFloat(order.Money)
-		notBeforeMs := time.Unix(order.CreateTime, 0).Add(-binancePayMatchSlack).UnixMilli()
-		for _, cand := range candidates {
-			if cand.timeMs > 0 && cand.timeMs < notBeforeMs {
-				continue
+	settled := map[string]bool{}
+	for _, cand := range candidates {
+		order, reason := pickBinancePayOrder(pending, cand, settled)
+		if order == nil {
+			if reason != "" {
+				logger.LogWarn(ctx, fmt.Sprintf("Binance Pay 收款未自动匹配 transaction_id=%s amount=%s %s reason=%s",
+					cand.txn.TransactionId, cand.amount.String(), cand.currency, reason))
 			}
-			if !model.BinancePayMoneyEqual(cand.amount, want) {
-				continue
-			}
-			txn := cand.txn
-			LockOrder(order.TradeNo)
-			err := model.RechargeBinancePay(order.TradeNo, &txn, callerIp)
-			UnlockOrder(order.TradeNo)
-			switch {
-			case err == nil:
-				matched++
-				logger.LogInfo(ctx, fmt.Sprintf("Binance Pay 充值成功 trade_no=%s transaction_id=%s amount=%s %s",
-					order.TradeNo, txn.TransactionId, txn.Amount, txn.Currency))
-			case errors.Is(err, model.ErrBinancePayTxnUsed), errors.Is(err, model.ErrTopUpStatusInvalid):
-				// Already settled by a concurrent pass, or this transaction paid
-				// another order. Try the next candidate.
-				continue
-			default:
-				logger.LogError(ctx, fmt.Sprintf("Binance Pay 充值处理失败 trade_no=%s transaction_id=%s error=%q",
-					order.TradeNo, txn.TransactionId, err.Error()))
-			}
-			break
+			continue
+		}
+		txn := cand.txn
+		LockOrder(order.TradeNo)
+		err := model.RechargeBinancePay(order.TradeNo, &txn, callerIp)
+		UnlockOrder(order.TradeNo)
+		switch {
+		case err == nil:
+			matched++
+			settled[order.TradeNo] = true
+			logger.LogInfo(ctx, fmt.Sprintf("Binance Pay 充值成功 trade_no=%s transaction_id=%s amount=%s %s expected=%s",
+				order.TradeNo, txn.TransactionId, txn.Amount, txn.Currency, model.FormatBinancePayMoney(order.Money)))
+		case errors.Is(err, model.ErrBinancePayTxnUsed):
+			// This transaction already paid an order (earlier pass, or by hand).
+			continue
+		case errors.Is(err, model.ErrTopUpStatusInvalid):
+			// Settled concurrently; do not offer this order to later candidates.
+			settled[order.TradeNo] = true
+			continue
+		default:
+			logger.LogError(ctx, fmt.Sprintf("Binance Pay 充值处理失败 trade_no=%s transaction_id=%s error=%q",
+				order.TradeNo, txn.TransactionId, err.Error()))
 		}
 	}
 	if matched > 0 {
 		logger.LogInfo(ctx, fmt.Sprintf("Binance Pay 对账完成 pending=%d candidates=%d matched=%d", len(pending), len(candidates), matched))
 	}
 	return nil
+}
+
+// pickBinancePayOrder decides which pending order an incoming transaction
+// pays, or none. Exact amount wins. Otherwise a payer who sent slightly MORE
+// than the unique amount is accepted when the overpayment is within the
+// configured tolerance and exactly one pending order fits -- two orders in
+// the same band cannot be told apart, and a short payment is never
+// auto-credited; both are left for the operator's matching view. The
+// returned reason is non-empty when there were fitting orders but no safe
+// choice.
+func pickBinancePayOrder(pending []*model.TopUp, cand binancePayCandidate, settled map[string]bool) (*model.TopUp, string) {
+	amt := cand.amount.Round(model.BinancePayMoneyDecimals)
+	tolerance := decimal.NewFromFloat(setting.BinancePayOverpayTolerancePercent).Div(decimal.NewFromInt(100))
+	var exact, over []*model.TopUp
+	for _, order := range pending {
+		if settled[order.TradeNo] {
+			continue
+		}
+		notBeforeMs := time.Unix(order.CreateTime, 0).Add(-binancePayMatchSlack).UnixMilli()
+		if cand.timeMs > 0 && cand.timeMs < notBeforeMs {
+			continue
+		}
+		want := decimal.NewFromFloat(order.Money).Round(model.BinancePayMoneyDecimals)
+		switch {
+		case amt.Equal(want):
+			exact = append(exact, order)
+		case amt.GreaterThan(want) && tolerance.Sign() > 0 && amt.Sub(want).LessThanOrEqual(want.Mul(tolerance)):
+			over = append(over, order)
+		}
+	}
+	switch {
+	case len(exact) == 1:
+		return exact[0], ""
+	case len(exact) > 1:
+		return nil, fmt.Sprintf("%d pending orders share this exact amount", len(exact))
+	case len(over) == 1:
+		return over[0], ""
+	case len(over) > 1:
+		return nil, fmt.Sprintf("overpayment fits %d pending orders", len(over))
+	}
+	return nil, ""
 }
 
 // collectBinancePayCandidates reads the receiving account's history for
@@ -415,9 +474,13 @@ func collectBinancePayCandidates(ctx context.Context, reader service.BinanceHist
 	receiverId := strings.TrimSpace(setting.BinancePayReceiverId)
 	candidates := make([]binancePayCandidate, 0, 16)
 
-	payRows, err := reader.PayTransactions(ctx, startMs, endMs)
-	if err != nil {
-		return nil, fmt.Errorf("pay history: %w", err)
+	var payRows []service.BinancePayTransaction
+	if setting.BinancePaySupportsPayTransfers() {
+		var err error
+		payRows, err = reader.PayTransactions(ctx, startMs, endMs)
+		if err != nil {
+			return nil, fmt.Errorf("pay history: %w", err)
+		}
 	}
 	for _, row := range payRows {
 		if !strings.EqualFold(row.Currency, currency) {

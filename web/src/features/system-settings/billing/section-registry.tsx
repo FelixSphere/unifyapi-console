@@ -260,6 +260,9 @@ const BILLING_SECTIONS = [
             settings.BinancePayDepositAddresses ?? '[]',
           BinancePayRecommendForPartners:
             settings.BinancePayRecommendForPartners ?? true,
+          BinancePayPlatform: settings.BinancePayPlatform ?? 'binance.com',
+          BinancePayOverpayTolerancePercent:
+            settings.BinancePayOverpayTolerancePercent ?? 5,
         }}
       />
     ),

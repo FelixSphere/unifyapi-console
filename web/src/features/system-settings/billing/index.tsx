@@ -117,6 +117,8 @@ const defaultBillingSettings: BillingSettings = {
   BinancePayOrderTTLMinutes: 60,
   BinancePayDepositAddresses: '[]',
   BinancePayRecommendForPartners: true,
+  BinancePayPlatform: 'binance.com',
+  BinancePayOverpayTolerancePercent: 5,
   'checkin_setting.enabled': false,
   'checkin_setting.min_quota': 1000,
   'checkin_setting.max_quota': 10000,

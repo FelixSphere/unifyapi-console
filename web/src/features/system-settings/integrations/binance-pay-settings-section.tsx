@@ -23,6 +23,14 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 
@@ -56,7 +64,15 @@ export interface BinancePaySettingsValues {
   /** JSON: [{"network":"TRX","address":"T..."}] */
   BinancePayDepositAddresses: string
   BinancePayRecommendForPartners: boolean
+  /** 'binance.com' | 'binance.us' */
+  BinancePayPlatform: string
+  BinancePayOverpayTolerancePercent: number
 }
+
+export const BINANCE_PAY_PLATFORMS = [
+  { value: 'binance.com', label: 'Binance (binance.com)' },
+  { value: 'binance.us', label: 'Binance.US (binance.us)' },
+] as const
 
 const schema = z
   .object({
@@ -76,6 +92,8 @@ const schema = z
     BinancePayOrderTTLMinutes: z.coerce.number().int().min(5).max(1440),
     BinancePayDepositAddressesText: z.string(),
     BinancePayRecommendForPartners: z.boolean(),
+    BinancePayPlatform: z.enum(['binance.com', 'binance.us']),
+    BinancePayOverpayTolerancePercent: z.coerce.number().min(0).max(50),
   })
   .superRefine((values, ctx) => {
     if (values.BinancePayEnabled) {
@@ -93,11 +111,26 @@ const schema = z
           message: 'Required when Binance Pay is enabled',
         })
       }
-      if (!values.BinancePayReceiverId) {
+      const hasAddresses =
+        parseDepositAddressLines(values.BinancePayDepositAddressesText)
+          .addresses.length > 0
+      if (values.BinancePayPlatform === 'binance.us' && !hasAddresses) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['BinancePayDepositAddressesText'],
+          message:
+            'Binance.US has no Binance Pay; at least one deposit address is required',
+        })
+      }
+      if (
+        values.BinancePayPlatform === 'binance.com' &&
+        !values.BinancePayReceiverId &&
+        !hasAddresses
+      ) {
         ctx.addIssue({
           code: 'custom',
           path: ['BinancePayReceiverId'],
-          message: 'Required when Binance Pay is enabled',
+          message: 'Enter a Pay ID or at least one deposit address',
         })
       }
     }
@@ -140,11 +173,19 @@ export function BinancePaySettingsSection({
       ),
       BinancePayRecommendForPartners:
         defaultValues.BinancePayRecommendForPartners,
+      BinancePayPlatform:
+        defaultValues.BinancePayPlatform === 'binance.us'
+          ? 'binance.us'
+          : 'binance.com',
+      BinancePayOverpayTolerancePercent:
+        defaultValues.BinancePayOverpayTolerancePercent ?? 5,
     },
   })
 
   const { isDirty, isSubmitting } = form.formState
   const enabled = form.watch('BinancePayEnabled')
+  const platform = form.watch('BinancePayPlatform')
+  const isUS = platform === 'binance.us'
 
   async function onSubmit(values: Values) {
     const updates: Array<{ key: string; value: string }> = []
@@ -167,6 +208,11 @@ export function BinancePaySettingsSection({
     push(
       'BinancePayRecommendForPartners',
       String(values.BinancePayRecommendForPartners)
+    )
+    push('BinancePayPlatform', values.BinancePayPlatform)
+    push(
+      'BinancePayOverpayTolerancePercent',
+      String(values.BinancePayOverpayTolerancePercent)
     )
 
     const { addresses } = parseDepositAddressLines(
@@ -264,6 +310,77 @@ export function BinancePaySettingsSection({
           <div className='grid gap-4 sm:grid-cols-2'>
             <FormField
               control={form.control}
+              name='BinancePayPlatform'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Binance platform')}</FormLabel>
+                  <Select
+                    items={BINANCE_PAY_PLATFORMS.map((p) => ({
+                      value: p.value,
+                      label: p.label,
+                    }))}
+                    value={field.value}
+                    onValueChange={(value) => {
+                      if (value) field.onChange(value)
+                    }}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent alignItemWithTrigger={false}>
+                      <SelectGroup>
+                        {BINANCE_PAY_PLATFORMS.map((p) => (
+                          <SelectItem key={p.value} value={p.value}>
+                            {p.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    {isUS
+                      ? t(
+                          'Binance.US is a separate company: keys from binance.us only work here, and it has no Binance Pay, so customers pay on-chain to your deposit address.'
+                        )
+                      : t(
+                          'Keys created at binance.com. Customers can pay by Binance Pay (Pay ID) or on-chain.'
+                        )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='BinancePayOverpayTolerancePercent'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Accept overpayment up to (%)')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={0}
+                      max={50}
+                      step='0.5'
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'A transfer slightly above the unique amount is credited automatically when only one pending order fits. Short payments always wait for an administrator. 0 disables.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          <div className='grid gap-4 sm:grid-cols-2'>
+            <FormField
+              control={form.control}
               name='BinancePayApiKey'
               render={({ field }) => (
                 <FormItem>
@@ -298,12 +415,14 @@ export function BinancePaySettingsSection({
                 <FormItem>
                   <FormLabel>{t('Receiving Pay ID (Binance UID)')}</FormLabel>
                   <FormControl>
-                    <Input placeholder='34355667' {...field} />
+                    <Input placeholder='34355667' disabled={isUS} {...field} />
                   </FormControl>
                   <FormDescription>
-                    {t(
-                      'Shown to payers as the recipient, and used to make sure a matched transfer was received by this account.'
-                    )}
+                    {isUS
+                      ? t('Not used on Binance.US (no Binance Pay).')
+                      : t(
+                          'Shown to payers as the recipient, and used to make sure a matched transfer was received by this account.'
+                        )}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

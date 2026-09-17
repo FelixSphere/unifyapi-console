@@ -341,6 +341,8 @@ export type BillingSettings = {
   BinancePayOrderTTLMinutes: number
   BinancePayDepositAddresses: string
   BinancePayRecommendForPartners: boolean
+  BinancePayPlatform: string
+  BinancePayOverpayTolerancePercent: number
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number

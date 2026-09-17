@@ -130,6 +130,8 @@ func InitOptionMap() {
 	common.OptionMap["BinancePayOrderTTLMinutes"] = strconv.Itoa(setting.BinancePayOrderTTLMinutes)
 	common.OptionMap["BinancePayDepositAddresses"] = setting.BinancePayDepositAddresses
 	common.OptionMap["BinancePayRecommendForPartners"] = strconv.FormatBool(setting.BinancePayRecommendForPartners)
+	common.OptionMap["BinancePayPlatform"] = setting.BinancePayPlatform
+	common.OptionMap["BinancePayOverpayTolerancePercent"] = strconv.FormatFloat(setting.BinancePayOverpayTolerancePercent, 'f', -1, 64)
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
@@ -646,6 +648,10 @@ func updateOptionMapLocked(key string, value string) (err error) {
 		setting.BinancePayDepositAddresses = value
 	case "BinancePayRecommendForPartners":
 		setting.BinancePayRecommendForPartners = value == "true"
+	case "BinancePayPlatform":
+		setting.BinancePayPlatform = value
+	case "BinancePayOverpayTolerancePercent":
+		setting.BinancePayOverpayTolerancePercent, _ = strconv.ParseFloat(value, 64)
 	case "TopupGroupRatio":
 		err = common.UpdateTopupGroupRatioByJSONString(value)
 	case "GitHubClientId":
