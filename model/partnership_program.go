@@ -328,7 +328,7 @@ func CreatePartnershipCustomer(programId int, customer *PartnershipCustomer) err
 			}
 			var removed PartnershipCustomer
 			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("program_id = ? AND `group` = ? AND removed_at <> ?", programId, customer.Group, 0).
+				Where("program_id = ? AND "+groupColumn()+" = ? AND removed_at <> ?", programId, customer.Group, 0).
 				First(&removed).Error
 			if err == nil {
 				if err := validatePartnershipCodeAvailable(tx, customer.Code, 0, removed.Id); err != nil {

@@ -27,6 +27,21 @@ var commonFalseVal string
 var logKeyCol string
 var logGroupCol string
 
+// groupColumn is the portable way to name the reserved word "group" in a
+// query. commonGroupCol is set by initCol, which a running server always calls
+// and a unit test generally does not -- and an empty column name produces SQL
+// that is broken in a quieter way than the reserved word ever was. Falling
+// back on the dialect keeps both honest.
+func groupColumn() string {
+	if commonGroupCol != "" {
+		return commonGroupCol
+	}
+	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+		return `"group"`
+	}
+	return "`group`"
+}
+
 func initCol() {
 	// init common column names
 	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {

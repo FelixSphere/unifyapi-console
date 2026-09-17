@@ -42,18 +42,40 @@ func TestAProgramWithNoGroupOffersNoPublicRegistration(t *testing.T) {
 	assert.Nil(t, offer)
 }
 
-// The failure this replaces: an offer was returned carrying an empty group.
-// Anyone registering through it became a member of nothing.
+// No offer from any path may carry an empty pricing group -- that was the
+// failure: an account registered through one belonged to no customer and sat
+// on no price list.
+//
+// The first version of this test wrapped its assertion in `if err == nil`,
+// which made it unfailable: the sibling test above asserts the error, so the
+// body never ran. It now walks every code that resolves and checks each one,
+// so it has something to be wrong about.
 func TestNoOfferEverCarriesAnEmptyGroup(t *testing.T) {
 	setupPartnershipTestDB(t)
-	program := programWithNoGroup(t)
-
-	offer, err := getPartnershipOfferByCode(DB, program.Code, false)
-	if err == nil {
-		require.NotNil(t, offer)
-		assert.NotEmpty(t, offer.CustomerGroup,
-			"an offer with no pricing group would put the account on no price list")
+	withGroup := &PartnershipProgram{
+		Name: "With group", Code: "with-group", Group: "partner",
+		GrantQuota: 5000000, GrantLimit: 50, Enabled: true,
 	}
+	require.NoError(t, CreatePartnershipProgram(withGroup))
+	require.NoError(t, DB.Create(&PartnershipCustomer{
+		ProgramId: withGroup.Id, Name: "Nusa Labs", Code: "nusa-labs",
+		Group: "vip", Enabled: true,
+	}).Error)
+	groupless := programWithNoGroup(t)
+
+	resolved := 0
+	for _, code := range []string{"with-group", "nusa-labs", groupless.Code} {
+		offer, err := getPartnershipOfferByCode(DB, code, false)
+		if err != nil {
+			continue
+		}
+		resolved++
+		require.NotNil(t, offer, "code %q", code)
+		assert.NotEmpty(t, offer.CustomerGroup,
+			"code %q resolved to an offer with no pricing group", code)
+	}
+	require.Equal(t, 2, resolved,
+		"exactly the two codes with a group behind them must resolve")
 }
 
 // A program that still has a group keeps serving its registration code
