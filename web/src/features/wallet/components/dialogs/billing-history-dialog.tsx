@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Search, Copy, Check, ChevronLeft, ChevronRight } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
@@ -48,12 +48,23 @@ import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { formatCurrencyFromUSD } from '@/lib/currency'
 import { formatNumber } from '@/lib/format'
 
+import { getBinancePayEvidence, isApiSuccess } from '../../api'
 import { useBillingHistory } from '../../hooks/use-billing-history'
 import {
   getStatusConfig,
   getPaymentMethodName,
   formatTimestamp,
 } from '../../lib/billing'
+import type { BinancePayEvidence } from '../../types'
+import {
+  BinancePayEvidenceBlock,
+  BinancePayMatchDialog,
+} from './binance-pay-match-dialog'
+
+// UNIFYAPI-FORK: Binance Pay orders are settled against a real transaction in
+// the receiving account. Administrators see that transaction under settled
+// orders, and match pending ones instead of completing them blind.
+const BINANCE_PAY_METHOD = 'binance_pay'
 
 interface BillingHistoryDialogProps {
   open: boolean
@@ -78,9 +89,36 @@ export function BillingHistoryDialog({
     handlePageSizeChange,
     handleSearch,
     handleCompleteOrder,
+    refresh,
   } = useBillingHistory()
 
   const [confirmTradeNo, setConfirmTradeNo] = useState<string | null>(null)
+  const [matchTradeNo, setMatchTradeNo] = useState<string | null>(null)
+  const [evidence, setEvidence] = useState<Record<string, BinancePayEvidence>>(
+    {}
+  )
+
+  const settledBinanceTradeNos = records
+    .filter(
+      (r) => r.payment_method === BINANCE_PAY_METHOD && r.status === 'success'
+    )
+    .map((r) => r.trade_no)
+  const evidenceKey = settledBinanceTradeNos.join(',')
+
+  useEffect(() => {
+    if (!isAdmin || !evidenceKey) {
+      setEvidence({})
+      return
+    }
+    let cancelled = false
+    void getBinancePayEvidence(evidenceKey.split(',')).then((response) => {
+      if (cancelled) return
+      setEvidence(isApiSuccess(response) && response.data ? response.data : {})
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [isAdmin, evidenceKey])
   const { copyToClipboard, copiedText } = useCopyToClipboard({ notify: false })
 
   const totalPages = Math.ceil(total / pageSize)
@@ -258,19 +296,44 @@ export function BillingHistoryDialog({
                         </div>
                       </div>
 
+                      {/* Binance Pay proof of receipt */}
+                      {isAdmin &&
+                        record.payment_method === BINANCE_PAY_METHOD &&
+                        evidence[record.trade_no] && (
+                          <BinancePayEvidenceBlock
+                            evidence={evidence[record.trade_no]}
+                          />
+                        )}
+
                       {/* Admin Actions */}
-                      {isAdmin && record.status === 'pending' && (
-                        <div className='mt-4 flex justify-end'>
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            onClick={() => setConfirmTradeNo(record.trade_no)}
-                            disabled={completing}
-                          >
-                            {t('Complete Order')}
-                          </Button>
-                        </div>
-                      )}
+                      {isAdmin &&
+                        record.payment_method === BINANCE_PAY_METHOD &&
+                        (record.status === 'pending' ||
+                          record.status === 'expired') && (
+                          <div className='mt-4 flex justify-end'>
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() => setMatchTradeNo(record.trade_no)}
+                            >
+                              {t('Match Binance transaction')}
+                            </Button>
+                          </div>
+                        )}
+                      {isAdmin &&
+                        record.payment_method !== BINANCE_PAY_METHOD &&
+                        record.status === 'pending' && (
+                          <div className='mt-4 flex justify-end'>
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() => setConfirmTradeNo(record.trade_no)}
+                              disabled={completing}
+                            >
+                              {t('Complete Order')}
+                            </Button>
+                          </div>
+                        )}
                     </div>
                   )
                 })}
@@ -314,6 +377,13 @@ export function BillingHistoryDialog({
           )}
         </div>
       </Dialog>
+
+      <BinancePayMatchDialog
+        open={!!matchTradeNo}
+        onOpenChange={(open) => !open && setMatchTradeNo(null)}
+        tradeNo={matchTradeNo}
+        onMatched={() => void refresh()}
+      />
 
       {/* Confirm Complete Order Dialog */}
       <AlertDialog

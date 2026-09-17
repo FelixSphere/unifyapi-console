@@ -29,6 +29,9 @@ import (
 const (
 	BinancePayTxnSourcePay     = "pay"
 	BinancePayTxnSourceDeposit = "deposit"
+	// BinancePayTxnSourceManual prefixes the source of a transaction an
+	// administrator matched by hand ("manual:pay", "manual:deposit").
+	BinancePayTxnSourceManual = "manual"
 
 	// BinancePayMoneyDecimals is the scale of the pay amount. Two decimals are
 	// the price, the last two are the per-order identifier.
@@ -135,18 +138,71 @@ func binancePayQuota(topUp *TopUp) (int, error) {
 	return quota, nil
 }
 
+// GetBinancePayTransactionsByTradeNos returns the ledger row (the Binance
+// transaction that paid the order) for each of the given orders that has one.
+func GetBinancePayTransactionsByTradeNos(tradeNos []string) (map[string]BinancePayTransaction, error) {
+	out := map[string]BinancePayTransaction{}
+	if len(tradeNos) == 0 {
+		return out, nil
+	}
+	var rows []BinancePayTransaction
+	if err := DB.Where("trade_no IN ?", tradeNos).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.TradeNo] = row
+	}
+	return out, nil
+}
+
+// GetUsedBinancePayTransactionIds reports which of the given Binance
+// transaction ids have already paid an order, and which one.
+func GetUsedBinancePayTransactionIds(ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []BinancePayTransaction
+	if err := DB.Select("transaction_id", "trade_no").Where("transaction_id IN ?", ids).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.TransactionId] = row.TradeNo
+	}
+	return out, nil
+}
+
 // RechargeBinancePay credits the order paid by txn. It is idempotent on both
 // sides: a transaction id already in the ledger returns ErrBinancePayTxnUsed
 // before touching the order, and an order that is no longer pending is left
 // alone. Both checks happen under the row lock, in one transaction with the
 // quota increase.
 func RechargeBinancePay(tradeNo string, txn *BinancePayTransaction, callerIp string) error {
+	return rechargeBinancePay(tradeNo, txn, callerIp, 0)
+}
+
+// RechargeBinancePayManual is the operator path: an administrator has looked
+// at the account's Binance history and picked the transaction that paid this
+// order (typically because the payer sent a slightly different amount). It
+// differs from the automatic path in two ways only -- an expired order may be
+// completed, since the customer's money arrived even if late, and the log
+// names the administrator. The ledger still pins the transaction, so it can
+// never be used for a second order.
+func RechargeBinancePayManual(tradeNo string, txn *BinancePayTransaction, callerIp string, adminId int) error {
+	if adminId <= 0 {
+		return errors.New("missing administrator")
+	}
+	return rechargeBinancePay(tradeNo, txn, callerIp, adminId)
+}
+
+func rechargeBinancePay(tradeNo string, txn *BinancePayTransaction, callerIp string, adminId int) error {
 	if strings.TrimSpace(tradeNo) == "" {
 		return errors.New("未提供支付单号")
 	}
 	if txn == nil || strings.TrimSpace(txn.TransactionId) == "" {
 		return errors.New("missing binance transaction id")
 	}
+	manual := adminId > 0
 
 	refCol := "`trade_no`"
 	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
@@ -165,7 +221,8 @@ func RechargeBinancePay(tradeNo string, txn *BinancePayTransaction, callerIp str
 		if topUp.Status == common.TopUpStatusSuccess {
 			return nil
 		}
-		if topUp.Status != common.TopUpStatusPending {
+		if topUp.Status != common.TopUpStatusPending &&
+			!(manual && topUp.Status == common.TopUpStatusExpired) {
 			return ErrTopUpStatusInvalid
 		}
 
@@ -212,10 +269,17 @@ func RechargeBinancePay(tradeNo string, txn *BinancePayTransaction, callerIp str
 	_ = InvalidateBillingQuotaCacheForUser(topUp.UserId)
 
 	if quotaToAdd > 0 {
+		who := "自动对账"
+		via := PaymentMethodBinancePay
+		if manual {
+			who = fmt.Sprintf("管理员(%d)匹配", adminId)
+			via = "admin"
+		}
 		RecordTopupLog(topUp.UserId,
-			fmt.Sprintf("Binance Pay充值成功，充值额度: %v，支付金额: %s %s，交易号: %s",
-				logger.FormatQuota(quotaToAdd), FormatBinancePayMoney(topUp.Money), txn.Currency, txn.TransactionId),
-			callerIp, topUp.PaymentMethod, PaymentMethodBinancePay)
+			fmt.Sprintf("Binance Pay充值成功（%s），充值额度: %v，应付: %s %s，实收: %s %s，交易号: %s",
+				who, logger.FormatQuota(quotaToAdd), FormatBinancePayMoney(topUp.Money), txn.Currency,
+				txn.Amount, txn.Currency, txn.TransactionId),
+			callerIp, topUp.PaymentMethod, via)
 	}
 	return nil
 }

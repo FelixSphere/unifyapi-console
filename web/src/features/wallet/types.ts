@@ -262,6 +262,59 @@ export interface BinancePayOrder {
 export type BinancePayOrderResponse = ApiResponse<BinancePayOrder | string>
 
 /**
+ * The Binance transaction that paid a settled Binance Pay order (admin view)
+ */
+export interface BinancePayEvidence {
+  trade_no: string
+  transaction_id: string
+  source: string
+  amount: string
+  currency: string
+  payer_id: string
+  transact_time: number
+  matched_at: number
+  manual: boolean
+}
+
+/**
+ * One incoming transfer in the receiving Binance account that could have
+ * paid an order (admin matching view)
+ */
+export interface BinancePayCandidate {
+  transaction_id: string
+  source: string
+  amount: string
+  currency: string
+  /** amount - expected, at gateway precision */
+  delta: string
+  delta_percent: number
+  exact_match: boolean
+  warn: boolean
+  payer_id: string
+  payer_name: string
+  network: string
+  transact_time: number
+  used_by_trade_no?: string
+}
+
+export interface BinancePayCandidatesResponse {
+  trade_no: string
+  status: string
+  user_id: number
+  amount: number
+  expected_amount: string
+  currency: string
+  created_at: number
+  window_end: number
+  candidates: BinancePayCandidate[]
+}
+
+export interface BinancePayMatchRequest {
+  trade_no: string
+  transaction_id: string
+}
+
+/**
  * Waffo Pancake payment request parameters
  */
 export interface WaffoPancakePaymentRequest {
