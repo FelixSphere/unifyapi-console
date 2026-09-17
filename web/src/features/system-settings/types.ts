@@ -706,6 +706,8 @@ export type Statement = {
   /** Customer side only: what the customer's logins paid in this period, by login. */
   funding?: StatementFundingLine[]
   funded_usd?: number
+  funding_to_date?: StatementFundingLine[]
+  funded_to_date_usd?: number
   requests: number
   prompt_tokens: number
   cached_tokens: number

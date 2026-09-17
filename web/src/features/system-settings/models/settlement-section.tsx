@@ -1069,11 +1069,31 @@ function StatementDetail({ row }: { row: SettlementRow }) {
             </Alert>
           ) : null}
 
-          {!vendor && statement.funding?.length ? (
+          {!vendor ? (
             <div>
               <div className='text-muted-foreground mb-1 text-[10px] font-semibold tracking-wider uppercase'>
-                {t('Funded by user')} · {formatUSD(statement.funded_usd ?? 0)}
+                {t('Funded by user')} · {t('this period')} ·{' '}
+                {formatUSD(statement.funded_usd ?? 0)}
+                {statement.funding_to_date?.length ? (
+                  <>
+                    {'  ·  '}
+                    {t('all time')} ·{' '}
+                    {formatUSD(statement.funded_to_date_usd ?? 0)}
+                  </>
+                ) : null}
               </div>
+              {!statement.funding?.length ? (
+                <p className='text-muted-foreground mb-2 text-xs'>
+                  {statement.funding_to_date?.length
+                    ? t(
+                        'Nothing was paid in during this period. {{total}} has been paid in altogether — widen the date range to see it.',
+                        { total: formatUSD(statement.funded_to_date_usd ?? 0) }
+                      )
+                    : t(
+                        'No money has been recorded as paid into this customer. Balances credited before funding was recorded do not appear here.'
+                      )}
+                </p>
+              ) : null}
               {!fundingLinesAreBalanced(statement) ? (
                 <Alert variant='destructive' className='mb-2'>
                   <AlertTriangle className='size-4' />
@@ -1082,42 +1102,46 @@ function StatementDetail({ row }: { row: SettlementRow }) {
                   </AlertDescription>
                 </Alert>
               ) : null}
-              <div className='overflow-x-auto rounded border'>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className='text-xs'>{t('Username')}</TableHead>
-                      <TableHead className='text-right text-xs'>
-                        {t('Top-ups')}
-                      </TableHead>
-                      <TableHead className='text-right text-xs'>
-                        {t('Admin grants')}
-                      </TableHead>
-                      <TableHead className='text-right text-xs'>
-                        {t('Credited')}
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {statement.funding.map((line) => (
-                      <TableRow key={line.user_id}>
-                        <TableCell className='font-mono text-xs'>
-                          {line.username}
-                        </TableCell>
-                        <TableCell className='text-right font-mono text-xs tabular-nums'>
-                          {line.orders.toLocaleString()}
-                        </TableCell>
-                        <TableCell className='text-right font-mono text-xs tabular-nums'>
-                          {line.grants.toLocaleString()}
-                        </TableCell>
-                        <TableCell className='text-right font-mono text-xs tabular-nums'>
-                          {formatUSD(line.credited_usd)}
-                        </TableCell>
+              {statement.funding?.length ? (
+                <div className='overflow-x-auto rounded border'>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className='text-xs'>
+                          {t('Username')}
+                        </TableHead>
+                        <TableHead className='text-right text-xs'>
+                          {t('Top-ups')}
+                        </TableHead>
+                        <TableHead className='text-right text-xs'>
+                          {t('Admin grants')}
+                        </TableHead>
+                        <TableHead className='text-right text-xs'>
+                          {t('Credited')}
+                        </TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {(statement.funding ?? []).map((line) => (
+                        <TableRow key={line.user_id}>
+                          <TableCell className='font-mono text-xs'>
+                            {line.username}
+                          </TableCell>
+                          <TableCell className='text-right font-mono text-xs tabular-nums'>
+                            {line.orders.toLocaleString()}
+                          </TableCell>
+                          <TableCell className='text-right font-mono text-xs tabular-nums'>
+                            {line.grants.toLocaleString()}
+                          </TableCell>
+                          <TableCell className='text-right font-mono text-xs tabular-nums'>
+                            {formatUSD(line.credited_usd)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : null}
             </div>
           ) : null}
           <div className='overflow-x-auto rounded border'>

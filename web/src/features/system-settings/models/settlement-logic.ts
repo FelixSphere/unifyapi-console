@@ -280,6 +280,15 @@ export function fundingLinesAreBalanced(statement: Statement): boolean {
   return Math.abs(credited - (statement.funded_usd ?? 0)) <= 1e-8
 }
 
+export function fundingToDateLinesAreBalanced(statement: Statement): boolean {
+  if (!statement.funding_to_date?.length) return true
+  const credited = statement.funding_to_date.reduce(
+    (sum, f) => sum + f.credited_usd,
+    0
+  )
+  return Math.abs(credited - (statement.funded_to_date_usd ?? 0)) <= 1e-8
+}
+
 export function deriveStatement(statement: Statement): StatementStep[] {
   if (statement.kind === 'customer') {
     return [
