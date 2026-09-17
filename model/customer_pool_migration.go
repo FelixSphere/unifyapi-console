@@ -19,11 +19,17 @@ import (
 // customer's wallet did, so the operator can check the totals before and after
 // rather than trusting that it worked.
 type CustomerPoolBackfillResult struct {
-	Customers     int      `json:"customers"`
-	MembersMoved  int      `json:"members_moved"`
-	QuotaCarried  int      `json:"quota_carried"`
-	AlreadyPooled int      `json:"already_pooled"`
-	Skipped       []string `json:"skipped,omitempty"`
+	Customers     int `json:"customers"`
+	MembersMoved  int `json:"members_moved"`
+	QuotaCarried  int `json:"quota_carried"`
+	AlreadyPooled int `json:"already_pooled"`
+	// Swept counts logins already on their wallet that still held credit in
+	// their own users.quota column. That column is invisible and unspendable
+	// for a wallet-backed login, so the credit is folded into the wallet
+	// (and counted in QuotaCarried) rather than left where nothing reads it.
+	// The operator decided on 2026-09-17 that such residue is the customer's.
+	Swept   int      `json:"swept"`
+	Skipped []string `json:"skipped,omitempty"`
 }
 
 // BackfillCustomerPools moves members enrolled in a customer onto that
@@ -177,7 +183,26 @@ func BackfillCustomerPools(dryRun bool) (*CustomerPoolBackfillResult, error) {
 func (result *CustomerPoolBackfillResult) admitTx(tx *gorm.DB, user *User, tenantId int, dryRun bool) (bool, error) {
 	if user.TenantId == tenantId {
 		result.AlreadyPooled++
-		return false, nil
+		if user.Quota == 0 {
+			return false, nil
+		}
+		// Already on the wallet, but with credit stranded in the private
+		// column: the same money JoinCustomerPoolTx would have carried had the
+		// login been moved. Fold it in, so an adopted first member and a moved
+		// second member are treated alike.
+		result.Swept++
+		result.QuotaCarried += user.Quota
+		if dryRun {
+			return false, nil
+		}
+		if err := tx.Model(&Tenant{}).Where("id = ?", tenantId).
+			Update("quota", gorm.Expr("quota + ?", user.Quota)).Error; err != nil {
+			return false, err
+		}
+		if err := tx.Model(&User{}).Where("id = ?", user.Id).Update("quota", 0).Error; err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 	carried, err := quotaCarriedInto(tx, user)
 	if err != nil {

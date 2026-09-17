@@ -234,6 +234,7 @@ func BackfillCustomerPools(c *gin.Context) {
 			"members_moved":  result.MembersMoved,
 			"quota_carried":  result.QuotaCarried,
 			"already_pooled": result.AlreadyPooled,
+			"swept":          result.Swept,
 			"skipped":        result.Skipped,
 		},
 	})
