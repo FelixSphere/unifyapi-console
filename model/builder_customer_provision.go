@@ -466,20 +466,17 @@ func ensureCustomerTenant(tx *gorm.DB, offer *PartnershipOffer) (int, error) {
 	if customer.TenantId != 0 {
 		return customer.TenantId, nil
 	}
-	tenant := &Tenant{
-		Name:   customer.Name,
-		Slug:   slugFromName("team-" + customer.Code),
-		Status: TenantStatusEnabled,
-		Group:  customer.Group,
-	}
-	if err := CreateTenantWithTx(tx, tenant); err != nil {
+	// The team and its pricing group are one customer: a wallet the group
+	// already bills through is this team's wallet too.
+	tenantId, err := customerWalletTx(tx, customer.Group, customer.Name, slugFromName("team-"+customer.Code))
+	if err != nil {
 		return 0, err
 	}
 	if err := tx.Model(&PartnershipCustomer{}).Where("id = ?", customer.Id).
-		Update("tenant_id", tenant.Id).Error; err != nil {
+		Update("tenant_id", tenantId).Error; err != nil {
 		return 0, err
 	}
-	return tenant.Id, nil
+	return tenantId, nil
 }
 
 // claimTeamTenantOwner names the first member to connect as the tenant's

@@ -28,7 +28,7 @@ func setupPartnershipTestDB(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&User{}, &Tenant{}, &Log{}, &Option{}, &PartnershipProgram{}, &PartnershipCustomer{}, &PartnershipEnrollment{},
+		&User{}, &Tenant{}, &Log{}, &Option{}, &PartnershipProgram{}, &PartnershipCustomer{}, &PartnershipEnrollment{}, &CustomerWallet{},
 	))
 	previous := DB
 	previousType := common.MainDatabaseType()
