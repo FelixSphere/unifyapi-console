@@ -355,3 +355,32 @@ func BuilderIntegration(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"code": "UNIFY_ACTION_UNAVAILABLE"})
 	}
 }
+
+// ArchiveOrphanedBuilderIdentity frees a subject whose linked account no longer
+// exists, so the Builder side can connect again.
+//
+// The link is archived, not deleted: it records which program and customer the
+// account was enrolled in and when it claimed its grant. Every bridge path
+// already refuses an archived subject, so moving it there is enough.
+func ArchiveOrphanedBuilderIdentity(c *gin.Context) {
+	subject := c.Param("subject")
+	link, err := model.ArchiveOrphanedBuilderIdentity(subject)
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "no Builder link has that subject"})
+		return
+	case errors.Is(err, model.ErrBuilderLinkNotBroken):
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	case err != nil:
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
+		"subject":     subject,
+		"archived_as": model.ArchivedBuilderSubject(link.Id, link.Subject),
+		"user_id":     link.UserId,
+		"program_id":  link.ProgramId,
+		"customer_id": link.CustomerId,
+	}})
+}
