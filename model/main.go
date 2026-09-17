@@ -305,6 +305,7 @@ func migrateDB() error {
 		&Log{},
 		&Midjourney{},
 		&TopUp{},
+		&BinancePayTransaction{}, // UNIFYAPI-FORK
 		&QuotaData{},
 		// UNIFYAPI-FORK: persisted reconciliation runs, see reconcile_snapshot.go
 		&ReconcileSnapshot{},
@@ -398,6 +399,7 @@ func migrateDBFast() error {
 		{&Log{}, "Log"},
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
+		{&BinancePayTransaction{}, "BinancePayTransaction"}, // UNIFYAPI-FORK
 		{&QuotaData{}, "QuotaData"},
 		{&Task{}, "Task"},
 		{&Model{}, "Model"},

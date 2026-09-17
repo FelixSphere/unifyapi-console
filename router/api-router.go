@@ -128,6 +128,10 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/waffo/pay", middleware.CriticalRateLimit(), controller.RequestWaffoPay)
 				selfRoute.POST("/waffo-pancake/amount", controller.RequestWaffoPancakeAmount)
 				selfRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), controller.RequestWaffoPancakePay)
+				// UNIFYAPI-FORK: Binance Pay (personal account) -- no webhook, the wallet polls the order.
+				selfRoute.POST("/binance-pay/amount", controller.RequestBinancePayAmount)
+				selfRoute.POST("/binance-pay/pay", middleware.CriticalRateLimit(), controller.RequestBinancePay)
+				selfRoute.GET("/binance-pay/order/:trade_no", controller.GetBinancePayOrderStatus)
 				selfRoute.POST("/aff_transfer", controller.TransferAffQuota)
 				selfRoute.PUT("/setting", controller.UpdateUserSetting)
 

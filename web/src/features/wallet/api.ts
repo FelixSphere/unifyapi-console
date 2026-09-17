@@ -39,6 +39,8 @@ import type {
   WaffoPaymentResponse,
   WaffoPancakePaymentRequest,
   WaffoPancakePaymentResponse,
+  BinancePayPaymentRequest,
+  BinancePayOrderResponse,
 } from './types'
 
 // ============================================================================
@@ -178,6 +180,44 @@ export async function requestWaffoPancakePayment(
   const res = await api.post('/api/user/waffo-pancake/pay', request, {
     skipBusinessError: true,
   } as Record<string, unknown>)
+  return res.data
+}
+
+/**
+ * Calculate payment amount for Binance Pay payment (price before the
+ * per-order identifier suffix)
+ */
+export async function calculateBinancePayAmount(
+  request: AmountRequest
+): Promise<AmountResponse> {
+  const res = await api.post('/api/user/binance-pay/amount', request, {
+    skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+/**
+ * Create a Binance Pay order; the response carries the transfer instructions
+ */
+export async function requestBinancePayPayment(
+  request: BinancePayPaymentRequest
+): Promise<BinancePayOrderResponse> {
+  const res = await api.post('/api/user/binance-pay/pay', request, {
+    skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+/**
+ * Poll a Binance Pay order; the backend re-checks Binance when it is pending
+ */
+export async function getBinancePayOrderStatus(
+  tradeNo: string
+): Promise<BinancePayOrderResponse> {
+  const res = await api.get(
+    `/api/user/binance-pay/order/${encodeURIComponent(tradeNo)}`,
+    { skipBusinessError: true } as Record<string, unknown>
+  )
   return res.data
 }
 

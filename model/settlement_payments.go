@@ -13,6 +13,7 @@ package model
 //	epay (non-stripe) quota = Amount x QuotaPerUnit
 //	waffo           quota = Amount x QuotaPerUnit
 //	waffo_pancake   quota = Amount x QuotaPerUnit
+//	binance_pay     quota = Amount x QuotaPerUnit
 //	creem           quota = Amount            <- raw quota, NOT multiplied
 //
 // So `Amount` means dollars for four providers and quota units for the fifth.
@@ -190,6 +191,10 @@ func creditedQuota(provider string, amount int64, money float64) float64 {
 		// operator adjustment (model/operator_grant.go). Multiplying here would
 		// overstate every such row by QuotaPerUnit.
 		return float64(amount)
+	case PaymentProviderBinancePay:
+		// Binance Pay: Amount is dollars, Money is the stablecoin amount paid
+		// (price plus a per-order identifier suffix), never the credit.
+		return float64(amount) * common.QuotaPerUnit
 	default:
 		// epay, waffo, waffo_pancake and anything added later: Amount is
 		// dollars.

@@ -166,6 +166,16 @@ export interface TopupInfo {
   enable_waffo_pancake_topup?: boolean
   /** Minimum topup amount for Waffo Pancake */
   waffo_pancake_min_topup?: number
+  /** Whether Binance Pay (personal account) topup is enabled */
+  enable_binance_pay_topup?: boolean
+  /** Minimum topup amount for Binance Pay */
+  binance_pay_min_topup?: number
+  /** Binance Pay is the recommended method for this user (partner channel) */
+  binance_pay_recommended?: boolean
+  /** Stablecoin Binance Pay orders are denominated in, e.g. USDT */
+  binance_pay_currency?: string
+  /** Price of 1 USD of credit in binance_pay_currency */
+  binance_pay_unit_price?: number
   /** Whether redemption code usage is enabled */
   enable_redemption?: boolean
   /** Whether compliance confirmation has been completed */
@@ -213,6 +223,43 @@ export interface WaffoPaymentRequest {
   /** Optional server-side Waffo payment method index */
   pay_method_index?: number
 }
+
+/**
+ * Binance Pay payment request parameters
+ */
+export interface BinancePayPaymentRequest {
+  /** Topup amount */
+  amount: number
+}
+
+/**
+ * One on-chain address of the receiving Binance account
+ */
+export interface BinancePayDepositAddress {
+  network: string
+  address: string
+}
+
+/**
+ * A Binance Pay order: the transfer instructions plus its status
+ */
+export interface BinancePayOrder {
+  trade_no: string
+  status: string
+  /** Credits purchased */
+  amount: number
+  /** Exact amount to send, as a string at gateway precision */
+  pay_amount: string
+  currency: string
+  receiver_id: string
+  receiver_nickname?: string
+  deposit_addresses?: BinancePayDepositAddress[]
+  created_at: number
+  expires_at: number
+  poll_interval_seconds?: number
+}
+
+export type BinancePayOrderResponse = ApiResponse<BinancePayOrder | string>
 
 /**
  * Waffo Pancake payment request parameters

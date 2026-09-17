@@ -21,6 +21,7 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { IconBadge } from '@/components/ui/icon-badge'
@@ -97,6 +98,9 @@ interface RechargeFormCardProps {
   waffoMinTopup?: number
   onWaffoMethodSelect?: (method: WaffoPayMethod, index: number) => void
   enableWaffoPancakeTopup?: boolean
+  enableBinancePayTopup?: boolean
+  /** Payment type to mark as recommended (UNIFYAPI-FORK: partner channel) */
+  recommendedPaymentType?: string
 }
 
 // Every figure that represents money leaving the user must carry the currency it
@@ -141,6 +145,8 @@ export function RechargeFormCard({
   waffoMinTopup,
   onWaffoMethodSelect,
   enableWaffoPancakeTopup,
+  enableBinancePayTopup,
+  recommendedPaymentType,
 }: RechargeFormCardProps) {
   const { t } = useTranslation()
   const [localAmount, setLocalAmount] = useState(topupAmount.toString())
@@ -173,7 +179,8 @@ export function RechargeFormCard({
     topupInfo?.enable_online_topup ||
     topupInfo?.enable_stripe_topup ||
     enableWaffoTopup ||
-    enableWaffoPancakeTopup
+    enableWaffoPancakeTopup ||
+    enableBinancePayTopup
   const hasAnyTopup = hasConfigurableTopup || enableCreemTopup
   const hasStandardPaymentMethods =
     Array.isArray(topupInfo?.pay_methods) && topupInfo.pay_methods.length > 0
@@ -413,6 +420,9 @@ export function RechargeFormCard({
                       const disabledLabel = disabled
                         ? `${t('Minimum:')} ${minTopup}`
                         : undefined
+                      const recommended =
+                        !!recommendedPaymentType &&
+                        method.type === recommendedPaymentType
 
                       const button = (
                         <Button
@@ -426,8 +436,16 @@ export function RechargeFormCard({
                               ? `${method.name}. ${disabledReason}`
                               : method.name
                           }
-                          className='min-h-14 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left'
+                          className={cn(
+                            'relative min-h-14 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left',
+                            recommended && 'border-foreground/60'
+                          )}
                         >
+                          {recommended && (
+                            <Badge className='absolute -top-2 right-2 px-1.5 py-0 text-[10px]'>
+                              {t('Recommended')}
+                            </Badge>
+                          )}
                           {paymentLoading === method.type ? (
                             <Loader2 className='h-4 w-4 animate-spin' />
                           ) : (

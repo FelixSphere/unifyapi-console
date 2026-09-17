@@ -55,6 +55,7 @@ const (
 	PaymentMethodCreem        = "creem"
 	PaymentMethodWaffo        = "waffo"
 	PaymentMethodWaffoPancake = "waffo_pancake"
+	PaymentMethodBinancePay   = "binance_pay" // UNIFYAPI-FORK
 	PaymentMethodBalance      = "balance"
 	// UNIFYAPI-BRAND: an operator's hand adjustment, recorded like a payment so
 	// receipts views see it. See model/operator_grant.go.
@@ -67,6 +68,7 @@ const (
 	PaymentProviderCreem        = "creem"
 	PaymentProviderWaffo        = "waffo"
 	PaymentProviderWaffoPancake = "waffo_pancake"
+	PaymentProviderBinancePay   = "binance_pay" // UNIFYAPI-FORK
 	PaymentProviderBalance      = "balance"
 	PaymentProviderAdmin        = "admin"
 )
