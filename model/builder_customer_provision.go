@@ -261,17 +261,16 @@ func registerBuilderGroupTx(tx *gorm.DB, group string) ([]builderGroupChange, er
 // Allocate a fresh settlement group whenever a previous customer owns the
 // display-name group. Removed customers remain owners of their historical keys.
 // Never change their group or reuse it for a new invoice counterparty.
-func builderCustomerIdentifiers(tx *gorm.DB, name string) (string, string, error) {
+func builderCustomerIdentifiers(tx *gorm.DB, program *PartnershipProgram, name string) (string, string, error) {
 	base := partnershipCodeFromName(name)
 	for attempt := 1; attempt <= 100; attempt++ {
 		code := base
+		display := name
 		if attempt > 1 {
 			code = fmt.Sprintf("%s-%d", base, attempt)
+			display = fmt.Sprintf("%s-%d", name, attempt)
 		}
-		group := code
-		if attempt == 1 && len(name) <= 64 {
-			group = name
-		}
+		group := customerPricingGroupName(program, display, code)
 		var count int64
 		if err := tx.Model(&PartnershipCustomer{}).Where(clause.Or(clause.Eq{Column: "code", Value: code}, clause.Eq{Column: "group", Value: group})).Count(&count).Error; err != nil {
 			return "", "", err
@@ -279,32 +278,75 @@ func builderCustomerIdentifiers(tx *gorm.DB, name string) (string, string, error
 		if count != 0 {
 			continue
 		}
-		// Suffix groups must also avoid independently configured billing groups.
-		if attempt > 1 || group != name {
-			occupied := false
-			for _, key := range []string{"GroupRatio", "TopupGroupRatio", "UserUsableGroups"} {
-				var option Option
-				err := tx.Where("key = ?", key).First(&option).Error
-				if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		// Every candidate must also avoid a billing group an operator
+		// configured independently, on the first attempt as much as any other.
+		// This check used to be skipped when the group was the team's plain
+		// name, which is the one case where an outside name can collide with
+		// an existing group: a team called "UnifyAPI" would have adopted the
+		// "UnifyAPI" group and its invoice, and nothing would have said so.
+		occupied := false
+		for _, key := range []string{"GroupRatio", "TopupGroupRatio", "UserUsableGroups"} {
+			var option Option
+			err := tx.Where("key = ?", key).First(&option).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return "", "", err
+			}
+			entries := map[string]any{}
+			if option.Value != "" {
+				if err := common.Unmarshal([]byte(option.Value), &entries); err != nil {
 					return "", "", err
 				}
-				entries := map[string]any{}
-				if option.Value != "" {
-					if err := common.Unmarshal([]byte(option.Value), &entries); err != nil {
-						return "", "", err
-					}
-				}
-				if _, exists := entries[group]; exists {
-					occupied = true
-				}
 			}
-			if occupied {
-				continue
+			if _, exists := entries[group]; exists {
+				occupied = true
 			}
+		}
+		if occupied {
+			continue
 		}
 		return code, group, nil
 	}
 	return "", "", errors.New("no free Builder customer identifiers")
+}
+
+// groupNameSeparator joins the program to the team. An underscore matches the
+// names already in use ("Builder_hub_2026_Sep_Batch") and stays safe in the
+// places a group name travels: JSON option keys, config and URLs.
+const groupNameSeparator = "_"
+
+// customerPricingGroupName names the pricing group a team bills through.
+//
+// The team's own name is not enough on its own. A pricing group is the invoice
+// counterparty, and these names arrive from another product's team list: a
+// team called "UnifyAPI" or "Kingdee" can collide with a group that already
+// exists here and already carries somebody else's money.
+//
+// So the program namespaces it. Two programs may each have a team of the same
+// name without sharing an invoice, and an outside name can never select a
+// group that was not created for it.
+//
+// The column is varchar(64) while a team name may be 120 characters, so this
+// takes the most legible form that fits: the group is printed as the bill-to
+// line, and an unlovely invoice beats a failed insert.
+func customerPricingGroupName(program *PartnershipProgram, name, code string) string {
+	if program == nil {
+		return code
+	}
+	for _, candidate := range []string{
+		program.Name + groupNameSeparator + name,
+		program.Code + groupNameSeparator + name,
+		program.Code + groupNameSeparator + code,
+		code,
+	} {
+		if fitsPricingGroupColumn(candidate) {
+			return candidate
+		}
+	}
+	return code
+}
+
+func fitsPricingGroupColumn(group string) bool {
+	return group != "" && len(group) <= 64 && len([]rune(group)) <= 64
 }
 
 // ProvisionBuilderCustomer atomically registers a new team and its settings.
@@ -340,7 +382,7 @@ func ProvisionBuilderCustomer(programName, customerName string) error {
 				changes, err = registerBuilderGroupTx(tx, existing.Group)
 				return err
 			}
-			code, group, err := builderCustomerIdentifiers(tx, customerName)
+			code, group, err := builderCustomerIdentifiers(tx, program, customerName)
 			if err != nil {
 				return err
 			}
