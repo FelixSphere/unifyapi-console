@@ -161,3 +161,12 @@ func TestBuilderMissingAccountRequiresRepairWithoutRecreatingOrGranting(t *testi
 		})
 	}
 }
+
+func TestBuilderArchiveIsNotAUsableSubject(t *testing.T) {
+	subject := BuilderArchivedSubjectPrefix + "builder:2:20260917"
+	_, _, err := GetBuilderIdentity(subject)
+	assert.ErrorIs(t, err, ErrBuilderUnavailable)
+	_, err = ConnectBuilderIdentityWithProgram(subject, "verified@example.invalid", BuilderProgramSelector{ProgramName: "Builders"}, "")
+	assert.ErrorIs(t, err, ErrBuilderUnavailable)
+	assert.ErrorIs(t, ClaimBuilderTeamGrantWithProgram(subject, BuilderProgramSelector{ProgramName: "Builders"}), ErrBuilderUnavailable)
+}

@@ -68,7 +68,7 @@ func readBuilderRequest(c *gin.Context) (*builderRequest, error) {
 	if err := common.Unmarshal(body, &request); err != nil {
 		return nil, err
 	}
-	if request.Subject == "" || len(request.Subject) > 128 || (request.PartnershipCode == "") == (request.ProgramName == "") {
+	if request.Subject == "" || len(request.Subject) > 128 || model.IsArchivedBuilderSubject(request.Subject) || (request.PartnershipCode == "") == (request.ProgramName == "") {
 		return nil, errors.New("invalid identity or program")
 	}
 	if request.ProgramName != "" {

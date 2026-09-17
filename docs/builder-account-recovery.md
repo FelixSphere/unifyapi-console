@@ -64,3 +64,11 @@ Regression fixtures live in `model/builder_recovery_test.go` and
 history, concurrent idempotent creation, occupied suffixes, disabled/ambiguous
 customers, transaction rollback, absent/soft-deleted user, retained paid balance,
 no repeated grant, and signed HTTP error classification.
+
+An explicitly approved fresh-account recovery may archive the old identity
+under a unique `unifyapi:archived:` subject while retaining the old user reference
+and receipts. This prefix is rejected by signed assertions and the model's
+connect/read/claim functions; it can never be used as a new external identity.
+Such a recovery still requires the guarded snapshots, balance authorization and
+rollback checks above. The original verified Builder subject reconnects through
+the normal flow; no old credentials or administrator privileges are restored.

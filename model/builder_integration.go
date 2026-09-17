@@ -18,6 +18,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // BuilderIdentity links a trusted Builder subject to one personal account.
@@ -65,6 +66,13 @@ var ErrBuilderOwnershipProof = fmt.Errorf("management token does not prove owner
 // A saved identity with no live account needs an audited administrative repair.
 // Do not wrap ErrRecordNotFound: callers interpret that as a new identity.
 var ErrBuilderAccountRepairRequired = errors.New("linked Builder account requires repair")
+
+// Reserved for operator recovery archives, never an external Builder identity.
+const BuilderArchivedSubjectPrefix = "unifyapi:archived:"
+
+func IsArchivedBuilderSubject(subject string) bool {
+	return strings.HasPrefix(subject, BuilderArchivedSubjectPrefix)
+}
 
 // builderAccountRefusal says which of those applies to a user record.
 func builderAccountRefusal(user *User) error {
@@ -200,6 +208,9 @@ func resolveProgramCustomer(query func() *gorm.DB, programId int, name string) (
 }
 
 func GetBuilderIdentity(subject string) (*BuilderIdentity, *User, error) {
+	if IsArchivedBuilderSubject(subject) {
+		return nil, nil, ErrBuilderUnavailable
+	}
 	var link BuilderIdentity
 	if err := DB.Where("subject = ?", subject).First(&link).Error; err != nil {
 		return nil, nil, err
@@ -294,6 +305,9 @@ func rebindDanglingIdentity(tx *gorm.DB, link *BuilderIdentity, offer *Partnersh
 }
 
 func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderProgramSelector, managementToken string) (*BuilderIdentity, error) {
+	if IsArchivedBuilderSubject(subject) {
+		return nil, ErrBuilderUnavailable
+	}
 	offer, err := ResolveBuilderProgram(DB, selector, false)
 	if err != nil {
 		return nil, err
@@ -477,7 +491,7 @@ func ReadBuilderWorkspace(link *BuilderIdentity, user *User, period string) (map
 		credits = append(credits, map[string]any{"id": -link.Id, "amount": float64(link.GrantQuota) / common.QuotaPerUnit, "timestamp": time.Unix(link.GrantClaimedAt, 0).UTC().Format(time.RFC3339), "description": "Team launch credit"})
 	}
 	models := []string{}
-	if err := DB.Table("abilities").Where(groupColumn()+" = ? AND enabled = ?", user.Group, true).Distinct("model").Order("model").Pluck("model", &models).Error; err != nil {
+	if err := DB.Table("abilities").Where(clause.Eq{Column: "group", Value: user.Group}).Where("enabled = ?", true).Distinct("model").Order("model").Pluck("model", &models).Error; err != nil {
 		return nil, err
 	}
 	if models == nil {
@@ -509,6 +523,9 @@ func ClaimBuilderTeamGrant(subject, code string) error {
 }
 
 func ClaimBuilderTeamGrantWithProgram(subject string, selector BuilderProgramSelector) error {
+	if IsArchivedBuilderSubject(subject) {
+		return ErrBuilderUnavailable
+	}
 	var userID int
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		offer, err := ResolveBuilderProgram(tx, selector, true)

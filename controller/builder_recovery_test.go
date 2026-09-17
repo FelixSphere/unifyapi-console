@@ -158,3 +158,12 @@ func TestBuilderRemovedCustomerConnectAndWorkspaceThroughSignedHTTP(t *testing.T
 	assert.Equal(t, retired.Group, unchanged.Group)
 	assert.EqualValues(t, 123, unchanged.RemovedAt)
 }
+
+func TestBuilderArchivedSubjectCannotBeUsedAsAnExternalIdentity(t *testing.T) {
+	// Rejected during signed assertion validation before touching any database.
+	for _, action := range []string{"connect", "workspace", "claim", "key", "credit-status", "checkout"} {
+		response := recoveryRequest(t, action, `{"subject":"unifyapi:archived:builder:2:20260917","program_name":"Builders","email":"verified@example.invalid","email_verified":true,"owner_eligible":true}`)
+		require.Equal(t, 401, response.Code, response.Body.String())
+		assert.JSONEq(t, `{"code":"UNIFY_UNAUTHORIZED"}`, response.Body.String())
+	}
+}
