@@ -1,5 +1,8 @@
 {
   "translation": {
+    "Every customer group can use every channel": "すべての顧客グループがすべてのチャネルを利用できます",
+    "Every customer group can route through every channel. The groups picked here are this channel's own and are kept as configured.": "すべての顧客グループがすべてのチャネルを経由できます。ここで選択したグループはこのチャネル固有のもので、設定どおり保持されます。",
+    "Also open to every other customer group: {{groups}}": "他のすべての顧客グループも利用可能：{{groups}}",
     "Approx. to pay:": "お支払い目安：",
     "By user": "ユーザー別",
     "Funded by user": "ユーザー別入金",

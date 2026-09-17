@@ -1,5 +1,8 @@
 {
   "translation": {
+    "Every customer group can use every channel": "Chaque groupe client peut utiliser chaque canal",
+    "Every customer group can route through every channel. The groups picked here are this channel's own and are kept as configured.": "Chaque groupe client peut être routé par chaque canal. Les groupes choisis ici sont ceux propres à ce canal et sont conservés tels quels.",
+    "Also open to every other customer group: {{groups}}": "Également ouvert à tous les autres groupes clients : {{groups}}",
     "Approx. to pay:": "À payer (env.) :",
     "By user": "Par utilisateur",
     "Funded by user": "Financé par utilisateur",

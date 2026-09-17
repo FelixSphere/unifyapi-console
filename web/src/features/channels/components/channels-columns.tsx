@@ -57,6 +57,7 @@ import { truncateText } from '@/lib/utils'
 
 import { getCodexUsage } from '../api'
 import { CHANNEL_STATUS_CONFIG, MODEL_FETCHABLE_TYPES } from '../constants'
+import { usePricingGroups } from '../hooks/use-pricing-groups'
 import {
   formatRelativeTime,
   formatResponseTime,
@@ -67,6 +68,7 @@ import {
   isMultiKeyChannel,
   parseModelsList,
   parseGroupsList,
+  splitChannelGroups,
   parseChannelSettings,
   handleUpdateChannelField,
   handleUpdateTagField,
@@ -550,6 +552,7 @@ export function useChannelsColumns(
 ): ColumnDef<Channel>[] {
   const { t, i18n } = useTranslation()
   const { sensitiveVisible } = useChannels()
+  const pricingGroups = usePricingGroups()
   const enableSelection = options.enableSelection ?? true
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   // The column definitions only depend on the translation function, the active
@@ -1019,17 +1022,35 @@ export function useChannelsColumns(
         meta: { mobileHidden: true },
         cell: ({ row }) => {
           const group = row.getValue('group') as string
-          const groupArray = parseGroupsList(group)
+          // Own groups first, then every other pricing group -- all of them
+          // have access; see lib/channel-groups.ts.
+          const { own, inherited } = splitChannelGroups(group, pricingGroups)
           return (
             <BadgeListCell
-              items={groupArray.map((g) => (
-                <GroupBadge
-                  key={g}
-                  group={g}
-                  label={sensitiveVisible ? undefined : SENSITIVE_MASK}
-                  size='sm'
-                />
-              ))}
+              items={[
+                ...own.map((g) => (
+                  <GroupBadge
+                    key={g}
+                    group={g}
+                    label={sensitiveVisible ? undefined : SENSITIVE_MASK}
+                    size='sm'
+                  />
+                )),
+                ...inherited.map((g) => (
+                  <span
+                    key={g}
+                    className='opacity-60'
+                    title={t('Every customer group can use every channel')}
+                    data-inherited-group={g}
+                  >
+                    <GroupBadge
+                      group={g}
+                      label={sensitiveVisible ? undefined : SENSITIVE_MASK}
+                      size='sm'
+                    />
+                  </span>
+                )),
+              ]}
             />
           )
         },
@@ -1184,6 +1205,6 @@ export function useChannelsColumns(
         meta: { pinned: 'right' as const },
       },
     ],
-    [enableSelection, t, locale, sensitiveVisible]
+    [enableSelection, t, locale, sensitiveVisible, pricingGroups]
   )
 }

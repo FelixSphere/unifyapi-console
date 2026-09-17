@@ -1,5 +1,8 @@
 {
   "translation": {
+    "Every customer group can use every channel": "Mọi nhóm khách hàng đều có thể dùng mọi kênh",
+    "Every customer group can route through every channel. The groups picked here are this channel's own and are kept as configured.": "Mọi nhóm khách hàng đều có thể định tuyến qua mọi kênh. Các nhóm chọn ở đây là nhóm riêng của kênh này và được giữ nguyên.",
+    "Also open to every other customer group: {{groups}}": "Cũng mở cho mọi nhóm khách hàng khác: {{groups}}",
     "Approx. to pay:": "Thanh toán ước tính:",
     "By user": "Theo người dùng",
     "Funded by user": "Nạp tiền theo người dùng",

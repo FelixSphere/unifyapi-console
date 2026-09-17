@@ -159,6 +159,7 @@ import {
   getChannelTypeIcon,
   getKeyPromptForType,
   parseModelsString,
+  splitChannelGroups,
   formatModelsArray,
   extractRedirectModels,
   extractMappingSourceModels,
@@ -913,6 +914,13 @@ export function ChannelMutateDrawer({
       label: group,
     }))
   }, [groupsData, currentGroups])
+
+  // Every pricing group not picked above still has access; see
+  // lib/channel-groups.ts.
+  const inheritedGroups = useMemo(
+    () => splitChannelGroups(currentGroups || [], groupsData?.data).inherited,
+    [groupsData, currentGroups]
+  )
 
   // Parse current models as array
   const currentModelsArray = useMemo(
@@ -3601,6 +3609,19 @@ export function ChannelMutateDrawer({
                                       />
                                     )}
                                   </FormControl>
+                                  {inheritedGroups.length > 0 && (
+                                    <p
+                                      className='text-muted-foreground text-xs'
+                                      data-inherited-groups
+                                    >
+                                      {t(
+                                        'Also open to every other customer group: {{groups}}',
+                                        {
+                                          groups: inheritedGroups.join(', '),
+                                        }
+                                      )}
+                                    </p>
+                                  )}
                                   <FormMessage />
                                 </FormItem>
                               )}
