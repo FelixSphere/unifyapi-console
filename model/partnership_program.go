@@ -300,8 +300,14 @@ func UpdatePartnershipProgram(id int, input *PartnershipProgram) error {
 			if err != nil {
 				return err
 			}
+			// Giving a program a group again brings its catch-all back. The
+			// lookup above does not filter on removed_at, so a retired default
+			// is found and would otherwise be updated in place and left
+			// retired -- clearing the group would be a one-way door, and
+			// putting it back would silently do nothing.
 			return tx.Model(&defaultCustomer).Updates(map[string]any{
 				"name": input.Name, "code": input.Code, "group": input.Group,
+				"enabled": true, "removed_at": 0,
 			}).Error
 		})
 	})
