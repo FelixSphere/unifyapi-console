@@ -24,7 +24,8 @@ import { GroupBadge } from '@/components/group-badge'
 import { cn } from '@/lib/utils'
 
 import { CHANNEL_STATUS } from '../constants'
-import { isTagAggregateRow, parseGroupsList } from '../lib'
+import { usePricingGroups } from '../hooks/use-pricing-groups'
+import { isTagAggregateRow, splitChannelGroups } from '../lib'
 import type { Channel } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
 import { useChannels } from './channels-provider'
@@ -65,7 +66,14 @@ function ChannelCardComponent({
     test_time: t('Last Tested'),
   }
 
-  const groups = parseGroupsList(row.original.group ?? '')
+  // Own groups first, then every other pricing group -- all of them have
+  // access; see lib/channel-groups.ts.
+  const pricingGroups = usePricingGroups()
+  const { own, inherited } = splitChannelGroups(
+    row.original.group ?? '',
+    pricingGroups
+  )
+  const groups = [...own, ...inherited]
 
   const selectCell = renderCell('select')
   const typeCell = renderCell('type')
@@ -160,13 +168,27 @@ function ChannelCardComponent({
         <div className='min-w-0'>
           {groups.length > 0 ? (
             <div className='-ml-1.5 flex flex-wrap gap-1'>
-              {groups.map((g) => (
+              {own.map((g) => (
                 <GroupBadge
                   key={g}
                   group={g}
                   label={sensitiveVisible ? undefined : SENSITIVE_MASK}
                   size='sm'
                 />
+              ))}
+              {inherited.map((g) => (
+                <span
+                  key={g}
+                  className='opacity-60'
+                  title={t('Every customer group can use every channel')}
+                  data-inherited-group={g}
+                >
+                  <GroupBadge
+                    group={g}
+                    label={sensitiveVisible ? undefined : SENSITIVE_MASK}
+                    size='sm'
+                  />
+                </span>
               ))}
             </div>
           ) : (
