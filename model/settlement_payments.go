@@ -185,13 +185,97 @@ func creditedQuota(provider string, amount int64, money float64) float64 {
 	switch provider {
 	case PaymentProviderStripe:
 		return money * common.QuotaPerUnit
-	case PaymentProviderCreem:
-		// Creem writes quota units into Amount directly. Multiplying here would
-		// overstate every Creem payment by QuotaPerUnit.
+	case PaymentProviderCreem, PaymentProviderAdmin:
+		// Creem writes quota units into Amount directly, and so does an
+		// operator adjustment (model/operator_grant.go). Multiplying here would
+		// overstate every such row by QuotaPerUnit.
 		return float64(amount)
 	default:
 		// epay, waffo, waffo_pancake and anything added later: Amount is
 		// dollars.
 		return float64(amount) * common.QuotaPerUnit
 	}
+}
+
+// FundingRow is one login's receipts from one gateway inside the window,
+// labelled for the statement: the customer the money was paid into and the
+// username. Bounded by CompleteTime like FetchCustomerPayments.
+type FundingRow struct {
+	UserID int
+	// Username is empty for a login deleted since; the statement labels it by
+	// id so the money still shows against the customer it was paid into.
+	Username string
+	// CustomerGroup is the group snapshotted on the top-up, else the login's
+	// current group, else empty (deleted login, pre-snapshot row).
+	CustomerGroup string
+	Provider      string
+	Orders        int64
+	CreditedUSD   float64
+	ChargedMoney  float64
+}
+
+// FetchCustomerFunding returns successful top-ups completed inside the window
+// at the grain a customer statement's "funded by user" table needs: one row
+// per login per gateway.
+func FetchCustomerFunding(startTimestamp, endTimestamp int64) ([]FundingRow, error) {
+	rows, err := fetchCustomerPaymentRows(startTimestamp, endTimestamp)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	ids := make([]int, 0, len(rows))
+	seen := map[int]bool{}
+	for _, row := range rows {
+		if !seen[row.UserId] {
+			seen[row.UserId] = true
+			ids = append(ids, row.UserId)
+		}
+	}
+	var users []User
+	if err := DB.Select("Id", "Username", "Group").Where("id IN ?", ids).Find(&users).Error; err != nil {
+		return nil, err
+	}
+	logins := map[int]User{}
+	for _, user := range users {
+		logins[user.Id] = user
+	}
+
+	type key struct {
+		userID   int
+		provider string
+	}
+	totals := map[key]*FundingRow{}
+	for _, row := range rows {
+		provider := row.PaymentProvider
+		if provider == "" {
+			provider = "unknown"
+		}
+		id := key{userID: row.UserId, provider: provider}
+		entry, ok := totals[id]
+		if !ok {
+			login := logins[row.UserId]
+			group := row.CustomerGroup
+			if group == "" {
+				group = login.Group
+			}
+			entry = &FundingRow{UserID: row.UserId, Username: login.Username, CustomerGroup: group, Provider: provider}
+			totals[id] = entry
+		}
+		entry.Orders++
+		entry.CreditedUSD += creditedUSD(provider, row.Amount, row.Money)
+		entry.ChargedMoney += row.Money
+	}
+	out := make([]FundingRow, 0, len(totals))
+	for _, entry := range totals {
+		out = append(out, *entry)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].UserID != out[j].UserID {
+			return out[i].UserID < out[j].UserID
+		}
+		return out[i].Provider < out[j].Provider
+	})
+	return out, nil
 }

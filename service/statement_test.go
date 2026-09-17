@@ -380,3 +380,92 @@ func TestVendorStatementHasNoUserBreakdown(t *testing.T) {
 	require.Len(t, statements, 1)
 	require.Nil(t, statements[0].Users, "a supplier is owed for channels, not for who called them")
 }
+
+func TestFundingIsBrokenDownByLoginAndSumsToTheStatement(t *testing.T) {
+	rows := []model.UsageRow{
+		{Model: "gpt-4o", UserID: 13, Username: "Aaron", BillingGroup: "UnifyAI",
+			Requests: 2, PromptTokens: 100, CompletionTokens: 10, Quota: usdToQuota(5)},
+	}
+	statements := BuildStatements(rows, StatementKindCustomer, "2026-09-01", "2026-09-30")
+	funding := []model.FundingRow{
+		{UserID: 10, Username: "ycwtest", CustomerGroup: "UnifyAI", Provider: model.PaymentProviderStripe, Orders: 2, CreditedUSD: 20},
+		{UserID: 13, Username: "Aaron", CustomerGroup: "UnifyAI", Provider: model.PaymentProviderStripe, Orders: 1, CreditedUSD: 10},
+		{UserID: 13, Username: "Aaron", CustomerGroup: "UnifyAI", Provider: model.PaymentProviderAdmin, Orders: 1, CreditedUSD: 100},
+	}
+	out := AttachFunding(statements, StatementKindCustomer, funding, "2026-09-01", "2026-09-30")
+	require.Len(t, out, 1, "money paid into a customer lands on that customer's statement, not a new one")
+	s := out[0]
+	require.Len(t, s.Funding, 2)
+	// Largest funder first.
+	require.Equal(t, "Aaron", s.Funding[0].Username)
+	require.EqualValues(t, 1, s.Funding[0].Orders)
+	require.EqualValues(t, 1, s.Funding[0].Grants, "an operator grant is counted apart from a payment")
+	require.InDelta(t, 110, s.Funding[0].CreditedUSD, 1e-9)
+	require.Equal(t, "ycwtest", s.Funding[1].Username)
+	require.EqualValues(t, 2, s.Funding[1].Orders)
+	require.Zero(t, s.Funding[1].Grants)
+	var byLine float64
+	for _, f := range s.Funding {
+		byLine += f.CreditedUSD
+	}
+	require.InDelta(t, s.FundedUSD, byLine, 1e-9)
+	require.InDelta(t, 130, s.FundedUSD, 1e-9)
+	require.InDelta(t, 5, s.AmountUSD, 1e-9, "receipts never touch what was consumed")
+}
+
+func TestACustomerThatPaidButDidNotConsumeStillGetsAStatement(t *testing.T) {
+	funding := []model.FundingRow{
+		{UserID: 16, Username: "hj", CustomerGroup: "Vip User", Provider: model.PaymentProviderStripe, Orders: 1, CreditedUSD: 30},
+	}
+	out := AttachFunding(nil, StatementKindCustomer, funding, "2026-09-01", "2026-09-30")
+	require.Len(t, out, 1)
+	s := out[0]
+	require.Equal(t, model.CustomerPricingGroupKey("Vip User"), s.Counterparty)
+	require.Equal(t, "Vip User", s.Label)
+	require.NotNil(t, s.Lines, "an empty usage table, not a null one")
+	require.Empty(t, s.Lines)
+	require.Zero(t, s.AmountUSD)
+	require.InDelta(t, 30, s.FundedUSD, 1e-9)
+}
+
+func TestFundingLineFallsBackToUserIDWhenTheLoginIsGone(t *testing.T) {
+	funding := []model.FundingRow{
+		{UserID: 7, Username: "", CustomerGroup: "Chinhin", Provider: model.PaymentProviderStripe, Orders: 1, CreditedUSD: 12},
+	}
+	out := AttachFunding(nil, StatementKindCustomer, funding, "2026-09-01", "2026-09-30")
+	require.Len(t, out, 1)
+	require.Equal(t, "user 7", out[0].Funding[0].Username)
+	require.InDelta(t, 12, out[0].FundedUSD, 1e-9)
+}
+
+func TestDefaultGroupFundingIsPerLoginLikeItsUsage(t *testing.T) {
+	rows := []model.UsageRow{
+		{Model: "gpt-4o", UserID: 17, Username: "MinhTranGAF", BillingGroup: "default", Requests: 1, Quota: usdToQuota(1)},
+	}
+	statements := BuildStatements(rows, StatementKindCustomer, "2026-09-01", "2026-09-30")
+	funding := []model.FundingRow{
+		{UserID: 17, Username: "MinhTranGAF", CustomerGroup: "default", Provider: model.PaymentProviderStripe, Orders: 1, CreditedUSD: 10},
+		{UserID: 18, Username: "tiankong", CustomerGroup: "default", Provider: model.PaymentProviderStripe, Orders: 1, CreditedUSD: 20},
+	}
+	out := AttachFunding(statements, StatementKindCustomer, funding, "2026-09-01", "2026-09-30")
+	require.Len(t, out, 2, "default is not a customer: strangers never share a statement")
+	require.Equal(t, "17", out[0].Counterparty)
+	require.InDelta(t, 10, out[0].FundedUSD, 1e-9)
+	require.Equal(t, "18", out[1].Counterparty)
+	require.Equal(t, "tiankong", out[1].Label)
+}
+
+func TestVendorStatementsIgnoreFunding(t *testing.T) {
+	rows := []model.UsageRow{
+		{Model: "gpt-4o", UserID: 1, Username: "a", BillingGroup: "acme", ChannelID: 1, ChannelName: "oai", ChannelBaseURL: "https://api.openai.com",
+			Requests: 1, PromptTokens: 10, CompletionTokens: 1, Quota: usdToQuota(1)},
+	}
+	statements := BuildStatements(rows, StatementKindVendor, "2026-09-01", "2026-09-30")
+	funding := []model.FundingRow{{UserID: 1, Username: "a", CustomerGroup: "acme", Provider: model.PaymentProviderStripe, Orders: 1, CreditedUSD: 5}}
+	out := AttachFunding(statements, StatementKindVendor, funding, "2026-09-01", "2026-09-30")
+	require.Equal(t, statements, out)
+	for _, s := range out {
+		require.Nil(t, s.Funding)
+		require.Zero(t, s.FundedUSD)
+	}
+}

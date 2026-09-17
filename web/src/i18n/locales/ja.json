@@ -2,6 +2,10 @@
   "translation": {
     "Approx. to pay:": "お支払い目安：",
     "By user": "ユーザー別",
+    "Funded by user": "ユーザー別入金",
+    "Top-ups": "入金件数",
+    "Admin grants": "管理者調整",
+    "Credited": "入金額",
     "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "概算です。最終的な通貨と金額は、Stripe が決済ページでその時のレートに基づいて決定します。",
     "Every model marked below is already discounted for new accounts. No code needed.": "下記のマーク付きモデルは新規アカウントで自動的に割引されます。コード不要。",
     "Sign up and save": "登録してお得に",

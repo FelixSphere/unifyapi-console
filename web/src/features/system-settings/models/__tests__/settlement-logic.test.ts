@@ -34,6 +34,7 @@ import {
   recentPeriods,
   settlementState,
   statementIsBalanced,
+  fundingLinesAreBalanced,
   userLinesAreBalanced,
   varianceVerdict,
 } from '../settlement-logic'
@@ -522,5 +523,54 @@ describe('userLinesAreBalanced', () => {
       ),
       false
     )
+  })
+})
+
+describe('fundingLinesAreBalanced', () => {
+  test('funding lines are a breakdown of funded_usd and must add up to it', () => {
+    const s = statement({
+      funded_usd: 130,
+      funding: [
+        {
+          user_id: 13,
+          username: 'Aaron',
+          orders: 1,
+          grants: 1,
+          credited_usd: 110,
+        },
+        {
+          user_id: 10,
+          username: 'ycwtest',
+          orders: 2,
+          grants: 0,
+          credited_usd: 20,
+        },
+      ],
+    })
+    assert.equal(fundingLinesAreBalanced(s), true)
+  })
+
+  test('a line that does not add up is an error, not a rounding quirk', () => {
+    const s = statement({
+      funded_usd: 130,
+      funding: [
+        {
+          user_id: 13,
+          username: 'Aaron',
+          orders: 1,
+          grants: 0,
+          credited_usd: 100,
+        },
+      ],
+    })
+    assert.equal(fundingLinesAreBalanced(s), false)
+  })
+
+  test('no funding balances trivially: vendor side, or a statement frozen before it existed', () => {
+    assert.equal(
+      fundingLinesAreBalanced(statement({ funding: undefined })),
+      true
+    )
+    assert.equal(fundingLinesAreBalanced(statement({ funding: [] })), true)
   })
 })

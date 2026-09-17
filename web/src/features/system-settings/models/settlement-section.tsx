@@ -78,6 +78,7 @@ import {
   customerInvoiceUI,
   csvHref,
   deriveStatement,
+  fundingLinesAreBalanced,
   userLinesAreBalanced,
   formatSigned,
   formatTokens,
@@ -1066,6 +1067,58 @@ function StatementDetail({ row }: { row: SettlementRow }) {
                 {t('Error')}: {t('By user')} ≠ {t('Total')}
               </AlertDescription>
             </Alert>
+          ) : null}
+
+          {!vendor && statement.funding?.length ? (
+            <div>
+              <div className='text-muted-foreground mb-1 text-[10px] font-semibold tracking-wider uppercase'>
+                {t('Funded by user')} · {formatUSD(statement.funded_usd ?? 0)}
+              </div>
+              {!fundingLinesAreBalanced(statement) ? (
+                <Alert variant='destructive' className='mb-2'>
+                  <AlertTriangle className='size-4' />
+                  <AlertDescription className='text-xs'>
+                    {t('Error')}: {t('Funded by user')} ≠ {t('Total')}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+              <div className='overflow-x-auto rounded border'>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className='text-xs'>{t('Username')}</TableHead>
+                      <TableHead className='text-right text-xs'>
+                        {t('Top-ups')}
+                      </TableHead>
+                      <TableHead className='text-right text-xs'>
+                        {t('Admin grants')}
+                      </TableHead>
+                      <TableHead className='text-right text-xs'>
+                        {t('Credited')}
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {statement.funding.map((line) => (
+                      <TableRow key={line.user_id}>
+                        <TableCell className='font-mono text-xs'>
+                          {line.username}
+                        </TableCell>
+                        <TableCell className='text-right font-mono text-xs tabular-nums'>
+                          {line.orders.toLocaleString()}
+                        </TableCell>
+                        <TableCell className='text-right font-mono text-xs tabular-nums'>
+                          {line.grants.toLocaleString()}
+                        </TableCell>
+                        <TableCell className='text-right font-mono text-xs tabular-nums'>
+                          {formatUSD(line.credited_usd)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
           ) : null}
           <div className='overflow-x-auto rounded border'>
             <Table>

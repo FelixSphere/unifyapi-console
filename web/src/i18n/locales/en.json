@@ -2,6 +2,10 @@
   "translation": {
     "Approx. to pay:": "Approx. to pay:",
     "By user": "By user",
+    "Funded by user": "Funded by user",
+    "Top-ups": "Top-ups",
+    "Admin grants": "Admin grants",
+    "Credited": "Credited",
     "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.",
     "Every model marked below is already discounted for new accounts. No code needed.": "Every model marked below is already discounted for new accounts. No code needed.",
     "Sign up and save": "Sign up and save",

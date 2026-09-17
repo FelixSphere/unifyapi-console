@@ -459,3 +459,36 @@ func TestVendorSettlementCannotBecomeOutgoingInvoice(t *testing.T) {
 	require.Equal(t, http.StatusConflict, recorder.Code)
 	require.Contains(t, recorder.Body.String(), "incoming invoices")
 }
+
+// Receipts appear on the customer's statement as funding, and nothing else
+// changes: no settlement record, no paid state. Wallet credit arriving is a
+// fact about the customer's balance, not about any invoice.
+func TestFundingAppearsOnTheStatementWithoutMarkingAnythingPaid(t *testing.T) {
+	db := setupSettlementControllerDB(t)
+	previous := common.QuotaPerUnit
+	common.QuotaPerUnit = 500_000
+	t.Cleanup(func() { common.QuotaPerUnit = previous })
+	startTime := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.Local).Unix()
+	require.NoError(t, db.Create(&model.User{Id: 1, Username: "acme", Group: "GenAI", Password: "x", AffCode: "g1"}).Error)
+	require.NoError(t, db.Create(&model.Log{
+		UserId: 1, Username: "acme", Group: "GenAI", CreatedAt: startTime + 10,
+		Type: model.LogTypeConsume, ModelName: "gpt-4o", Quota: 500_000,
+	}).Error)
+	require.NoError(t, db.Create(&model.TopUp{
+		UserId: 1, Status: common.TopUpStatusSuccess, Money: 25, PaymentProvider: model.PaymentProviderStripe,
+		TradeNo: "wallet-credit-2", CompleteTime: startTime + 20,
+	}).Error)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet,
+		"/api/pricing/settlement?kind=customer&start=2026-07-01&end=2026-07-31", nil)
+	GetSettlements(ctx)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	response := recorder.Body.String()
+	require.Contains(t, response, `"funding":[{"user_id":1,"username":"acme","orders":1,"grants":0,"credited_usd":25}]`)
+	require.Contains(t, response, `"funded_usd":25`)
+	require.Contains(t, response, `"counterparty":"pricing-group:GenAI"`, "the money sits on the customer the login belongs to")
+	require.NotContains(t, response, `"settlement":`)
+	require.NotContains(t, response, `"payments"`)
+	require.NotContains(t, strings.ToLower(response), "topup")
+}

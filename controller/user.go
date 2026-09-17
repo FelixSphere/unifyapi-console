@@ -1212,7 +1212,7 @@ func ManageUser(c *gin.Context) {
 				common.ApiErrorI18n(c, i18n.MsgUserQuotaChangeZero)
 				return
 			}
-			if err := model.IncreaseUserQuota(user.Id, req.Value, true); err != nil {
+			if _, err := model.AdjustQuotaByOperator(user.Id, "add", req.Value); err != nil {
 				common.ApiError(c, err)
 				return
 			}
@@ -1224,7 +1224,7 @@ func ManageUser(c *gin.Context) {
 				common.ApiErrorI18n(c, i18n.MsgUserQuotaChangeZero)
 				return
 			}
-			if err := model.DecreaseUserQuota(user.Id, req.Value, true); err != nil {
+			if _, err := model.AdjustQuotaByOperator(user.Id, "subtract", req.Value); err != nil {
 				common.ApiError(c, err)
 				return
 			}
@@ -1232,17 +1232,13 @@ func ManageUser(c *gin.Context) {
 				"quota": logger.LogQuota(req.Value),
 			})
 		case "override":
-			oldQuota, err := model.GetUserQuota(user.Id, true)
+			delta, err := model.AdjustQuotaByOperator(user.Id, "override", req.Value)
 			if err != nil {
 				common.ApiError(c, err)
 				return
 			}
-			if err := model.SetUserQuota(user.Id, req.Value); err != nil {
-				common.ApiError(c, err)
-				return
-			}
 			recordManageAuditFor(c, user.Id, "user.quota_override", map[string]interface{}{
-				"from": logger.LogQuota(oldQuota),
+				"from": logger.LogQuota(req.Value - delta),
 				"to":   logger.LogQuota(req.Value),
 			})
 		default:

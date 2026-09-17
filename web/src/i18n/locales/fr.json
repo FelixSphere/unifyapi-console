@@ -2,6 +2,10 @@
   "translation": {
     "Approx. to pay:": "À payer (env.) :",
     "By user": "Par utilisateur",
+    "Funded by user": "Financé par utilisateur",
+    "Top-ups": "Recharges",
+    "Admin grants": "Ajustements admin",
+    "Credited": "Crédité",
     "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Estimation seulement. Stripe fixe la devise et le montant définitifs au paiement, à son taux en direct.",
     "Every model marked below is already discounted for new accounts. No code needed.": "Chaque modèle marqué ci-dessous est déjà remisé pour les nouveaux comptes. Aucun code requis.",
     "Sign up and save": "Inscrivez-vous et économisez",

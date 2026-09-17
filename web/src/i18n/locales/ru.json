@@ -2,6 +2,10 @@
   "translation": {
     "Approx. to pay:": "Примерно к оплате:",
     "By user": "По пользователям",
+    "Funded by user": "Пополнения по пользователям",
+    "Top-ups": "Пополнения",
+    "Admin grants": "Корректировки админа",
+    "Credited": "Зачислено",
     "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "Только оценка. Итоговую валюту и сумму Stripe определяет при оплате по своему текущему курсу.",
     "Every model marked below is already discounted for new accounts. No code needed.": "Все отмеченные ниже модели уже со скидкой для новых аккаунтов. Промокод не нужен.",
     "Sign up and save": "Зарегистрируйтесь и экономьте",
