@@ -30,7 +30,10 @@ func partnershipProgramPayload(c *gin.Context) (*model.PartnershipProgram, bool)
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return nil, false
 	}
-	if !ratio_setting.ContainsGroupRatio(program.Group) {
+	// An empty group is how an operator says this program has no default
+	// customer. There is no group to find in Group Pricing, and requiring one
+	// here would refuse the request before the model ever sees it.
+	if program.Group != "" && !ratio_setting.ContainsGroupRatio(program.Group) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "group must exist in Group Pricing"})
 		return nil, false
 	}
