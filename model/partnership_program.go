@@ -589,6 +589,14 @@ func getPartnershipOfferByCode(tx *gorm.DB, code string, lock bool) (*Partnershi
 	if !partnershipProgramActive(&program, time.Now().Unix()) {
 		return nil, ErrPartnershipProgramUnavailable
 	}
+	// A program with no group has no default customer, so there is nothing for
+	// this code to register anyone into. Serving the offer anyway would hand
+	// out an empty pricing group -- an account belonging to no customer, on no
+	// price list -- which is precisely what having no catch-all is meant to
+	// prevent.
+	if program.Group == "" {
+		return nil, ErrPartnershipProgramUnavailable
+	}
 	return &PartnershipOffer{
 		Program: program, CustomerName: program.Name, CustomerCode: program.Code,
 		CustomerGroup: program.Group,
