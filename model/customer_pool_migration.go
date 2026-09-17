@@ -11,6 +11,7 @@ package model
 import (
 	"fmt"
 
+	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
 )
 
@@ -35,6 +36,11 @@ type CustomerPoolBackfillResult struct {
 func BackfillCustomerPools(dryRun bool) (*CustomerPoolBackfillResult, error) {
 	result := &CustomerPoolBackfillResult{}
 	var moved []movedMember
+	// Members the partnership loop reached; the pricing-group loop below must
+	// not count them a second time, or a dry run promises more than a real
+	// run moves.
+	handled := map[int]bool{}
+	counted := map[string]bool{}
 	var customers []PartnershipCustomer
 	if err := DB.Where("is_default = ? AND removed_at = ?", false, 0).
 		Find(&customers).Error; err != nil {
@@ -50,6 +56,7 @@ func BackfillCustomerPools(dryRun bool) (*CustomerPoolBackfillResult, error) {
 			continue
 		}
 		result.Customers++
+		counted[customer.Group] = true
 
 		err := DB.Transaction(func(tx *gorm.DB) error {
 			tenantId := customer.TenantId
@@ -77,30 +84,74 @@ func BackfillCustomerPools(dryRun bool) (*CustomerPoolBackfillResult, error) {
 					}
 					return err
 				}
-				if user.TenantId == tenantId {
-					result.AlreadyPooled++
-					continue
-				}
-				carried, err := quotaCarriedInto(tx, &user)
+				handled[user.Id] = true
+				joined, err := result.admitTx(tx, &user, tenantId, dryRun)
 				if err != nil {
 					return err
 				}
-				if dryRun {
-					result.MembersMoved++
-					result.QuotaCarried += carried
-					continue
+				if joined {
+					moved = append(moved, movedMember{UserId: user.Id, TenantId: tenantId})
 				}
-				if err := JoinCustomerPoolTx(tx, user.Id, tenantId); err != nil {
-					result.Skipped = append(result.Skipped,
-						fmt.Sprintf("user %d (%s): %s", user.Id, user.Username, err.Error()))
-					continue
+			}
+			if dryRun {
+				return errDryRun
+			}
+			return nil
+		})
+		if err != nil && err != errDryRun {
+			return nil, err
+		}
+	}
+	// UNIFYAPI-BRAND: a pricing group is a customer too. Logins the operator
+	// created by hand each hold their money in a wallet of their own; move them
+	// onto the group's. See model/customer_wallet.go for which groups count.
+	var groups []string
+	if err := DB.Model(&User{}).Where("role < ?", common.RoleAdminUser).
+		Distinct().Pluck("group", &groups).Error; err != nil {
+		return nil, err
+	}
+	for _, group := range groups {
+		customer, err := isCustomerGroupTx(DB, group)
+		if err != nil {
+			return nil, err
+		}
+		if !customer {
+			continue
+		}
+		var logins []User
+		if err := DB.Where(map[string]any{"group": group}).Where("role < ?", common.RoleAdminUser).
+			Order("id").Find(&logins).Error; err != nil {
+			return nil, err
+		}
+		var members []User
+		for _, login := range logins {
+			if !handled[login.Id] {
+				members = append(members, login)
+			}
+		}
+		if len(members) == 0 {
+			continue
+		}
+		if !counted[group] {
+			result.Customers++
+		}
+		err = DB.Transaction(func(tx *gorm.DB) error {
+			walletId, err := customerWalletTx(tx, group, group, slugFromName("customer-"+group))
+			if err != nil {
+				return err
+			}
+			for _, member := range members {
+				var user User
+				if err := tx.First(&user, member.Id).Error; err != nil {
+					return err
 				}
-				result.MembersMoved++
-				result.QuotaCarried += carried
-				// Caches are cleared after the transaction commits, not here.
-				// Clearing them inside it lets a concurrent read repopulate the
-				// pre-commit balance, which nothing would then clear again.
-				moved = append(moved, movedMember{UserId: user.Id, TenantId: tenantId})
+				joined, err := result.admitTx(tx, &user, walletId, dryRun)
+				if err != nil {
+					return err
+				}
+				if joined {
+					moved = append(moved, movedMember{UserId: user.Id, TenantId: walletId})
+				}
 			}
 			if dryRun {
 				return errDryRun
@@ -116,6 +167,35 @@ func BackfillCustomerPools(dryRun bool) (*CustomerPoolBackfillResult, error) {
 		_ = invalidateBillingQuotaCache(BillingEntity{UserId: member.UserId, TenantId: member.TenantId})
 	}
 	return result, nil
+}
+
+// admitTx moves one member into a wallet, or in a dry run only counts what
+// would move. It reports whether a real move happened, so the caller can clear
+// caches after the transaction commits: clearing them inside it lets a
+// concurrent read repopulate the pre-commit balance, which nothing would then
+// clear again.
+func (result *CustomerPoolBackfillResult) admitTx(tx *gorm.DB, user *User, tenantId int, dryRun bool) (bool, error) {
+	if user.TenantId == tenantId {
+		result.AlreadyPooled++
+		return false, nil
+	}
+	carried, err := quotaCarriedInto(tx, user)
+	if err != nil {
+		return false, err
+	}
+	if dryRun {
+		result.MembersMoved++
+		result.QuotaCarried += carried
+		return false, nil
+	}
+	if err := JoinCustomerPoolTx(tx, user.Id, tenantId); err != nil {
+		result.Skipped = append(result.Skipped,
+			fmt.Sprintf("user %d (%s): %s", user.Id, user.Username, err.Error()))
+		return false, nil
+	}
+	result.MembersMoved++
+	result.QuotaCarried += carried
+	return true, nil
 }
 
 // movedMember is a member whose caches need clearing once their move has

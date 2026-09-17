@@ -767,6 +767,12 @@ func UpdateUser(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// A group change moves the login onto that customer's wallet and may have
+	// carried a balance into it; the balance cached for that wallet is stale.
+	if err := model.InvalidateBillingQuotaCacheForUser(updatedUser.Id); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	recordManageAuditFor(c, updatedUser.Id, "user.update", map[string]interface{}{
 		"username": originUser.Username,
 		"id":       updatedUser.Id,

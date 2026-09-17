@@ -262,7 +262,9 @@ func migrateDB() error {
 		&Channel{},
 		&Token{},
 		&User{},
-		&Tenant{}, // UNIFYAPI-BRAND: see model/tenant.go
+		&Tenant{},         // UNIFYAPI-BRAND: see model/tenant.go
+		&CustomerWallet{}, // UNIFYAPI-BRAND: see model/customer_wallet.go
+
 		&CreditPool{},
 		&CreditPoolLot{},
 		&TenantCreditGrant{},
@@ -353,7 +355,9 @@ func migrateDBFast() error {
 		{&Channel{}, "Channel"},
 		{&Token{}, "Token"},
 		{&User{}, "User"},
-		{&Tenant{}, "Tenant"}, // UNIFYAPI-BRAND: see model/tenant.go
+		{&Tenant{}, "Tenant"},                 // UNIFYAPI-BRAND: see model/tenant.go
+		{&CustomerWallet{}, "CustomerWallet"}, // UNIFYAPI-BRAND: see model/customer_wallet.go
+
 		{&PartnershipProgram{}, "PartnershipProgram"},
 		{&PartnershipCustomer{}, "PartnershipCustomer"},
 		{&PartnershipEnrollment{}, "PartnershipEnrollment"},

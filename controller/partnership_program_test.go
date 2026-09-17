@@ -31,7 +31,7 @@ func setupPartnershipControllerTest(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&model.Option{}, &model.PartnershipProgram{}, &model.PartnershipCustomer{}, &model.PartnershipEnrollment{},
+		&model.Option{}, &model.PartnershipProgram{}, &model.PartnershipCustomer{}, &model.CustomerWallet{}, &model.PartnershipEnrollment{},
 	))
 	previousDB := model.DB
 	previousType := common.MainDatabaseType()

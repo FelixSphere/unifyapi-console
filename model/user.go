@@ -814,6 +814,9 @@ func (user *User) Edit(updatePassword bool) error {
 	if err := updateUserCache(*user); err != nil {
 		return err
 	}
+	if err := InvalidateBillingQuotaCacheForUser(user.Id); err != nil {
+		return err
+	}
 	if user.AuthVersion > previousAuthVersion {
 		_, err := RevokeAllUserSessions(user.Id, "user_security_changed")
 		return err
@@ -852,8 +855,16 @@ func (user *User) EditWithTx(tx *gorm.DB, updatePassword bool) error {
 			return err
 		}
 	}
+	previous := current
 	if err = tx.Model(&current).Updates(updates).Error; err != nil {
 		return err
+	}
+	// UNIFYAPI-BRAND: the pricing group is the customer, so changing it moves
+	// the login onto that customer's wallet. See model/customer_wallet.go.
+	if previous.Group != newUser.Group && !IsStaffRole(previous.Role) {
+		if err = reattachWalletTx(tx, previous, newUser.Group); err != nil {
+			return err
+		}
 	}
 	return tx.First(user, user.Id).Error
 }

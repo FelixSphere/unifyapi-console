@@ -195,6 +195,27 @@ func EnsureTenantForUserTx(tx *gorm.DB, userId int) (*Tenant, error) {
 		}
 		return tenant, nil
 	}
+	// A pricing group is a customer, and a customer has one wallet. Only a
+	// `default` login gets a wallet of its own. See model/customer_wallet.go.
+	customer, err := isCustomerGroupTx(tx, user.Group)
+	if err != nil {
+		return nil, err
+	}
+	if customer {
+		walletId, err := customerWalletTx(tx, user.Group, user.Group, slugFromName("customer-"+user.Group))
+		if err != nil {
+			return nil, err
+		}
+		if err := JoinCustomerPoolTx(tx, user.Id, walletId); err != nil {
+			return nil, err
+		}
+		if err := claimTeamTenantOwner(tx, walletId, user.Id); err != nil {
+			return nil, err
+		}
+		tenant := &Tenant{}
+		err = tx.First(tenant, "id = ?", walletId).Error
+		return tenant, err
+	}
 
 	name := user.DisplayName
 	if name == "" {
