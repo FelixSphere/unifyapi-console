@@ -393,3 +393,93 @@ func TestCustomerPaymentsCombineCompanyUsersAndKeepTheOriginalCompany(t *testing
 	assert.InDelta(t, 130, payments[key][0].CreditedUSD, 1e-9)
 	assert.NotContains(t, payments, CustomerPricingGroupKey("UnifyAI"))
 }
+
+func TestOperatorAdjustmentsCountAsRawQuota(t *testing.T) {
+	previous := common.QuotaPerUnit
+	common.QuotaPerUnit = 500_000
+	t.Cleanup(func() { common.QuotaPerUnit = previous })
+	// An operator adjustment writes the quota delta into Amount, like Creem.
+	assert.InDelta(t, 20.0, creditedUSD(PaymentProviderAdmin, 10_000_000, 0), 1e-9)
+	assert.InDelta(t, -20.0, creditedUSD(PaymentProviderAdmin, -10_000_000, 0), 1e-9, "a subtraction is negative funding")
+}
+
+func TestFetchCustomerFundingLabelsLoginsAndKeepsTheOriginalCompany(t *testing.T) {
+	setupSettlementTestDB(t)
+	previous := common.QuotaPerUnit
+	common.QuotaPerUnit = 500_000
+	t.Cleanup(func() { common.QuotaPerUnit = previous })
+	const start, end = 1_754_000_000, 1_756_600_000
+
+	require.NoError(t, DB.Create(&User{Id: 10, Username: "ycwtest", Group: "UnifyAI", Password: "x", AffCode: "a1"}).Error)
+	require.NoError(t, DB.Create(&User{Id: 13, Username: "Aaron", Group: "GenAI", Password: "x", AffCode: "a2"}).Error)
+	rows := []*TopUp{
+		{UserId: 10, PaymentProvider: PaymentProviderStripe, Money: 20, TradeNo: "f1", Status: common.TopUpStatusSuccess, CustomerGroup: "UnifyAI", CreateTime: start, CompleteTime: start + 1},
+		{UserId: 10, PaymentProvider: PaymentProviderStripe, Money: 5, TradeNo: "f2", Status: common.TopUpStatusSuccess, CustomerGroup: "UnifyAI", CreateTime: start, CompleteTime: start + 2},
+		// Paid while Aaron was in UnifyAI; he has since been moved to GenAI. The
+		// money stays with the company it was paid into.
+		{UserId: 13, PaymentProvider: PaymentProviderStripe, Money: 10, TradeNo: "f3", Status: common.TopUpStatusSuccess, CustomerGroup: "UnifyAI", CreateTime: start, CompleteTime: start + 3},
+		// A pre-snapshot row: falls back to the login's current group.
+		{UserId: 13, PaymentProvider: PaymentProviderAdmin, Amount: 5_000_000, TradeNo: "f4", Status: common.TopUpStatusSuccess, CreateTime: start, CompleteTime: start + 4},
+		// A login deleted since: no username, no group, still counted.
+		{UserId: 99, PaymentProvider: PaymentProviderWaffo, Amount: 7, TradeNo: "f5", Status: common.TopUpStatusSuccess, CreateTime: start, CompleteTime: start + 5},
+		// Outside the window.
+		{UserId: 10, PaymentProvider: PaymentProviderStripe, Money: 999, TradeNo: "f6", Status: common.TopUpStatusSuccess, CustomerGroup: "UnifyAI", CreateTime: start, CompleteTime: end + 1},
+	}
+	for _, row := range rows {
+		require.NoError(t, DB.Session(&gorm.Session{SkipHooks: true}).Create(row).Error)
+	}
+
+	funding, err := FetchCustomerFunding(start, end)
+	require.NoError(t, err)
+	require.Len(t, funding, 4)
+	assert.Equal(t, FundingRow{UserID: 10, Username: "ycwtest", CustomerGroup: "UnifyAI", Provider: PaymentProviderStripe, Orders: 2, CreditedUSD: 25, ChargedMoney: 25}, funding[0])
+	assert.Equal(t, FundingRow{UserID: 13, Username: "Aaron", CustomerGroup: "GenAI", Provider: PaymentProviderAdmin, Orders: 1, CreditedUSD: 10}, funding[1])
+	assert.Equal(t, FundingRow{UserID: 13, Username: "Aaron", CustomerGroup: "UnifyAI", Provider: PaymentProviderStripe, Orders: 1, CreditedUSD: 10, ChargedMoney: 10}, funding[2])
+	assert.Equal(t, FundingRow{UserID: 99, Username: "", CustomerGroup: "", Provider: PaymentProviderWaffo, Orders: 1, CreditedUSD: 7}, funding[3])
+}
+
+func TestAnOperatorAdjustmentLeavesALedgerRow(t *testing.T) {
+	setupSettlementTestDB(t)
+	require.NoError(t, DB.Create(&User{Id: 4, Username: "Chris", Group: "Chinhin", Quota: 1_000_000, Password: "x", AffCode: "c1"}).Error)
+
+	delta, err := AdjustQuotaByOperator(4, "add", 51_000_000)
+	require.NoError(t, err)
+	assert.Equal(t, 51_000_000, delta)
+	delta, err = AdjustQuotaByOperator(4, "subtract", 1_000_000)
+	require.NoError(t, err)
+	assert.Equal(t, -1_000_000, delta)
+	delta, err = AdjustQuotaByOperator(4, "override", 60_000_000)
+	require.NoError(t, err)
+	assert.Equal(t, 9_000_000, delta, "an override is recorded as the delta it actually moved")
+	delta, err = AdjustQuotaByOperator(4, "override", 60_000_000)
+	require.NoError(t, err)
+	assert.Zero(t, delta, "an override to the current balance moves nothing and records nothing")
+
+	quota, err := GetUserQuota(4, true)
+	require.NoError(t, err)
+	assert.Equal(t, 60_000_000, quota)
+
+	var ledger []TopUp
+	require.NoError(t, DB.Where("user_id = ?", 4).Order("id").Find(&ledger).Error)
+	require.Len(t, ledger, 3)
+	for _, row := range ledger {
+		assert.Equal(t, PaymentProviderAdmin, row.PaymentProvider)
+		assert.Equal(t, common.TopUpStatusSuccess, row.Status)
+		assert.NotZero(t, row.CompleteTime, "the funding window is bounded by completion")
+		assert.Equal(t, "Chinhin", row.CustomerGroup, "stamped with the company it was paid into")
+	}
+	assert.EqualValues(t, 51_000_000, ledger[0].Amount)
+	assert.EqualValues(t, -1_000_000, ledger[1].Amount)
+	assert.EqualValues(t, 9_000_000, ledger[2].Amount)
+
+	// A grant to a login that does not exist fails, and the row says so
+	// instead of pretending the credit arrived.
+	_, err = AdjustQuotaByOperator(404, "add", 5)
+	require.Error(t, err)
+	var failed TopUp
+	require.NoError(t, DB.Where("user_id = ?", 404).First(&failed).Error)
+	assert.Equal(t, common.TopUpStatusFailed, failed.Status)
+
+	_, err = AdjustQuotaByOperator(4, "halve", 5)
+	require.Error(t, err)
+}

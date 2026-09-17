@@ -56,6 +56,9 @@ const (
 	PaymentMethodWaffo        = "waffo"
 	PaymentMethodWaffoPancake = "waffo_pancake"
 	PaymentMethodBalance      = "balance"
+	// UNIFYAPI-BRAND: an operator's hand adjustment, recorded like a payment so
+	// receipts views see it. See model/operator_grant.go.
+	PaymentMethodAdmin = "admin"
 )
 
 const (
@@ -65,6 +68,7 @@ const (
 	PaymentProviderWaffo        = "waffo"
 	PaymentProviderWaffoPancake = "waffo_pancake"
 	PaymentProviderBalance      = "balance"
+	PaymentProviderAdmin        = "admin"
 )
 
 var (

@@ -270,6 +270,16 @@ export function userLinesAreBalanced(statement: Statement): boolean {
   )
 }
 
+/**
+ * Funding lines are a breakdown of `funded_usd` by login and must add up to
+ * it, the same way user lines add up to the amount.
+ */
+export function fundingLinesAreBalanced(statement: Statement): boolean {
+  if (!statement.funding?.length) return true
+  const credited = statement.funding.reduce((sum, f) => sum + f.credited_usd, 0)
+  return Math.abs(credited - (statement.funded_usd ?? 0)) <= 1e-8
+}
+
 export function deriveStatement(statement: Statement): StatementStep[] {
   if (statement.kind === 'customer') {
     return [

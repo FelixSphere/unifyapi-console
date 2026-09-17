@@ -41,7 +41,15 @@ func statementRowsForWindow(kind service.StatementKind, start, end string) ([]se
 	if err != nil {
 		return nil, nil, false, err
 	}
-	return service.BuildStatements(rows, kind, start, end), rows, truncated, nil
+	statements := service.BuildStatements(rows, kind, start, end)
+	if kind == service.StatementKindCustomer {
+		funding, err := model.FetchCustomerFunding(from, to)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		statements = service.AttachFunding(statements, kind, funding, start, end)
+	}
+	return statements, rows, truncated, nil
 }
 
 // settlementRow pairs what the period looks like NOW with what was frozen when

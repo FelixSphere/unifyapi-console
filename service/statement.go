@@ -122,6 +122,23 @@ type StatementUserLine struct {
 	AmountUSD        float64 `json:"amount_usd"`
 }
 
+// StatementFundingLine is one login's receipts on a customer statement: what
+// they paid in (or an operator granted them) during the period, in the same
+// grain as StatementUserLine so "who spent it" and "who funded it" sit side by
+// side. Keyed on the top-up's user id and labelled from the live users table
+// when the login still exists, by id when it does not.
+type StatementFundingLine struct {
+	UserID   int    `json:"user_id"`
+	Username string `json:"username"`
+	// Orders are gateway top-ups; Grants are operator adjustments, which can
+	// be negative. Neither is a payment against an invoice -- wallet credit is
+	// prepaid, and TestCustomerSettlementResponseNeverTreatsTopUpsAsInvoicePayments
+	// keeps that word out of this document.
+	Orders      int64   `json:"orders"`
+	Grants      int64   `json:"grants"`
+	CreditedUSD float64 `json:"credited_usd"`
+}
+
 // Statement is one counterparty's activity for one period.
 type Statement struct {
 	Kind StatementKind `json:"kind"`
@@ -145,12 +162,15 @@ type Statement struct {
 	// Users is the same total broken down by login. Customer side only: a
 	// supplier is owed for models on channels, not for who called them.
 	Users []StatementUserLine `json:"users,omitempty"`
-
-	Requests         int64   `json:"requests"`
-	PromptTokens     int64   `json:"prompt_tokens"`
-	CachedTokens     int64   `json:"cached_tokens"`
-	CompletionTokens int64   `json:"completion_tokens"`
-	AmountUSD        float64 `json:"amount_usd"`
+	// Funding is what the customer's logins paid in during the period, by
+	// login; FundedUSD is its total. Customer side only. See AttachFunding.
+	Funding          []StatementFundingLine `json:"funding,omitempty"`
+	FundedUSD        float64                `json:"funded_usd,omitempty"`
+	Requests         int64                  `json:"requests"`
+	PromptTokens     int64                  `json:"prompt_tokens"`
+	CachedTokens     int64                  `json:"cached_tokens"`
+	CompletionTokens int64                  `json:"completion_tokens"`
+	AmountUSD        float64                `json:"amount_usd"`
 
 	// UnpricedRequests is vendor-side only: traffic whose model has no catalog
 	// price, so it contributes nothing to AmountUSD. A vendor statement with
@@ -274,6 +294,85 @@ func BuildStatements(rows []model.UsageRow, kind StatementKind, periodStart, per
 		return out[i].Counterparty < out[j].Counterparty
 	})
 	return out
+}
+
+// AttachFunding puts the period's receipts on the customer statements they
+// were paid into, one line per login. A customer that paid but did not consume
+// still gets a statement -- with no usage lines -- because money that arrived
+// must appear somewhere. Vendor statements are returned unchanged: a supplier
+// is paid, it does not pay us.
+func AttachFunding(statements []Statement, kind StatementKind, rows []model.FundingRow, periodStart, periodEnd string) []Statement {
+	if kind != StatementKindCustomer || len(rows) == 0 {
+		return statements
+	}
+	out := make([]Statement, len(statements))
+	copy(out, statements)
+	index := map[string]int{}
+	for i := range out {
+		index[out[i].Counterparty] = i
+	}
+	byUser := map[string]map[int]*StatementFundingLine{}
+	for _, row := range rows {
+		key, label, group := fundingParty(row)
+		i, ok := index[key]
+		if !ok {
+			out = append(out, Statement{
+				Kind: kind, Counterparty: key, Label: label, Group: group,
+				PeriodStart: periodStart, PeriodEnd: periodEnd, Lines: []StatementLine{},
+			})
+			i = len(out) - 1
+			index[key] = i
+		}
+		lines, ok := byUser[key]
+		if !ok {
+			lines = map[int]*StatementFundingLine{}
+			byUser[key] = lines
+		}
+		line, ok := lines[row.UserID]
+		if !ok {
+			name := row.Username
+			if name == "" {
+				name = "user " + strconv.Itoa(row.UserID)
+			}
+			line = &StatementFundingLine{UserID: row.UserID, Username: name}
+			lines[row.UserID] = line
+		}
+		if row.Provider == model.PaymentProviderAdmin {
+			line.Grants += row.Orders
+		} else {
+			line.Orders += row.Orders
+		}
+		line.CreditedUSD += row.CreditedUSD
+		out[i].FundedUSD += row.CreditedUSD
+	}
+	for key, lines := range byUser {
+		sorted := make([]StatementFundingLine, 0, len(lines))
+		for _, line := range lines {
+			sorted = append(sorted, *line)
+		}
+		sort.SliceStable(sorted, func(a, b int) bool {
+			if sorted[a].CreditedUSD != sorted[b].CreditedUSD {
+				return sorted[a].CreditedUSD > sorted[b].CreditedUSD
+			}
+			return sorted[a].UserID < sorted[b].UserID
+		})
+		out[index[key]].Funding = sorted
+	}
+	return out
+}
+
+// fundingParty keys a receipt the way statementParty keys usage, so the money
+// lands on the same statement as the consumption it paid for.
+func fundingParty(row model.FundingRow) (key, label, group string) {
+	if row.CustomerGroup == "" || row.CustomerGroup == systemDefaultGroup {
+		key = strconv.Itoa(row.UserID)
+		label = row.Username
+		if label == "" {
+			label = "user " + key
+		}
+		return key, label, row.CustomerGroup
+	}
+	return model.CustomerPricingGroupKey(row.CustomerGroup), row.CustomerGroup, row.CustomerGroup
 }
 
 // statementAmount is the whole asymmetry between the two directions, in one

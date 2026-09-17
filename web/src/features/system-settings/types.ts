@@ -684,6 +684,15 @@ export type StatementUserLine = {
   amount_usd: number
 }
 
+/** One login's receipts on a customer statement: gateway top-ups plus operator grants. */
+export type StatementFundingLine = {
+  user_id: number
+  username: string
+  orders: number
+  grants: number
+  credited_usd: number
+}
+
 export type Statement = {
   kind: StatementKind
   counterparty: string
@@ -694,6 +703,9 @@ export type Statement = {
   lines: StatementLine[]
   /** Customer side only: the same total broken down by login. */
   users?: StatementUserLine[]
+  /** Customer side only: what the customer's logins paid in this period, by login. */
+  funding?: StatementFundingLine[]
+  funded_usd?: number
   requests: number
   prompt_tokens: number
   cached_tokens: number

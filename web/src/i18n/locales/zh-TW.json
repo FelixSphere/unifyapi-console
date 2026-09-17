@@ -2,6 +2,10 @@
   "translation": {
     "Approx. to pay:": "預計支付：",
     "By user": "按使用者",
+    "Funded by user": "按使用者充值",
+    "Top-ups": "充值筆數",
+    "Admin grants": "後台調整",
+    "Credited": "到帳金額",
     "Estimate only. Stripe sets the final currency and amount at checkout, using its own live rate.": "僅為估算。最終貨幣與金額由 Stripe 在支付頁按其即時匯率決定。",
     "Every model marked below is already discounted for new accounts. No code needed.": "下方帶標記的模型對新帳戶已自動打折，無需優惠碼。",
     "Sign up and save": "註冊即享優惠",
