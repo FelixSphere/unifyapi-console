@@ -159,6 +159,11 @@ curl -s -X PUT "$CONSOLE/api/pricing/discount" \
 2. 新建一个分组（比如 `Enterprise-Acme` = 0.7），在 `UserUsableGroups` 里授权
 3. **用户页**把该客户的分组改成它
 
+新客户的起点是 **0.9**：Builder 团队接入或 partnership program 自动建出的分组，
+`GroupRatio` 一律以 0.9 写入（`model/builder_customer_provision.go` 的 `provisionedGroupRatio`），
+`TopupGroupRatio` 保持 1（折扣只打在账单上，不打在充值上）。已存在的分组永远不会被重新定价；
+之后要给某个团队单独定价，改它的分组倍率或按模型覆盖即可。
+
 想给"某个客户买某个分组"再加一层特价，用 `GroupGroupRatio`（分组特殊倍率）。
 
 ### 两层折扣是相乘的

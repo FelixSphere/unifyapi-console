@@ -65,7 +65,7 @@ func TestProvisioningATeamPreservesEveryExistingPrice(t *testing.T) {
 		assert.InDelta(t, ratio, after[group], 1e-9, "existing group %q was altered or dropped", group)
 	}
 	assert.Len(t, after, len(before)+1, "exactly one group added")
-	assert.InDelta(t, 1, after["Nusa Labs"], 1e-9, "a new team starts at list price")
+	assert.InDelta(t, 0.9, after["Nusa Labs"], 1e-9, "a new team starts at 90% of the published price -- every new customer does")
 }
 
 // Reconnecting must never reprice a team. A member joining a discounted team
@@ -151,7 +151,9 @@ func TestAProvisionedGroupIsRegisteredEverywhereAGroupHasToBe(t *testing.T) {
 	}
 
 	assert.Contains(t, read("GroupRatio"), "Nusa Labs", "billing ratio")
+	assert.InDelta(t, 0.9, read("GroupRatio")["Nusa Labs"], 1e-9, "billed at 90% of the published price")
 	assert.Contains(t, read("TopupGroupRatio"), "Nusa Labs", "top-up ratio -- shows as 'Not set' without this")
+	assert.InDelta(t, 1, read("TopupGroupRatio")["Nusa Labs"], 1e-9, "the discount is on the bill, never on what a payment buys")
 	usable := read("UserUsableGroups")
 	assert.Contains(t, usable, "Nusa Labs", "user-selectable -- the group is invisible in the pricing editor without this")
 	assert.Equal(t, "Nusa Labs", usable["Nusa Labs"], "labelled with its own name")
