@@ -34,13 +34,19 @@ import (
 // commonGroupCol holds the portable form. This scans for the mistake instead
 // of relying on a test that cannot reach it.
 func TestNoReservedWordIsQuotedForOneDialectOnly(t *testing.T) {
-	// A Select with a documented portable retry is a different, deliberate
-	// case; this guards the clauses that have no fallback.
-	clauses := []string{"Where(", "Joins(", "Having(", "Order("}
+	// Any clause that reaches the database. An earlier version scanned only
+	// WHERE-shaped clauses on the theory that a Select with a retry was safe;
+	// it was not -- the retry meant every call on PostgreSQL failed, logged a
+	// syntax error, and ran twice. Guessing wrong and recovering is still
+	// getting it wrong.
+	clauses := []string{"Where(", "Joins(", "Having(", "Order(", "Select(", "Pluck(", "Group("}
 
 	var offences []string
-	for _, dir := range []string{".", "../controller", "../service"} {
+	for _, dir := range []string{".", "../controller", "../service", "../relay", "../middleware"} {
 		entries, err := os.ReadDir(dir)
+		if os.IsNotExist(err) {
+			continue
+		}
 		require.NoError(t, err)
 		for _, entry := range entries {
 			name := entry.Name()
