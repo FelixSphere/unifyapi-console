@@ -177,10 +177,13 @@ func TestAPartnershipTeamAndItsPricingGroupAreTheSameWallet(t *testing.T) {
 	program := setupPoolTest(t)
 	require.NoError(t, ProvisionBuilderCustomer(program.Name, "Acme"))
 	teamWallet := teamTenant(t, program.Id, "Acme")
+	var team PartnershipCustomer
+	require.NoError(t, DB.Where("program_id = ? AND name = ?", program.Id, "Acme").First(&team).Error)
 
-	// A login the operator adds by hand to the team's pricing group is a
+	// A login the operator adds by hand to the team's pricing group -- which
+	// since #126 is namespaced by program, not the bare team name -- is a
 	// member of that customer, not a second customer with the same name.
-	dan := adminCreates(t, "dan", "Acme")
+	dan := adminCreates(t, "dan", team.Group)
 	assert.Equal(t, teamWallet, walletOf(t, dan.Id).TenantId)
 }
 
@@ -246,11 +249,11 @@ func TestTheDryRunPromisesWhatTheRealRunMovesForAMixedCustomer(t *testing.T) {
 	require.NoError(t, ProvisionBuilderCustomer(program.Name, "Acme"))
 	var customer PartnershipCustomer
 	require.NoError(t, DB.Where("program_id = ? AND name = ?", program.Id, "Acme").First(&customer).Error)
-	enrolled := legacySoloWallet(t, "fay", "Acme", 2_000_000)
+	enrolled := legacySoloWallet(t, "fay", customer.Group, 2_000_000)
 	require.NoError(t, DB.Create(&PartnershipEnrollment{
-		ProgramId: program.Id, CustomerId: customer.Id, CustomerGroup: "Acme", UserId: enrolled.Id,
+		ProgramId: program.Id, CustomerId: customer.Id, CustomerGroup: customer.Group, UserId: enrolled.Id,
 	}).Error)
-	byHand := legacySoloWallet(t, "gus", "Acme", 3_000_000)
+	byHand := legacySoloWallet(t, "gus", customer.Group, 3_000_000)
 	before := totalCredit(t)
 
 	dry, err := BackfillCustomerPools(true)
