@@ -134,6 +134,17 @@ func builderConflictBody(err error) gin.H {
 	return body
 }
 
+func writeBuilderResolutionError(c *gin.Context, err error) {
+	if errors.Is(err, model.ErrPartnershipProgramUnavailable) ||
+		errors.Is(err, model.ErrPartnershipCustomerUnavailable) ||
+		errors.Is(err, model.ErrPartnershipCustomerConflict) {
+		c.JSON(http.StatusConflict, builderConflictBody(err))
+		return
+	}
+	// Storage/provisioning failures are not evidence of a bad Program selector.
+	c.JSON(http.StatusServiceUnavailable, gin.H{"code": "UNIFY_INTEGRATION_UNAVAILABLE"})
+}
+
 // BuilderIntegration accepts only server-signed assertions, never a browser's
 // claimed email or user id. The integration is disabled without its secret.
 func BuilderIntegration(c *gin.Context) {
@@ -148,6 +159,15 @@ func BuilderIntegration(c *gin.Context) {
 	if request.CustomerName != "" && !model.ValidBuilderProgramName(request.CustomerName) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "UNIFY_CUSTOMER_INVALID"})
 		return
+	}
+	// Check broken account links before provisioning teams or issuing grants.
+	// Otherwise a reconnect can write business data for an account that cannot
+	// be used, or falsely report success after finding the orphaned link again.
+	if c.Param("action") == "connect" || c.Param("action") == "claim" {
+		if _, _, err := model.GetBuilderIdentity(request.Subject); errors.Is(err, model.ErrBuilderAccountRepairRequired) {
+			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_ACCOUNT_REPAIR_REQUIRED"})
+			return
+		}
 	}
 	// The team name decides which customer an account is ENROLLED in, so it is
 	// only consulted where enrollment is established. A read must never fail
@@ -173,13 +193,13 @@ func BuilderIntegration(c *gin.Context) {
 		// behind.
 		if enrollmentName != "" && errors.Is(err, model.ErrPartnershipCustomerUnavailable) {
 			if provisionErr := model.ProvisionBuilderCustomer(request.ProgramName, enrollmentName); provisionErr != nil {
-				c.JSON(http.StatusConflict, builderConflictBody(provisionErr))
+				writeBuilderResolutionError(c, provisionErr)
 				return
 			}
 			offer, err = model.ResolveBuilderProgram(model.DB, selector, false)
 		}
 		if err != nil {
-			c.JSON(http.StatusConflict, builderConflictBody(err))
+			writeBuilderResolutionError(c, err)
 			return
 		}
 	}
@@ -190,6 +210,10 @@ func BuilderIntegration(c *gin.Context) {
 			return
 		}
 		_, err := model.ConnectBuilderIdentityWithProgram(request.Subject, request.Email, selector, request.ManagementToken)
+		if errors.Is(err, model.ErrBuilderAccountRepairRequired) {
+			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_ACCOUNT_REPAIR_REQUIRED"})
+			return
+		}
 		if request.ProgramName != "" && (errors.Is(err, model.ErrPartnershipProgramUnavailable) ||
 			errors.Is(err, model.ErrPartnershipCustomerUnavailable) ||
 			errors.Is(err, model.ErrPartnershipCustomerConflict)) {
@@ -227,6 +251,10 @@ func BuilderIntegration(c *gin.Context) {
 		return
 	}
 	link, user, err := model.GetBuilderIdentity(request.Subject)
+	if errors.Is(err, model.ErrBuilderAccountRepairRequired) {
+		c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_ACCOUNT_REPAIR_REQUIRED"})
+		return
+	}
 	if errors.Is(err, gorm.ErrRecordNotFound) && c.Param("action") == "workspace" {
 		c.JSON(http.StatusOK, gin.H{"connected": false})
 		return
@@ -285,6 +313,10 @@ func BuilderIntegration(c *gin.Context) {
 			return
 		}
 		if err := model.ClaimBuilderTeamGrantWithProgram(request.Subject, selector); err != nil {
+			if errors.Is(err, model.ErrBuilderAccountRepairRequired) {
+				c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_ACCOUNT_REPAIR_REQUIRED"})
+				return
+			}
 			c.JSON(http.StatusConflict, gin.H{"code": "UNIFY_GRANT_UNAVAILABLE"})
 			return
 		}

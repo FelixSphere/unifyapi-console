@@ -62,6 +62,10 @@ var ErrBuilderStaffAccount = fmt.Errorf("administrator accounts cannot be linked
 var ErrBuilderAccountDisabled = fmt.Errorf("the linked account is disabled: %w", ErrBuilderUnavailable)
 var ErrBuilderOwnershipProof = fmt.Errorf("management token does not prove ownership of that address: %w", ErrBuilderUnavailable)
 
+// A saved identity with no live account needs an audited administrative repair.
+// Do not wrap ErrRecordNotFound: callers interpret that as a new identity.
+var ErrBuilderAccountRepairRequired = errors.New("linked Builder account requires repair")
+
 // builderAccountRefusal says which of those applies to a user record.
 func builderAccountRefusal(user *User) error {
 	if user == nil {
@@ -201,6 +205,9 @@ func GetBuilderIdentity(subject string) (*BuilderIdentity, *User, error) {
 		return nil, nil, err
 	}
 	user, err := GetUserById(link.UserId, false)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil, ErrBuilderAccountRepairRequired
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -325,6 +332,16 @@ func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderPr
 				return err
 			}
 			if err := tx.Where("subject = ?", subject).First(&link).Error; err == nil {
+				var linkedUser User
+				if err := lockForUpdate(tx).First(&linkedUser, link.UserId).Error; err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						return ErrBuilderAccountRepairRequired
+					}
+					return err
+				}
+				if err := builderAccountRefusal(&linkedUser); err != nil {
+					return err
+				}
 				if enrolledElsewhere(&link, offer) {
 					exists, err := programStillExists(tx, link.ProgramId)
 					if err != nil {
@@ -506,15 +523,18 @@ func ClaimBuilderTeamGrantWithProgram(subject string, selector BuilderProgramSel
 		if offer.Program.Id != link.ProgramId || offer.CustomerId != link.CustomerId {
 			return ErrBuilderUnavailable
 		}
-		if link.GrantClaimedAt > 0 {
-			return nil
-		}
 		var user User
 		if err := lockForUpdate(tx).First(&user, link.UserId).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrBuilderAccountRepairRequired
+			}
 			return err
 		}
 		if user.Status != common.UserStatusEnabled || IsStaffRole(user.Role) {
 			return ErrBuilderUnavailable
+		}
+		if link.GrantClaimedAt > 0 {
+			return nil
 		}
 		var enrollment PartnershipEnrollment
 		if err := lockForUpdate(tx).Where("program_id = ? AND user_id = ?", link.ProgramId, link.UserId).First(&enrollment).Error; err != nil {
