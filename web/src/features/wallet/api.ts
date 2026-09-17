@@ -41,6 +41,9 @@ import type {
   WaffoPancakePaymentResponse,
   BinancePayPaymentRequest,
   BinancePayOrderResponse,
+  BinancePayEvidence,
+  BinancePayCandidatesResponse,
+  BinancePayMatchRequest,
 } from './types'
 
 // ============================================================================
@@ -274,6 +277,44 @@ export async function getAllBillingHistory(
     params.append('keyword', keyword)
   }
   const res = await api.get(`/api/user/topup?${params.toString()}`)
+  return res.data
+}
+
+/**
+ * Which Binance transaction paid each order (admin only)
+ */
+export async function getBinancePayEvidence(
+  tradeNos: string[]
+): Promise<ApiResponse<Record<string, BinancePayEvidence>>> {
+  const res = await api.get(
+    `/api/user/topup/binance-pay/evidence?trade_nos=${encodeURIComponent(tradeNos.join(','))}`,
+    { skipBusinessError: true } as Record<string, unknown>
+  )
+  return res.data
+}
+
+/**
+ * Incoming Binance transfers that could have paid an order (admin only)
+ */
+export async function getBinancePayCandidates(
+  tradeNo: string
+): Promise<ApiResponse<BinancePayCandidatesResponse>> {
+  const res = await api.get(
+    `/api/user/topup/binance-pay/candidates?trade_no=${encodeURIComponent(tradeNo)}`,
+    { skipBusinessError: true } as Record<string, unknown>
+  )
+  return res.data
+}
+
+/**
+ * Credit a Binance Pay order from a chosen Binance transaction (admin only)
+ */
+export async function matchBinancePayTransaction(
+  request: BinancePayMatchRequest
+): Promise<ApiResponse> {
+  const res = await api.post('/api/user/topup/binance-pay/match', request, {
+    skipBusinessError: true,
+  } as Record<string, unknown>)
   return res.data
 }
 

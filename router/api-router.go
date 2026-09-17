@@ -157,6 +157,10 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/", controller.GetAllUsers)
 				adminRoute.GET("/topup", controller.GetAllTopUps)
 				adminRoute.POST("/topup/complete", controller.AdminCompleteTopUp)
+				// UNIFYAPI-FORK: Binance Pay evidence and operator matching.
+				adminRoute.GET("/topup/binance-pay/evidence", controller.AdminBinancePayEvidence)
+				adminRoute.GET("/topup/binance-pay/candidates", controller.AdminListBinancePayCandidates)
+				adminRoute.POST("/topup/binance-pay/match", controller.AdminMatchBinancePay)
 				adminRoute.GET("/search", controller.SearchUsers)
 				adminRoute.GET("/unreachable-emails", controller.GetUnreachableEmails)
 				adminRoute.GET("/:id/oauth/bindings", controller.GetUserOAuthBindingsByAdmin)

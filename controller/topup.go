@@ -529,6 +529,13 @@ func AdminCompleteTopUp(c *gin.Context) {
 		return
 	}
 
+	// UNIFYAPI-FORK: a Binance Pay order is completed by matching it to a
+	// transaction in the receiving account's history, never blind.
+	if order := model.GetTopUpByTradeNo(req.TradeNo); order != nil && order.PaymentProvider == model.PaymentProviderBinancePay {
+		common.ApiErrorMsg(c, "Binance Pay 订单必须匹配一笔币安收款记录后才能完成，请使用「匹配币安交易」")
+		return
+	}
+
 	// 订单级互斥，防止并发补单
 	LockOrder(req.TradeNo)
 	defer UnlockOrder(req.TradeNo)

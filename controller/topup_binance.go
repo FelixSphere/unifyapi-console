@@ -106,6 +106,10 @@ func binancePayMinTopUp() int64 {
 // RequestBinancePayAmount quotes the price (without suffix) for the wallet's
 // "Amount to pay" field.
 func RequestBinancePayAmount(c *gin.Context) {
+	if !isBinancePayTopUpEnabled() {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Binance Pay 支付未启用"})
+		return
+	}
 	var req BinancePayRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "参数错误"})
@@ -316,10 +320,12 @@ func RunBinancePayReconciler() {
 // binancePayCandidate is an incoming transaction normalised from either
 // history source.
 type binancePayCandidate struct {
-	txn      model.BinancePayTransaction
-	amount   decimal.Decimal
-	currency string
-	timeMs   int64
+	txn       model.BinancePayTransaction
+	amount    decimal.Decimal
+	currency  string
+	timeMs    int64
+	payerName string
+	network   string
 }
 
 // reconcileBinancePay expires stale orders, then matches each remaining
@@ -353,93 +359,9 @@ func reconcileBinancePay(ctx context.Context, reader service.BinanceHistoryReade
 	}
 	endMs := now.UnixMilli()
 
-	currency := setting.GetBinancePayCurrency()
-	receiverId := strings.TrimSpace(setting.BinancePayReceiverId)
-	candidates := make([]binancePayCandidate, 0, 16)
-
-	payRows, err := reader.PayTransactions(ctx, startMs, endMs)
+	candidates, err := collectBinancePayCandidates(ctx, reader, startMs, endMs)
 	if err != nil {
-		return fmt.Errorf("pay history: %w", err)
-	}
-	for _, row := range payRows {
-		if !strings.EqualFold(row.Currency, currency) {
-			continue
-		}
-		if isBinanceRefundOrderType(row.OrderType) {
-			continue
-		}
-		// Only money that arrived in this account counts. Binance lists the
-		// account's outgoing payments in the same history.
-		if r := row.ReceiverInfo.BinanceId.String(); r != "" && r != receiverId {
-			continue
-		}
-		if p := row.PayerInfo.BinanceId.String(); p != "" && p == receiverId {
-			continue
-		}
-		amt, err := decimal.NewFromString(strings.TrimSpace(row.Amount.String()))
-		if err != nil || amt.Sign() <= 0 {
-			continue
-		}
-		txnId := row.TransactionId.String()
-		if txnId == "" {
-			continue
-		}
-		candidates = append(candidates, binancePayCandidate{
-			txn: model.BinancePayTransaction{
-				TransactionId: "pay:" + txnId,
-				Source:        model.BinancePayTxnSourcePay,
-				Amount:        amt.String(),
-				Currency:      currency,
-				PayerId:       row.PayerInfo.BinanceId.String(),
-				TransactTime:  row.TransactionTime,
-			},
-			amount:   amt,
-			currency: currency,
-			timeMs:   row.TransactionTime,
-		})
-	}
-
-	if addresses := setting.GetBinancePayDepositAddresses(); len(addresses) > 0 {
-		ours := make(map[string]struct{}, len(addresses))
-		for _, a := range addresses {
-			ours[strings.ToLower(a.Address)] = struct{}{}
-		}
-		deposits, err := reader.DepositHistory(ctx, currency, startMs, endMs)
-		if err != nil {
-			return fmt.Errorf("deposit history: %w", err)
-		}
-		for _, d := range deposits {
-			if !d.IsCredited() || !strings.EqualFold(d.Coin, currency) {
-				continue
-			}
-			if _, ok := ours[strings.ToLower(strings.TrimSpace(d.Address))]; !ok {
-				continue
-			}
-			amt, err := decimal.NewFromString(strings.TrimSpace(d.Amount.String()))
-			if err != nil || amt.Sign() <= 0 {
-				continue
-			}
-			id := strings.TrimSpace(d.TxId)
-			if id == "" {
-				id = d.Id.String()
-			}
-			if id == "" {
-				continue
-			}
-			candidates = append(candidates, binancePayCandidate{
-				txn: model.BinancePayTransaction{
-					TransactionId: "deposit:" + id,
-					Source:        model.BinancePayTxnSourceDeposit,
-					Amount:        amt.String(),
-					Currency:      currency,
-					PayerId:       d.Network,
-					TransactTime:  d.InsertTime,
-				},
-				amount:   amt,
-				currency: currency,
-				timeMs:   d.InsertTime,
-			})
-		}
+		return err
 	}
 
 	if len(candidates) == 0 {
@@ -481,6 +403,106 @@ func reconcileBinancePay(ctx context.Context, reader service.BinanceHistoryReade
 		logger.LogInfo(ctx, fmt.Sprintf("Binance Pay 对账完成 pending=%d candidates=%d matched=%d", len(pending), len(candidates), matched))
 	}
 	return nil
+}
+
+// collectBinancePayCandidates reads the receiving account's history for
+// [startMs, endMs] and returns every incoming transaction in the configured
+// asset that could have paid an order: refunds, the account's own outgoing
+// payments and money received by other accounts are dropped here, once, for
+// both the reconciler and the operator's matching view.
+func collectBinancePayCandidates(ctx context.Context, reader service.BinanceHistoryReader, startMs, endMs int64) ([]binancePayCandidate, error) {
+	currency := setting.GetBinancePayCurrency()
+	receiverId := strings.TrimSpace(setting.BinancePayReceiverId)
+	candidates := make([]binancePayCandidate, 0, 16)
+
+	payRows, err := reader.PayTransactions(ctx, startMs, endMs)
+	if err != nil {
+		return nil, fmt.Errorf("pay history: %w", err)
+	}
+	for _, row := range payRows {
+		if !strings.EqualFold(row.Currency, currency) {
+			continue
+		}
+		if isBinanceRefundOrderType(row.OrderType) {
+			continue
+		}
+		// Only money that arrived in this account counts. Binance lists the
+		// account's outgoing payments in the same history.
+		if r := row.ReceiverInfo.BinanceId.String(); r != "" && r != receiverId {
+			continue
+		}
+		if p := row.PayerInfo.BinanceId.String(); p != "" && p == receiverId {
+			continue
+		}
+		amt, err := decimal.NewFromString(strings.TrimSpace(row.Amount.String()))
+		if err != nil || amt.Sign() <= 0 {
+			continue
+		}
+		txnId := row.TransactionId.String()
+		if txnId == "" {
+			continue
+		}
+		candidates = append(candidates, binancePayCandidate{
+			txn: model.BinancePayTransaction{
+				TransactionId: "pay:" + txnId,
+				Source:        model.BinancePayTxnSourcePay,
+				Amount:        amt.String(),
+				Currency:      currency,
+				PayerId:       row.PayerInfo.BinanceId.String(),
+				TransactTime:  row.TransactionTime,
+			},
+			amount:    amt,
+			currency:  currency,
+			timeMs:    row.TransactionTime,
+			payerName: row.PayerInfo.Name,
+		})
+	}
+
+	if addresses := setting.GetBinancePayDepositAddresses(); len(addresses) > 0 {
+		ours := make(map[string]struct{}, len(addresses))
+		for _, a := range addresses {
+			ours[strings.ToLower(a.Address)] = struct{}{}
+		}
+		deposits, err := reader.DepositHistory(ctx, currency, startMs, endMs)
+		if err != nil {
+			return nil, fmt.Errorf("deposit history: %w", err)
+		}
+		for _, d := range deposits {
+			if !d.IsCredited() || !strings.EqualFold(d.Coin, currency) {
+				continue
+			}
+			if _, ok := ours[strings.ToLower(strings.TrimSpace(d.Address))]; !ok {
+				continue
+			}
+			amt, err := decimal.NewFromString(strings.TrimSpace(d.Amount.String()))
+			if err != nil || amt.Sign() <= 0 {
+				continue
+			}
+			id := strings.TrimSpace(d.TxId)
+			if id == "" {
+				id = d.Id.String()
+			}
+			if id == "" {
+				continue
+			}
+			candidates = append(candidates, binancePayCandidate{
+				txn: model.BinancePayTransaction{
+					TransactionId: "deposit:" + id,
+					Source:        model.BinancePayTxnSourceDeposit,
+					Amount:        amt.String(),
+					Currency:      currency,
+					PayerId:       d.Network,
+					TransactTime:  d.InsertTime,
+				},
+				amount:   amt,
+				currency: currency,
+				timeMs:   d.InsertTime,
+				network:  d.Network,
+			})
+		}
+	}
+
+	return candidates, nil
 }
 
 func isBinanceRefundOrderType(orderType string) bool {
