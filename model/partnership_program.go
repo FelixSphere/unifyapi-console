@@ -185,12 +185,36 @@ func initializePartnershipCustomers() error {
 					// customer. The upgrade must not hand one back.
 					continue
 				}
-				customer = PartnershipCustomer{
-					ProgramId: program.Id, Name: program.Name, Code: program.Code,
-					Group: program.Group, IsDefault: true, Enabled: true,
-				}
-				if err := tx.Create(&customer).Error; err != nil {
-					return fmt.Errorf("backfill default customer for partnership program %d: %w", program.Id, err)
+				// A default that was retired still holds (program_id, group):
+				// the unique index does not exclude removed rows. Inserting
+				// over it fails forever, not once, so revive the row instead
+				// of minting a second one -- and the revived row keeps
+				// whatever was billed through it.
+				var retired PartnershipCustomer
+				revive := tx.Where("program_id = ? AND is_default = ? AND removed_at <> ?", program.Id, true, 0).
+					Order("id").First(&retired).Error
+				switch {
+				case revive == nil:
+					if err := tx.Model(&PartnershipCustomer{}).Where("id = ?", retired.Id).
+						Updates(map[string]any{
+							"name": program.Name, "code": program.Code, "group": program.Group,
+							"enabled": true, "removed_at": 0,
+						}).Error; err != nil {
+						return err
+					}
+					retired.Name, retired.Code, retired.Group = program.Name, program.Code, program.Group
+					retired.Enabled, retired.RemovedAt = true, 0
+					customer = retired
+				case errors.Is(revive, gorm.ErrRecordNotFound):
+					customer = PartnershipCustomer{
+						ProgramId: program.Id, Name: program.Name, Code: program.Code,
+						Group: program.Group, IsDefault: true, Enabled: true,
+					}
+					if err := tx.Create(&customer).Error; err != nil {
+						return fmt.Errorf("backfill default customer for partnership program %d: %w", program.Id, err)
+					}
+				default:
+					return revive
 				}
 			} else if err != nil {
 				return err

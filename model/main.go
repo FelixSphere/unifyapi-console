@@ -338,8 +338,14 @@ func migrateDB() error {
 	if err := EnsureSettlementRevisionIndex(); err != nil {
 		return err
 	}
+	// A partnership row this cannot reconcile must not take the product down.
+	// It runs inside InitDB, whose error is fatal in main, so returning one
+	// here stops console AND relay over a single partnership customer. The
+	// backfill is an upgrade convenience: without it a program falls back to
+	// behaving as it did before customers existed, which is a degraded
+	// partnership feature, not an outage.
 	if err := initializePartnershipCustomers(); err != nil {
-		return err
+		common.SysError("partnership customer backfill skipped: " + err.Error())
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err
@@ -434,8 +440,14 @@ func migrateDBFast() error {
 			return err
 		}
 	}
+	// A partnership row this cannot reconcile must not take the product down.
+	// It runs inside InitDB, whose error is fatal in main, so returning one
+	// here stops console AND relay over a single partnership customer. The
+	// backfill is an upgrade convenience: without it a program falls back to
+	// behaving as it did before customers existed, which is a degraded
+	// partnership feature, not an outage.
 	if err := initializePartnershipCustomers(); err != nil {
-		return err
+		common.SysError("partnership customer backfill skipped: " + err.Error())
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err
