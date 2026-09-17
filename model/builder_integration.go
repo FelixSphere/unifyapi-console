@@ -477,7 +477,7 @@ func ReadBuilderWorkspace(link *BuilderIdentity, user *User, period string) (map
 		credits = append(credits, map[string]any{"id": -link.Id, "amount": float64(link.GrantQuota) / common.QuotaPerUnit, "timestamp": time.Unix(link.GrantClaimedAt, 0).UTC().Format(time.RFC3339), "description": "Team launch credit"})
 	}
 	models := []string{}
-	if err := DB.Table("abilities").Where(commonGroupCol+" = ? AND enabled = ?", user.Group, true).Distinct("model").Order("model").Pluck("model", &models).Error; err != nil {
+	if err := DB.Table("abilities").Where(groupColumn()+" = ? AND enabled = ?", user.Group, true).Distinct("model").Order("model").Pluck("model", &models).Error; err != nil {
 		return nil, err
 	}
 	if models == nil {

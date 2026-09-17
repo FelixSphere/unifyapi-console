@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
@@ -106,4 +107,54 @@ func TestBuilderResolutionErrorSeparatesBusinessAndStorageFailures(t *testing.T)
 		assert.Contains(t, recorder.Body.String(), tc.code)
 		assert.NotContains(t, recorder.Body.String(), "sensitive")
 	}
+}
+
+func TestBuilderRemovedCustomerConnectAndWorkspaceThroughSignedHTTP(t *testing.T) {
+	oldRedis := common.RedisEnabled
+	common.RedisEnabled = false
+	t.Cleanup(func() { common.RedisEnabled = oldRedis })
+	setupPartnershipControllerTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.User{}, &model.Tenant{}, &model.BuilderIdentity{}, &model.Token{}, &model.Log{}, &model.TopUp{}, &model.Ability{}, &model.PricingConfigHistory{}))
+	oldLogDB, oldOptions := model.LOG_DB, common.OptionMap
+	model.LOG_DB = model.DB
+	common.OptionMap = map[string]string{}
+	t.Cleanup(func() { model.LOG_DB = oldLogDB; common.OptionMap = oldOptions })
+	sqlDB, err := model.DB.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	program := model.PartnershipProgram{Name: "Builders", Code: "builders", Group: "partner", Enabled: true}
+	require.NoError(t, model.CreatePartnershipProgram(&program))
+	retired := model.PartnershipCustomer{ProgramId: program.Id, Name: "UnifyAPI", Code: "unifyapi", Group: "UnifyAPI", Enabled: false, RemovedAt: 123}
+	require.NoError(t, model.DB.Create(&retired).Error)
+	// GORM applies the enabled default on insert; keep this archived fixture disabled.
+	require.NoError(t, model.DB.Model(&retired).Update("enabled", false).Error)
+	request := `{"subject":"healthy-new-subject","program_name":"Builders","customer_name":"UnifyAPI","email":"healthy@example.invalid","email_verified":true,"range":"30d"}`
+	for i := 0; i < 2; i++ {
+		connect := recoveryRequest(t, "connect", request)
+		require.Equal(t, 200, connect.Code, connect.Body.String())
+		assert.JSONEq(t, `{"connected":true}`, connect.Body.String())
+	}
+	workspace := recoveryRequest(t, "workspace", request)
+	require.Equal(t, 200, workspace.Code, workspace.Body.String())
+	var body struct {
+		Connected bool    `json:"connected"`
+		Balance   float64 `json:"balance"`
+		Account   struct {
+			Group string `json:"group"`
+		} `json:"account"`
+	}
+	require.NoError(t, common.Unmarshal(workspace.Body.Bytes(), &body))
+	assert.True(t, body.Connected)
+	assert.Zero(t, body.Balance)
+	assert.NotEqual(t, retired.Group, body.Account.Group)
+	var identities, keys int64
+	require.NoError(t, model.DB.Model(&model.BuilderIdentity{}).Count(&identities).Error)
+	require.NoError(t, model.DB.Model(&model.Token{}).Count(&keys).Error)
+	assert.EqualValues(t, 1, identities)
+	assert.EqualValues(t, 1, keys)
+	var unchanged model.PartnershipCustomer
+	require.NoError(t, model.DB.First(&unchanged, retired.Id).Error)
+	assert.False(t, unchanged.Enabled)
+	assert.Equal(t, retired.Group, unchanged.Group)
+	assert.EqualValues(t, 123, unchanged.RemovedAt)
 }
