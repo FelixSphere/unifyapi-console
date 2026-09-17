@@ -12,11 +12,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Auto-provisioning a Builder team.
@@ -194,110 +196,178 @@ func ensureGroupSettingEntry(key, group string, add func(map[string]any) bool) e
 	return updateOptionMap(key, merged)
 }
 
-// ensureBuilderCustomerTx finds the named customer inside a program, creating
-// it if absent. Returns the offer for that customer.
-//
-// Name is free text and is stored verbatim, because it is what the Builder side
-// signs and matches on. Code is derived and must be unique across every
-// program, so a collision is resolved by suffixing rather than by silently
-// attaching the team to somebody else's customer.
-func ensureBuilderCustomerTx(tx *gorm.DB, program *PartnershipProgram, name string) (*PartnershipCustomer, error) {
-	var existing []PartnershipCustomer
-	if err := tx.Where("program_id = ? AND removed_at = ?", program.Id, 0).Find(&existing).Error; err != nil {
-		return nil, err
-	}
-	for i := range existing {
-		if existing[i].Name == name {
-			if !existing[i].Enabled {
-				return nil, ErrPartnershipCustomerUnavailable
-			}
-			return &existing[i], nil
-		}
-	}
+// builderProvisionMu keeps cache publication ordered within this process. The
+// database integrity lock below serializes provisioning with other instances.
+var builderProvisionMu sync.Mutex
 
-	base := partnershipCodeFromName(name)
-	code := base
-	for attempt := 2; ; attempt++ {
-		var clash int64
-		if err := tx.Model(&PartnershipCustomer{}).Where("code = ?", code).Count(&clash).Error; err != nil {
-			return nil, err
-		}
-		if clash == 0 {
-			break
-		}
-		code = fmt.Sprintf("%s-%d", base, attempt)
-		if attempt > 50 {
-			return nil, fmt.Errorf("could not derive a free registration code for %q", name)
-		}
-	}
-
-	// The pricing group becomes the invoice counterparty and is printed as the
-	// bill-to line, so the display name is used where it fits. The column is
-	// varchar(64) while a team name may be up to 120 characters, in which case
-	// the derived code stands in -- an unlovely invoice beats a failed insert.
-	group := name
-	if len([]rune(group)) > 64 || len(group) > 64 {
-		group = code
-	}
-	customer := PartnershipCustomer{
-		ProgramId: program.Id, Name: name, Code: code, Group: group,
-		IsDefault: false, Enabled: true,
-	}
-	if err := ValidatePartnershipCustomer(&customer); err != nil {
-		return nil, err
-	}
-	// A customer may only reference a group that exists in Group Pricing, so
-	// the group is priced first. Both happen before the enrollment is written,
-	// so a failure here leaves no half-provisioned team behind.
-	if err := validatePartnershipProgramGroup(tx, customer.Group); err != nil {
-		return nil, err
-	}
-	if err := tx.Create(&customer).Error; err != nil {
-		return nil, err
-	}
-	return &customer, nil
+type builderGroupChange struct {
+	key, old, value string
 }
 
-// ProvisionBuilderCustomer creates the pricing group and the customer for a
-// team the Builder side named but that does not exist here yet. Idempotent:
-// two members of the same new team connecting at once leave one customer.
+// Merge the final group into all settings inside the customer transaction.
+// A failed insert must leave neither durable settings nor cache changes behind.
+func registerBuilderGroupTx(tx *gorm.DB, group string) ([]builderGroupChange, error) {
+	var changes []builderGroupChange
+	for _, key := range []string{"GroupRatio", "TopupGroupRatio", "UserUsableGroups"} {
+		var option Option
+		err := tx.Where("key = ?", key).First(&option).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		entries := map[string]any{}
+		if option.Value != "" {
+			if err := common.Unmarshal([]byte(option.Value), &entries); err != nil {
+				return nil, fmt.Errorf("parse %s: %w", key, err)
+			}
+		}
+		if entries == nil {
+			return nil, fmt.Errorf("%s must be an object", key)
+		}
+		// Validate the types expected by cache publication before committing.
+		// Syntactically valid JSON with wrong values must roll back too.
+		if option.Value != "" {
+			if key == "UserUsableGroups" {
+				var typed map[string]string
+				if err := common.Unmarshal([]byte(option.Value), &typed); err != nil {
+					return nil, err
+				}
+			} else {
+				var typed map[string]float64
+				if err := common.Unmarshal([]byte(option.Value), &typed); err != nil {
+					return nil, err
+				}
+			}
+		}
+		if _, exists := entries[group]; exists {
+			continue
+		}
+		if key == "UserUsableGroups" {
+			entries[group] = group
+		} else {
+			entries[group] = builderProvisionedGroupRatio
+		}
+		raw, err := common.Marshal(entries)
+		if err != nil {
+			return nil, err
+		}
+		if err := saveOptionValue(tx, key, string(raw)); err != nil {
+			return nil, err
+		}
+		changes = append(changes, builderGroupChange{key, option.Value, string(raw)})
+	}
+	return changes, nil
+}
+
+// Allocate a fresh settlement group whenever a previous customer owns the
+// display-name group. Removed customers remain owners of their historical keys.
+// Never change their group or reuse it for a new invoice counterparty.
+func builderCustomerIdentifiers(tx *gorm.DB, name string) (string, string, error) {
+	base := partnershipCodeFromName(name)
+	for attempt := 1; attempt <= 100; attempt++ {
+		code := base
+		if attempt > 1 {
+			code = fmt.Sprintf("%s-%d", base, attempt)
+		}
+		group := code
+		if attempt == 1 && len(name) <= 64 {
+			group = name
+		}
+		var count int64
+		if err := tx.Model(&PartnershipCustomer{}).Where(clause.Or(clause.Eq{Column: "code", Value: code}, clause.Eq{Column: "group", Value: group})).Count(&count).Error; err != nil {
+			return "", "", err
+		}
+		if count != 0 {
+			continue
+		}
+		// Suffix groups must also avoid independently configured billing groups.
+		if attempt > 1 || group != name {
+			occupied := false
+			for _, key := range []string{"GroupRatio", "TopupGroupRatio", "UserUsableGroups"} {
+				var option Option
+				err := tx.Where("key = ?", key).First(&option).Error
+				if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+					return "", "", err
+				}
+				entries := map[string]any{}
+				if option.Value != "" {
+					if err := common.Unmarshal([]byte(option.Value), &entries); err != nil {
+						return "", "", err
+					}
+				}
+				if _, exists := entries[group]; exists {
+					occupied = true
+				}
+			}
+			if occupied {
+				continue
+			}
+		}
+		return code, group, nil
+	}
+	return "", "", errors.New("no free Builder customer identifiers")
+}
+
+// ProvisionBuilderCustomer atomically registers a new team and its settings.
+// Existing disabled teams stay disabled, and removed rows and enrollments are
+// retained. No account, grant, wallet or invoice is moved here.
 func ProvisionBuilderCustomer(programName, customerName string) error {
 	if !ValidBuilderProgramName(programName) || !ValidBuilderProgramName(customerName) {
 		return ErrPartnershipCustomerUnavailable
 	}
-	program, err := resolveProgramByName(DB, programName)
+	builderProvisionMu.Lock()
+	defer builderProvisionMu.Unlock()
+	var changes []builderGroupChange
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
+			program, err := resolveProgramByName(tx, programName)
+			if err != nil {
+				return err
+			}
+			var candidates []PartnershipCustomer
+			if err := tx.Where("program_id = ? AND removed_at = ?", program.Id, 0).Find(&candidates).Error; err != nil {
+				return err
+			}
+			var existing *PartnershipCustomer
+			for i := range candidates {
+				if candidates[i].Name == customerName {
+					if existing != nil || !candidates[i].Enabled {
+						return ErrPartnershipCustomerUnavailable
+					}
+					existing = &candidates[i]
+				}
+			}
+			if existing != nil {
+				changes, err = registerBuilderGroupTx(tx, existing.Group)
+				return err
+			}
+			code, group, err := builderCustomerIdentifiers(tx, customerName)
+			if err != nil {
+				return err
+			}
+			customer := PartnershipCustomer{ProgramId: program.Id, Name: customerName, Code: code, Group: group, Enabled: true}
+			if err := ValidatePartnershipCustomer(&customer); err != nil {
+				return err
+			}
+			changes, err = registerBuilderGroupTx(tx, group)
+			if err != nil {
+				return err
+			}
+			if err := validatePartnershipProgramGroup(tx, group); err != nil {
+				return err
+			}
+			return tx.Create(&customer).Error
+		})
+	})
 	if err != nil {
 		return err
 	}
-
-	// Derive the group the same way the customer will, and price it before the
-	// customer row can reference it.
-	code := partnershipCodeFromName(customerName)
-	group := customerName
-	if len([]rune(group)) > 64 || len(group) > 64 {
-		group = code
-	}
-	if err := EnsurePartnershipGroupRatio(group); err != nil {
-		return err
-	}
-
-	err = DB.Transaction(func(tx *gorm.DB) error {
-		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
-			_, err := ensureBuilderCustomerTx(tx, program, customerName)
+	for _, change := range changes {
+		RecordPricingConfigChange(change.key, change.old, change.value, "builder-bridge", "auto-provision-team")
+		if err := updateOptionMap(change.key, change.value); err != nil {
 			return err
-		})
-	})
-	if err == nil {
-		return nil
+		}
 	}
-	// A concurrent connect for the same team may have won the race. That is a
-	// success for this caller, not a failure, so long as the team now exists.
-	if _, resolveErr := ResolveBuilderProgram(DB, BuilderProgramSelector{
-		ProgramName: programName, CustomerName: customerName,
-	}, false); resolveErr == nil {
-		return nil
-	}
-	return err
+	return nil
 }
 
 // resolveProgramByName finds exactly one active program, comparing in Go

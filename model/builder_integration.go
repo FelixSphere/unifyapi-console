@@ -18,6 +18,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // BuilderIdentity links a trusted Builder subject to one personal account.
@@ -61,6 +62,17 @@ var ErrPartnershipProgramInactive = fmt.Errorf("the partnership program is disab
 var ErrBuilderStaffAccount = fmt.Errorf("administrator accounts cannot be linked to Builder: %w", ErrBuilderUnavailable)
 var ErrBuilderAccountDisabled = fmt.Errorf("the linked account is disabled: %w", ErrBuilderUnavailable)
 var ErrBuilderOwnershipProof = fmt.Errorf("management token does not prove ownership of that address: %w", ErrBuilderUnavailable)
+
+// A saved identity with no live account needs an audited administrative repair.
+// Do not wrap ErrRecordNotFound: callers interpret that as a new identity.
+var ErrBuilderAccountRepairRequired = errors.New("linked Builder account requires repair")
+
+// Reserved for operator recovery archives, never an external Builder identity.
+const BuilderArchivedSubjectPrefix = "unifyapi:archived:"
+
+func IsArchivedBuilderSubject(subject string) bool {
+	return strings.HasPrefix(subject, BuilderArchivedSubjectPrefix)
+}
 
 // builderAccountRefusal says which of those applies to a user record.
 func builderAccountRefusal(user *User) error {
@@ -196,11 +208,17 @@ func resolveProgramCustomer(query func() *gorm.DB, programId int, name string) (
 }
 
 func GetBuilderIdentity(subject string) (*BuilderIdentity, *User, error) {
+	if IsArchivedBuilderSubject(subject) {
+		return nil, nil, ErrBuilderUnavailable
+	}
 	var link BuilderIdentity
 	if err := DB.Where("subject = ?", subject).First(&link).Error; err != nil {
 		return nil, nil, err
 	}
 	user, err := GetUserById(link.UserId, false)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil, ErrBuilderAccountRepairRequired
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -287,6 +305,9 @@ func rebindDanglingIdentity(tx *gorm.DB, link *BuilderIdentity, offer *Partnersh
 }
 
 func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderProgramSelector, managementToken string) (*BuilderIdentity, error) {
+	if IsArchivedBuilderSubject(subject) {
+		return nil, ErrBuilderUnavailable
+	}
 	offer, err := ResolveBuilderProgram(DB, selector, false)
 	if err != nil {
 		return nil, err
@@ -325,6 +346,16 @@ func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderPr
 				return err
 			}
 			if err := tx.Where("subject = ?", subject).First(&link).Error; err == nil {
+				var linkedUser User
+				if err := lockForUpdate(tx).First(&linkedUser, link.UserId).Error; err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						return ErrBuilderAccountRepairRequired
+					}
+					return err
+				}
+				if err := builderAccountRefusal(&linkedUser); err != nil {
+					return err
+				}
 				if enrolledElsewhere(&link, offer) {
 					exists, err := programStillExists(tx, link.ProgramId)
 					if err != nil {
@@ -460,7 +491,7 @@ func ReadBuilderWorkspace(link *BuilderIdentity, user *User, period string) (map
 		credits = append(credits, map[string]any{"id": -link.Id, "amount": float64(link.GrantQuota) / common.QuotaPerUnit, "timestamp": time.Unix(link.GrantClaimedAt, 0).UTC().Format(time.RFC3339), "description": "Team launch credit"})
 	}
 	models := []string{}
-	if err := DB.Table("abilities").Where(commonGroupCol+" = ? AND enabled = ?", user.Group, true).Distinct("model").Order("model").Pluck("model", &models).Error; err != nil {
+	if err := DB.Table("abilities").Where(clause.Eq{Column: "group", Value: user.Group}).Where("enabled = ?", true).Distinct("model").Order("model").Pluck("model", &models).Error; err != nil {
 		return nil, err
 	}
 	if models == nil {
@@ -492,6 +523,9 @@ func ClaimBuilderTeamGrant(subject, code string) error {
 }
 
 func ClaimBuilderTeamGrantWithProgram(subject string, selector BuilderProgramSelector) error {
+	if IsArchivedBuilderSubject(subject) {
+		return ErrBuilderUnavailable
+	}
 	var userID int
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		offer, err := ResolveBuilderProgram(tx, selector, true)
@@ -506,15 +540,18 @@ func ClaimBuilderTeamGrantWithProgram(subject string, selector BuilderProgramSel
 		if offer.Program.Id != link.ProgramId || offer.CustomerId != link.CustomerId {
 			return ErrBuilderUnavailable
 		}
-		if link.GrantClaimedAt > 0 {
-			return nil
-		}
 		var user User
 		if err := lockForUpdate(tx).First(&user, link.UserId).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrBuilderAccountRepairRequired
+			}
 			return err
 		}
 		if user.Status != common.UserStatusEnabled || IsStaffRole(user.Role) {
 			return ErrBuilderUnavailable
+		}
+		if link.GrantClaimedAt > 0 {
+			return nil
 		}
 		var enrollment PartnershipEnrollment
 		if err := lockForUpdate(tx).Where("program_id = ? AND user_id = ?", link.ProgramId, link.UserId).First(&enrollment).Error; err != nil {
