@@ -34,10 +34,20 @@ import (
 // already present is left exactly as it is. A team is never repriced by
 // reconnecting.
 
-// builderProvisionedGroupRatio is list price. A new team pays the published
-// rate until somebody deliberately discounts it; inheriting a cohort discount
-// by merely existing would give away margin nobody agreed to.
-const builderProvisionedGroupRatio = 1
+// provisionedGroupRatio is the billing multiplier a newly provisioned
+// pricing group starts at. Operator decision 2026-09-17: every new customer --
+// a team joining through a partnership program included -- pays 90% of the
+// published price until somebody deliberately reprices that group. (Until
+// then a new team started at list, 1.0.) Existing groups are never repriced by
+// reconnecting; the constant only applies to a group being created.
+//
+// provisionedTopupRatio is deliberately NOT discounted: the top-up ratio says
+// how much credit a payment buys, and a discount there would give the same 10%
+// away twice.
+const (
+	provisionedGroupRatio = 0.9
+	provisionedTopupRatio = 1
+)
 
 // partnershipCodeFromName derives a registration code from a display name.
 // Codes are pattern-constrained (lowercase, 3-64 chars) while names are free
@@ -72,8 +82,8 @@ func partnershipCodeFromName(name string) string {
 	return code
 }
 
-// EnsurePartnershipGroupRatio adds one pricing group at list price if it is
-// absent, leaving every other entry untouched.
+// EnsurePartnershipGroupRatio adds one pricing group at the provisioned
+// discount if it is absent, leaving every other entry untouched.
 //
 // The read, the merge and the write all happen inside one locked transaction.
 // Reading the map first and writing it back afterwards would let two teams
@@ -101,7 +111,7 @@ func EnsurePartnershipGroupRatio(group string) error {
 				// Already priced. Reconnecting must never reprice a team.
 				return nil
 			}
-			groups[group] = builderProvisionedGroupRatio
+			groups[group] = provisionedGroupRatio
 			encoded, err := common.Marshal(groups)
 			if err != nil {
 				return err
@@ -142,7 +152,7 @@ func ensureTopupGroupRatio(group string) error {
 		if _, exists := raw[group]; exists {
 			return false
 		}
-		raw[group] = builderProvisionedGroupRatio
+		raw[group] = provisionedTopupRatio
 		return true
 	})
 }
@@ -241,10 +251,13 @@ func registerBuilderGroupTx(tx *gorm.DB, group string) ([]builderGroupChange, er
 		if _, exists := entries[group]; exists {
 			continue
 		}
-		if key == "UserUsableGroups" {
+		switch key {
+		case "UserUsableGroups":
 			entries[group] = group
-		} else {
-			entries[group] = builderProvisionedGroupRatio
+		case "TopupGroupRatio":
+			entries[group] = provisionedTopupRatio
+		default:
+			entries[group] = provisionedGroupRatio
 		}
 		raw, err := common.Marshal(entries)
 		if err != nil {

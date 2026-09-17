@@ -44,8 +44,8 @@ func TestBuilderConnectRoutesToNamedCustomer(t *testing.T) {
 	t.Setenv("BUILDER_INTEGRATION_PROGRAM_NAME", "")
 	t.Setenv("BUILDER_INTEGRATION_PARTNERSHIP_CODE", "")
 
-	// A team's group is created at list price; discounts are granted per team
-	// afterwards rather than inherited by joining the cohort.
+	// A team's group is created at the provisioned discount (0.9), never by
+	// inheriting the program's own ratio; per-team pricing comes afterwards.
 	const groups = `{"partner":0.9,"acme_robotics":1}`
 	require.NoError(t, model.DB.Model(&model.Option{}).Where("key = ?", "GroupRatio").Update("value", groups).Error)
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(groups))
@@ -123,9 +123,9 @@ func TestBuilderConnectRoutesToNamedCustomer(t *testing.T) {
 		assert.Equal(t, customer.Group, user.Group, "the member joins their own team's pricing group")
 		assert.NotEqual(t, "partner", user.Group, "and not the program default group")
 
-		// List price. Inheriting a cohort discount by merely existing would
-		// give away margin nobody agreed to.
-		assert.InDelta(t, 1, ratio_setting.GetGroupRatio(customer.Group), 1e-9)
+		// Every new customer starts at 90% of the published price -- not at the
+		// program's own ratio, which is a different contract.
+		assert.InDelta(t, 0.9, ratio_setting.GetGroupRatio(customer.Group), 1e-9)
 	})
 
 	// Reconnecting must not create a second customer or reprice the first.

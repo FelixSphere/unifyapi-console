@@ -30,9 +30,11 @@ The final chosen group is used consistently in `GroupRatio`, `TopupGroupRatio`
 and `UserUsableGroups`. All three durable settings and the customer insert share
 one transaction and the existing database integrity lock. Failed provisioning
 rolls them all back. Pricing audit/cache publication happens after commit;
-existing negotiated values are preserved. New groups do not automatically gain
-provider channel capacity; an operator must configure availability as for any
-new pricing group.
+existing negotiated values are preserved. A group created here starts at
+`GroupRatio` 0.9 (every new customer pays 90% of the published price) with
+`TopupGroupRatio` 1; an existing group is never repriced by reconnecting. Since
+#129 every pricing group can route through every channel, so a new group has
+channel access the moment it is created.
 
 ## Recovering a deleted linked account
 
