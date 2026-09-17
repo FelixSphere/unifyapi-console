@@ -1,5 +1,9 @@
 {
   "translation": {
+    "this period": "本期間",
+    "all time": "累計",
+    "Nothing was paid in during this period. {{total}} has been paid in altogether — widen the date range to see it.": "本期間沒有入帳。累計已入帳 {{total}}——放寬日期範圍即可看到。",
+    "No money has been recorded as paid into this customer. Balances credited before funding was recorded do not appear here.": "該客戶沒有任何入帳記錄。在入帳記錄功能啟用之前充值的餘額不會顯示在這裡。",
     "Approx. to pay:": "預計支付：",
     "By user": "按使用者",
     "Funded by user": "按使用者充值",

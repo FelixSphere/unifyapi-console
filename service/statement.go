@@ -164,8 +164,15 @@ type Statement struct {
 	Users []StatementUserLine `json:"users,omitempty"`
 	// Funding is what the customer's logins paid in during the period, by
 	// login; FundedUSD is its total. Customer side only. See AttachFunding.
-	Funding          []StatementFundingLine `json:"funding,omitempty"`
-	FundedUSD        float64                `json:"funded_usd,omitempty"`
+	Funding   []StatementFundingLine `json:"funding,omitempty"`
+	FundedUSD float64                `json:"funded_usd,omitempty"`
+	// FundingToDate is everything the customer's logins have ever paid in, up
+	// to the end of this period, and FundedToDateUSD is its total. The period
+	// figures answer "what arrived this month"; these answer "what has this
+	// customer put in altogether", which is the question usually being asked
+	// and which a month-scoped view cannot show. See AttachFundingToDate.
+	FundingToDate    []StatementFundingLine `json:"funding_to_date,omitempty"`
+	FundedToDateUSD  float64                `json:"funded_to_date_usd,omitempty"`
 	Requests         int64                  `json:"requests"`
 	PromptTokens     int64                  `json:"prompt_tokens"`
 	CachedTokens     int64                  `json:"cached_tokens"`
@@ -482,4 +489,66 @@ func SumStatements(statements []Statement) StatementTotals {
 		totals.UnpricedRequests += statement.UnpricedRequests
 	}
 	return totals
+}
+
+// AttachFundingToDate records everything paid in up to the end of the period,
+// alongside the period's own receipts.
+//
+// Unlike AttachFunding this never creates a statement. A customer that funded
+// long ago and neither paid nor spent this period does not belong in this
+// period's list; adding it would fill a month's view with everyone who ever
+// paid. This only annotates statements that are already there.
+func AttachFundingToDate(statements []Statement, kind StatementKind, rows []model.FundingRow) []Statement {
+	if kind != StatementKindCustomer || len(rows) == 0 {
+		return statements
+	}
+	out := make([]Statement, len(statements))
+	copy(out, statements)
+	index := map[string]int{}
+	for i := range out {
+		index[out[i].Counterparty] = i
+	}
+	byUser := map[string]map[int]*StatementFundingLine{}
+	for _, row := range rows {
+		key, _, _ := fundingParty(row)
+		i, ok := index[key]
+		if !ok {
+			continue
+		}
+		lines, ok := byUser[key]
+		if !ok {
+			lines = map[int]*StatementFundingLine{}
+			byUser[key] = lines
+		}
+		line, ok := lines[row.UserID]
+		if !ok {
+			name := row.Username
+			if name == "" {
+				name = "user " + strconv.Itoa(row.UserID)
+			}
+			line = &StatementFundingLine{UserID: row.UserID, Username: name}
+			lines[row.UserID] = line
+		}
+		if row.Provider == model.PaymentProviderAdmin {
+			line.Grants += row.Orders
+		} else {
+			line.Orders += row.Orders
+		}
+		line.CreditedUSD += row.CreditedUSD
+		out[i].FundedToDateUSD += row.CreditedUSD
+	}
+	for key, lines := range byUser {
+		sorted := make([]StatementFundingLine, 0, len(lines))
+		for _, line := range lines {
+			sorted = append(sorted, *line)
+		}
+		sort.Slice(sorted, func(a, b int) bool {
+			if sorted[a].CreditedUSD != sorted[b].CreditedUSD {
+				return sorted[a].CreditedUSD > sorted[b].CreditedUSD
+			}
+			return sorted[a].UserID < sorted[b].UserID
+		})
+		out[index[key]].FundingToDate = sorted
+	}
+	return out
 }
