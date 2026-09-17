@@ -216,6 +216,7 @@ func TestPinnedDollarsForTheModelsThatCarryTheTraffic(t *testing.T) {
 		"gpt-5-mini":        0.25 + 2,    // OpenAI $0.25 / $2
 		"deepseek-v4-flash": 0.44 + 1.32, // DeepSeek peak tier, 2026-08-16 increase
 		"deepseek-v4-pro":   1.32 + 3.96,
+		"deepseek-flash":    0.3 + 1.2, // DeepSeek V4.1 Flash, peak tier, page read 2026-09-17
 		"glm-5.3":           1.4 + 4.4, // Zhipu $1.40 / $4.40
 		"kimi-k3":           3 + 15,    // Moonshot $3 / $15
 	}

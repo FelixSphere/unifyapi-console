@@ -138,8 +138,9 @@ func TestUnverifiableCountIsStable(t *testing.T) {
 	}
 	// Seven per-second video models and three token-billed Seedance names use
 	// dated official vendor quotes: models.dev does not expose their pricing.
-	// Keep the ten prior exceptions visible as well.
-	require.Equal(t, 20, count,
+	// Keep the ten prior exceptions visible as well. The 21st is deepseek-flash
+	// (DeepSeek-V4.1-Flash, 2026-09-10), newer than the pinned fixture.
+	require.Equal(t, 21, count,
 		"unverifiable entries require a documented reason and a maintained quote")
 	for _, name := range []string{"happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max", "wan3.0-video", "wan3.0-video-prime"} {
 		entry, ok := ratio_setting.CatalogEntryFor(name)
