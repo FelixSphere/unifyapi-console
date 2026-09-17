@@ -312,4 +312,17 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "deepseek-v4-flash", Vendor: "deepseek", InputUSD: 0.44, OutputUSD: 1.32, CacheReadUSD: 0.014, CacheWriteUSD: 0,
 		QuoteSource: "https://api-docs.deepseek.com/quick_start/pricing (peak tier)", QuoteDate: "2026-08-30"},
 	{Model: "deepseek-v4-pro", Vendor: "deepseek", InputUSD: 1.32, OutputUSD: 3.96, CacheReadUSD: 0.044, CacheWriteUSD: 0,
-		QuoteSource: "https://api-docs.deepseek.com/quick_start/pricing (peak tier)", QuoteDate: "2026-08-30"}}
+		QuoteSource: "https://api-docs.deepseek.com/quick_start/pricing (peak tier)", QuoteDate: "2026-08-30"},
+	// DeepSeek-V4.1-Flash, released 2026-09-10. The id the vendor exposes is
+	// `deepseek-flash` -- there is no "deepseek-v4.1-flash" -- so that is the
+	// name sold here, and a request passes upstream unchanged. Peak tier, as
+	// above: cache-hit $0.006, cache-miss $0.30, output $1.20 per 1M. Unverified
+	// (and so Vendor "") only because the pinned models.dev fixture (2026-09-11)
+	// does not list it yet; once the feed carries deepseek/deepseek-flash, set
+	// Vendor "deepseek" and drop the flag. The price was read off the vendor's
+	// own page on QuoteDate. The
+	// vendor also retired V4 Flash the same day and temporarily routes the
+	// `deepseek-v4-flash` id to V4.1 Flash; that entry's price is left alone
+	// here because repricing it is a customer-visible change.
+	{Model: "deepseek-flash", Vendor: "", InputUSD: 0.3, OutputUSD: 1.2, CacheReadUSD: 0.006, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://api-docs.deepseek.com/quick_start/pricing (peak tier; DeepSeek-V4.1-Flash)", QuoteDate: "2026-09-17"}}

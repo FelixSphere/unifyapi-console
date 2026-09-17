@@ -45,6 +45,7 @@ var publishedModels = []string{
 	"deepseek-v3",
 	"deepseek-v3.2",
 	"deepseek-v3.2-thinking",
+	"deepseek-flash",
 	"deepseek-v4-flash",
 	"deepseek-v4-pro",
 	"gemini-2.5-flash",
@@ -373,6 +374,7 @@ func TestUnverifiedEntriesAreDeclared(t *testing.T) {
 		"deepseek-v3",                 // retired; DeepSeek publishes v4 only
 		"deepseek-v3.2",               //
 		"deepseek-v3.2-thinking",      //
+		"deepseek-flash",              // V4.1 Flash, released 2026-09-10; newer than the pinned fixture, quoted off DeepSeek's page
 		"gemini-3.1-flash-lite-image", // Nano Banana 2 Lite; newer than the pinned fixture
 		"gemini-3.5-flash",            // newer than the pinned fixture; quoted off Google's page
 		"gemini-3.7-flash",            // same, and on promotional pricing until 2026-12-31

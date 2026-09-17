@@ -103,6 +103,7 @@ psql "$SQL_DSN" -f seed-pricing.sql
 |---|---|
 | 49 个 | models.dev 自动核对，无漂移 |
 | `deepseek-v4-flash`、`deepseek-v4-pro` | 人工报价覆盖 feed（DeepSeek 08-16 涨价） |
+| `deepseek-flash` | DeepSeek-V4.1-Flash，2026-09-10 上线；models.dev 快照尚未收录，按厂商价目表峰值人工报价（2026-09-17） |
 | `qwen3.5-flash` | 人工核对过阿里云新加坡价目表，价格本来就对 |
 | `glm-5-turbo` | 中国区独有，只有人民币价、且按输入长度分档 |
 | `deepseek-v3`、`deepseek-v3.2`、`deepseek-v3.2-thinking` | **厂商已下架**，没有官方价可填 |
