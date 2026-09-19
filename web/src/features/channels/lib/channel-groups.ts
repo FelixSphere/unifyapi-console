@@ -12,7 +12,7 @@ import { parseGroupsList } from './channel-utils'
 // backend applies the rule where routing is decided (a channel serves its own
 // group list UNION every Group Pricing key -- see
 // model/unifyapi_pricing_group_channel_access.go) and never rewrites the
-// channel's stored `group` column, which is 64 characters wide. So what the
+// channel's stored `group` column. So what the
 // operator typed and what actually has access differ, and the screens must
 // show both: the channel's own groups, then the ones it inherits.
 export type ChannelGroupSplit = {

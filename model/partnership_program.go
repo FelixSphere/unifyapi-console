@@ -38,7 +38,7 @@ type PartnershipProgram struct {
 	Id           int                   `json:"id" gorm:"primaryKey"`
 	Name         string                `json:"name" gorm:"type:varchar(120);not null"`
 	Code         string                `json:"code" gorm:"type:varchar(64);not null;uniqueIndex"`
-	Group        string                `json:"group" gorm:"type:varchar(64);not null"`
+	Group        string                `json:"group" gorm:"type:varchar(255);not null"`
 	GrantQuota   int                   `json:"grant_quota" gorm:"type:int;not null;default:0"`
 	GrantLimit   int                   `json:"grant_limit" gorm:"type:int;not null;default:0"`
 	ClaimedCount int                   `json:"claimed_count" gorm:"type:int;not null;default:0"`
@@ -59,7 +59,7 @@ type PartnershipCustomer struct {
 	ProgramId int    `json:"program_id" gorm:"not null;index;uniqueIndex:idx_partnership_customer_group"`
 	Name      string `json:"name" gorm:"type:varchar(120);not null"`
 	Code      string `json:"code" gorm:"type:varchar(64);not null;uniqueIndex"`
-	Group     string `json:"group" gorm:"type:varchar(64);not null;uniqueIndex:idx_partnership_customer_group"`
+	Group     string `json:"group" gorm:"type:varchar(255);not null;uniqueIndex:idx_partnership_customer_group"`
 	IsDefault bool   `json:"is_default" gorm:"not null;default:false;index"`
 	// TenantId owns this customer's wallet. Every member of the team points at
 	// it, which is what makes the team's credit one balance rather than one

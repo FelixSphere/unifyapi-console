@@ -43,7 +43,7 @@ type Tenant struct {
 	UsedQuota int    `json:"used_quota" gorm:"type:int;default:0;column:used_quota"`
 	// Group mirrors User.Group so pricing tiers can eventually be a tenant
 	// property rather than a per-member one. Not yet consulted by the relay.
-	Group  string `json:"group" gorm:"type:varchar(64);default:'default'"`
+	Group  string `json:"group" gorm:"type:varchar(255);default:'default'"`
 	Remark string `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
 	// ExpiresAt is the end of the paid term, 0 meaning open-ended. Operators
 	// extend it rather than editing a subscription row, because a tenant term is
