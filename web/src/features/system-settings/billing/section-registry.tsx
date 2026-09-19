@@ -179,92 +179,95 @@ const BILLING_SECTIONS = [
   {
     id: 'payment',
     titleKey: 'Payment Gateway',
+    // UNIFYAPI-FORK: Binance Pay is a gateway like the tabs above it, so it
+    // lives on this page -- as its own card with its own save, because its
+    // form is independent of the upstream gateway form and nesting one <form>
+    // in another is not HTML. The old `binance-pay` section id redirects here.
     build: (settings: BillingSettings) => (
-      <PaymentSettingsSection
-        defaultValues={{
-          PayAddress: settings.PayAddress,
-          EpayId: settings.EpayId,
-          EpayKey: settings.EpayKey,
-          Price: settings.Price,
-          MinTopUp: settings.MinTopUp,
-          CustomCallbackAddress: settings.CustomCallbackAddress,
-          PayMethods: settings.PayMethods,
-          AmountOptions: settings['payment_setting.amount_options'],
-          AmountDiscount: settings['payment_setting.amount_discount'],
-          StripeApiSecret: settings.StripeApiSecret,
-          StripeWebhookSecret: settings.StripeWebhookSecret,
-          StripePriceId: settings.StripePriceId,
-          StripeProductId: settings.StripeProductId,
-          StripeCurrencies: settings.StripeCurrencies,
-          StripeUnitPrice: settings.StripeUnitPrice,
-          StripeMinTopUp: settings.StripeMinTopUp,
-          StripePromotionCodesEnabled: settings.StripePromotionCodesEnabled,
-          CreemApiKey: settings.CreemApiKey,
-          CreemWebhookSecret: settings.CreemWebhookSecret,
-          CreemTestMode: settings.CreemTestMode,
-          CreemProducts: settings.CreemProducts,
-        }}
-        waffoDefaultValues={{
-          WaffoEnabled: settings.WaffoEnabled ?? false,
-          WaffoApiKey: settings.WaffoApiKey ?? '',
-          WaffoPrivateKey: settings.WaffoPrivateKey ?? '',
-          WaffoPublicCert: settings.WaffoPublicCert ?? '',
-          WaffoSandboxPublicCert: settings.WaffoSandboxPublicCert ?? '',
-          WaffoSandboxApiKey: settings.WaffoSandboxApiKey ?? '',
-          WaffoSandboxPrivateKey: settings.WaffoSandboxPrivateKey ?? '',
-          WaffoSandbox: settings.WaffoSandbox ?? false,
-          WaffoMerchantId: settings.WaffoMerchantId ?? '',
-          WaffoCurrency: settings.WaffoCurrency ?? 'USD',
-          WaffoUnitPrice: settings.WaffoUnitPrice ?? 1,
-          WaffoMinTopUp: settings.WaffoMinTopUp ?? 1,
-          WaffoNotifyUrl: settings.WaffoNotifyUrl ?? '',
-          WaffoReturnUrl: settings.WaffoReturnUrl ?? '',
-          WaffoPayMethods: settings.WaffoPayMethods ?? '[]',
-        }}
-        waffoPancakeDefaultValues={{
-          WaffoPancakeMerchantID: settings.WaffoPancakeMerchantID ?? '',
-          WaffoPancakePrivateKey: settings.WaffoPancakePrivateKey ?? '',
-          WaffoPancakeReturnURL: settings.WaffoPancakeReturnURL ?? '',
-        }}
-        waffoPancakeProvisionedStoreID={settings.WaffoPancakeStoreID ?? ''}
-        waffoPancakeProvisionedProductID={settings.WaffoPancakeProductID ?? ''}
-        complianceDefaults={{
-          confirmed: settings['payment_setting.compliance_confirmed'] ?? false,
-          termsVersion:
-            settings['payment_setting.compliance_terms_version'] ?? '',
-          confirmedAt: settings['payment_setting.compliance_confirmed_at'] ?? 0,
-          confirmedBy: settings['payment_setting.compliance_confirmed_by'] ?? 0,
-        }}
-      />
-    ),
-  },
-  {
-    // UNIFYAPI-FORK: its own section so the upstream Payment Gateway form
-    // stays untouched. Sits between the gateways and the partner programs it
-    // is recommended to.
-    id: 'binance-pay',
-    titleKey: 'Binance Pay',
-    build: (settings: BillingSettings) => (
-      <BinancePaySettingsSection
-        defaultValues={{
-          BinancePayEnabled: settings.BinancePayEnabled ?? false,
-          BinancePayApiKey: settings.BinancePayApiKey ?? '',
-          BinancePaySecretKey: settings.BinancePaySecretKey ?? '',
-          BinancePayReceiverId: settings.BinancePayReceiverId ?? '',
-          BinancePayReceiverNickname: settings.BinancePayReceiverNickname ?? '',
-          BinancePayCurrency: settings.BinancePayCurrency ?? 'USDT',
-          BinancePayUnitPrice: settings.BinancePayUnitPrice ?? 1,
-          BinancePayMinTopUp: settings.BinancePayMinTopUp ?? 1,
-          BinancePayOrderTTLMinutes: settings.BinancePayOrderTTLMinutes ?? 60,
-          BinancePayDepositAddresses:
-            settings.BinancePayDepositAddresses ?? '[]',
-          BinancePayRecommendForPartners:
-            settings.BinancePayRecommendForPartners ?? true,
-          BinancePayPlatform: settings.BinancePayPlatform ?? 'binance.com',
-          BinancePayOverpayTolerancePercent:
-            settings.BinancePayOverpayTolerancePercent ?? 5,
-        }}
-      />
+      <>
+        <PaymentSettingsSection
+          defaultValues={{
+            PayAddress: settings.PayAddress,
+            EpayId: settings.EpayId,
+            EpayKey: settings.EpayKey,
+            Price: settings.Price,
+            MinTopUp: settings.MinTopUp,
+            CustomCallbackAddress: settings.CustomCallbackAddress,
+            PayMethods: settings.PayMethods,
+            AmountOptions: settings['payment_setting.amount_options'],
+            AmountDiscount: settings['payment_setting.amount_discount'],
+            StripeApiSecret: settings.StripeApiSecret,
+            StripeWebhookSecret: settings.StripeWebhookSecret,
+            StripePriceId: settings.StripePriceId,
+            StripeProductId: settings.StripeProductId,
+            StripeCurrencies: settings.StripeCurrencies,
+            StripeUnitPrice: settings.StripeUnitPrice,
+            StripeMinTopUp: settings.StripeMinTopUp,
+            StripePromotionCodesEnabled: settings.StripePromotionCodesEnabled,
+            CreemApiKey: settings.CreemApiKey,
+            CreemWebhookSecret: settings.CreemWebhookSecret,
+            CreemTestMode: settings.CreemTestMode,
+            CreemProducts: settings.CreemProducts,
+          }}
+          waffoDefaultValues={{
+            WaffoEnabled: settings.WaffoEnabled ?? false,
+            WaffoApiKey: settings.WaffoApiKey ?? '',
+            WaffoPrivateKey: settings.WaffoPrivateKey ?? '',
+            WaffoPublicCert: settings.WaffoPublicCert ?? '',
+            WaffoSandboxPublicCert: settings.WaffoSandboxPublicCert ?? '',
+            WaffoSandboxApiKey: settings.WaffoSandboxApiKey ?? '',
+            WaffoSandboxPrivateKey: settings.WaffoSandboxPrivateKey ?? '',
+            WaffoSandbox: settings.WaffoSandbox ?? false,
+            WaffoMerchantId: settings.WaffoMerchantId ?? '',
+            WaffoCurrency: settings.WaffoCurrency ?? 'USD',
+            WaffoUnitPrice: settings.WaffoUnitPrice ?? 1,
+            WaffoMinTopUp: settings.WaffoMinTopUp ?? 1,
+            WaffoNotifyUrl: settings.WaffoNotifyUrl ?? '',
+            WaffoReturnUrl: settings.WaffoReturnUrl ?? '',
+            WaffoPayMethods: settings.WaffoPayMethods ?? '[]',
+          }}
+          waffoPancakeDefaultValues={{
+            WaffoPancakeMerchantID: settings.WaffoPancakeMerchantID ?? '',
+            WaffoPancakePrivateKey: settings.WaffoPancakePrivateKey ?? '',
+            WaffoPancakeReturnURL: settings.WaffoPancakeReturnURL ?? '',
+          }}
+          waffoPancakeProvisionedStoreID={settings.WaffoPancakeStoreID ?? ''}
+          waffoPancakeProvisionedProductID={
+            settings.WaffoPancakeProductID ?? ''
+          }
+          complianceDefaults={{
+            confirmed:
+              settings['payment_setting.compliance_confirmed'] ?? false,
+            termsVersion:
+              settings['payment_setting.compliance_terms_version'] ?? '',
+            confirmedAt:
+              settings['payment_setting.compliance_confirmed_at'] ?? 0,
+            confirmedBy:
+              settings['payment_setting.compliance_confirmed_by'] ?? 0,
+          }}
+        />
+        <BinancePaySettingsSection
+          defaultValues={{
+            BinancePayEnabled: settings.BinancePayEnabled ?? false,
+            BinancePayApiKey: settings.BinancePayApiKey ?? '',
+            BinancePaySecretKey: settings.BinancePaySecretKey ?? '',
+            BinancePayReceiverId: settings.BinancePayReceiverId ?? '',
+            BinancePayReceiverNickname:
+              settings.BinancePayReceiverNickname ?? '',
+            BinancePayCurrency: settings.BinancePayCurrency ?? 'USDT',
+            BinancePayUnitPrice: settings.BinancePayUnitPrice ?? 1,
+            BinancePayMinTopUp: settings.BinancePayMinTopUp ?? 1,
+            BinancePayOrderTTLMinutes: settings.BinancePayOrderTTLMinutes ?? 60,
+            BinancePayDepositAddresses:
+              settings.BinancePayDepositAddresses ?? '[]',
+            BinancePayRecommendForPartners:
+              settings.BinancePayRecommendForPartners ?? true,
+            BinancePayPlatform: settings.BinancePayPlatform ?? 'binance.com',
+            BinancePayOverpayTolerancePercent:
+              settings.BinancePayOverpayTolerancePercent ?? 5,
+          }}
+        />
+      </>
     ),
   },
   {
