@@ -176,6 +176,8 @@ export interface TopupInfo {
   binance_pay_currency?: string
   /** Price of 1 USD of credit in binance_pay_currency */
   binance_pay_unit_price?: number
+  /** Receiving accounts currently offered (binance.com and/or Binance.US) */
+  binance_pay_accounts?: BinancePayAccountInfo[]
   /** Whether redemption code usage is enabled */
   enable_redemption?: boolean
   /** Whether compliance confirmation has been completed */
@@ -225,11 +227,28 @@ export interface WaffoPaymentRequest {
 }
 
 /**
+ * One receiving Binance account offered on the wallet page
+ */
+export interface BinancePayAccountInfo {
+  /** 'binance.com' | 'binance.us' */
+  platform: string
+  label: string
+  /** Wallet tile type / TopUp payment_method */
+  payment_method: string
+  has_pay_id: boolean
+  has_addresses: boolean
+}
+
+/**
  * Binance Pay payment request parameters
  */
 export interface BinancePayPaymentRequest {
   /** Topup amount */
   amount: number
+  /** Receiving account: 'binance.com' (default) or 'binance.us' */
+  platform?: string
+  /** Alternatively the tile type: 'binance_pay' | 'binance_pay_us' */
+  payment_method?: string
 }
 
 /**
@@ -246,6 +265,10 @@ export interface BinancePayDepositAddress {
 export interface BinancePayOrder {
   trade_no: string
   status: string
+  /** 'binance.com' | 'binance.us' — which company's account receives */
+  platform: string
+  platform_label: string
+  payment_method: string
   /** Credits purchased */
   amount: number
   /** Exact amount to send, as a string at gateway precision */
@@ -300,6 +323,8 @@ export interface BinancePayCandidate {
 export interface BinancePayCandidatesResponse {
   trade_no: string
   status: string
+  platform?: string
+  platform_label?: string
   user_id: number
   amount: number
   expected_amount: string

@@ -123,7 +123,20 @@ export function isWaffoPancakePayment(paymentType: string): boolean {
  * instructions that the wallet shows in its own dialog.
  */
 export function isBinancePayPayment(paymentType: string): boolean {
-  return paymentType === PAYMENT_TYPES.BINANCE_PAY
+  return (
+    paymentType === PAYMENT_TYPES.BINANCE_PAY ||
+    paymentType === PAYMENT_TYPES.BINANCE_PAY_US
+  )
+}
+
+/**
+ * Which company's account a Binance tile pays into. binance.com and
+ * Binance.US are separate companies; the payer must use the matching one.
+ */
+export function binancePayPlatformForType(paymentType: string): string {
+  return paymentType === PAYMENT_TYPES.BINANCE_PAY_US
+    ? 'binance.us'
+    : 'binance.com'
 }
 
 export interface PaymentProcessors {
@@ -134,7 +147,7 @@ export interface PaymentProcessors {
   ) => Promise<boolean>
   waffo: (topupAmount: number, payMethodIndex: number) => Promise<boolean>
   waffoPancake: (topupAmount: number) => Promise<boolean>
-  binancePay: (topupAmount: number) => Promise<boolean>
+  binancePay: (topupAmount: number, paymentType: string) => Promise<boolean>
 }
 
 export async function dispatchSelectedPayment(
@@ -156,7 +169,7 @@ export async function dispatchSelectedPayment(
   }
 
   if (isBinancePayPayment(paymentMethod.type)) {
-    return processors.binancePay(topupAmount)
+    return processors.binancePay(topupAmount, paymentMethod.type)
   }
 
   return processors.regular(topupAmount, paymentMethod.type, currency)

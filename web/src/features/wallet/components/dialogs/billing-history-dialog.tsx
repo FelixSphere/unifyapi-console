@@ -64,7 +64,8 @@ import {
 // UNIFYAPI-FORK: Binance Pay orders are settled against a real transaction in
 // the receiving account. Administrators see that transaction under settled
 // orders, and match pending ones instead of completing them blind.
-const BINANCE_PAY_METHOD = 'binance_pay'
+const BINANCE_PAY_METHODS = new Set(['binance_pay', 'binance_pay_us'])
+const isBinancePayRecord = (method: string) => BINANCE_PAY_METHODS.has(method)
 
 interface BillingHistoryDialogProps {
   open: boolean
@@ -100,7 +101,7 @@ export function BillingHistoryDialog({
 
   const settledBinanceTradeNos = records
     .filter(
-      (r) => r.payment_method === BINANCE_PAY_METHOD && r.status === 'success'
+      (r) => isBinancePayRecord(r.payment_method) && r.status === 'success'
     )
     .map((r) => r.trade_no)
   const evidenceKey = settledBinanceTradeNos.join(',')
@@ -298,7 +299,7 @@ export function BillingHistoryDialog({
 
                       {/* Binance Pay proof of receipt */}
                       {isAdmin &&
-                        record.payment_method === BINANCE_PAY_METHOD &&
+                        isBinancePayRecord(record.payment_method) &&
                         evidence[record.trade_no] && (
                           <BinancePayEvidenceBlock
                             evidence={evidence[record.trade_no]}
@@ -307,7 +308,7 @@ export function BillingHistoryDialog({
 
                       {/* Admin Actions */}
                       {isAdmin &&
-                        record.payment_method === BINANCE_PAY_METHOD &&
+                        isBinancePayRecord(record.payment_method) &&
                         (record.status === 'pending' ||
                           record.status === 'expired') && (
                           <div className='mt-4 flex justify-end'>
@@ -321,7 +322,7 @@ export function BillingHistoryDialog({
                           </div>
                         )}
                       {isAdmin &&
-                        record.payment_method !== BINANCE_PAY_METHOD &&
+                        !isBinancePayRecord(record.payment_method) &&
                         record.status === 'pending' && (
                           <div className='mt-4 flex justify-end'>
                             <Button

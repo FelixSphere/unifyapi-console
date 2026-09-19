@@ -250,8 +250,8 @@ export function Wallet(props: WalletProps) {
         regular: processPayment,
         waffo: processWaffoPayment,
         waffoPancake: processWaffoPancakePayment,
-        binancePay: async (amount) => {
-          const created = await processBinancePayPayment(amount)
+        binancePay: async (amount, paymentType) => {
+          const created = await processBinancePayPayment(amount, paymentType)
           if (created) {
             setBinancePayDialogOpen(true)
           }
@@ -396,9 +396,12 @@ export function Wallet(props: WalletProps) {
                     topupInfo?.enable_waffo_pancake_topup
                   }
                   enableBinancePayTopup={topupInfo?.enable_binance_pay_topup}
-                  recommendedPaymentType={
+                  recommendedPaymentTypes={
                     topupInfo?.binance_pay_recommended
-                      ? PAYMENT_TYPES.BINANCE_PAY
+                      ? [
+                          PAYMENT_TYPES.BINANCE_PAY,
+                          PAYMENT_TYPES.BINANCE_PAY_US,
+                        ]
                       : undefined
                   }
                 />

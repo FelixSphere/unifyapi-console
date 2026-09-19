@@ -76,6 +76,7 @@ export async function requestPaymentAmount(
   } else if (isWaffoPancakePayment(paymentType)) {
     calculator = calculators.waffoPancake
   } else if (isBinancePayPayment(paymentType)) {
+    // Both Binance accounts share one price; the tile only picks the account.
     calculator = calculators.binancePay
   }
 

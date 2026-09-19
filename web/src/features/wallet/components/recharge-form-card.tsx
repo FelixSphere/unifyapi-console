@@ -99,8 +99,8 @@ interface RechargeFormCardProps {
   onWaffoMethodSelect?: (method: WaffoPayMethod, index: number) => void
   enableWaffoPancakeTopup?: boolean
   enableBinancePayTopup?: boolean
-  /** Payment type to mark as recommended (UNIFYAPI-FORK: partner channel) */
-  recommendedPaymentType?: string
+  /** Payment types to mark as recommended (UNIFYAPI-FORK: partner channel) */
+  recommendedPaymentTypes?: string[]
 }
 
 // Every figure that represents money leaving the user must carry the currency it
@@ -146,7 +146,7 @@ export function RechargeFormCard({
   onWaffoMethodSelect,
   enableWaffoPancakeTopup,
   enableBinancePayTopup,
-  recommendedPaymentType,
+  recommendedPaymentTypes,
 }: RechargeFormCardProps) {
   const { t } = useTranslation()
   const [localAmount, setLocalAmount] = useState(topupAmount.toString())
@@ -420,9 +420,9 @@ export function RechargeFormCard({
                       const disabledLabel = disabled
                         ? `${t('Minimum:')} ${minTopup}`
                         : undefined
-                      const recommended =
-                        !!recommendedPaymentType &&
-                        method.type === recommendedPaymentType
+                      const recommended = !!recommendedPaymentTypes?.includes(
+                        method.type
+                      )
 
                       const button = (
                         <Button

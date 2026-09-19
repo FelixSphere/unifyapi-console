@@ -35,11 +35,33 @@ describe('Binance Pay order parsing', () => {
     })
 
     assert.ok(order)
+    assert.equal(order.platform, 'binance.com')
+    assert.equal(order.payment_method, 'binance_pay')
     assert.equal(order.pay_amount, '20.0137')
     assert.equal(order.receiver_id, '34355667')
     assert.deepEqual(order.deposit_addresses, [
       { network: 'TRX', address: 'TXYZ' },
     ])
+  })
+
+  test('recognises a Binance.US order by platform or payment method', () => {
+    const byPlatform = parseBinancePayOrder({
+      trade_no: 'BNPUS-1',
+      pay_amount: '5.0001',
+      platform: 'binance.us',
+    })
+    assert.ok(byPlatform)
+    assert.equal(byPlatform.platform, 'binance.us')
+    assert.equal(byPlatform.payment_method, 'binance_pay_us')
+    assert.equal(byPlatform.platform_label, 'Binance.US')
+
+    const byMethod = parseBinancePayOrder({
+      trade_no: 'BNPUS-2',
+      pay_amount: '5.0002',
+      payment_method: 'binance_pay_us',
+    })
+    assert.ok(byMethod)
+    assert.equal(byMethod.platform, 'binance.us')
   })
 
   test('refuses a payload without the two fields the payer must see', () => {
