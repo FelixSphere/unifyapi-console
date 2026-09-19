@@ -233,8 +233,16 @@ function AccountStatusLine({
 
 export function BinancePaySettingsSection({
   defaultValues,
+  embedded = false,
 }: {
   defaultValues: BinancePaySettingsValues
+  /**
+   * Rendered as a tab inside the upstream Payment Gateway form. The upstream
+   * tabs all share one <form>; nesting another is not HTML, and
+   * react-hook-form does not need one, so in this mode the section renders
+   * no <form> and no page-header save action -- it saves from its own button.
+   */
+  embedded?: boolean
 }) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
@@ -608,181 +616,206 @@ export function BinancePaySettingsSection({
     )
   }
 
+  const saving = updateOption.isPending || isSubmitting
+  const body = (
+    <>
+      {embedded ? (
+        <div className='flex flex-wrap items-start justify-between gap-3'>
+          <div>
+            <h3 className='text-lg font-medium'>
+              {t('Binance Pay (personal accounts)')}
+            </h3>
+            <p className='text-muted-foreground text-sm'>
+              {t(
+                'Saved separately from the other gateways: this button saves only the Binance settings.'
+              )}
+            </p>
+          </div>
+          <Button
+            type='button'
+            size='sm'
+            onClick={form.handleSubmit(onSubmit)}
+            disabled={saving || !isDirty}
+          >
+            {saving && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+            {t('Save Binance Pay settings')}
+          </Button>
+        </div>
+      ) : (
+        <SettingsPageFormActions
+          onSave={form.handleSubmit(onSubmit)}
+          isSaving={saving}
+          isSaveDisabled={!isDirty}
+          saveLabel='Save Binance Pay settings'
+        />
+      )}
+
+      <Alert>
+        <AlertDescription className='text-xs'>
+          {t(
+            'Customers transfer a stablecoin to your own Binance account and the console confirms it by reading that account’s history with a read-only API key (grant "Enable Reading" only). Binance (binance.com) and Binance.US are separate companies with separate accounts, keys and customers, so each is configured and offered on its own; a customer picks the one where they hold an account. Each order gets a unique amount; overpayment within the tolerance is accepted, anything else waits for you to match it.'
+          )}
+        </AlertDescription>
+      </Alert>
+
+      {statusQuery.data && !statusQuery.data.compliance_confirmed && (
+        <Alert>
+          <AlertTriangle className='h-4 w-4' />
+          <AlertDescription className='text-xs'>
+            {t(
+              'Payment compliance terms are not confirmed yet (Payment Gateway section). Until then no gateway is shown to customers.'
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {renderAccountCard({
+        platform: 'binance.com',
+        title: t('Binance (binance.com)'),
+        intro: t(
+          'Global Binance. Customers pay by Binance Pay to your Pay ID (free, instant) or on-chain.'
+        ),
+        enabledField: 'BinancePayEnabled',
+        apiKeyField: 'BinancePayApiKey',
+        secretField: 'BinancePaySecretKey',
+        nicknameField: 'BinancePayReceiverNickname',
+        addressesField: 'BinancePayDepositAddressesText',
+        showPayId: true,
+      })}
+
+      {renderAccountCard({
+        platform: 'binance.us',
+        title: t('Binance.US'),
+        intro: t(
+          'US entity, separate from binance.com. No Binance Pay: customers pay on-chain to your deposit address.'
+        ),
+        enabledField: 'BinancePayUSEnabled',
+        apiKeyField: 'BinancePayUSApiKey',
+        secretField: 'BinancePayUSSecretKey',
+        nicknameField: 'BinancePayUSReceiverNickname',
+        addressesField: 'BinancePayUSDepositAddressesText',
+        showPayId: false,
+      })}
+
+      <div className='space-y-4 rounded-lg border p-4'>
+        <h4 className='font-medium'>{t('Shared settings')}</h4>
+        <FormField
+          control={form.control}
+          name='BinancePayRecommendForPartners'
+          render={({ field }) => (
+            <SettingsSwitchItem>
+              <SettingsSwitchContent>
+                <FormLabel>{t('Recommend to partnership customers')}</FormLabel>
+                <FormDescription>
+                  {t(
+                    'Users in a Partnership Program customer group see the Binance options first, marked as recommended.'
+                  )}
+                </FormDescription>
+              </SettingsSwitchContent>
+              <FormControl>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+            </SettingsSwitchItem>
+          )}
+        />
+        <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-5'>
+          <FormField
+            control={form.control}
+            name='BinancePayCurrency'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Asset')}</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder='USDT'
+                    {...field}
+                    onChange={(event) =>
+                      field.onChange(event.target.value.toUpperCase())
+                    }
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='BinancePayUnitPrice'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Price per 1 USD of credit')}</FormLabel>
+                <FormControl>
+                  <Input type='number' step='0.01' min={0} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='BinancePayMinTopUp'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Minimum top-up quantity')}</FormLabel>
+                <FormControl>
+                  <Input type='number' min={1} step={1} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='BinancePayOrderTTLMinutes'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Order expires after (minutes)')}</FormLabel>
+                <FormControl>
+                  <Input type='number' min={5} max={1440} step={1} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='BinancePayOverpayTolerancePercent'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Accept overpayment up to (%)')}</FormLabel>
+                <FormControl>
+                  <Input type='number' min={0} max={50} step='0.5' {...field} />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Credited automatically when only one pending order fits. Short payments always wait for you. 0 disables.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+      </div>
+    </>
+  )
+
+  if (embedded) {
+    return (
+      <Form {...form}>
+        <div className='space-y-6 pt-4'>{body}</div>
+      </Form>
+    )
+  }
+
   return (
     <SettingsSection title={t('Binance Pay (personal accounts)')}>
       <Form {...form}>
         <SettingsForm onSubmit={form.handleSubmit(onSubmit)} autoComplete='off'>
-          <SettingsPageFormActions
-            onSave={form.handleSubmit(onSubmit)}
-            isSaving={updateOption.isPending || isSubmitting}
-            isSaveDisabled={!isDirty}
-            saveLabel='Save Binance Pay settings'
-          />
-
-          <Alert>
-            <AlertDescription className='text-xs'>
-              {t(
-                'Customers transfer a stablecoin to your own Binance account and the console confirms it by reading that account’s history with a read-only API key (grant "Enable Reading" only). Binance (binance.com) and Binance.US are separate companies with separate accounts, keys and customers, so each is configured and offered on its own; a customer picks the one where they hold an account. Each order gets a unique amount; overpayment within the tolerance is accepted, anything else waits for you to match it.'
-              )}
-            </AlertDescription>
-          </Alert>
-
-          {statusQuery.data && !statusQuery.data.compliance_confirmed && (
-            <Alert>
-              <AlertTriangle className='h-4 w-4' />
-              <AlertDescription className='text-xs'>
-                {t(
-                  'Payment compliance terms are not confirmed yet (Payment Gateway section). Until then no gateway is shown to customers.'
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {renderAccountCard({
-            platform: 'binance.com',
-            title: t('Binance (binance.com)'),
-            intro: t(
-              'Global Binance. Customers pay by Binance Pay to your Pay ID (free, instant) or on-chain.'
-            ),
-            enabledField: 'BinancePayEnabled',
-            apiKeyField: 'BinancePayApiKey',
-            secretField: 'BinancePaySecretKey',
-            nicknameField: 'BinancePayReceiverNickname',
-            addressesField: 'BinancePayDepositAddressesText',
-            showPayId: true,
-          })}
-
-          {renderAccountCard({
-            platform: 'binance.us',
-            title: t('Binance.US'),
-            intro: t(
-              'US entity, separate from binance.com. No Binance Pay: customers pay on-chain to your deposit address.'
-            ),
-            enabledField: 'BinancePayUSEnabled',
-            apiKeyField: 'BinancePayUSApiKey',
-            secretField: 'BinancePayUSSecretKey',
-            nicknameField: 'BinancePayUSReceiverNickname',
-            addressesField: 'BinancePayUSDepositAddressesText',
-            showPayId: false,
-          })}
-
-          <div className='space-y-4 rounded-lg border p-4'>
-            <h4 className='font-medium'>{t('Shared settings')}</h4>
-            <FormField
-              control={form.control}
-              name='BinancePayRecommendForPartners'
-              render={({ field }) => (
-                <SettingsSwitchItem>
-                  <SettingsSwitchContent>
-                    <FormLabel>
-                      {t('Recommend to partnership customers')}
-                    </FormLabel>
-                    <FormDescription>
-                      {t(
-                        'Users in a Partnership Program customer group see the Binance options first, marked as recommended.'
-                      )}
-                    </FormDescription>
-                  </SettingsSwitchContent>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </SettingsSwitchItem>
-              )}
-            />
-            <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-5'>
-              <FormField
-                control={form.control}
-                name='BinancePayCurrency'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Asset')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder='USDT'
-                        {...field}
-                        onChange={(event) =>
-                          field.onChange(event.target.value.toUpperCase())
-                        }
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name='BinancePayUnitPrice'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Price per 1 USD of credit')}</FormLabel>
-                    <FormControl>
-                      <Input type='number' step='0.01' min={0} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name='BinancePayMinTopUp'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Minimum top-up quantity')}</FormLabel>
-                    <FormControl>
-                      <Input type='number' min={1} step={1} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name='BinancePayOrderTTLMinutes'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Order expires after (minutes)')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        type='number'
-                        min={5}
-                        max={1440}
-                        step={1}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name='BinancePayOverpayTolerancePercent'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Accept overpayment up to (%)')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        type='number'
-                        min={0}
-                        max={50}
-                        step='0.5'
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      {t(
-                        'Credited automatically when only one pending order fits. Short payments always wait for you. 0 disables.'
-                      )}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-          </div>
+          {body}
         </SettingsForm>
       </Form>
     </SettingsSection>

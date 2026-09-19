@@ -264,6 +264,10 @@ type PaymentSettingsSectionProps = {
   waffoPancakeProvisionedStoreID?: string
   waffoPancakeProvisionedProductID?: string
   complianceDefaults: PaymentComplianceDefaults
+  // UNIFYAPI-FORK: the Binance Pay tab. Rendered by the caller so this
+  // upstream form stays ignorant of the fork's gateway; the slot must not
+  // contain a <form> (see BinancePaySettingsSection embedded mode).
+  binancePaySlot?: React.ReactNode
 }
 
 function parseWaffoPayMethods(value: string): PayMethod[] {
@@ -282,6 +286,7 @@ export function PaymentSettingsSection({
   waffoPancakeProvisionedStoreID,
   waffoPancakeProvisionedProductID,
   complianceDefaults,
+  binancePaySlot,
 }: PaymentSettingsSectionProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -958,13 +963,21 @@ export function PaymentSettingsSection({
           />
           <Tabs defaultValue='general' className='min-w-0'>
             <div className='overflow-x-auto pb-1'>
-              <TabsList className='grid min-w-[44rem] grid-cols-6'>
+              <TabsList
+                className={cn(
+                  'grid min-w-[44rem]',
+                  binancePaySlot ? 'grid-cols-7' : 'grid-cols-6'
+                )}
+              >
                 <TabsTrigger value='general'>{t('General')}</TabsTrigger>
                 <TabsTrigger value='epay'>Epay</TabsTrigger>
                 <TabsTrigger value='stripe'>{t('Stripe')}</TabsTrigger>
                 <TabsTrigger value='creem'>Creem</TabsTrigger>
                 <TabsTrigger value='waffo-pancake'>Waffo Pancake</TabsTrigger>
                 <TabsTrigger value='waffo'>Waffo</TabsTrigger>
+                {binancePaySlot && (
+                  <TabsTrigger value='binance'>Binance</TabsTrigger> // UNIFYAPI-FORK
+                )}
               </TabsList>
             </div>
 
@@ -1759,6 +1772,16 @@ export function PaymentSettingsSection({
                 onPayMethodsChange={setWaffoPayMethods}
               />
             </TabsContent>
+
+            {binancePaySlot && (
+              // UNIFYAPI-FORK
+              <TabsContent
+                value='binance'
+                className={paymentTabContentClassName}
+              >
+                {binancePaySlot}
+              </TabsContent>
+            )}
           </Tabs>
         </SettingsForm>
       </Form>
