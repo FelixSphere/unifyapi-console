@@ -155,6 +155,7 @@ export function getPaymentIcon(
         </span>
       )
     case PAYMENT_TYPES.BINANCE_PAY:
+    case PAYMENT_TYPES.BINANCE_PAY_US:
       return (
         <SiBinance
           className={className}

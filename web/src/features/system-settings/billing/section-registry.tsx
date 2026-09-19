@@ -249,20 +249,22 @@ const BILLING_SECTIONS = [
         <BinancePaySettingsSection
           defaultValues={{
             BinancePayEnabled: settings.BinancePayEnabled ?? false,
-            BinancePayApiKey: settings.BinancePayApiKey ?? '',
-            BinancePaySecretKey: settings.BinancePaySecretKey ?? '',
             BinancePayReceiverId: settings.BinancePayReceiverId ?? '',
             BinancePayReceiverNickname:
               settings.BinancePayReceiverNickname ?? '',
+            BinancePayDepositAddresses:
+              settings.BinancePayDepositAddresses ?? '[]',
+            BinancePayUSEnabled: settings.BinancePayUSEnabled ?? false,
+            BinancePayUSReceiverNickname:
+              settings.BinancePayUSReceiverNickname ?? '',
+            BinancePayUSDepositAddresses:
+              settings.BinancePayUSDepositAddresses ?? '[]',
             BinancePayCurrency: settings.BinancePayCurrency ?? 'USDT',
             BinancePayUnitPrice: settings.BinancePayUnitPrice ?? 1,
             BinancePayMinTopUp: settings.BinancePayMinTopUp ?? 1,
             BinancePayOrderTTLMinutes: settings.BinancePayOrderTTLMinutes ?? 60,
-            BinancePayDepositAddresses:
-              settings.BinancePayDepositAddresses ?? '[]',
             BinancePayRecommendForPartners:
               settings.BinancePayRecommendForPartners ?? true,
-            BinancePayPlatform: settings.BinancePayPlatform ?? 'binance.com',
             BinancePayOverpayTolerancePercent:
               settings.BinancePayOverpayTolerancePercent ?? 5,
           }}

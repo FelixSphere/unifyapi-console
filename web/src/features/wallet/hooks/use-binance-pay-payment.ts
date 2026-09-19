@@ -15,7 +15,7 @@ import {
   isApiSuccess,
   requestBinancePayPayment,
 } from '../api'
-import { getPaymentErrorMessage } from '../lib'
+import { binancePayPlatformForType, getPaymentErrorMessage } from '../lib'
 import type { BinancePayOrder } from '../types'
 
 // ============================================================================
@@ -51,9 +51,26 @@ export function parseBinancePayOrder(data: unknown): BinancePayOrder | null {
         .filter((item) => item.network && item.address)
     : []
 
+  const platform =
+    raw.platform === 'binance.us' || raw.payment_method === 'binance_pay_us'
+      ? 'binance.us'
+      : 'binance.com'
   return {
     trade_no: tradeNo,
     status: typeof raw.status === 'string' ? raw.status : 'pending',
+    platform,
+    platform_label:
+      typeof raw.platform_label === 'string' && raw.platform_label
+        ? raw.platform_label
+        : platform === 'binance.us'
+          ? 'Binance.US'
+          : 'Binance (binance.com)',
+    payment_method:
+      typeof raw.payment_method === 'string' && raw.payment_method
+        ? raw.payment_method
+        : platform === 'binance.us'
+          ? 'binance_pay_us'
+          : 'binance_pay',
     amount: Number(raw.amount) || 0,
     pay_amount: payAmount,
     currency: typeof raw.currency === 'string' ? raw.currency : 'USDT',
@@ -77,28 +94,33 @@ export function useBinancePayPayment() {
   const [processing, setProcessing] = useState(false)
   const [order, setOrder] = useState<BinancePayOrder | null>(null)
 
-  const processBinancePayPayment = useCallback(async (topupAmount: number) => {
-    setProcessing(true)
-    try {
-      const response = await requestBinancePayPayment({
-        amount: Math.floor(topupAmount),
-      })
-      if (isApiSuccess(response)) {
-        const parsed = parseBinancePayOrder(response.data)
-        if (parsed) {
-          setOrder(parsed)
-          return true
+  const processBinancePayPayment = useCallback(
+    async (topupAmount: number, paymentType: string = 'binance_pay') => {
+      setProcessing(true)
+      try {
+        const response = await requestBinancePayPayment({
+          amount: Math.floor(topupAmount),
+          platform: binancePayPlatformForType(paymentType),
+          payment_method: paymentType,
+        })
+        if (isApiSuccess(response)) {
+          const parsed = parseBinancePayOrder(response.data)
+          if (parsed) {
+            setOrder(parsed)
+            return true
+          }
         }
+        toast.error(getPaymentErrorMessage(response.message, response.data))
+        return false
+      } catch {
+        toast.error(i18next.t('Payment request failed'))
+        return false
+      } finally {
+        setProcessing(false)
       }
-      toast.error(getPaymentErrorMessage(response.message, response.data))
-      return false
-    } catch {
-      toast.error(i18next.t('Payment request failed'))
-      return false
-    } finally {
-      setProcessing(false)
-    }
-  }, [])
+    },
+    []
+  )
 
   const clearOrder = useCallback(() => setOrder(null), [])
 

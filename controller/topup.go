@@ -105,19 +105,22 @@ func GetTopUpInfo(c *gin.Context) {
 				binancePayRecommended = model.IsPartnershipCustomerGroup(group)
 			}
 		}
-		hasBinancePay := false
+		present := map[string]bool{}
 		for _, method := range payMethods {
-			if method["type"] == model.PaymentMethodBinancePay {
-				hasBinancePay = true
-				break
+			if isBinancePayMethodType(method["type"]) {
+				present[method["type"]] = true
 			}
 		}
-		if !hasBinancePay {
-			if binancePayRecommended {
-				payMethods = append([]map[string]string{binancePayMethodEntry()}, payMethods...)
-			} else {
-				payMethods = append(payMethods, binancePayMethodEntry())
+		var fresh []map[string]string
+		for _, entry := range binancePayMethodEntries() {
+			if !present[entry["type"]] {
+				fresh = append(fresh, entry)
 			}
+		}
+		if binancePayRecommended {
+			payMethods = append(fresh, payMethods...)
+		} else {
+			payMethods = append(payMethods, fresh...)
 		}
 	}
 

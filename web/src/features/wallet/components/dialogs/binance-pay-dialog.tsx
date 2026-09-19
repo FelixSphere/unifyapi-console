@@ -122,6 +122,10 @@ export function BinancePayDialog({
   const amountLabel = `${current.pay_amount} ${current.currency}`
   const addresses = current.deposit_addresses ?? []
   const hasPayId = !!current.receiver_id
+  const isUS = current.platform === 'binance.us'
+  const platformLabel =
+    current.platform_label || (isUS ? 'Binance.US' : 'Binance (binance.com)')
+  const otherPlatform = isUS ? 'binance.com' : 'Binance.US'
 
   return (
     <Dialog
@@ -129,8 +133,10 @@ export function BinancePayDialog({
       onOpenChange={onOpenChange}
       title={
         <span className='inline-flex items-center gap-2'>
-          {getPaymentIcon('binance_pay', 'h-5 w-5')}
-          {t('Pay with Binance Pay')}
+          {getPaymentIcon(current.payment_method, 'h-5 w-5')}
+          {isUS
+            ? t('Pay with Binance.US')
+            : t('Pay with Binance Pay (binance.com)')}
         </span>
       }
       description={
@@ -201,6 +207,17 @@ export function BinancePayDialog({
         </Alert>
       ) : (
         <>
+          <div className='rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs'>
+            <span className='font-medium'>
+              {t('Receiving account: {{platform}}.', {
+                platform: platformLabel,
+              })}
+            </span>{' '}
+            {t(
+              'Binance (binance.com) and Binance.US are separate companies. Send only from an account on {{platform}}; a transfer from {{other}} cannot reach it.',
+              { platform: platformLabel, other: otherPlatform }
+            )}
+          </div>
           <CopyRow label={t('Amount to send')} value={amountLabel} emphasis />
           <p className='text-muted-foreground text-xs'>
             {t(
@@ -224,7 +241,11 @@ export function BinancePayDialog({
               )}
 
               <ol className='text-muted-foreground list-decimal space-y-1 pl-5 text-xs'>
-                <li>{t('Open the Binance app and go to Pay, then Send.')}</li>
+                <li>
+                  {t(
+                    'Open the Binance (binance.com) app and go to Pay, then Send.'
+                  )}
+                </li>
                 <li>{t('Enter the recipient Pay ID above.')}</li>
                 <li>
                   {t('Choose {{currency}} and enter the exact amount.', {

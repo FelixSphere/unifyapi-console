@@ -1,15 +1,15 @@
 package controller
 
-// UNIFYAPI-FORK: the operator side of Binance Pay -- proof of receipt.
+// UNIFYAPI-FORK: the operator side of Binance Pay -- proof of receipt and
+// health.
 //
 // The automatic reconciler only credits an order when a transaction of
-// exactly its amount is in the receiving account's history, and it records
-// which one. These endpoints make that evidence visible, and replace blind
-// "complete order" for this gateway with "match this order to that
-// transaction": the administrator sees the account's real incoming transfers
-// around the order, picks one, and the ledger pins it so it can never settle a
-// second order. Nothing here trusts an amount sent by the browser; the chosen
-// transaction is re-read from Binance before any quota moves.
+// exactly (or acceptably above) its amount is in the receiving account's
+// history, and it records which one. These endpoints make that evidence
+// visible, replace blind "complete order" for this gateway with "match this
+// order to that transaction", and tell the operator whether each account's
+// key actually works. Nothing here trusts an amount sent by the browser; the
+// chosen transaction is re-read from Binance before any quota moves.
 
 import (
 	"context"
@@ -61,6 +61,7 @@ type binancePayCandidateView struct {
 
 type binancePayEvidenceView struct {
 	TradeNo       string `json:"trade_no"`
+	Platform      string `json:"platform"`
 	TransactionId string `json:"transaction_id"`
 	Source        string `json:"source"`
 	Amount        string `json:"amount"`
@@ -95,8 +96,13 @@ func AdminBinancePayEvidence(c *gin.Context) {
 	}
 	out := make(map[string]binancePayEvidenceView, len(rows))
 	for tradeNo, row := range rows {
+		platform := setting.BinancePayPlatformGlobal
+		if strings.HasPrefix(row.TransactionId, "us:") {
+			platform = setting.BinancePayPlatformUS
+		}
 		out[tradeNo] = binancePayEvidenceView{
 			TradeNo:       tradeNo,
+			Platform:      platform,
 			TransactionId: row.TransactionId,
 			Source:        row.Source,
 			Amount:        row.Amount,
@@ -133,16 +139,17 @@ func loadBinancePayOrderForOperator(tradeNo string) (*model.TopUp, error) {
 	return order, nil
 }
 
-// binancePayCandidatesForOrder reads the account's history around the order
-// and ranks every incoming transaction by how close it is to the expected
-// amount. Transactions that already paid an order are returned too, marked.
-func binancePayCandidatesForOrder(ctx context.Context, reader service.BinanceHistoryReader, order *model.TopUp) ([]binancePayCandidateView, []binancePayCandidate, error) {
+// binancePayCandidatesForOrder reads the order's account history around the
+// order and ranks every incoming transaction by how close it is to the
+// expected amount. Transactions that already paid an order are returned too,
+// marked.
+func binancePayCandidatesForOrder(ctx context.Context, account setting.BinancePayAccount, reader service.BinanceHistoryReader, order *model.TopUp) ([]binancePayCandidateView, []binancePayCandidate, error) {
 	startMs := time.Unix(order.CreateTime, 0).Add(-binancePayMatchSlack).UnixMilli()
 	endMs := time.Unix(order.CreateTime, 0).Add(binancePayCandidateWindow).UnixMilli()
 	if now := time.Now().UnixMilli(); endMs > now {
 		endMs = now
 	}
-	candidates, err := collectBinancePayCandidates(ctx, reader, startMs, endMs)
+	candidates, err := collectBinancePayCandidates(ctx, account, reader, startMs, endMs)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -200,15 +207,17 @@ func AdminListBinancePayCandidates(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if strings.TrimSpace(setting.BinancePayApiKey) == "" || strings.TrimSpace(setting.BinancePaySecretKey) == "" {
-		common.ApiErrorMsg(c, "Binance Pay 未配置 API Key，无法读取收款记录")
+	account := binancePayAccountForOrder(order)
+	if !account.HasCredentials() {
+		common.ApiErrorMsg(c, fmt.Sprintf("%s 账户未配置有效的 API Key，无法读取收款记录", account.Label()))
 		return
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), binancePayReconcileTimeout)
 	defer cancel()
-	views, _, err := binancePayCandidatesForOrder(ctx, binancePayHistoryReaderFactory(), order)
+	views, _, err := binancePayCandidatesForOrder(ctx, account, binancePayHistoryReaderFactory(account), order)
+	recordBinancePayHealth(account.Platform, "operator", err)
 	if err != nil {
-		logger.LogWarn(ctx, fmt.Sprintf("Binance Pay 读取收款记录失败 trade_no=%s error=%q", order.TradeNo, err.Error()))
+		logger.LogWarn(ctx, fmt.Sprintf("Binance Pay 读取收款记录失败 trade_no=%s platform=%s error=%q", order.TradeNo, account.Platform, err.Error()))
 		common.ApiErrorMsg(c, "读取币安收款记录失败: "+err.Error())
 		return
 	}
@@ -216,6 +225,8 @@ func AdminListBinancePayCandidates(c *gin.Context) {
 		"trade_no":        order.TradeNo,
 		"status":          order.Status,
 		"user_id":         order.UserId,
+		"platform":        account.Platform,
+		"platform_label":  account.Label(),
 		"amount":          order.Amount,
 		"expected_amount": model.FormatBinancePayMoney(order.Money),
 		"currency":        setting.GetBinancePayCurrency(),
@@ -244,9 +255,11 @@ func AdminMatchBinancePay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	account := binancePayAccountForOrder(order)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), binancePayReconcileTimeout)
 	defer cancel()
-	_, candidates, err := binancePayCandidatesForOrder(ctx, binancePayHistoryReaderFactory(), order)
+	_, candidates, err := binancePayCandidatesForOrder(ctx, account, binancePayHistoryReaderFactory(account), order)
+	recordBinancePayHealth(account.Platform, "operator", err)
 	if err != nil {
 		common.ApiErrorMsg(c, "读取币安收款记录失败: "+err.Error())
 		return
@@ -276,7 +289,138 @@ func AdminMatchBinancePay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	logger.LogInfo(ctx, fmt.Sprintf("Binance Pay 管理员匹配成功 admin_id=%d trade_no=%s transaction_id=%s amount=%s expected=%s",
-		adminId, order.TradeNo, chosen.TransactionId, chosen.Amount, model.FormatBinancePayMoney(order.Money)))
+	logger.LogInfo(ctx, fmt.Sprintf("Binance Pay 管理员匹配成功 admin_id=%d platform=%s trade_no=%s transaction_id=%s amount=%s expected=%s",
+		adminId, account.Platform, order.TradeNo, chosen.TransactionId, chosen.Amount, model.FormatBinancePayMoney(order.Money)))
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": binancePayOrderView(model.GetTopUpByTradeNo(order.TradeNo))})
+}
+
+// ---------------------------------------------------------------------------
+// Account status and connection test (root settings page)
+// ---------------------------------------------------------------------------
+
+type binancePayAccountStatusView struct {
+	Platform         string            `json:"platform"`
+	Label            string            `json:"label"`
+	PaymentMethod    string            `json:"payment_method"`
+	Enabled          bool              `json:"enabled"`
+	HasCredentials   bool              `json:"has_credentials"`
+	ApiKeyLength     int               `json:"api_key_length"`
+	SecretLength     int               `json:"secret_length"`
+	PayId            string            `json:"pay_id"`
+	PayIdValid       bool              `json:"pay_id_valid"`
+	SupportsPay      bool              `json:"supports_pay"`
+	AddressCount     int               `json:"address_count"`
+	Configured       bool              `json:"configured"`
+	PendingOrders    int               `json:"pending_orders"`
+	LastCheck        *binancePayHealth `json:"last_check,omitempty"`
+	ConfiguredReason string            `json:"configured_reason"`
+}
+
+func binancePayStatusFor(account setting.BinancePayAccount, pendingByMethod map[string]int) binancePayAccountStatusView {
+	reason := ""
+	switch {
+	case !account.Enabled:
+		reason = "disabled"
+	case !account.HasCredentials():
+		reason = "api key or secret is not a 64-character Binance key"
+	case account.PayIdForPayers() == "" && len(account.Addresses()) == 0:
+		if account.SupportsPayTransfers() {
+			reason = "needs a valid Pay ID (6-20 digits) or a deposit address"
+		} else {
+			reason = "needs a deposit address (Binance.US has no Binance Pay)"
+		}
+	}
+	v := binancePayAccountStatusView{
+		Platform:         account.Platform,
+		Label:            account.Label(),
+		PaymentMethod:    account.PaymentMethod(),
+		Enabled:          account.Enabled,
+		HasCredentials:   account.HasCredentials(),
+		ApiKeyLength:     len(account.ApiKey),
+		SecretLength:     len(account.SecretKey),
+		PayId:            account.ReceiverId,
+		PayIdValid:       account.PayIdForPayers() != "",
+		SupportsPay:      account.SupportsPayTransfers(),
+		AddressCount:     len(account.Addresses()),
+		Configured:       account.Configured(),
+		PendingOrders:    pendingByMethod[account.PaymentMethod()],
+		ConfiguredReason: reason,
+	}
+	if h, ok := getBinancePayHealth(account.Platform); ok {
+		hh := h
+		v.LastCheck = &hh
+	}
+	return v
+}
+
+// AdminBinancePayStatus GET returns both accounts' effective state: whether
+// each is configured (and if not, why), how many orders wait on it, and the
+// result of the last call to its platform.
+func AdminBinancePayStatus(c *gin.Context) {
+	pendingByMethod := map[string]int{}
+	if pending, err := model.GetPendingBinancePayTopUps(); err == nil {
+		for _, o := range pending {
+			pendingByMethod[o.PaymentMethod]++
+		}
+	}
+	accounts := setting.BinancePayAccounts()
+	out := make([]binancePayAccountStatusView, 0, len(accounts))
+	for _, a := range accounts {
+		out = append(out, binancePayStatusFor(a, pendingByMethod))
+	}
+	common.ApiSuccess(c, gin.H{
+		"compliance_confirmed": isPaymentComplianceConfirmed(),
+		"accounts":             out,
+	})
+}
+
+type AdminBinancePayTestRequest struct {
+	Platform string `json:"platform"`
+}
+
+// AdminBinancePayTest POST {platform} makes one read against the platform
+// with the STORED credentials and reports what came back. It reads the last
+// 24h of deposit history (both platforms) and Pay history (binance.com), so
+// a bad key, a wrong platform or a region block shows up here, not in a
+// customer's pending order.
+func AdminBinancePayTest(c *gin.Context) {
+	var req AdminBinancePayTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	account, ok := setting.BinancePayAccountForPlatform(req.Platform)
+	if !ok {
+		common.ApiErrorMsg(c, "未知平台")
+		return
+	}
+	if !account.HasCredentials() {
+		common.ApiErrorMsg(c, "该账户的 API Key / Secret 不是有效的 64 位币安密钥，请先保存正确的密钥")
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), binancePayReconcileTimeout)
+	defer cancel()
+	reader := binancePayHistoryReaderFactory(account)
+	endMs := time.Now().UnixMilli()
+	startMs := time.Now().Add(-24 * time.Hour).UnixMilli()
+
+	result := gin.H{"platform": account.Platform, "label": account.Label()}
+	deposits, err := reader.DepositHistory(ctx, setting.GetBinancePayCurrency(), startMs, endMs)
+	if err != nil {
+		recordBinancePayHealth(account.Platform, "test", err)
+		common.ApiErrorMsg(c, "读取充币记录失败: "+err.Error())
+		return
+	}
+	result["deposits_24h"] = len(deposits)
+	if account.SupportsPayTransfers() {
+		pays, err := reader.PayTransactions(ctx, startMs, endMs)
+		if err != nil {
+			recordBinancePayHealth(account.Platform, "test", err)
+			common.ApiErrorMsg(c, "读取 Binance Pay 记录失败: "+err.Error())
+			return
+		}
+		result["pay_transactions_24h"] = len(pays)
+	}
+	recordBinancePayHealth(account.Platform, "test", nil)
+	common.ApiSuccess(c, result)
 }

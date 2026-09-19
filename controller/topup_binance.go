@@ -1,16 +1,17 @@
 package controller
 
 // UNIFYAPI-FORK: Binance Pay top-ups into the operator's personal Binance
-// account. See setting/payment_binance.go for the model and
+// account(s). See setting/payment_binance.go for the account model and
 // model/binance_pay.go for the ledger.
 //
-// Flow: the user asks for N credits -> we price it, reserve a unique
-// stablecoin amount and store a pending TopUp -> the wallet shows "send
-// exactly X USDT to Pay ID Y" -> the reconciler polls the account's Binance
-// Pay history (and, if configured, its deposit history) and credits the one
-// pending order whose amount matches. There is no webhook: Binance does not
-// notify personal accounts, so the wallet polls the order status and each
-// poll may nudge the reconciler, rate limited.
+// Flow: the user asks for N credits on one of the Binance tiles -> we price
+// it, reserve a unique stablecoin amount and store a pending TopUp whose
+// PaymentMethod names the receiving account -> the wallet shows "send exactly
+// X USDT to Pay ID Y" (binance.com) or "to address Z" (either platform) ->
+// the reconciler polls each account's own history with its read-only key and
+// credits the one pending order whose amount matches. There is no webhook:
+// Binance does not notify personal accounts, so the wallet polls the order
+// status and each poll may nudge the reconciler, rate limited.
 
 import (
 	"context"
@@ -47,31 +48,33 @@ const (
 	binancePayPollIntervalSeconds = 10
 )
 
-func isBinancePayTopUpEnabled() bool {
+// binancePayConfiguredAccounts are the accounts that can take payments right
+// now: compliance confirmed, enabled, credible credentials, a way to pay.
+func binancePayConfiguredAccounts() []setting.BinancePayAccount {
 	if !isPaymentComplianceConfirmed() {
-		return false
+		return nil
 	}
-	if !setting.BinancePayEnabled {
-		return false
+	var out []setting.BinancePayAccount
+	for _, a := range setting.BinancePayAccounts() {
+		if a.Configured() {
+			out = append(out, a)
+		}
 	}
-	if strings.TrimSpace(setting.BinancePayApiKey) == "" || strings.TrimSpace(setting.BinancePaySecretKey) == "" {
-		return false
-	}
-	// There must be at least one way to pay: a Pay ID (Binance Pay, not on
-	// Binance.US) or an on-chain deposit address.
-	if setting.BinancePaySupportsPayTransfers() && strings.TrimSpace(setting.BinancePayReceiverId) != "" {
-		return true
-	}
-	return len(setting.GetBinancePayDepositAddresses()) > 0
+	return out
 }
 
-// binancePayReceiverIdForPayers is the Pay ID shown to payers -- none on a
-// platform without Binance Pay, so the wallet shows on-chain instructions only.
-func binancePayReceiverIdForPayers() string {
-	if !setting.BinancePaySupportsPayTransfers() {
-		return ""
+func isBinancePayTopUpEnabled() bool {
+	return len(binancePayConfiguredAccounts()) > 0
+}
+
+// binancePayAccountForOrder resolves the receiving account of an order from
+// its PaymentMethod. Legacy rows (method "binance_pay") are binance.com.
+func binancePayAccountForOrder(topUp *model.TopUp) setting.BinancePayAccount {
+	if a, ok := setting.BinancePayAccountForMethod(topUp.PaymentMethod); ok {
+		return a
 	}
-	return strings.TrimSpace(setting.BinancePayReceiverId)
+	a, _ := setting.BinancePayAccountForPlatform(setting.BinancePayPlatformGlobal)
+	return a
 }
 
 func binancePayOrderTTL() time.Duration {
@@ -84,7 +87,7 @@ func binancePayOrderTTL() time.Duration {
 
 // getBinancePayPrice is the stablecoin price of `amount` credits before the
 // unique suffix: credits x unit price x top-up group ratio x amount discount,
-// in decimal all the way.
+// in decimal all the way. Shared by both accounts.
 func getBinancePayPrice(amount float64, group string) decimal.Decimal {
 	originalAmount := amount
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
@@ -109,6 +112,22 @@ func getBinancePayPrice(amount float64, group string) decimal.Decimal {
 
 type BinancePayRequest struct {
 	Amount int64 `json:"amount"`
+	// Platform selects the receiving account: "binance.com" (default) or
+	// "binance.us". The wallet sends the tile's platform.
+	Platform string `json:"platform"`
+	// PaymentMethod is accepted as an alternative to Platform ("binance_pay"
+	// or "binance_pay_us"), matching the tile type.
+	PaymentMethod string `json:"payment_method"`
+}
+
+func (r BinancePayRequest) platform() string {
+	if strings.TrimSpace(r.Platform) != "" {
+		return setting.NormalizeBinancePayPlatform(r.Platform)
+	}
+	if strings.TrimSpace(r.PaymentMethod) != "" {
+		return setting.NormalizeBinancePayPlatform(r.PaymentMethod)
+	}
+	return setting.BinancePayPlatformGlobal
 }
 
 func binancePayMinTopUp() int64 {
@@ -148,34 +167,48 @@ func RequestBinancePayAmount(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "success", "data": price.StringFixed(2)})
 }
 
+// binancePayOrderView is what the wallet renders: the transfer instructions
+// for the order's own receiving account, plus status.
 func binancePayOrderView(topUp *model.TopUp) gin.H {
+	account := binancePayAccountForOrder(topUp)
 	expiresAt := topUp.CreateTime + int64(binancePayOrderTTL().Seconds())
+	addresses := account.Addresses()
+	if addresses == nil {
+		addresses = []setting.BinancePayDepositAddress{}
+	}
 	return gin.H{
 		"trade_no":              topUp.TradeNo,
 		"status":                topUp.Status,
 		"amount":                topUp.Amount,
 		"pay_amount":            model.FormatBinancePayMoney(topUp.Money),
 		"currency":              setting.GetBinancePayCurrency(),
-		"platform":              setting.GetBinancePayPlatform(),
-		"receiver_id":           binancePayReceiverIdForPayers(),
-		"receiver_nickname":     strings.TrimSpace(setting.BinancePayReceiverNickname),
-		"deposit_addresses":     setting.GetBinancePayDepositAddresses(),
+		"platform":              account.Platform,
+		"platform_label":        account.Label(),
+		"payment_method":        account.PaymentMethod(),
+		"receiver_id":           account.PayIdForPayers(),
+		"receiver_nickname":     account.ReceiverNickname,
+		"deposit_addresses":     addresses,
 		"created_at":            topUp.CreateTime,
 		"expires_at":            expiresAt,
 		"poll_interval_seconds": binancePayPollIntervalSeconds,
 	}
 }
 
-// RequestBinancePay creates a pending order and returns the exact transfer
-// instructions.
+// RequestBinancePay creates a pending order on the chosen account and returns
+// the exact transfer instructions.
 func RequestBinancePay(c *gin.Context) {
-	if !isBinancePayTopUpEnabled() {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Binance Pay 支付未启用"})
-		return
-	}
 	var req BinancePayRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "参数错误"})
+		return
+	}
+	if !isPaymentComplianceConfirmed() {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Binance Pay 支付未启用"})
+		return
+	}
+	account, ok := setting.BinancePayAccountForPlatform(req.platform())
+	if !ok || !account.Configured() {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "该 Binance 收款账户未启用"})
 		return
 	}
 	if req.Amount < binancePayMinTopUp() {
@@ -201,6 +234,9 @@ func RequestBinancePay(c *gin.Context) {
 		logger.LogWarn(c.Request.Context(), fmt.Sprintf("Binance Pay 过期订单清理失败 error=%q", err.Error()))
 	}
 
+	// Amounts are unique across BOTH accounts (ReserveBinancePayMoney looks at
+	// every pending Binance order), so a transfer can never be ambiguous
+	// between platforms either.
 	money, err := model.ReserveBinancePayMoney(price)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Binance Pay 金额预留失败 user_id=%d amount=%d error=%q", id, req.Amount, err.Error()))
@@ -218,14 +254,18 @@ func RequestBinancePay(c *gin.Context) {
 		}
 	}
 
-	tradeNo := fmt.Sprintf("BNP-%d-%d-%s", id, time.Now().UnixMilli(), common.GetRandomString(6))
+	prefix := "BNP"
+	if account.Platform == setting.BinancePayPlatformUS {
+		prefix = "BNPUS"
+	}
+	tradeNo := fmt.Sprintf("%s-%d-%d-%s", prefix, id, time.Now().UnixMilli(), common.GetRandomString(6))
 	moneyF, _ := money.Float64()
 	topUp := &model.TopUp{
 		UserId:          id,
 		Amount:          amount,
 		Money:           moneyF,
 		TradeNo:         tradeNo,
-		PaymentMethod:   model.PaymentMethodBinancePay,
+		PaymentMethod:   account.PaymentMethod(),
 		PaymentProvider: model.PaymentProviderBinancePay,
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
@@ -235,8 +275,8 @@ func RequestBinancePay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
 		return
 	}
-	logger.LogInfo(c.Request.Context(), fmt.Sprintf("Binance Pay 充值订单创建成功 user_id=%d trade_no=%s amount=%d pay_amount=%s %s",
-		id, tradeNo, req.Amount, money.StringFixed(model.BinancePayMoneyDecimals), setting.GetBinancePayCurrency()))
+	logger.LogInfo(c.Request.Context(), fmt.Sprintf("Binance Pay 充值订单创建成功 platform=%s user_id=%d trade_no=%s amount=%d pay_amount=%s %s",
+		account.Platform, id, tradeNo, req.Amount, money.StringFixed(model.BinancePayMoneyDecimals), setting.GetBinancePayCurrency()))
 
 	c.JSON(http.StatusOK, gin.H{"message": "success", "data": binancePayOrderView(topUp)})
 }
@@ -279,17 +319,46 @@ func GetBinancePayOrderStatus(c *gin.Context) {
 // Reconciler
 // ---------------------------------------------------------------------------
 
+// binancePayHealth is the last result of talking to each account's platform,
+// shown to the operator so "why is nothing being credited" has an answer.
+type binancePayHealth struct {
+	CheckedAt int64  `json:"checked_at"`
+	OK        bool   `json:"ok"`
+	Error     string `json:"error,omitempty"`
+	Source    string `json:"source"` // "reconciler" | "test" | "operator"
+}
+
 var (
 	binancePayReconcileMu   sync.Mutex
 	binancePayLastReconcile time.Time
+	binancePayHealthMu      sync.RWMutex
+	binancePayHealthByPlat  = map[string]binancePayHealth{}
 	// binancePayHistoryReaderFactory is swapped by tests.
-	binancePayHistoryReaderFactory = func() service.BinanceHistoryReader {
-		return service.NewBinanceClient(setting.BinancePayApiKey, setting.BinancePaySecretKey, setting.BinancePayApiBaseURL())
+	binancePayHistoryReaderFactory = func(account setting.BinancePayAccount) service.BinanceHistoryReader {
+		return service.NewBinanceClient(account.ApiKey, account.SecretKey, account.ApiBaseURL())
 	}
 )
 
-// reconcileBinancePayThrottled runs one reconcile pass unless another is in
-// flight or one finished less than binancePayReconcileMinGap ago.
+func recordBinancePayHealth(platform, source string, err error) {
+	h := binancePayHealth{CheckedAt: time.Now().Unix(), OK: err == nil, Source: source}
+	if err != nil {
+		h.Error = err.Error()
+	}
+	binancePayHealthMu.Lock()
+	binancePayHealthByPlat[platform] = h
+	binancePayHealthMu.Unlock()
+}
+
+func getBinancePayHealth(platform string) (binancePayHealth, bool) {
+	binancePayHealthMu.RLock()
+	defer binancePayHealthMu.RUnlock()
+	h, ok := binancePayHealthByPlat[platform]
+	return h, ok
+}
+
+// reconcileBinancePayThrottled runs one reconcile pass over every configured
+// account unless another is in flight or one finished less than
+// binancePayReconcileMinGap ago.
 func reconcileBinancePayThrottled(ctx context.Context, callerIp string) {
 	if !binancePayReconcileMu.TryLock() {
 		return
@@ -299,13 +368,11 @@ func reconcileBinancePayThrottled(ctx context.Context, callerIp string) {
 		return
 	}
 	binancePayLastReconcile = time.Now()
-	if err := reconcileBinancePay(ctx, binancePayHistoryReaderFactory(), callerIp); err != nil {
-		logger.LogWarn(ctx, fmt.Sprintf("Binance Pay 对账失败 error=%q", err.Error()))
-	}
+	reconcileAllBinancePayAccounts(ctx, callerIp)
 }
 
 // RunBinancePayReconciler is the background loop started from main. It does
-// nothing while the gateway is disabled, so enabling it needs no restart.
+// nothing while no account is configured, so enabling one needs no restart.
 func RunBinancePayReconciler() {
 	ticker := time.NewTicker(binancePayReconcileInterval)
 	defer ticker.Stop()
@@ -325,11 +392,21 @@ func RunBinancePayReconciler() {
 			}
 			defer binancePayReconcileMu.Unlock()
 			binancePayLastReconcile = time.Now()
-			if err := reconcileBinancePay(ctx, binancePayHistoryReaderFactory(), "reconciler"); err != nil {
-				logger.LogWarn(ctx, fmt.Sprintf("Binance Pay 对账失败 error=%q", err.Error()))
-			}
+			reconcileAllBinancePayAccounts(ctx, "reconciler")
 		}()
 		cancel()
+	}
+}
+
+// reconcileAllBinancePayAccounts runs one pass per configured account. An
+// error on one account (bad key, region block) must not stop the other.
+func reconcileAllBinancePayAccounts(ctx context.Context, callerIp string) {
+	for _, account := range binancePayConfiguredAccounts() {
+		err := reconcileBinancePay(ctx, account, binancePayHistoryReaderFactory(account), callerIp)
+		recordBinancePayHealth(account.Platform, "reconciler", err)
+		if err != nil {
+			logger.LogWarn(ctx, fmt.Sprintf("Binance Pay 对账失败 platform=%s error=%q", account.Platform, err.Error()))
+		}
 	}
 }
 
@@ -344,9 +421,26 @@ type binancePayCandidate struct {
 	network   string
 }
 
-// reconcileBinancePay expires stale orders, then matches each remaining
-// pending order to an incoming transaction of exactly its amount.
-func reconcileBinancePay(ctx context.Context, reader service.BinanceHistoryReader, callerIp string) error {
+// pendingBinancePayOrdersFor returns the unpaid orders that belong to one
+// account, oldest first.
+func pendingBinancePayOrdersFor(account setting.BinancePayAccount) ([]*model.TopUp, error) {
+	all, err := model.GetPendingBinancePayTopUps()
+	if err != nil {
+		return nil, err
+	}
+	method := account.PaymentMethod()
+	out := make([]*model.TopUp, 0, len(all))
+	for _, o := range all {
+		if o.PaymentMethod == method {
+			out = append(out, o)
+		}
+	}
+	return out, nil
+}
+
+// reconcileBinancePay expires stale orders, then matches each of this
+// account's pending orders to an incoming transaction in its history.
+func reconcileBinancePay(ctx context.Context, account setting.BinancePayAccount, reader service.BinanceHistoryReader, callerIp string) error {
 	ttl := binancePayOrderTTL()
 	if n, err := model.ExpireBinancePayTopUps(time.Now().Add(-ttl).Unix()); err != nil {
 		return fmt.Errorf("expire orders: %w", err)
@@ -354,7 +448,7 @@ func reconcileBinancePay(ctx context.Context, reader service.BinanceHistoryReade
 		logger.LogInfo(ctx, fmt.Sprintf("Binance Pay 已过期订单 count=%d", n))
 	}
 
-	pending, err := model.GetPendingBinancePayTopUps()
+	pending, err := pendingBinancePayOrdersFor(account)
 	if err != nil {
 		return fmt.Errorf("load pending: %w", err)
 	}
@@ -375,11 +469,10 @@ func reconcileBinancePay(ctx context.Context, reader service.BinanceHistoryReade
 	}
 	endMs := now.UnixMilli()
 
-	candidates, err := collectBinancePayCandidates(ctx, reader, startMs, endMs)
+	candidates, err := collectBinancePayCandidates(ctx, account, reader, startMs, endMs)
 	if err != nil {
 		return err
 	}
-
 	if len(candidates) == 0 {
 		return nil
 	}
@@ -390,8 +483,8 @@ func reconcileBinancePay(ctx context.Context, reader service.BinanceHistoryReade
 		order, reason := pickBinancePayOrder(pending, cand, settled)
 		if order == nil {
 			if reason != "" {
-				logger.LogWarn(ctx, fmt.Sprintf("Binance Pay 收款未自动匹配 transaction_id=%s amount=%s %s reason=%s",
-					cand.txn.TransactionId, cand.amount.String(), cand.currency, reason))
+				logger.LogWarn(ctx, fmt.Sprintf("Binance Pay 收款未自动匹配 platform=%s transaction_id=%s amount=%s %s reason=%s",
+					account.Platform, cand.txn.TransactionId, cand.amount.String(), cand.currency, reason))
 			}
 			continue
 		}
@@ -403,8 +496,8 @@ func reconcileBinancePay(ctx context.Context, reader service.BinanceHistoryReade
 		case err == nil:
 			matched++
 			settled[order.TradeNo] = true
-			logger.LogInfo(ctx, fmt.Sprintf("Binance Pay 充值成功 trade_no=%s transaction_id=%s amount=%s %s expected=%s",
-				order.TradeNo, txn.TransactionId, txn.Amount, txn.Currency, model.FormatBinancePayMoney(order.Money)))
+			logger.LogInfo(ctx, fmt.Sprintf("Binance Pay 充值成功 platform=%s trade_no=%s transaction_id=%s amount=%s %s expected=%s",
+				account.Platform, order.TradeNo, txn.TransactionId, txn.Amount, txn.Currency, model.FormatBinancePayMoney(order.Money)))
 		case errors.Is(err, model.ErrBinancePayTxnUsed):
 			// This transaction already paid an order (earlier pass, or by hand).
 			continue
@@ -418,7 +511,8 @@ func reconcileBinancePay(ctx context.Context, reader service.BinanceHistoryReade
 		}
 	}
 	if matched > 0 {
-		logger.LogInfo(ctx, fmt.Sprintf("Binance Pay 对账完成 pending=%d candidates=%d matched=%d", len(pending), len(candidates), matched))
+		logger.LogInfo(ctx, fmt.Sprintf("Binance Pay 对账完成 platform=%s pending=%d candidates=%d matched=%d",
+			account.Platform, len(pending), len(candidates), matched))
 	}
 	return nil
 }
@@ -464,64 +558,73 @@ func pickBinancePayOrder(pending []*model.TopUp, cand binancePayCandidate, settl
 	return nil, ""
 }
 
-// collectBinancePayCandidates reads the receiving account's history for
+// binancePayLedgerPrefix keeps transaction ids unique across accounts. The
+// binance.com account keeps the original bare prefixes so rows written before
+// the second account existed still guard against replay.
+func binancePayLedgerPrefix(account setting.BinancePayAccount) string {
+	if account.Platform == setting.BinancePayPlatformUS {
+		return "us:"
+	}
+	return ""
+}
+
+// collectBinancePayCandidates reads one account's history for
 // [startMs, endMs] and returns every incoming transaction in the configured
 // asset that could have paid an order: refunds, the account's own outgoing
 // payments and money received by other accounts are dropped here, once, for
 // both the reconciler and the operator's matching view.
-func collectBinancePayCandidates(ctx context.Context, reader service.BinanceHistoryReader, startMs, endMs int64) ([]binancePayCandidate, error) {
+func collectBinancePayCandidates(ctx context.Context, account setting.BinancePayAccount, reader service.BinanceHistoryReader, startMs, endMs int64) ([]binancePayCandidate, error) {
 	currency := setting.GetBinancePayCurrency()
-	receiverId := strings.TrimSpace(setting.BinancePayReceiverId)
+	receiverId := account.ReceiverId
+	prefix := binancePayLedgerPrefix(account)
 	candidates := make([]binancePayCandidate, 0, 16)
 
-	var payRows []service.BinancePayTransaction
-	if setting.BinancePaySupportsPayTransfers() {
-		var err error
-		payRows, err = reader.PayTransactions(ctx, startMs, endMs)
+	if account.SupportsPayTransfers() {
+		payRows, err := reader.PayTransactions(ctx, startMs, endMs)
 		if err != nil {
 			return nil, fmt.Errorf("pay history: %w", err)
 		}
-	}
-	for _, row := range payRows {
-		if !strings.EqualFold(row.Currency, currency) {
-			continue
+		for _, row := range payRows {
+			if !strings.EqualFold(row.Currency, currency) {
+				continue
+			}
+			if isBinanceRefundOrderType(row.OrderType) {
+				continue
+			}
+			// Only money that arrived in this account counts. Binance lists the
+			// account's outgoing payments in the same history.
+			if r := row.ReceiverInfo.BinanceId.String(); r != "" && receiverId != "" && r != receiverId {
+				continue
+			}
+			if p := row.PayerInfo.BinanceId.String(); p != "" && p == receiverId {
+				continue
+			}
+			amt, err := decimal.NewFromString(strings.TrimSpace(row.Amount.String()))
+			if err != nil || amt.Sign() <= 0 {
+				continue
+			}
+			txnId := row.TransactionId.String()
+			if txnId == "" {
+				continue
+			}
+			candidates = append(candidates, binancePayCandidate{
+				txn: model.BinancePayTransaction{
+					TransactionId: prefix + "pay:" + txnId,
+					Source:        model.BinancePayTxnSourcePay,
+					Amount:        amt.String(),
+					Currency:      currency,
+					PayerId:       row.PayerInfo.BinanceId.String(),
+					TransactTime:  row.TransactionTime,
+				},
+				amount:    amt,
+				currency:  currency,
+				timeMs:    row.TransactionTime,
+				payerName: row.PayerInfo.Name,
+			})
 		}
-		if isBinanceRefundOrderType(row.OrderType) {
-			continue
-		}
-		// Only money that arrived in this account counts. Binance lists the
-		// account's outgoing payments in the same history.
-		if r := row.ReceiverInfo.BinanceId.String(); r != "" && r != receiverId {
-			continue
-		}
-		if p := row.PayerInfo.BinanceId.String(); p != "" && p == receiverId {
-			continue
-		}
-		amt, err := decimal.NewFromString(strings.TrimSpace(row.Amount.String()))
-		if err != nil || amt.Sign() <= 0 {
-			continue
-		}
-		txnId := row.TransactionId.String()
-		if txnId == "" {
-			continue
-		}
-		candidates = append(candidates, binancePayCandidate{
-			txn: model.BinancePayTransaction{
-				TransactionId: "pay:" + txnId,
-				Source:        model.BinancePayTxnSourcePay,
-				Amount:        amt.String(),
-				Currency:      currency,
-				PayerId:       row.PayerInfo.BinanceId.String(),
-				TransactTime:  row.TransactionTime,
-			},
-			amount:    amt,
-			currency:  currency,
-			timeMs:    row.TransactionTime,
-			payerName: row.PayerInfo.Name,
-		})
 	}
 
-	if addresses := setting.GetBinancePayDepositAddresses(); len(addresses) > 0 {
+	if addresses := account.Addresses(); len(addresses) > 0 {
 		ours := make(map[string]struct{}, len(addresses))
 		for _, a := range addresses {
 			ours[strings.ToLower(a.Address)] = struct{}{}
@@ -550,7 +653,7 @@ func collectBinancePayCandidates(ctx context.Context, reader service.BinanceHist
 			}
 			candidates = append(candidates, binancePayCandidate{
 				txn: model.BinancePayTransaction{
-					TransactionId: "deposit:" + id,
+					TransactionId: prefix + "deposit:" + id,
 					Source:        model.BinancePayTxnSourceDeposit,
 					Amount:        amt.String(),
 					Currency:      currency,
@@ -564,7 +667,6 @@ func collectBinancePayCandidates(ctx context.Context, reader service.BinanceHist
 			})
 		}
 	}
-
 	return candidates, nil
 }
 
@@ -576,23 +678,51 @@ func isBinanceRefundOrderType(orderType string) bool {
 	return false
 }
 
+// ---------------------------------------------------------------------------
+// GetTopUpInfo integration
+// ---------------------------------------------------------------------------
+
 // binancePayInfoFields is what GetTopUpInfo exposes for this gateway.
 func binancePayInfoFields(enabled bool, recommended bool) gin.H {
+	accounts := make([]gin.H, 0, 2)
+	if enabled {
+		for _, a := range binancePayConfiguredAccounts() {
+			accounts = append(accounts, gin.H{
+				"platform":       a.Platform,
+				"label":          a.Label(),
+				"payment_method": a.PaymentMethod(),
+				"has_pay_id":     a.PayIdForPayers() != "",
+				"has_addresses":  len(a.Addresses()) > 0,
+			})
+		}
+	}
 	return gin.H{
 		"enable_binance_pay_topup": enabled,
 		"binance_pay_min_topup":    int(binancePayMinTopUp()),
 		"binance_pay_recommended":  enabled && recommended,
 		"binance_pay_currency":     setting.GetBinancePayCurrency(),
 		"binance_pay_unit_price":   setting.BinancePayUnitPrice,
+		"binance_pay_accounts":     accounts,
 	}
 }
 
-// binancePayMethodEntry is the wallet's payment-method tile.
-func binancePayMethodEntry() map[string]string {
-	return map[string]string{
-		"name":      "Binance Pay",
-		"type":      model.PaymentMethodBinancePay,
-		"color":     "#F0B90B",
-		"min_topup": strconv.Itoa(int(binancePayMinTopUp())),
+// binancePayMethodEntries are the wallet's payment-method tiles, one per
+// configured account, binance.com first.
+func binancePayMethodEntries() []map[string]string {
+	accounts := binancePayConfiguredAccounts()
+	out := make([]map[string]string, 0, len(accounts))
+	for _, a := range accounts {
+		out = append(out, map[string]string{
+			"name":      a.Label(),
+			"type":      a.PaymentMethod(),
+			"color":     "#F0B90B",
+			"min_topup": strconv.Itoa(int(binancePayMinTopUp())),
+		})
 	}
+	return out
+}
+
+// isBinancePayMethodType reports whether a wallet tile type is one of ours.
+func isBinancePayMethodType(t string) bool {
+	return t == setting.BinancePayMethodGlobal || t == setting.BinancePayMethodUS
 }

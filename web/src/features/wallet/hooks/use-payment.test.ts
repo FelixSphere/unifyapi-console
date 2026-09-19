@@ -105,5 +105,18 @@ describe('payment amount routing', () => {
     assert.equal(amount, 20.4)
     // Binance Pay is stablecoin-denominated; the Stripe currency never applies.
     assert.deepEqual(requests, [{ label: 'binancePay', amount: 20 }])
+
+    // Binance.US shares the same price calculator.
+    await requestPaymentAmount(20, PAYMENT_TYPES.BINANCE_PAY_US, undefined, {
+      regular: record('regular'),
+      stripe: record('stripe'),
+      waffo: record('waffo'),
+      waffoPancake: record('waffoPancake'),
+      binancePay: record('binancePay'),
+    })
+    assert.deepEqual(requests, [
+      { label: 'binancePay', amount: 20 },
+      { label: 'binancePay', amount: 20 },
+    ])
   })
 })
