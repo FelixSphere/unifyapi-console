@@ -338,9 +338,10 @@ const groupNameSeparator = "_"
 // name without sharing an invoice, and an outside name can never select a
 // group that was not created for it.
 //
-// The column is varchar(64) while a team name may be 120 characters, so this
-// takes the most legible form that fits: the group is printed as the bill-to
-// line, and an unlovely invoice beats a failed insert.
+// The group is printed as the bill-to line, so this takes the most legible
+// form that fits the column and degrades only if it must. The column was
+// varchar(64), which forced most real names down to an opaque code; it is 255
+// now, so "Program_Team" survives for a 120-character team name.
 func customerPricingGroupName(program *PartnershipProgram, name, code string) string {
 	if program == nil {
 		return code
@@ -358,8 +359,13 @@ func customerPricingGroupName(program *PartnershipProgram, name, code string) st
 	return code
 }
 
+// pricingGroupColumnLength is the width of every single-name group column
+// (users, tenants, abilities, tasks, partnership, customer wallets). Keep it
+// equal to the narrowest of them.
+const pricingGroupColumnLength = 255
+
 func fitsPricingGroupColumn(group string) bool {
-	return group != "" && len(group) <= 64 && len([]rune(group)) <= 64
+	return group != "" && len(group) <= pricingGroupColumnLength && len([]rune(group)) <= pricingGroupColumnLength
 }
 
 // ProvisionBuilderCustomer atomically registers a new team and its settings.
