@@ -28,6 +28,14 @@ export const Route = createFileRoute(
   '/_authenticated/system-settings/billing/$section'
 )({
   beforeLoad: ({ params }) => {
+    // Binance Pay used to be its own section; it is a card on the Payment
+    // Gateway page now. Keep the old link working.
+    if (params.section === 'binance-pay') {
+      throw redirect({
+        to: '/system-settings/billing/$section',
+        params: { section: 'payment' },
+      })
+    }
     const validSections = BILLING_SECTION_IDS as unknown as string[]
     if (!validSections.includes(params.section)) {
       throw redirect({
