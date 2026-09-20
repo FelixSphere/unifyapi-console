@@ -78,6 +78,32 @@ export function formatQuota(quota: number): string {
 }
 
 /**
+ * Convert US dollars to quota units, and back.
+ *
+ * Deliberately NOT display-aware, unlike parseQuotaFromDollars below. The
+ * server's money is dollars: every top-up path computes `quota = USD *
+ * QuotaPerUnit` (model/topup.go) with no exchange rate anywhere. An operator
+ * setting how much credit a new user receives is setting a dollar amount, and
+ * it must not change meaning because someone switched the console's display
+ * currency to RM.
+ *
+ * Only `quotaPerUnit` is read, so these stay correct if that is reconfigured.
+ */
+export function usdToQuotaUnits(usd: number): number {
+  if (!Number.isFinite(usd)) return 0
+  const { config } = getCurrencyDisplay()
+  return Math.round(usd * config.quotaPerUnit)
+}
+
+export function quotaUnitsToUsd(units: number): number {
+  if (!Number.isFinite(units)) return 0
+  // getConfig() already substitutes the default when quotaPerUnit is absent or
+  // not positive, so there is no zero to divide by here.
+  const { config } = getCurrencyDisplay()
+  return units / config.quotaPerUnit
+}
+
+/**
  * Parse quota from the current display input back to quota units.
  */
 export function parseQuotaFromDollars(amount: number): number {
