@@ -7,7 +7,7 @@ Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus } from 'lucide-react'
+import { HandCoins, Pencil, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -29,12 +29,13 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 
 import {
+  paySupplierShare,
   saveCreditSupplier,
   type CreditLot,
   type CreditSupplier,
   type CreditSupplierInput,
 } from './credit-supply-api'
-import { formatUSD, payableUSD } from './credit-supply-logic'
+import { formatUSD, payableUSD, unpaidShareUSD } from './credit-supply-logic'
 
 type SupplierFormState = {
   name: string
@@ -68,6 +69,37 @@ export function CreditSuppliersPanel({
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<CreditSupplier | null>(null)
   const [form, setForm] = useState<SupplierFormState>(emptySupplierForm())
+  const [payout, setPayout] = useState<PayoutState | null>(null)
+  const payoutMutation = useMutation({
+    mutationFn: () => {
+      if (!payout) throw new Error('no payout in progress')
+      return paySupplierShare({
+        supplierId: payout.supplier.id,
+        method: payout.method,
+        reference: payout.reference,
+        force: payout.force,
+      })
+    },
+    onSuccess: (result) => {
+      toast.success(
+        t('Paid {{amount}} of revenue share across {{count}} lots.', {
+          amount: formatUSD(result.amount_usd),
+          count: result.payouts.length,
+        })
+      )
+      setPayout(null)
+      queryClient.invalidateQueries({ queryKey: ['credit-supply'] })
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
+  const openPayout = (supplier: CreditSupplier, owed: number) =>
+    setPayout({
+      supplier,
+      owed,
+      method: supplier.user_id ? 'platform_credit' : 'external',
+      reference: '',
+      force: false,
+    })
 
   const mutation = useMutation({
     mutationFn: saveCreditSupplier,
@@ -138,6 +170,7 @@ export function CreditSuppliersPanel({
       face: own.reduce((sum, lot) => sum + lot.face_value_usd, 0),
       consumed: own.reduce((sum, lot) => sum + lot.consumed_usd, 0),
       payable: own.reduce((sum, lot) => sum + payableUSD(lot), 0),
+      shareUnpaid: own.reduce((sum, lot) => sum + unpaidShareUSD(lot), 0),
     }
   }
 
@@ -160,6 +193,8 @@ export function CreditSuppliersPanel({
               <TableHead>{t('Face value')}</TableHead>
               <TableHead>{t('Consumed')}</TableHead>
               <TableHead>{t('Payable to date')}</TableHead>
+              <TableHead>{t('Revenue share owed')}</TableHead>
+              <TableHead>{t('Payout account')}</TableHead>
               <TableHead>{t('Status')}</TableHead>
               <TableHead className='text-right'>{t('Actions')}</TableHead>
             </TableRow>
@@ -201,6 +236,33 @@ export function CreditSuppliersPanel({
                   <TableCell className='tabular-nums'>
                     {formatUSD(totals.payable)}
                   </TableCell>
+                  <TableCell className='tabular-nums'>
+                    {totals.shareUnpaid > 0
+                      ? formatUSD(totals.shareUnpaid)
+                      : '—'}
+                  </TableCell>
+                  <TableCell className='text-sm'>
+                    {supplier.payout_method ? (
+                      <>
+                        <div>
+                          {supplier.payout_method}
+                          {supplier.payout_currency
+                            ? ` · ${supplier.payout_currency}`
+                            : ''}
+                        </div>
+                        {supplier.payout_details ? (
+                          <div className='text-muted-foreground text-xs'>
+                            {supplier.payout_holder} ·{' '}
+                            {maskPayoutDetails(supplier.payout_details)}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className='text-destructive text-xs'>
+                        {t('Not filed — cannot be paid')}
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Badge variant={supplierBadgeVariant(supplier.status)}>
                       {t(SUPPLIER_STATUS_LABELS[supplier.status])}
@@ -213,6 +275,20 @@ export function CreditSuppliersPanel({
                   </TableCell>
                   <TableCell className='text-right'>
                     <div className='flex justify-end gap-1'>
+                      {totals.shareUnpaid > 0 ? (
+                        <Button
+                          type='button'
+                          size='icon-sm'
+                          variant='ghost'
+                          aria-label={t('Pay revenue share')}
+                          title={t('Pay revenue share')}
+                          onClick={() =>
+                            openPayout(supplier, totals.shareUnpaid)
+                          }
+                        >
+                          <HandCoins className='size-4' />
+                        </Button>
+                      ) : null}
                       <Button
                         type='button'
                         size='icon-sm'
@@ -230,7 +306,7 @@ export function CreditSuppliersPanel({
             {suppliers.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={8}
+                  colSpan={10}
                   className='text-muted-foreground text-center'
                 >
                   {t('No suppliers yet.')}
@@ -314,6 +390,27 @@ export function CreditSuppliersPanel({
             <Label>{t('Supplier active')}</Label>
           </div>
           <div className='sm:col-span-2'>
+            {editing?.payout_method ? (
+              <div className='rounded-md border p-3 text-sm'>
+                <div className='font-medium'>
+                  {t('Payout account (filed by the seller)')}
+                </div>
+                <div className='mt-1'>
+                  {editing.payout_method}
+                  {editing.payout_currency
+                    ? ` · ${editing.payout_currency}`
+                    : ''}
+                </div>
+                {editing.payout_holder ? (
+                  <div>{editing.payout_holder}</div>
+                ) : null}
+                {editing.payout_details ? (
+                  <pre className='mt-1 font-mono text-xs whitespace-pre-wrap'>
+                    {editing.payout_details}
+                  </pre>
+                ) : null}
+              </div>
+            ) : null}
             <Field label={t('Payout terms (in words — never account numbers)')}>
               <Textarea
                 value={form.payoutTerms}
@@ -340,8 +437,111 @@ export function CreditSuppliersPanel({
           </div>
         </div>
       </Dialog>
+
+      <Dialog
+        open={payout !== null}
+        onOpenChange={(open) => (open ? null : setPayout(null))}
+        title={t('Pay revenue share')}
+        description={t(
+          'Settles everything this contributor is owed across all of their keys, in one payment. Platform credit lands in their wallet immediately; an external transfer is recorded against the reference they can look up.'
+        )}
+        footer={
+          <>
+            <Button
+              type='button'
+              variant='outline'
+              onClick={() => setPayout(null)}
+            >
+              {t('Cancel')}
+            </Button>
+            <Button
+              type='button'
+              disabled={payoutMutation.isPending}
+              onClick={() => payoutMutation.mutate()}
+            >
+              {t('Pay {{amount}}', {
+                amount: formatUSD(payout?.owed ?? 0),
+              })}
+            </Button>
+          </>
+        }
+      >
+        {payout ? (
+          <div className='grid gap-4'>
+            <p className='text-sm'>
+              {t('{{name}} is owed {{amount}}.', {
+                name: payout.supplier.name,
+                amount: formatUSD(payout.owed),
+              })}
+            </p>
+            <Field label={t('How')}>
+              <div className='flex flex-wrap gap-2'>
+                <Button
+                  type='button'
+                  size='sm'
+                  variant={
+                    payout.method === 'platform_credit' ? 'default' : 'outline'
+                  }
+                  disabled={!payout.supplier.user_id}
+                  onClick={() =>
+                    setPayout({ ...payout, method: 'platform_credit' })
+                  }
+                >
+                  {t('Platform credit')}
+                </Button>
+                <Button
+                  type='button'
+                  size='sm'
+                  variant={payout.method === 'external' ? 'default' : 'outline'}
+                  onClick={() => setPayout({ ...payout, method: 'external' })}
+                >
+                  {t('External transfer')}
+                </Button>
+              </div>
+              {payout.supplier.user_id ? null : (
+                <p className='text-muted-foreground text-xs'>
+                  {t(
+                    'This contributor has no linked login, so there is no wallet to credit.'
+                  )}
+                </p>
+              )}
+            </Field>
+            {payout.method === 'external' ? (
+              <Field label={t('Transfer reference')}>
+                <Input
+                  value={payout.reference}
+                  placeholder='wire-2026-0142'
+                  onChange={(event) =>
+                    setPayout({ ...payout, reference: event.target.value })
+                  }
+                />
+              </Field>
+            ) : null}
+            <div className='flex items-center gap-3'>
+              <Switch
+                checked={payout.force}
+                onCheckedChange={(force) => setPayout({ ...payout, force })}
+              />
+              <Label className='text-sm font-normal'>
+                {t('Pay even if the balance is below the posted minimum')}
+              </Label>
+            </div>
+          </div>
+        ) : null}
+      </Dialog>
     </div>
   )
+}
+
+// PayoutState is one dividend payment being composed. owed is what the screen
+// last saw as outstanding; the server recomputes it and pays what is actually
+// owed, so a stale number here can only be wrong in the display.
+type PayoutState = {
+  supplier: CreditSupplier
+  owed: number
+  method: 'platform_credit' | 'external'
+  reference: string
+  force: boolean
 }
 
 function supplierBadgeVariant(
@@ -379,4 +579,12 @@ function keptInactiveStatus(
 ): CreditSupplier['status'] {
   if (editing && editing.status !== 'active') return editing.status
   return 'suspended'
+}
+
+// maskPayoutDetails keeps the tail so the account is recognisable in a list
+// without the whole number on screen; the edit dialog shows it in full.
+function maskPayoutDetails(details: string): string {
+  const d = details.trim()
+  if (d.length <= 4) return '••••'
+  return `••••${d.slice(-4)}`
 }

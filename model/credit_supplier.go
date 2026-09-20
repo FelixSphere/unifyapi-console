@@ -79,9 +79,21 @@ type CreditSupplier struct {
 	// 15", "USDC on request"). It is operator memory, not payment credentials:
 	// account numbers do not belong here and the portal never shows it.
 	PayoutTerms string `json:"payout_terms" gorm:"type:text"`
-	Note        string `json:"note" gorm:"type:text"`
-	CreatedAt   int64  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   int64  `json:"updated_at" gorm:"autoUpdateTime"`
+
+	// Where the share is paid. Required before a seller can submit a key:
+	// with revenue share nothing is paid up front, so the account has to be
+	// on file before the first dollar is owed, not chased afterwards.
+	// PayoutMethod is platform_credit, bank, paypal, wise or crypto; Holder
+	// and Details are the seller's own words (IBAN + SWIFT, PayPal e-mail,
+	// wallet + network). Root reads them in full; nobody else does.
+	PayoutMethod    string `json:"payout_method" gorm:"type:varchar(24)"`
+	PayoutHolder    string `json:"payout_holder" gorm:"type:varchar(120)"`
+	PayoutDetails   string `json:"payout_details" gorm:"type:varchar(500)"`
+	PayoutCurrency  string `json:"payout_currency" gorm:"type:varchar(8)"`
+	PayoutUpdatedAt int64  `json:"payout_updated_at" gorm:"not null;default:0"`
+	Note            string `json:"note" gorm:"type:text"`
+	CreatedAt       int64  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt       int64  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 // CounterpartyKey is the stable id this supplier is settled under.
@@ -93,6 +105,106 @@ func (s *CreditSupplier) CounterpartyKey() string {
 // credit-pool supplier rather than a host-derived vendor.
 func IsSupplierCounterparty(counterparty string) bool {
 	return strings.HasPrefix(counterparty, creditSupplierCounterpartyPrefix)
+}
+
+// Payout methods a seller can choose. platform_credit needs no details: the
+// wallet behind their login is the account.
+var creditSupplierPayoutMethods = map[string]bool{
+	CreditLotPayoutPlatformCredit: true, "bank": true, "paypal": true, "wise": true, "crypto": true,
+}
+
+// SupplierPayoutAccount is what a seller files before they can sell.
+type SupplierPayoutAccount struct {
+	Method   string `json:"method"`
+	Holder   string `json:"holder"`
+	Details  string `json:"details"`
+	Currency string `json:"currency"`
+}
+
+// HasPayoutAccount reports whether we know where to send this seller's money.
+func (s *CreditSupplier) HasPayoutAccount() bool {
+	if s.PayoutMethod == CreditLotPayoutPlatformCredit {
+		return s.UserId > 0
+	}
+	return creditSupplierPayoutMethods[s.PayoutMethod] && strings.TrimSpace(s.PayoutHolder) != "" && strings.TrimSpace(s.PayoutDetails) != ""
+}
+
+// ExternalPayoutMethod folds the seller's choice into the two ways a payout is
+// booked: platform credit lands in the wallet, everything else is a transfer
+// the operator makes and records.
+func (s *CreditSupplier) ExternalPayoutMethod() string {
+	if s.PayoutMethod == CreditLotPayoutPlatformCredit {
+		return CreditLotPayoutPlatformCredit
+	}
+	return CreditLotPayoutExternal
+}
+
+// MaskedPayoutDetails keeps the tail so an operator can recognise the account
+// in a list without the whole number on screen.
+func (s *CreditSupplier) MaskedPayoutDetails() string {
+	d := strings.TrimSpace(s.PayoutDetails)
+	if len(d) <= 4 {
+		return strings.Repeat("•", len(d))
+	}
+	return strings.Repeat("•", 6) + d[len(d)-4:]
+}
+
+func validatePayoutAccount(method, holder, details, currency string) error {
+	if method == "" {
+		return nil
+	}
+	if !creditSupplierPayoutMethods[method] {
+		return errors.New("payout method must be platform_credit, bank, paypal, wise or crypto")
+	}
+	if method != CreditLotPayoutPlatformCredit && (strings.TrimSpace(holder) == "" || strings.TrimSpace(details) == "") {
+		return errors.New("an account holder and the account details are required for that payout method")
+	}
+	if textLooksLikeProviderSecret(holder, details) {
+		return ErrCreditLotSecretInText
+	}
+	if currency != "" && !regexp.MustCompile(`^[A-Z]{3,5}$`).MatchString(currency) {
+		return errors.New("currency must be a code such as USD or EUR")
+	}
+	return nil
+}
+
+// SetSupplierPayoutAccount files or replaces where a seller is paid.
+func SetSupplierPayoutAccount(supplierId int, acct SupplierPayoutAccount) (*CreditSupplier, error) {
+	acct.Method = strings.ToLower(strings.TrimSpace(acct.Method))
+	acct.Holder = strings.TrimSpace(acct.Holder)
+	acct.Details = strings.TrimSpace(acct.Details)
+	acct.Currency = strings.ToUpper(strings.TrimSpace(acct.Currency))
+	if acct.Method == "" {
+		return nil, errors.New("choose how you want to be paid")
+	}
+	if acct.Method == CreditLotPayoutPlatformCredit {
+		acct.Holder, acct.Details = "", ""
+	}
+	if acct.Currency == "" {
+		acct.Currency = "USD"
+	}
+	if err := validatePayoutAccount(acct.Method, acct.Holder, acct.Details, acct.Currency); err != nil {
+		return nil, err
+	}
+	var supplier CreditSupplier
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockForUpdate(tx).First(&supplier, "id = ?", supplierId).Error; err != nil {
+			return err
+		}
+		if acct.Method == CreditLotPayoutPlatformCredit && supplier.UserId <= 0 {
+			return errors.New("platform credit needs a login to credit; this supplier has none")
+		}
+		supplier.PayoutMethod = acct.Method
+		supplier.PayoutHolder = acct.Holder
+		supplier.PayoutDetails = acct.Details
+		supplier.PayoutCurrency = acct.Currency
+		supplier.PayoutUpdatedAt = common.GetTimestamp()
+		return tx.Save(&supplier).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &supplier, nil
 }
 
 func ValidateCreditSupplier(s *CreditSupplier) error {
@@ -124,6 +236,11 @@ func ValidateCreditSupplier(s *CreditSupplier) error {
 	}
 	if textLooksLikeProviderSecret(s.PayoutTerms, s.Note, s.StatusReason) {
 		return ErrCreditLotSecretInText
+	}
+	s.PayoutMethod = strings.ToLower(strings.TrimSpace(s.PayoutMethod))
+	s.PayoutCurrency = strings.ToUpper(strings.TrimSpace(s.PayoutCurrency))
+	if err := validatePayoutAccount(s.PayoutMethod, s.PayoutHolder, s.PayoutDetails, s.PayoutCurrency); err != nil {
+		return err
 	}
 	return nil
 }
@@ -334,6 +451,13 @@ func UpdateCreditSupplier(id int, patch *CreditSupplier) error {
 		}
 		merged.PayoutTerms = patch.PayoutTerms
 		merged.Note = patch.Note
+		if patch.PayoutMethod != "" {
+			merged.PayoutMethod = patch.PayoutMethod
+			merged.PayoutHolder = patch.PayoutHolder
+			merged.PayoutDetails = patch.PayoutDetails
+			merged.PayoutCurrency = patch.PayoutCurrency
+			merged.PayoutUpdatedAt = common.GetTimestamp()
+		}
 		if err := ValidateCreditSupplier(&merged); err != nil {
 			return err
 		}

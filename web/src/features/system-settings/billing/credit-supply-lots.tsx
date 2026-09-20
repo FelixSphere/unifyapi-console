@@ -46,13 +46,16 @@ import {
   consumedPct,
   dateTimeInputValue,
   daysUntil,
+  earnedShareUSD,
   formatRate,
   formatUSD,
+  isRevenueShare,
   lotHealth,
   payableUSD,
   purchasePriceUSD,
   remainingUSD,
   timestampFromInput,
+  unpaidShareUSD,
   type LotHealth,
   type LotTransition,
 } from './credit-supply-logic'
@@ -258,7 +261,13 @@ export function CreditLotsPanel({
   }
 
   const runTransition = (lot: CreditLot, transition: LotTransition) => {
-    if (transition.to === 'active' && lot.status === 'pending') {
+    // Activating a submission is where the right-to-transfer question gets
+    // asked, whichever way the key arrived: a sale reaches active through
+    // payment, a contributed key reaches it from verified through here.
+    if (
+      transition.to === 'active' &&
+      (lot.status === 'pending' || lot.status === 'verified')
+    ) {
       setProvenanceConfirmed(false)
       setApproving(lot)
       return
@@ -348,35 +357,21 @@ export function CreditLotsPanel({
                     ) : null}
                   </TableCell>
                   <TableCell className='tabular-nums'>
-                    {formatRate(lot.acquisition_rate)}
-                  </TableCell>
-                  <TableCell className='tabular-nums'>
-                    {lot.paid_at ? (
+                    {isRevenueShare(lot) ? (
                       <>
-                        <div>{formatUSD(lot.paid_usd)}</div>
+                        <div>{Math.round(lot.revenue_share_pct * 100)}%</div>
                         <div className='text-muted-foreground text-xs'>
-                          {t('paid {{date}}', {
-                            date: new Date(
-                              lot.paid_at * 1000
-                            ).toLocaleDateString(),
-                          })}
-                          {lot.payout_reference
-                            ? ` · ${lot.payout_reference}`
-                            : ''}
+                          {lot.revenue_share_basis === 'revenue'
+                            ? t('of revenue')
+                            : t('of margin')}
                         </div>
                       </>
                     ) : (
-                      <>
-                        <div>
-                          {lot.status === 'rejected'
-                            ? '—'
-                            : formatUSD(purchasePriceUSD(lot))}
-                        </div>
-                        <div className='text-muted-foreground text-xs'>
-                          {paidDueHint(lot, t)}
-                        </div>
-                      </>
+                      formatRate(lot.acquisition_rate)
                     )}
+                  </TableCell>
+                  <TableCell className='tabular-nums'>
+                    <PaidCell lot={lot} />
                   </TableCell>
                   <TableCell className='text-sm'>
                     {lot.expires_at
@@ -393,7 +388,8 @@ export function CreditLotsPanel({
                   </TableCell>
                   <TableCell className='text-right'>
                     <div className='flex justify-end gap-1'>
-                      {lot.status === 'verified' ? (
+                      {lot.status === 'verified' &&
+                      purchasePriceUSD(lot) > 0 ? (
                         <Button
                           type='button'
                           size='sm'
@@ -629,13 +625,23 @@ export function CreditLotsPanel({
           if (!open) setApproving(null)
         }}
         title={t('Approve credit lot #{{id}}?', { id: approving?.id ?? '' })}
-        description={t(
-          'Approving enables channel {{channel}}, writes the {{rate}} acquisition rate into its purchasing cost ratio, and starts drawing the lot down at list price.',
-          {
-            channel: approving ? channelName(approving.channel_id) : '',
-            rate: approving ? formatRate(approving.acquisition_rate) : '',
-          }
-        )}
+        description={
+          approving && isRevenueShare(approving)
+            ? t(
+                'Accepting enables channel {{channel}} and starts drawing the key down at list price. Nothing is paid up front: the contributor keeps {{share}}% of what it earns, settled from the Suppliers tab.',
+                {
+                  channel: approving ? channelName(approving.channel_id) : '',
+                  share: Math.round(approving.revenue_share_pct * 100),
+                }
+              )
+            : t(
+                'Approving enables channel {{channel}}, writes the {{rate}} acquisition rate into its purchasing cost ratio, and starts drawing the lot down at list price.',
+                {
+                  channel: approving ? channelName(approving.channel_id) : '',
+                  rate: approving ? formatRate(approving.acquisition_rate) : '',
+                }
+              )
+        }
         footer={
           <>
             <Button
@@ -915,7 +921,47 @@ function paidDueHint(
 ): string | null {
   if (lot.status === 'rejected') return null
   if (lot.status === 'verified') return t('due on settlement')
-  return t('consumed so far: {{amount}}', {
+  if (lot.paid_at) return null
+  return t('owed so far: {{amount}}', {
     amount: formatUSD(payableUSD(lot)),
   })
+}
+
+// PaidCell is what a lot has earned or been paid: the share owed on a
+// contributed key, the payment on a bought one, or the price still due.
+function PaidCell({ lot }: { lot: CreditLot }) {
+  const { t } = useTranslation()
+  if (isRevenueShare(lot)) {
+    return (
+      <>
+        <div>{formatUSD(earnedShareUSD(lot))}</div>
+        <div className='text-muted-foreground text-xs'>
+          {unpaidShareUSD(lot) > 0
+            ? t('{{amount}} owed', { amount: formatUSD(unpaidShareUSD(lot)) })
+            : t('paid up')}
+        </div>
+      </>
+    )
+  }
+  if (lot.paid_at) {
+    return (
+      <>
+        <div>{formatUSD(lot.paid_usd)}</div>
+        <div className='text-muted-foreground text-xs'>
+          {t('paid {{date}}', {
+            date: new Date(lot.paid_at * 1000).toLocaleDateString(),
+          })}
+          {lot.payout_reference ? ` · ${lot.payout_reference}` : ''}
+        </div>
+      </>
+    )
+  }
+  return (
+    <>
+      <div>
+        {lot.status === 'rejected' ? '—' : formatUSD(purchasePriceUSD(lot))}
+      </div>
+      <div className='text-muted-foreground text-xs'>{paidDueHint(lot, t)}</div>
+    </>
+  )
 }

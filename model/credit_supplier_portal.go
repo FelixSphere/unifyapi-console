@@ -50,7 +50,7 @@ func SubmitSupplierCreditLot(supplier *CreditSupplier, channel *Channel, lot *Cr
 		channel.CreatedTime = common.GetTimestamp()
 	}
 	info := channel.GetOtherInfo()
-	info["status_reason"] = fmt.Sprintf("submitted by supplier %s; awaiting verification and payment", supplier.Code)
+	info["status_reason"] = fmt.Sprintf("submitted by supplier %s; awaiting verification", supplier.Code)
 	info["status_time"] = common.GetTimestamp()
 	channel.SetOtherInfo(info)
 	if err := channel.Insert(); err != nil {
@@ -59,6 +59,9 @@ func SubmitSupplierCreditLot(supplier *CreditSupplier, channel *Channel, lot *Cr
 
 	lot.SupplierId = supplier.Id
 	lot.ChannelId = channel.Id
+	// Freeze the bonus this sale was quoted under; the operator may change the
+	// posted terms before getting round to paying.
+	lot.PayoutQuoteMultiplier = 1 + terms.PlatformCreditBonus
 	lot.Status = CreditLotStatusPending
 	lot.Source = CreditLotSourceSupplier
 	// The supplier's own attestation, made in the portal moments ago.
@@ -90,6 +93,25 @@ func allCustomerGroups() []string {
 	}
 	if !seen["default"] {
 		groups = append(groups, "default")
+	}
+	// A promotional credit pool routes grant-funded traffic through its own
+	// group and charges the customer nothing. A contributed key in that group
+	// would be drawn down and earn its owner nothing; keep it out.
+	var poolGroups []string
+	if DB != nil {
+		if err := DB.Model(&CreditPool{}).Distinct().Pluck("routing_group", &poolGroups).Error; err == nil {
+			excluded := map[string]bool{}
+			for _, g := range poolGroups {
+				excluded[strings.TrimSpace(g)] = true
+			}
+			kept := make([]string, 0, len(groups))
+			for _, g := range groups {
+				if !excluded[g] {
+					kept = append(kept, g)
+				}
+			}
+			groups = kept
+		}
 	}
 	sort.Strings(groups)
 	return groups
@@ -125,11 +147,13 @@ func RejectUnverifiedSubmission(lot *CreditLot, reason string) error {
 	return nil
 }
 
-// SupplierDailyUsage is one day's draw-down across all of a supplier's lots.
+// SupplierDailyUsage is one day's draw-down across all of a supplier's lots,
+// with what that traffic earned -- the chart behind a dividend.
 type SupplierDailyUsage struct {
-	Day      string  `json:"day"`
-	Requests int64   `json:"requests"`
-	FaceUSD  float64 `json:"face_usd"`
+	Day        string  `json:"day"`
+	Requests   int64   `json:"requests"`
+	FaceUSD    float64 `json:"face_usd"`
+	RevenueUSD float64 `json:"revenue_usd"`
 }
 
 func GetSupplierDailyUsage(supplierId int, days int) ([]SupplierDailyUsage, error) {
@@ -139,7 +163,8 @@ func GetSupplierDailyUsage(supplierId int, days int) ([]SupplierDailyUsage, erro
 	sinceDay := creditSupplyDay(common.GetTimestamp() - int64(days)*86400)
 	var rows []SupplierDailyUsage
 	err := DB.Table("credit_lot_usages").
-		Select("credit_lot_usages.day AS day, SUM(credit_lot_usages.requests) AS requests, SUM(credit_lot_usages.face_usd) AS face_usd").
+		Select("credit_lot_usages.day AS day, SUM(credit_lot_usages.requests) AS requests, "+
+			"SUM(credit_lot_usages.face_usd) AS face_usd, SUM(credit_lot_usages.revenue_usd) AS revenue_usd").
 		Joins("JOIN credit_lots ON credit_lots.id = credit_lot_usages.lot_id").
 		Where("credit_lots.supplier_id = ? AND credit_lot_usages.day >= ?", supplierId, sinceDay).
 		Group("credit_lot_usages.day").

@@ -255,6 +255,7 @@ func SetApiRouter(router *gin.Engine) {
 		creditSupplyRoute.Use(middleware.RootAuth())
 		{
 			creditSupplyRoute.GET("/overview", controller.GetCreditSupplyOverview)
+			creditSupplyRoute.GET("/terms", controller.GetCreditSupplyTermsAdmin)
 			creditSupplyRoute.GET("/suppliers", controller.GetCreditSuppliers)
 			creditSupplyRoute.POST("/suppliers", controller.CreateCreditSupplier)
 			creditSupplyRoute.PUT("/suppliers/:id", controller.UpdateCreditSupplier)
@@ -265,6 +266,8 @@ func SetApiRouter(router *gin.Engine) {
 			creditSupplyRoute.GET("/lots/:id/usage", controller.GetCreditLotUsage)
 			creditSupplyRoute.GET("/lots/:id/events", controller.GetCreditLotEvents)
 			creditSupplyRoute.POST("/lots/:id/pay", controller.PayCreditLot)
+			creditSupplyRoute.POST("/suppliers/:id/share-payout", controller.PaySupplierShare)
+			creditSupplyRoute.GET("/share-payouts", controller.GetCreditSharePayouts)
 		}
 		// UNIFYAPI-FORK: supplier portal -- an ordinary login mapped to a
 		// supplier by CreditSupplier.UserId. See controller/credit_supplier_portal.go.
@@ -273,6 +276,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			supplierRoute.GET("/me", controller.GetSupplierPortal)
 			supplierRoute.GET("/terms", controller.GetSupplierTerms)
+			supplierRoute.PUT("/payout-account", middleware.CriticalRateLimit(), controller.UpdateSupplierPayoutAccount)
 			supplierRoute.POST("/lots", middleware.CriticalRateLimit(), controller.SubmitSupplierLot)
 			supplierRoute.GET("/usage", controller.GetSupplierUsage)
 			supplierRoute.GET("/statements", controller.GetSupplierStatements)

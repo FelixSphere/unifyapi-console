@@ -7,9 +7,10 @@ Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
 
-// UNIFYAPI-FORK: the one form a seller fills. The price is posted, not asked
-// for; the key is verified while they wait; the answer is either "verified,
-// awaiting payment of $X" or the vendor's reason, right here.
+// UNIFYAPI-FORK: the one form a seller fills. The share is posted, not asked
+// for; the key is verified while they wait; the answer is either "live, you
+// keep X% of what it sells for" or the vendor's reason, right here. How they
+// are paid is on their profile, so this form never asks.
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -26,17 +27,17 @@ import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  formatRate,
   formatUSD,
   timestampFromInput,
 } from '@/features/system-settings/billing/credit-supply-logic'
 
 import {
+  contributableVendors,
+  sharePreview,
   submitSupplierLot,
   type SupplierLotSubmission,
   type SupplierTerms,
   type SupplierVendorPreset,
-  payoutPreview,
 } from '../api'
 
 type FormState = {
@@ -44,8 +45,6 @@ type FormState = {
   faceUSD: string
   expiresAt: string
   upstreamKey: string
-  payoutMethod: 'platform_credit' | 'external'
-  payoutAccount: string
   note: string
   confirmed: boolean
 }
@@ -63,36 +62,38 @@ export function SubmitLotDialog({
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const sellable = vendors.filter(
-    (vendor) => (terms.buy_rates[vendor.key] ?? 0) > 0
-  )
+  const offered = contributableVendors(terms, vendors)
   const [form, setForm] = useState<FormState>({
-    vendor: sellable[0]?.key ?? '',
+    vendor: offered[0]?.key ?? '',
     faceUSD: '',
     expiresAt: '',
     upstreamKey: '',
-    payoutMethod: 'platform_credit',
-    payoutAccount: '',
     note: '',
     confirmed: false,
   })
-  const preset = sellable.find((vendor) => vendor.key === form.vendor)
+  const preset = offered.find((vendor) => vendor.key === form.vendor)
   const faceUSD = Number(form.faceUSD)
-  const preview = payoutPreview(
-    terms,
-    form.vendor,
-    Number.isFinite(faceUSD) ? faceUSD : 0,
-    form.payoutMethod
-  )
+  const share = sharePreview(terms, form.vendor)
 
   const mutation = useMutation({
     mutationFn: submitSupplierLot,
     onSuccess: (result) => {
       toast.success(
-        t(
-          'Verified. Sale #{{id}} is awaiting payment of {{amount}}; your credits start being used once you have been paid.',
-          { id: result.lot_id, amount: formatUSD(result.payout_usd ?? 0) }
-        )
+        result.status === 'active'
+          ? t(
+              'Verified and live. Key #{{id}} is now serving customers; you keep {{share}}% of everything it sells.',
+              {
+                id: result.lot_id,
+                share: Math.round((result.revenue_share_pct ?? 0) * 100),
+              }
+            )
+          : t(
+              'Verified. Key #{{id}} goes live as soon as the operator accepts it; you keep {{share}}% of everything it sells.',
+              {
+                id: result.lot_id,
+                share: Math.round((result.revenue_share_pct ?? 0) * 100),
+              }
+            )
       )
       setForm((current) => ({
         ...current,
@@ -116,21 +117,15 @@ export function SubmitLotDialog({
     ) {
       toast.error(
         t(
-          'Check the vendor, the face value (at least {{min}}) and the API key.',
-          {
-            min: formatUSD(terms.min_face_usd),
-          }
+          'Check the vendor, the credit balance (at least {{min}}) and the API key.',
+          { min: formatUSD(terms.min_face_usd) }
         )
       )
       return
     }
-    if (form.payoutMethod === 'external' && form.payoutAccount.trim() === '') {
-      toast.error(t('Tell us where to send the payment.'))
-      return
-    }
     if (!form.confirmed) {
       toast.error(
-        t('Confirm that you have the right to transfer these credits.')
+        t('Confirm that you have the right to let us use these credits.')
       )
       return
     }
@@ -138,8 +133,6 @@ export function SubmitLotDialog({
       vendor: preset.key,
       face_value_usd: faceUSD,
       expires_at: timestampFromInput(form.expiresAt),
-      payout_method: form.payoutMethod,
-      payout_account: form.payoutAccount.trim(),
       note: form.note.trim(),
       upstream_key: form.upstreamKey.trim(),
       models: [],
@@ -154,7 +147,7 @@ export function SubmitLotDialog({
       onOpenChange={onOpenChange}
       title={t('Sell credits')}
       description={t(
-        'We verify the key with one small request while you wait, then pay you the posted rate. Your credits are only used after you have been paid.'
+        'We verify the key with one small request while you wait. Nothing is paid up front: your key starts serving paying customers, and you keep a share of everything it sells, settled as the balance builds up.'
       )}
       footer={
         <>
@@ -172,7 +165,9 @@ export function SubmitLotDialog({
           >
             {mutation.isPending
               ? t('Verifying key…')
-              : t('Sell for {{amount}}', { amount: formatUSD(preview.amount) })}
+              : t('Submit — you keep {{share}}%', {
+                  share: Math.round(share * 100),
+                })}
           </Button>
         </>
       }
@@ -185,11 +180,11 @@ export function SubmitLotDialog({
               setForm({ ...form, vendor: event.target.value })
             }
           >
-            {sellable.map((vendor) => (
+            {offered.map((vendor) => (
               <NativeSelectOption key={vendor.key} value={vendor.key}>
                 {vendor.label} —{' '}
-                {t('we pay {{rate}}', {
-                  rate: formatRate(terms.buy_rates[vendor.key] ?? 0),
+                {t('you keep {{share}}%', {
+                  share: Math.round(sharePreview(terms, vendor.key) * 100),
                 })}
               </NativeSelectOption>
             ))}
@@ -197,7 +192,7 @@ export function SubmitLotDialog({
         </Field>
         <Field
           label={t(
-            'Credit balance you are selling (USD, at the vendor’s list price)'
+            'Credit balance on the key (USD, at the vendor’s list price)'
           )}
         >
           <Input
@@ -210,21 +205,28 @@ export function SubmitLotDialog({
               setForm({ ...form, faceUSD: event.target.value })
             }
           />
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              'Used to track how much is left; you are paid on what actually sells, so an estimate is fine.'
+            )}
+          </p>
         </Field>
         <Alert>
           <AlertDescription className='text-sm'>
-            {t('You receive {{amount}} ({{rate}} of face value).', {
-              amount: formatUSD(preview.amount),
-              rate: formatRate(preview.rate),
-            })}
-            {form.payoutMethod === 'platform_credit' &&
-            terms.platform_credit_bonus > 0
-              ? ` ${t(
-                  'Includes the {{bonus}}% bonus for taking platform credit.',
-                  {
-                    bonus: Math.round(terms.platform_credit_bonus * 100),
-                  }
-                )}`
+            {t(
+              'You keep {{share}}% of {{basis}} on every request your key serves, until the balance runs out or the key expires. Paid as it earns, with no cap: a busy key pays a lot, an idle one pays nothing.',
+              {
+                share: Math.round(share * 100),
+                basis:
+                  terms.revenue_share_basis === 'revenue'
+                    ? t('what the customer pays')
+                    : t('what we make after costs'),
+              }
+            )}
+            {terms.min_share_payout_usd > 0
+              ? ` ${t('We settle once you are owed {{min}}.', {
+                  min: formatUSD(terms.min_share_payout_usd),
+                })}`
               : null}
           </AlertDescription>
         </Alert>
@@ -248,42 +250,10 @@ export function SubmitLotDialog({
             />
             <p className='text-muted-foreground text-xs'>
               {t(
-                'Write-only. It goes straight into a disabled channel on our side and is verified with one request to {{host}}.',
+                'Write-only. It goes straight into a channel on our side and is verified with one request to {{host}}.',
                 { host: preset.base_url }
               )}
             </p>
-          </Field>
-        ) : null}
-        <Field label={t('How do you want to be paid?')}>
-          <NativeSelect
-            value={form.payoutMethod}
-            onChange={(event) =>
-              setForm({
-                ...form,
-                payoutMethod: event.target.value as FormState['payoutMethod'],
-              })
-            }
-          >
-            <NativeSelectOption value='platform_credit'>
-              {t('Platform credit — instant when the sale is settled')}
-            </NativeSelectOption>
-            <NativeSelectOption value='external'>
-              {t('Bank / PayPal / wallet transfer')}
-            </NativeSelectOption>
-          </NativeSelect>
-        </Field>
-        {form.payoutMethod === 'external' ? (
-          <Field label={t('Where to send it')}>
-            <Textarea
-              rows={2}
-              value={form.payoutAccount}
-              placeholder={t(
-                'e.g. PayPal ops@acme.example, or IBAN + account name'
-              )}
-              onChange={(event) =>
-                setForm({ ...form, payoutAccount: event.target.value })
-              }
-            />
           </Field>
         ) : null}
         <Field label={t('Note (optional)')}>
@@ -301,7 +271,7 @@ export function SubmitLotDialog({
             />
             <span>
               {t(
-                'I own or control this vendor account and have the right to let UnifyAPI consume these credits. I understand payment is made once, at the posted rate, and that the credits are then used by UnifyAPI customers.'
+                'I own or control this vendor account and have the right to let UnifyAPI consume these credits. I understand that nothing is paid up front, that what I am paid is a share of what the credits actually sell for, and that the credits are used by UnifyAPI customers.'
               )}
             </span>
           </AlertDescription>

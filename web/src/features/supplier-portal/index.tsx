@@ -13,7 +13,7 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 // stands. Nothing is consumed before they have been paid.
 
 import { useQuery } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
+import { Landmark, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -39,11 +39,11 @@ import {
 import {
   LOT_STATUS_LABELS,
   consumedPct,
-  formatRate,
   formatUSD,
 } from '@/features/system-settings/billing/credit-supply-logic'
 
 import {
+  PAYOUT_METHOD_LABELS,
   getSupplierPortal,
   getSupplierTerms,
   getSupplierUsage,
@@ -51,6 +51,7 @@ import {
   type SupplierTerms,
   type SupplierVendorPreset,
 } from './api'
+import { PayoutAccountDialog } from './components/payout-account-dialog'
 import { SubmitLotDialog } from './components/submit-lot-dialog'
 
 const VENDOR_LABELS: Record<string, string> = {
@@ -62,6 +63,7 @@ const VENDOR_LABELS: Record<string, string> = {
 export function SupplierPortal() {
   const { t } = useTranslation()
   const [sellOpen, setSellOpen] = useState(false)
+  const [payoutOpen, setPayoutOpen] = useState(false)
 
   // Terms are public to any login; /me is 404 until the first sale.
   const terms = useQuery({
@@ -84,6 +86,7 @@ export function SupplierPortal() {
     return {
       requests: rows.reduce((sum, row) => sum + row.requests, 0),
       face: rows.reduce((sum, row) => sum + row.face_usd, 0),
+      revenue: rows.reduce((sum, row) => sum + (row.revenue_usd ?? 0), 0),
       peak: rows.reduce((max, row) => Math.max(max, row.face_usd), 0),
     }
   }, [usage.data])
@@ -92,22 +95,46 @@ export function SupplierPortal() {
   const activeTerms: SupplierTerms | undefined = data?.terms ?? terms.data
   const vendors: SupplierVendorPreset[] =
     data?.vendors ?? terms.data?.vendors ?? []
-  const canSell = Boolean(activeTerms) && data?.supplier.status !== 'suspended'
+  const hasPayoutAccount = Boolean(data?.supplier.has_payout_account)
+  const canSell =
+    Boolean(activeTerms) &&
+    data?.supplier.status !== 'suspended' &&
+    hasPayoutAccount
   const payments = (data?.lots ?? []).filter((lot) => lot.paid_at > 0)
+  const payoutAccount = data?.supplier
+    ? {
+        method: data.supplier.payout_method,
+        holder: data.supplier.payout_holder,
+        details: data.supplier.payout_details,
+        currency: data.supplier.payout_currency,
+      }
+    : null
 
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('Sell credits')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
-        <Button
-          type='button'
-          size='sm'
-          disabled={!canSell}
-          onClick={() => setSellOpen(true)}
-        >
-          <Plus className='size-4' />
-          {t('Sell credits')}
-        </Button>
+        {hasPayoutAccount ? (
+          <Button
+            type='button'
+            size='sm'
+            disabled={!canSell}
+            onClick={() => setSellOpen(true)}
+          >
+            <Plus className='size-4' />
+            {t('Sell credits')}
+          </Button>
+        ) : (
+          <Button
+            type='button'
+            size='sm'
+            disabled={!activeTerms}
+            onClick={() => setPayoutOpen(true)}
+          >
+            <Landmark className='size-4' />
+            {t('Add payout account to start')}
+          </Button>
+        )}
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         <div className='flex flex-col gap-4'>
@@ -115,51 +142,112 @@ export function SupplierPortal() {
             <Card>
               <CardHeader>
                 <CardTitle className='text-base'>
-                  {t('Turn unused vendor credits into cash or platform credit')}
+                  {t(
+                    'Sell unused vendor credits for a share of what they sell for'
+                  )}
                 </CardTitle>
                 <CardDescription>
                   {t(
-                    'Submit the credit balance and the API key; we verify the key with one small request while you wait, pay you the posted rate, and only then start routing customer traffic through your account. Credits are drawn down at the vendor’s list price and you can watch it happen here.'
+                    'Submit the credit balance and the API key. We verify the key with one small request while you wait, then route paying customer traffic through your account and draw the credits down at the vendor’s list price. You keep the posted share of what they sell for, paid out as the balance builds up — nothing is paid up front, nothing is capped.'
                   )}
                 </CardDescription>
               </CardHeader>
               <CardContent className='grid gap-3 sm:grid-cols-3'>
-                {Object.entries(activeTerms.buy_rates)
+                {Object.entries(activeTerms.revenue_share_rates ?? {})
                   .sort(([a], [b]) => a.localeCompare(b))
-                  .map(([vendor, rate]) => (
+                  .map(([vendor, share]) => (
                     <div
                       key={vendor}
                       className='bg-muted/40 rounded-lg p-3'
-                      data-testid={`posted-rate-${vendor}`}
+                      data-testid={`posted-share-${vendor}`}
                     >
                       <div className='text-muted-foreground text-xs'>
                         {VENDOR_LABELS[vendor] ?? vendor}
                       </div>
                       <div className='text-2xl font-semibold tabular-nums'>
-                        {formatRate(rate)}
+                        {t('you keep {{share}}%', {
+                          share: Math.round(share * 100),
+                        })}
                       </div>
                       <div className='text-muted-foreground text-xs'>
-                        {t('per $1 of credit · min. {{min}}', {
-                          min: formatUSD(activeTerms.min_face_usd),
-                        })}
+                        {t(
+                          'of what your credits sell for · min. {{min}} balance',
+                          {
+                            min: formatUSD(activeTerms.min_face_usd),
+                          }
+                        )}
                       </div>
                     </div>
                   ))}
-                {activeTerms.platform_credit_bonus > 0 ? (
-                  <p className='text-muted-foreground text-xs sm:col-span-3'>
-                    {t(
-                      'Take platform credit instead of a transfer and receive {{bonus}}% more, instantly.',
-                      {
-                        bonus: Math.round(
-                          activeTerms.platform_credit_bonus * 100
-                        ),
-                      }
-                    )}
-                  </p>
-                ) : null}
+                <p className='text-muted-foreground text-xs sm:col-span-3'>
+                  {activeTerms.min_share_payout_usd > 0
+                    ? t(
+                        'Settled once you are owed at least {{min}}, to your payout account or as platform credit.',
+                        { min: formatUSD(activeTerms.min_share_payout_usd) }
+                      )
+                    : t(
+                        'Settled to your payout account or as platform credit.'
+                      )}
+                  {activeTerms.manual_review
+                    ? ` ${t('Verified keys go live once the operator has accepted them.')}`
+                    : ` ${t('Verified keys go live immediately.')}`}
+                </p>
               </CardContent>
             </Card>
           ) : null}
+
+          <Card>
+            <CardHeader className='pb-3'>
+              <CardTitle className='flex items-center gap-2 text-base'>
+                <Landmark className='size-4' />
+                {t('Payout account')}
+              </CardTitle>
+              <CardDescription>
+                {hasPayoutAccount
+                  ? t(
+                      'Where your share is paid. Only the operator who pays you can read it.'
+                    )
+                  : t(
+                      'Before you can sell, tell us where to send your share. Nothing is paid before your credits are used, so this has to be on file first.'
+                    )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className='flex flex-wrap items-center justify-between gap-3 text-sm'>
+              {hasPayoutAccount && data ? (
+                <div>
+                  <div className='font-medium'>
+                    {t(
+                      PAYOUT_METHOD_LABELS[
+                        data.supplier
+                          .payout_method as keyof typeof PAYOUT_METHOD_LABELS
+                      ] ?? data.supplier.payout_method
+                    )}
+                    {data.supplier.payout_currency
+                      ? ` · ${data.supplier.payout_currency}`
+                      : ''}
+                  </div>
+                  {data.supplier.payout_holder ? (
+                    <div className='text-muted-foreground text-xs'>
+                      {data.supplier.payout_holder} ·{' '}
+                      {maskTail(data.supplier.payout_details)}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <span className='text-muted-foreground'>
+                  {t('No payout account yet.')}
+                </span>
+              )}
+              <Button
+                type='button'
+                size='sm'
+                variant={hasPayoutAccount ? 'outline' : 'default'}
+                onClick={() => setPayoutOpen(true)}
+              >
+                {hasPayoutAccount ? t('Change') : t('Add payout account')}
+              </Button>
+            </CardContent>
+          </Card>
 
           {data ? (
             <>
@@ -180,29 +268,39 @@ export function SupplierPortal() {
 
               <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-5'>
                 <Headline
-                  label={t('Sold')}
-                  value={formatUSD(data.totals.face_usd)}
-                  hint={t('Face value at list price')}
+                  label={t('Drawn down')}
+                  value={formatUSD(data.totals.consumed_usd)}
+                  hint={t('Of {{face}} at the vendor’s list price', {
+                    face: formatUSD(data.totals.face_usd),
+                  })}
                 />
                 <Headline
-                  label={t('Awaiting payment')}
-                  value={formatUSD(data.totals.awaiting_payment_usd)}
-                  hint={t('Verified sales not yet paid')}
+                  label={t('Sold for')}
+                  value={formatUSD(data.totals.share_revenue_usd)}
+                  hint={t('What customers paid for traffic on your keys')}
+                />
+                <Headline
+                  label={t('Your share')}
+                  value={formatUSD(data.totals.share_earned_usd)}
+                  hint={t('Earned to date at your posted share')}
                 />
                 <Headline
                   label={t('Paid to you')}
-                  value={formatUSD(data.totals.paid_usd)}
-                  hint={t('Across all sales')}
+                  value={formatUSD(
+                    data.totals.share_paid_usd + data.totals.paid_usd
+                  )}
+                  hint={t('Across all payouts')}
                 />
                 <Headline
-                  label={t('Consumed')}
-                  value={formatUSD(data.totals.consumed_usd)}
-                  hint={t('Drawn down by customer traffic')}
-                />
-                <Headline
-                  label={t('Remaining')}
-                  value={formatUSD(data.totals.remaining_usd)}
-                  hint={t('Still to be drawn')}
+                  label={t('Unpaid')}
+                  value={formatUSD(data.totals.share_unpaid_usd)}
+                  hint={
+                    activeTerms && activeTerms.min_share_payout_usd > 0
+                      ? t('Settled once it reaches {{min}}', {
+                          min: formatUSD(activeTerms.min_share_payout_usd),
+                        })
+                      : t('Settled by the operator')
+                  }
                 />
               </div>
 
@@ -211,7 +309,7 @@ export function SupplierPortal() {
                   <CardTitle className='text-base'>{t('Your sales')}</CardTitle>
                   <CardDescription>
                     {t(
-                      'Each sale is one tranche of credits. Verifying → awaiting payment → paid & in use → fully drawn or expired.'
+                      'Each key is one tranche of credits. Verifying → in use → fully drawn or expired. You are paid a share of what each one sells for.'
                     )}
                   </CardDescription>
                 </CardHeader>
@@ -219,12 +317,12 @@ export function SupplierPortal() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>{t('Sale')}</TableHead>
+                        <TableHead>{t('Key')}</TableHead>
                         <TableHead className='min-w-56'>
                           {t('Drawn down')}
                         </TableHead>
-                        <TableHead>{t('Rate')}</TableHead>
-                        <TableHead>{t('Payment')}</TableHead>
+                        <TableHead>{t('Sold for')}</TableHead>
+                        <TableHead>{t('Your share')}</TableHead>
                         <TableHead>{t('Expires')}</TableHead>
                         <TableHead>{t('Status')}</TableHead>
                       </TableRow>
@@ -256,10 +354,10 @@ export function SupplierPortal() {
                             </div>
                           </TableCell>
                           <TableCell className='tabular-nums'>
-                            {formatRate(lot.acquisition_rate)}
+                            <SoldForCell lot={lot} />
                           </TableCell>
                           <TableCell className='tabular-nums'>
-                            <PaymentCell lot={lot} />
+                            <ShareCell lot={lot} />
                           </TableCell>
                           <TableCell className='text-sm'>
                             {lot.expires_at
@@ -286,7 +384,7 @@ export function SupplierPortal() {
                             colSpan={6}
                             className='text-muted-foreground text-center'
                           >
-                            {t('No sales yet.')}
+                            {t('No keys yet.')}
                           </TableCell>
                         </TableRow>
                       ) : null}
@@ -306,6 +404,11 @@ export function SupplierPortal() {
                         requests: usageTotals.requests.toLocaleString(),
                         face: formatUSD(usageTotals.face),
                       })}
+                      {usageTotals.revenue > 0
+                        ? ` · ${t('{{revenue}} of revenue served', {
+                            revenue: formatUSD(usageTotals.revenue),
+                          })}`
+                        : null}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className='grid gap-1.5'>
@@ -343,7 +446,7 @@ export function SupplierPortal() {
                     <CardTitle className='text-base'>{t('Payments')}</CardTitle>
                     <CardDescription>
                       {t(
-                        'One payment per sale, made before your credits are used.'
+                        'Your share is settled as it builds up; each payout is listed here with how it was sent.'
                       )}
                     </CardDescription>
                   </CardHeader>
@@ -372,7 +475,35 @@ export function SupplierPortal() {
                         </span>
                       </div>
                     ))}
-                    {payments.length === 0 ? (
+                    {(data.share_payouts ?? []).map((payout) => (
+                      <div
+                        key={`share-${payout.id}`}
+                        className='flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2 text-sm'
+                      >
+                        <span>
+                          {t('Revenue share on key #{{id}}', {
+                            id: payout.lot_id,
+                          })}
+                          <span className='text-muted-foreground'>
+                            {' '}
+                            ·{' '}
+                            {new Date(
+                              payout.created_at * 1000
+                            ).toLocaleDateString()}
+                          </span>
+                        </span>
+                        <span className='flex items-center gap-2 tabular-nums'>
+                          {formatUSD(payout.amount_usd)}
+                          <Badge variant='outline'>
+                            {payout.method === 'platform_credit'
+                              ? t('Platform credit')
+                              : payout.reference || t('Transfer')}
+                          </Badge>
+                        </span>
+                      </div>
+                    ))}
+                    {payments.length === 0 &&
+                    (data.share_payouts ?? []).length === 0 ? (
                       <p className='text-muted-foreground text-sm'>
                         {t('No payments yet.')}
                       </p>
@@ -388,7 +519,7 @@ export function SupplierPortal() {
           {!data && !me.isLoading ? (
             <p className='text-muted-foreground text-sm'>
               {t(
-                'You have not sold any credits yet. Your sales, payments and draw-down will appear here.'
+                'You have not submitted any credits yet. Add your payout account, then submit a key; what it sells for and your share will appear here.'
               )}
             </p>
           ) : null}
@@ -406,43 +537,67 @@ export function SupplierPortal() {
             terms={activeTerms}
           />
         ) : null}
+        <PayoutAccountDialog
+          open={payoutOpen}
+          onOpenChange={setPayoutOpen}
+          current={payoutAccount}
+        />
       </SectionPageLayout.Content>
     </SectionPageLayout>
   )
 }
 
-function PaymentCell({ lot }: { lot: SupplierLot }) {
+function SoldForCell({ lot }: { lot: SupplierLot }) {
   const { t } = useTranslation()
-  if (lot.paid_at) {
+  if (lot.deal_type !== 'revenue_share') {
+    // A lot an operator bought outright: paid once, at its rate.
     return (
       <>
         <div>{formatUSD(lot.paid_usd)}</div>
         <div className='text-muted-foreground text-xs'>
-          {lot.payout_method === 'platform_credit'
-            ? t('platform credit, {{date}}', {
-                date: new Date(lot.paid_at * 1000).toLocaleDateString(),
-              })
-            : t('transfer {{ref}}', { ref: lot.payout_reference || '—' })}
+          {t('bought outright')}
         </div>
       </>
     )
   }
-  if (lot.status === 'verified') {
-    return (
-      <>
-        <div>{formatUSD(lot.payout_usd)}</div>
-        <div className='text-muted-foreground text-xs'>
-          {t('due · we pay, then use')}
-        </div>
-      </>
-    )
-  }
-  if (lot.status === 'rejected') {
+  return (
+    <>
+      <div>{formatUSD(lot.share_revenue_usd)}</div>
+      <div className='text-muted-foreground text-xs'>
+        {t('paid by customers')}
+      </div>
+    </>
+  )
+}
+
+function ShareCell({ lot }: { lot: SupplierLot }) {
+  const { t } = useTranslation()
+  if (lot.deal_type !== 'revenue_share') {
     return <span className='text-muted-foreground'>—</span>
   }
   return (
-    <span className='text-muted-foreground'>{formatUSD(lot.payout_usd)}</span>
+    <>
+      <div>
+        {formatUSD(lot.share_earned_usd)}{' '}
+        <span className='text-muted-foreground text-xs'>
+          ({Math.round(lot.revenue_share_pct * 100)}%)
+        </span>
+      </div>
+      <div className='text-muted-foreground text-xs'>
+        {lot.share_unpaid_usd > 0
+          ? t('{{unpaid}} unpaid', { unpaid: formatUSD(lot.share_unpaid_usd) })
+          : t('all paid')}
+      </div>
+    </>
   )
+}
+
+// maskTail keeps the last four characters so the seller recognises their own
+// account; the full details are one click away in the dialog.
+function maskTail(details: string): string {
+  const d = details.trim()
+  if (d.length <= 4) return '••••'
+  return `••••${d.slice(-4)}`
 }
 
 function Headline({

@@ -26,13 +26,30 @@ export type CreditSupplier = {
   attested_at: number
   payout_terms: string
   note: string
+  // Where the seller is paid; filed by the seller, read in full by root.
+  payout_method: string
+  payout_holder: string
+  payout_details: string
+  payout_currency: string
+  payout_updated_at: number
   created_at: number
   updated_at: number
 }
 
+// The payout account is the seller's to file (portal); the operator's form
+// never writes it, so it is not part of the input.
 export type CreditSupplierInput = Omit<
   CreditSupplier,
-  'id' | 'created_at' | 'updated_at' | 'attestation_version' | 'attested_at'
+  | 'id'
+  | 'created_at'
+  | 'updated_at'
+  | 'attestation_version'
+  | 'attested_at'
+  | 'payout_method'
+  | 'payout_holder'
+  | 'payout_details'
+  | 'payout_currency'
+  | 'payout_updated_at'
 >
 
 export type CreditLotStatus =
@@ -43,6 +60,10 @@ export type CreditLotStatus =
   | 'exhausted'
   | 'expired'
   | 'rejected'
+
+// How a lot is paid for: bought outright, or contributed for a share of what
+// the key earns. Mirrors model.CreditLotDeal*.
+export type CreditLotDeal = 'purchase' | 'revenue_share'
 
 export type CreditLot = {
   id: number
@@ -78,6 +99,13 @@ export type CreditLot = {
   retired_at: number
   created_at: number
   updated_at: number
+  // The dividend side. A purchase lot carries zeroes here.
+  deal_type: CreditLotDeal
+  revenue_share_pct: number
+  revenue_share_basis: 'revenue' | 'margin' | ''
+  share_revenue_usd: number
+  share_cost_usd: number
+  paid_share_usd: number
 }
 
 export type CreditLotInput = {
@@ -90,6 +118,9 @@ export type CreditLotInput = {
   expires_at: number
   status: 'pending' | 'active'
   note: string
+  // Set once, at creation: the deal a contributor agreed to is not editable.
+  deal_type?: CreditLotDeal
+  revenue_share_pct?: number
 }
 
 export type CreditLotEvent = {
@@ -109,6 +140,8 @@ export type CreditLotUsage = {
   day: string
   requests: number
   face_usd: number
+  // What customers paid for that day's traffic; the chart behind a dividend.
+  revenue_usd: number
 }
 
 export type CreditSupplyVendorTotals = {
@@ -118,6 +151,34 @@ export type CreditSupplyVendorTotals = {
   consumed_usd: number
   remaining_usd: number
   payable_usd: number
+  share_revenue_usd: number
+  share_unpaid_usd: number
+}
+
+// What contributed keys have earned their owners, in total.
+export type CreditShareTotals = {
+  lots: number
+  revenue_usd: number
+  earned_usd: number
+  paid_usd: number
+  unpaid_usd: number
+}
+
+// One dividend payment for one lot. A single payout writes one row per lot,
+// all sharing a batch.
+export type CreditSharePayout = {
+  id: number
+  supplier_id: number
+  lot_id: number
+  batch: string
+  amount_usd: number
+  earned_to_date_usd: number
+  revenue_to_date_usd: number
+  share_pct: number
+  method: 'platform_credit' | 'external'
+  reference: string
+  actor: string
+  created_at: number
 }
 
 export type CreditSupplyOverview = {
@@ -130,6 +191,8 @@ export type CreditSupplyOverview = {
   awaiting_payment_usd: number
   paid_usd: number
   unpriced_lots: number
+  share: CreditShareTotals
+  min_share_payout_usd: number
   by_vendor: CreditSupplyVendorTotals[]
   attention: CreditLot[]
 }
@@ -237,11 +300,19 @@ export type CreditSupplyTerms = {
   channel_priority: number
   min_face_usd: number
   platform_credit_bonus: number
+  // The other offer: contribute the key, keep a share of what it earns.
+  revenue_share_rates: Record<string, number>
+  revenue_share_basis: 'revenue' | 'margin'
+  min_share_payout_usd: number
+  // Keep a verified key disabled until an operator accepts it.
+  manual_review: boolean
 }
 
 export async function getCreditSupplyTerms() {
   return unwrap(
-    await api.get<Envelope<CreditSupplyTerms>>('/api/supplier/terms')
+    // The root endpoint: the seller-facing /api/supplier/terms posts only the
+    // offer and leaves the operator-only buy-out rates out.
+    await api.get<Envelope<CreditSupplyTerms>>('/api/credit-supply/terms')
   )
 }
 
@@ -258,6 +329,41 @@ export async function getCreditLotUsage(lotId: number, days = 30) {
     await api.get<Envelope<CreditLotUsage[]>>(
       `/api/credit-supply/lots/${lotId}/usage`,
       { params: { days } }
+    )
+  )
+}
+
+// Settle everything a contributor is owed across all of their lots, in one
+// payment. Platform credit is booked server-side; an external transfer is
+// recorded by the reference they can look up.
+export async function paySupplierShare(input: {
+  supplierId: number
+  method: 'platform_credit' | 'external'
+  reference?: string
+  force?: boolean
+}) {
+  return unwrap(
+    await api.post<
+      Envelope<{
+        batch: string
+        amount_usd: number
+        payouts: CreditSharePayout[]
+      }>
+    >(`/api/credit-supply/suppliers/${input.supplierId}/share-payout`, {
+      method: input.method,
+      reference: input.reference ?? '',
+      force: input.force ?? false,
+    })
+  )
+}
+
+export async function getCreditSharePayouts(
+  params: { supplier_id?: number; lot_id?: number } = {}
+) {
+  return unwrap(
+    await api.get<Envelope<CreditSharePayout[]>>(
+      '/api/credit-supply/share-payouts',
+      { params }
     )
   )
 }
