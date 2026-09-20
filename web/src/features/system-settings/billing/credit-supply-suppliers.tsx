@@ -194,6 +194,7 @@ export function CreditSuppliersPanel({
               <TableHead>{t('Consumed')}</TableHead>
               <TableHead>{t('Payable to date')}</TableHead>
               <TableHead>{t('Revenue share owed')}</TableHead>
+              <TableHead>{t('Payout account')}</TableHead>
               <TableHead>{t('Status')}</TableHead>
               <TableHead className='text-right'>{t('Actions')}</TableHead>
             </TableRow>
@@ -240,6 +241,28 @@ export function CreditSuppliersPanel({
                       ? formatUSD(totals.shareUnpaid)
                       : '—'}
                   </TableCell>
+                  <TableCell className='text-sm'>
+                    {supplier.payout_method ? (
+                      <>
+                        <div>
+                          {supplier.payout_method}
+                          {supplier.payout_currency
+                            ? ` · ${supplier.payout_currency}`
+                            : ''}
+                        </div>
+                        {supplier.payout_details ? (
+                          <div className='text-muted-foreground text-xs'>
+                            {supplier.payout_holder} ·{' '}
+                            {maskPayoutDetails(supplier.payout_details)}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className='text-destructive text-xs'>
+                        {t('Not filed — cannot be paid')}
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Badge variant={supplierBadgeVariant(supplier.status)}>
                       {t(SUPPLIER_STATUS_LABELS[supplier.status])}
@@ -283,7 +306,7 @@ export function CreditSuppliersPanel({
             {suppliers.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={9}
+                  colSpan={10}
                   className='text-muted-foreground text-center'
                 >
                   {t('No suppliers yet.')}
@@ -367,6 +390,27 @@ export function CreditSuppliersPanel({
             <Label>{t('Supplier active')}</Label>
           </div>
           <div className='sm:col-span-2'>
+            {editing?.payout_method ? (
+              <div className='rounded-md border p-3 text-sm'>
+                <div className='font-medium'>
+                  {t('Payout account (filed by the seller)')}
+                </div>
+                <div className='mt-1'>
+                  {editing.payout_method}
+                  {editing.payout_currency
+                    ? ` · ${editing.payout_currency}`
+                    : ''}
+                </div>
+                {editing.payout_holder ? (
+                  <div>{editing.payout_holder}</div>
+                ) : null}
+                {editing.payout_details ? (
+                  <pre className='mt-1 font-mono text-xs whitespace-pre-wrap'>
+                    {editing.payout_details}
+                  </pre>
+                ) : null}
+              </div>
+            ) : null}
             <Field label={t('Payout terms (in words — never account numbers)')}>
               <Textarea
                 value={form.payoutTerms}
@@ -535,4 +579,12 @@ function keptInactiveStatus(
 ): CreditSupplier['status'] {
   if (editing && editing.status !== 'active') return editing.status
   return 'suspended'
+}
+
+// maskPayoutDetails keeps the tail so the account is recognisable in a list
+// without the whole number on screen; the edit dialog shows it in full.
+function maskPayoutDetails(details: string): string {
+  const d = details.trim()
+  if (d.length <= 4) return '••••'
+  return `••••${d.slice(-4)}`
 }

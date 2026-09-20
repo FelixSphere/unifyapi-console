@@ -25,7 +25,7 @@ func setupCreditSupplyTestDB(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&Channel{}, &Ability{}, &Option{}, &PricingConfigHistory{},
-		&CreditSupplier{}, &CreditLot{}, &CreditLotUsage{}, &CreditLotEvent{}, &CreditSharePayout{}, &User{}, &Log{},
+		&CreditSupplier{}, &CreditLot{}, &CreditLotUsage{}, &CreditLotEvent{}, &CreditSharePayout{}, &User{}, &Log{}, &CreditPool{},
 	))
 	previous := DB
 	previousType := common.MainDatabaseType()
@@ -704,4 +704,80 @@ func TestActiveLotWithAutoDisabledChannelNeedsAttention(t *testing.T) {
 	lots, err := GetCreditLots(CreditLotFilter{})
 	require.NoError(t, err)
 	assert.Equal(t, common.ChannelStatusAutoDisabled, lots[0].ChannelStatus, "the lots list carries the channel status too")
+}
+
+func TestPayoutAccountIsRequiredValidatedAndPatchSafe(t *testing.T) {
+	setupCreditSupplyTestDB(t)
+	supplier := seedSupplier(t, "acme")
+	assert.False(t, supplier.HasPayoutAccount(), "nothing on file yet")
+
+	_, err := SetSupplierPayoutAccount(supplier.Id, SupplierPayoutAccount{Method: "cheque"})
+	require.Error(t, err, "unknown method")
+	_, err = SetSupplierPayoutAccount(supplier.Id, SupplierPayoutAccount{Method: "bank", Holder: "Acme"})
+	require.Error(t, err, "bank needs details")
+	_, err = SetSupplierPayoutAccount(supplier.Id, SupplierPayoutAccount{Method: "paypal", Holder: "Acme", Details: "sk-proj-abcdefghijklmnopqrstuvwxyz"})
+	require.ErrorIs(t, err, ErrCreditLotSecretInText, "a key pasted as an account is refused")
+	_, err = SetSupplierPayoutAccount(supplier.Id, SupplierPayoutAccount{Method: "platform_credit"})
+	require.Error(t, err, "platform credit needs a login to credit")
+
+	supplier.UserId = 42
+	require.NoError(t, UpdateCreditSupplier(supplier.Id, supplier))
+	got, err := SetSupplierPayoutAccount(supplier.Id, SupplierPayoutAccount{Method: "Bank", Holder: " Acme Labs Ltd ", Details: "IBAN IL620108000000099999999", Currency: "ils"})
+	require.NoError(t, err)
+	assert.True(t, got.HasPayoutAccount())
+	assert.Equal(t, "bank", got.PayoutMethod)
+	assert.Equal(t, "Acme Labs Ltd", got.PayoutHolder)
+	assert.Equal(t, "ILS", got.PayoutCurrency)
+	assert.Equal(t, CreditLotPayoutExternal, got.ExternalPayoutMethod())
+	assert.Equal(t, "••••••9999", got.MaskedPayoutDetails(), "an operator recognises the account from its tail without the whole number on screen")
+	assert.NotZero(t, got.PayoutUpdatedAt)
+
+	// An operator patch that says nothing about payout leaves it alone.
+	require.NoError(t, UpdateCreditSupplier(supplier.Id, &CreditSupplier{Note: "met at the Tel Aviv meetup"}))
+	after, _ := GetCreditSupplierById(supplier.Id)
+	assert.Equal(t, "bank", after.PayoutMethod)
+	assert.Equal(t, "IBAN IL620108000000099999999", after.PayoutDetails)
+
+	// Platform credit needs no details and clears any old ones.
+	got, err = SetSupplierPayoutAccount(supplier.Id, SupplierPayoutAccount{Method: "platform_credit", Holder: "stale", Details: "stale"})
+	require.NoError(t, err)
+	assert.True(t, got.HasPayoutAccount())
+	assert.Empty(t, got.PayoutDetails)
+	assert.Equal(t, CreditLotPayoutPlatformCredit, got.ExternalPayoutMethod())
+}
+
+func TestVerifiedShareLotActivatesWithoutAClickButABoughtLotDoesNot(t *testing.T) {
+	setupCreditSupplyTestDB(t)
+	supplier := seedSupplier(t, "acme")
+	seedSupplierChannel(t, 7)
+	share := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 500, DealType: CreditLotDealRevenueShare, RevenueSharePct: 0.5, RevenueShareBasis: CreditShareBasisRevenue, Source: CreditLotSourceSupplier, PayoutMethod: CreditLotPayoutPlatformCredit}
+	require.NoError(t, CreateCreditLot(share, "user:1"))
+	_, err := MarkCreditLotVerified(share.Id, "system", "ok", 0)
+	require.NoError(t, err)
+	active, err := ActivateVerifiedShareLot(share.Id, "system")
+	require.NoError(t, err)
+	assert.Equal(t, CreditLotStatusActive, active.Status)
+	channel, _ := GetChannelById(7, false)
+	assert.Equal(t, common.ChannelStatusEnabled, channel.Status)
+	assert.InDelta(t, 0.5, ratio_setting.GetChannelCostRatio(7), 1e-9)
+
+	seedSupplierChannel(t, 8)
+	bought := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 8, FaceValueUSD: 500, AcquisitionRate: 0.2, Source: CreditLotSourceSupplier, PayoutMethod: CreditLotPayoutExternal, PayoutAccount: "x"}
+	require.NoError(t, CreateCreditLot(bought, "user:1"))
+	_, err = MarkCreditLotVerified(bought.Id, "system", "ok", 0)
+	require.NoError(t, err)
+	_, err = ActivateVerifiedShareLot(bought.Id, "system")
+	require.Error(t, err, "a purchase is activated by paying for it, never automatically")
+}
+
+func TestSupplierChannelsStayOutOfPromotionalPoolGroups(t *testing.T) {
+	setupCreditSupplyTestDB(t)
+	previousGroups := ratio_setting.GroupRatio2JSONString()
+	t.Cleanup(func() { require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(previousGroups)) })
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"vip":0.9,"promo-pool":1}`))
+	require.NoError(t, DB.Create(&CreditPool{Name: "Launch promo", RoutingGroup: "promo-pool"}).Error)
+	groups := allCustomerGroups()
+	assert.Contains(t, groups, "default")
+	assert.Contains(t, groups, "vip")
+	assert.NotContains(t, groups, "promo-pool", "grant-funded traffic pays the customer nothing, so it must not draw on a contributed key")
 }

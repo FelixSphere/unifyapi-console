@@ -62,6 +62,12 @@ type CreditSupplyTerms struct {
 	// MinSharePayoutUSD is the balance a contributor has to reach before we
 	// send money. 0 pays any amount.
 	MinSharePayoutUSD float64 `json:"min_share_payout_usd"`
+	// ManualReview keeps a verified key out of routing until an operator
+	// activates it. Off by default: with revenue share nothing is at risk in
+	// letting a verified key start earning at once, and the seller has
+	// already attested. (Zero value = automatic, so terms saved before this
+	// field existed keep the default.)
+	ManualReview bool `json:"manual_review"`
 }
 
 func DefaultCreditSupplyTerms() CreditSupplyTerms {
@@ -70,7 +76,11 @@ func DefaultCreditSupplyTerms() CreditSupplyTerms {
 		ChannelPriority:   10,
 		MinFaceUSD:        100,
 		RevenueShareRates: map[string]float64{"anthropic": 0.50, "openai": 0.50, "google": 0.50},
-		RevenueShareBasis: CreditShareBasisMargin,
+		// Revenue: sellers only ever hand us keys on share terms now, nothing
+		// is paid up front, and "what your credits sold for" is the figure the
+		// seller sees and checks; a margin basis would net off a cost that is
+		// always zero for them and confuse the statement.
+		RevenueShareBasis: CreditShareBasisRevenue,
 		MinSharePayoutUSD: 20,
 	}
 }
@@ -129,8 +139,8 @@ func (t CreditSupplyTerms) PayoutUSD(faceUSD, rate float64, method string) float
 }
 
 func ValidateCreditSupplyTerms(t CreditSupplyTerms) error {
-	if len(t.BuyRates) == 0 {
-		return errors.New("at least one vendor buy rate is required")
+	if len(t.BuyRates) == 0 && len(t.RevenueShareRates) == 0 {
+		return errors.New("post at least one vendor share (or an operator buy rate)")
 	}
 	keys := make([]string, 0, len(t.BuyRates))
 	for k := range t.BuyRates {

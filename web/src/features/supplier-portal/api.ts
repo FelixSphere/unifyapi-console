@@ -53,15 +53,39 @@ export type SupplierLot = {
   share_unpaid_usd: number
 }
 
-// The posted terms: what we pay per dollar of each vendor's credit.
+// The posted offer: the share of what their credits sell for that a seller
+// keeps, per vendor. Sellers are offered this one deal; buy-out rates exist
+// only for lots an operator enters by hand and are not posted here.
 export type SupplierTerms = {
-  buy_rates: Record<string, number>
   min_face_usd: number
-  platform_credit_bonus: number
-  // The other offer: keep the key, keep a share of what it earns.
   revenue_share_rates: Record<string, number>
   revenue_share_basis: 'revenue' | 'margin'
   min_share_payout_usd: number
+  // When on, a verified key waits for an operator instead of going live.
+  manual_review: boolean
+}
+
+export type SupplierPayoutMethod =
+  | 'platform_credit'
+  | 'bank'
+  | 'paypal'
+  | 'wise'
+  | 'crypto'
+
+export const PAYOUT_METHOD_LABELS: Record<SupplierPayoutMethod, string> = {
+  platform_credit: 'Platform credit (added to your UnifyAPI balance)',
+  bank: 'Bank transfer',
+  paypal: 'PayPal',
+  wise: 'Wise',
+  crypto: 'Crypto wallet (USDT / USDC)',
+}
+
+// Where the seller's share goes. Required before the first sale.
+export type SupplierPayoutAccount = {
+  method: SupplierPayoutMethod | ''
+  holder: string
+  details: string
+  currency: string
 }
 
 // One dividend payment, as the contributor sees it.
@@ -87,6 +111,11 @@ export type SupplierPortalData = {
     status: 'pending' | 'active' | 'suspended' | 'rejected'
     status_reason: string
     counterparty: string
+    payout_method: SupplierPayoutMethod | ''
+    payout_holder: string
+    payout_details: string
+    payout_currency: string
+    has_payout_account: boolean
   }
   lots: SupplierLot[]
   totals: {
@@ -145,13 +174,12 @@ export async function getSupplierTerms() {
   )
 }
 
+// A seller handing us a key. No price and no deal to choose: the share is
+// posted; how they are paid is on their profile.
 export type SupplierLotSubmission = {
   vendor: string
-  deal_type: SupplierDeal
   face_value_usd: number
   expires_at: number
-  payout_method: 'platform_credit' | 'external'
-  payout_account: string
   note: string
   upstream_key: string
   models: string[]
@@ -208,24 +236,20 @@ export async function submitSupplierLot(submission: SupplierLotSubmission) {
         status: CreditLotStatus
         deal_type: SupplierDeal
         revenue_share_pct: number
-        payout_usd?: number
       }>
     >('/api/supplier/lots', submission)
   )
 }
 
-// payoutPreview is what a seller will receive for a sale under the posted
-// terms, mirrored from the server's PayoutUSD so the form can show it live.
-export function payoutPreview(
-  terms: SupplierTerms,
-  vendor: string,
-  faceUSD: number,
-  method: 'platform_credit' | 'external'
+export async function updateSupplierPayoutAccount(
+  account: SupplierPayoutAccount
 ) {
-  const rate = terms.buy_rates[vendor] ?? 0
-  const bonus =
-    method === 'platform_credit' ? 1 + (terms.platform_credit_bonus || 0) : 1
-  return { rate, amount: faceUSD > 0 ? faceUSD * rate * bonus : 0 }
+  return unwrap(
+    await api.put<Envelope<SupplierPortalData['supplier']>>(
+      '/api/supplier/payout-account',
+      account
+    )
+  )
 }
 
 // sharePreview is what a contributor keeps, mirrored from the server's posted

@@ -30,7 +30,7 @@ func TestPaidLotOwesNothingAsItIsConsumed(t *testing.T) {
 	require.NoError(t, UpdateCreditSupplier(supplier.Id, supplier))
 	require.NoError(t, DB.Create(&User{Id: 42, Username: "acme"}).Error)
 	seedSupplierChannel(t, 7)
-	listPrice, ok := ratio_setting.ListPriceUSD("claude-sonnet-5", 1_000_000, 0, 0)
+	listPrice, ok := ratio_setting.ListPriceUSD("claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: int64(1_000_000), CachedTokens: int64(0), CompletionTokens: int64(0)})
 	require.True(t, ok)
 
 	lot := &CreditLot{

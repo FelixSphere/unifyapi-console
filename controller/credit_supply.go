@@ -166,6 +166,12 @@ func UpdateCreditLot(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }
 
+// GetCreditSupplyTermsAdmin returns every term, including the operator-only
+// buy-out rates the seller endpoint deliberately leaves out.
+func GetCreditSupplyTermsAdmin(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": model.GetCreditSupplyTerms()})
+}
+
 // PayCreditLot settles a verified sale: pays the supplier (platform credit is
 // booked here; an external transfer is recorded by reference) and activates
 // the lot in the same step.

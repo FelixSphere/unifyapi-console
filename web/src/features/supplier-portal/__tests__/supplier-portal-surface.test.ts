@@ -31,12 +31,17 @@ describe('supplier portal surface', () => {
     assert.doesNotMatch(api, /credit-pool\/lots/)
   })
 
-  test('a sale carries the attestation, a write-only key and a payout choice; the rate is posted, not typed', () => {
+  test('a submission carries the attestation and a write-only key; the share is posted, never typed', () => {
     assert.match(dialog, /transfer_rights_confirmed: true/)
     assert.match(dialog, /PasswordInput/)
-    assert.match(dialog, /payout_method: form\.payoutMethod/)
-    // The seller never sets their own price: no acquisition_rate is sent.
-    assert.doesNotMatch(dialog, /acquisition_rate:/)
+    // The seller sets no price, chooses no deal, and the payout lives on the
+    // profile, not the form.
+    assert.doesNotMatch(
+      dialog,
+      /acquisition_rate:|deal_type:|payout_method:|revenue_share_pct:/
+    )
+    assert.doesNotMatch(dialog, /buy_rates/)
+    assert.match(dialog, /nothing is paid up front/i)
   })
 
   test('a login that has not sold yet sees the posted terms, not an error', () => {
@@ -66,15 +71,24 @@ describe('supplier portal surface', () => {
     )
   })
 
-  test('the same form takes the other deal: contribute the key for a share', () => {
-    // One form, two deals -- there is no second dialog to keep in step.
-    assert.match(dialog, /deal_type: form\.deal/)
-    assert.match(dialog, /contributableVendors/)
-    // The share is posted like the buy rate: never typed by the contributor.
-    assert.doesNotMatch(dialog, /revenue_share_pct:/)
-    // A contributor is told what they are agreeing to before they agree.
-    assert.match(dialog, /nothing is paid up front/i)
+  test('sellers file a payout account before they can sell, and see what their credits sold for', () => {
+    assert.match(api, /\/api\/supplier\/payout-account/)
+    assert.match(page, /has_payout_account/)
+    assert.match(page, /<PayoutAccountDialog/)
+    // Sell is gated on the account; the page turns the gate into the form.
+    assert.match(page, /Add payout account to start/)
+    // The three numbers a seller checks: sold for, their share, unpaid.
+    assert.match(page, /share_revenue_usd/)
+    assert.match(page, /share_earned_usd/)
     assert.match(page, /share_unpaid_usd/)
+    // No buy-out is offered to sellers anywhere on the page.
+    assert.doesNotMatch(page, /buy_rates|awaiting_payment_usd/)
+    const payout = readFileSync(
+      join(HERE, '../components/payout-account-dialog.tsx'),
+      'utf8'
+    )
+    assert.match(payout, /updateSupplierPayoutAccount/)
+    assert.match(payout, /Never paste an API key/)
   })
 
   test('the duplicate contribution module is gone', () => {

@@ -108,7 +108,8 @@ finds the whole delta without consulting git history.
   and drawn down at list price, on either of two deals. Bought outright, the
   supplier is paid once at an acquisition rate that doubles as the channel's
   `ChannelCostRatio`. Contributed, nothing is paid up front and the owner is
-  paid a share of what their key earns, settled from `credit_share_payouts`.
+  paid a share of what their key earns, settled from `credit_share_payouts`; the
+  share is the only deal offered to sellers, who file a payout account first.
 - `common/build_id.go`, `web/src/lib/stale-bundle.ts`, `web/src/features/errors/stale-bundle-error.tsx`
   (plus the `BUILD_ID` arg in
   `Dockerfile` / `fork-image.yml` and the `unifyapi-build` meta in `rsbuild.config.ts`) —

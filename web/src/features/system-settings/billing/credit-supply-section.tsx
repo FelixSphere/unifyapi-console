@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import {
   Table,
   TableBody,
@@ -137,7 +138,9 @@ function TermsCard() {
       }),
     onSuccess: () => {
       toast.success(
-        t('Buy terms saved. New sales use them; existing lots keep their rate.')
+        t(
+          'Terms saved. New submissions use them; keys already earning keep their share.'
+        )
       )
       setDraft(null)
       queryClient.invalidateQueries({ queryKey: ['credit-supply'] })
@@ -145,12 +148,14 @@ function TermsCard() {
     onError: (error: Error) => toast.error(error.message),
   })
   if (!current) return null
-  const vendors = Object.keys(current.buy_rates).sort()
+  // Defensive on both maps: a terms payload from before either existed, or
+  // from an endpoint that omits one, must not take the whole screen down.
+  const vendors = Object.keys(current.buy_rates ?? {}).sort()
   // Both offers are posted per vendor, and a vendor we buy from is one we
   // could equally take a key from, so the buy list drives both.
-  const shareVendors = Array.from(
-    new Set([...vendors, ...Object.keys(current.revenue_share_rates ?? {})])
-  ).sort()
+  const shareVendors = [
+    ...new Set([...vendors, ...Object.keys(current.revenue_share_rates ?? {})]),
+  ].sort()
   const setShare = (vendor: string, pct: string) => {
     const value = Number(pct)
     const rates = { ...(current.revenue_share_rates ?? {}) }
@@ -171,14 +176,108 @@ function TermsCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className='text-base'>{t('Buy terms')}</CardTitle>
+        <CardTitle className='text-base'>{t('Supply terms')}</CardTitle>
         <CardDescription>
           {t(
-            'What we pay per dollar of each vendor’s credit, shown to sellers before they submit. 20% means a seller of $1,000 Anthropic credit receives $200.'
+            'The deal sellers see before they submit: the share of what their credits sell for that they keep, per vendor. 50% means a key that sells $1,000 of traffic earns its owner $500. Changing a term applies to the next submission; keys already earning keep their share.'
           )}
         </CardDescription>
       </CardHeader>
       <CardContent className='grid gap-3'>
+        <div className='grid gap-3 sm:grid-cols-3'>
+          {shareVendors.map((vendor) => (
+            <div key={vendor} className='grid gap-1'>
+              <Label className='capitalize'>
+                {t('{{vendor}} — seller keeps', { vendor })}
+              </Label>
+              <div className='flex items-center gap-2'>
+                <Input
+                  type='number'
+                  min={0}
+                  max={99}
+                  step={1}
+                  value={Math.round(
+                    (current.revenue_share_rates?.[vendor] ?? 0) * 100
+                  )}
+                  onChange={(event) => setShare(vendor, event.target.value)}
+                  data-testid={`revenue-share-${vendor}`}
+                />
+                <span className='text-muted-foreground text-sm'>%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className='grid gap-3 sm:grid-cols-3'>
+          <div className='grid gap-1'>
+            <Label>{t('Share of')}</Label>
+            <select
+              className='border-input bg-background h-9 rounded-md border px-3 text-sm'
+              value={current.revenue_share_basis ?? 'revenue'}
+              onChange={(event) =>
+                setDraft({
+                  ...current,
+                  revenue_share_basis: event.target.value as
+                    | 'revenue'
+                    | 'margin',
+                })
+              }
+              data-testid='revenue-share-basis'
+            >
+              <option value='revenue'>
+                {t('Revenue — what customers actually paid (what sellers see)')}
+              </option>
+              <option value='margin'>
+                {t('Margin — revenue less anything we paid up front')}
+              </option>
+            </select>
+          </div>
+          <div className='grid gap-1'>
+            <Label>{t('Minimum payout (USD)')}</Label>
+            <Input
+              type='number'
+              min={0}
+              value={current.min_share_payout_usd ?? 0}
+              onChange={(event) =>
+                setDraft({
+                  ...current,
+                  min_share_payout_usd: Number(event.target.value),
+                })
+              }
+            />
+            <p className='text-muted-foreground text-xs'>
+              {t('Below this, a balance waits rather than being sent.')}
+            </p>
+          </div>
+          <div className='grid gap-1'>
+            <Label>{t('Manual review')}</Label>
+            <div className='flex h-9 items-center gap-2'>
+              <Switch
+                checked={Boolean(current.manual_review)}
+                onCheckedChange={(manual_review) =>
+                  setDraft({ ...current, manual_review })
+                }
+                data-testid='manual-review'
+              />
+              <span className='text-muted-foreground text-xs'>
+                {current.manual_review
+                  ? t('Verified keys wait for you to accept them')
+                  : t('Verified keys go live at once')}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className='grid gap-3 border-t pt-3'>
+          <div>
+            <Label className='text-sm font-medium'>
+              {t('Operator buy-out rates')}
+            </Label>
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'Only for lots you enter yourself as an outright purchase (New lot → bought). Sellers are never offered a buy-out; they see the share above.'
+              )}
+            </p>
+          </div>
+        </div>
         <div className='grid gap-3 sm:grid-cols-3'>
           {vendors.map((vendor) => (
             <div key={vendor} className='grid gap-1'>
@@ -189,7 +288,7 @@ function TermsCard() {
                   min={1}
                   max={99}
                   step={1}
-                  value={Math.round((current.buy_rates[vendor] ?? 0) * 100)}
+                  value={Math.round((current.buy_rates?.[vendor] ?? 0) * 100)}
                   onChange={(event) => setRate(vendor, event.target.value)}
                   data-testid={`buy-rate-${vendor}`}
                 />
@@ -248,81 +347,6 @@ function TermsCard() {
             />
           </div>
         </div>
-        <div className='grid gap-3 border-t pt-3'>
-          <div>
-            <Label className='text-sm font-medium'>
-              {t('Contribution terms')}
-            </Label>
-            <p className='text-muted-foreground text-xs'>
-              {t(
-                'The other offer: a contributor hands us the key, we pay nothing up front, and they keep this share of what it earns for as long as it earns. Leave a vendor at 0 to stop taking its keys on these terms. A key already earning keeps the share it was taken on.'
-              )}
-            </p>
-          </div>
-          <div className='grid gap-3 sm:grid-cols-3'>
-            {shareVendors.map((vendor) => (
-              <div key={vendor} className='grid gap-1'>
-                <Label className='capitalize'>{vendor}</Label>
-                <div className='flex items-center gap-2'>
-                  <Input
-                    type='number'
-                    min={0}
-                    max={99}
-                    step={1}
-                    value={Math.round(
-                      (current.revenue_share_rates?.[vendor] ?? 0) * 100
-                    )}
-                    onChange={(event) => setShare(vendor, event.target.value)}
-                    data-testid={`revenue-share-${vendor}`}
-                  />
-                  <span className='text-muted-foreground text-sm'>%</span>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className='grid gap-3 sm:grid-cols-3'>
-            <div className='grid gap-1'>
-              <Label>{t('Share of')}</Label>
-              <select
-                className='border-input bg-background h-9 rounded-md border px-3 text-sm'
-                value={current.revenue_share_basis ?? 'margin'}
-                onChange={(event) =>
-                  setDraft({
-                    ...current,
-                    revenue_share_basis: event.target.value as
-                      | 'revenue'
-                      | 'margin',
-                  })
-                }
-                data-testid='revenue-share-basis'
-              >
-                <option value='margin'>
-                  {t('Margin — revenue less what we paid up front')}
-                </option>
-                <option value='revenue'>
-                  {t('Revenue — everything the customer paid')}
-                </option>
-              </select>
-            </div>
-            <div className='grid gap-1'>
-              <Label>{t('Minimum payout (USD)')}</Label>
-              <Input
-                type='number'
-                min={0}
-                value={current.min_share_payout_usd ?? 0}
-                onChange={(event) =>
-                  setDraft({
-                    ...current,
-                    min_share_payout_usd: Number(event.target.value),
-                  })
-                }
-              />
-              <p className='text-muted-foreground text-xs'>
-                {t('Below this, a balance waits rather than being sent.')}
-              </p>
-            </div>
-          </div>
-        </div>
         <div className='flex justify-end gap-2'>
           <Button
             type='button'
@@ -337,7 +361,7 @@ function TermsCard() {
             disabled={draft === null || save.isPending}
             onClick={() => save.mutate(current)}
           >
-            {t('Save buy terms')}
+            {t('Save terms')}
           </Button>
         </div>
       </CardContent>
@@ -379,7 +403,7 @@ export function CreditSupplySection() {
       <Alert>
         <AlertDescription className='text-xs'>
           {t(
-            'Anyone can sell us vendor credits at the posted buy rates. A sale is verified automatically (one request through the key), then waits for you to pay it; paying books the payout and enables the channel at supplier priority, so bought credits are consumed first and drawn down at list price. The rate paid becomes the channel’s purchasing cost ratio, so Profit already reflects it. Suppliers are paid once, here — never per period from Settlement.'
+            'Anyone can hand us a vendor key and keep the posted share of what its credits sell for. A key is verified automatically (one request through it) and goes live at supplier priority, so contributed credits are consumed first and drawn down at list price; the share becomes the channel’s cost ratio, so Profit already reflects it. Sellers file a payout account before they can sell; you settle what they are owed from the Suppliers tab — never per period from Settlement. Buy-out at a fixed rate exists only for lots you enter yourself.'
           )}
         </AlertDescription>
       </Alert>

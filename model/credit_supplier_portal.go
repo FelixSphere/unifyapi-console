@@ -50,7 +50,7 @@ func SubmitSupplierCreditLot(supplier *CreditSupplier, channel *Channel, lot *Cr
 		channel.CreatedTime = common.GetTimestamp()
 	}
 	info := channel.GetOtherInfo()
-	info["status_reason"] = fmt.Sprintf("submitted by supplier %s; awaiting verification and payment", supplier.Code)
+	info["status_reason"] = fmt.Sprintf("submitted by supplier %s; awaiting verification", supplier.Code)
 	info["status_time"] = common.GetTimestamp()
 	channel.SetOtherInfo(info)
 	if err := channel.Insert(); err != nil {
@@ -93,6 +93,25 @@ func allCustomerGroups() []string {
 	}
 	if !seen["default"] {
 		groups = append(groups, "default")
+	}
+	// A promotional credit pool routes grant-funded traffic through its own
+	// group and charges the customer nothing. A contributed key in that group
+	// would be drawn down and earn its owner nothing; keep it out.
+	var poolGroups []string
+	if DB != nil {
+		if err := DB.Model(&CreditPool{}).Distinct().Pluck("routing_group", &poolGroups).Error; err == nil {
+			excluded := map[string]bool{}
+			for _, g := range poolGroups {
+				excluded[strings.TrimSpace(g)] = true
+			}
+			kept := make([]string, 0, len(groups))
+			for _, g := range groups {
+				if !excluded[g] {
+					kept = append(kept, g)
+				}
+			}
+			groups = kept
+		}
 	}
 	sort.Strings(groups)
 	return groups

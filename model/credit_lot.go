@@ -425,21 +425,26 @@ func applyLotCostRatio(lot *CreditLot, actor string) error {
 	if lot.ChannelId == 0 {
 		return nil
 	}
-	if lot.AcquisitionRate <= 0 {
-		// A contributed key cost nothing up front, and ChannelCostRatio refuses
-		// a zero multiplier because a free upstream makes every margin
-		// infinite. Leaving the channel at the default 1 costs its traffic at
-		// the vendor's list price, which understates our margin rather than
-		// inflating it -- the conservative direction. What the key actually
-		// owes its contributor is the dividend, tracked on the lot; it is not
-		// expressible as a multiple of list price. See docs/credit-supply.md.
+	// The cost basis reconciliation reads for this channel. A bought lot costs
+	// its acquisition rate x list. A contributed key costs its SHARE of
+	// revenue, i.e. share x list x customer discount; ChannelCostRatio is a
+	// multiple of list, so the share itself is the closest expressible figure
+	// and errs conservative: it overstates cost by the customer discount and
+	// never understates it. Without it the channel would be costed at full
+	// list and every share request would read as 0% margin on the profit
+	// screen. What is actually owed is exact on the lot (UnpaidShareUSD).
+	ratio := lot.AcquisitionRate
+	if lot.IsRevenueShare() && lot.RevenueSharePct > 0 {
+		ratio = lot.RevenueSharePct
+	}
+	if ratio <= 0 {
 		return nil
 	}
 	ratios := ratio_setting.GetChannelCostRatioCopy()
 	if ratios == nil {
 		ratios = map[string]float64{}
 	}
-	ratios[strconv.Itoa(lot.ChannelId)] = lot.AcquisitionRate
+	ratios[strconv.Itoa(lot.ChannelId)] = ratio
 	encoded, err := common.Marshal(ratios)
 	if err != nil {
 		return err
@@ -746,6 +751,21 @@ func (lot *CreditLot) PayoutUSD(terms CreditSupplyTerms) float64 {
 // verificationUSD is the list-price cost of the verification request, booked
 // against the lot's face value: the seller's vendor balance really did go
 // down by that much, so the remaining figure must not overstate it.
+// ActivateVerifiedShareLot puts a verified, contributed key into service
+// without an operator click. Nothing is paid up front, the seller attested at
+// submission, and the key just answered a real request: there is no decision
+// left for a human to make, so the sale does not wait for one.
+func ActivateVerifiedShareLot(id int, actor string) (*CreditLot, error) {
+	lot, err := GetCreditLotById(id)
+	if err != nil {
+		return nil, err
+	}
+	if !lot.IsRevenueShare() {
+		return nil, errors.New("only a contributed key activates without payment")
+	}
+	return TransitionCreditLot(id, CreditLotTransition{To: CreditLotStatusActive, Actor: actor, TransferRightsConfirmed: true})
+}
+
 func MarkCreditLotVerified(id int, actor, note string, verificationUSD float64) (*CreditLot, error) {
 	var lot CreditLot
 	err := DB.Transaction(func(tx *gorm.DB) error {

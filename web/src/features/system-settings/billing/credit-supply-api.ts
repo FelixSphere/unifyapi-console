@@ -26,13 +26,30 @@ export type CreditSupplier = {
   attested_at: number
   payout_terms: string
   note: string
+  // Where the seller is paid; filed by the seller, read in full by root.
+  payout_method: string
+  payout_holder: string
+  payout_details: string
+  payout_currency: string
+  payout_updated_at: number
   created_at: number
   updated_at: number
 }
 
+// The payout account is the seller's to file (portal); the operator's form
+// never writes it, so it is not part of the input.
 export type CreditSupplierInput = Omit<
   CreditSupplier,
-  'id' | 'created_at' | 'updated_at' | 'attestation_version' | 'attested_at'
+  | 'id'
+  | 'created_at'
+  | 'updated_at'
+  | 'attestation_version'
+  | 'attested_at'
+  | 'payout_method'
+  | 'payout_holder'
+  | 'payout_details'
+  | 'payout_currency'
+  | 'payout_updated_at'
 >
 
 export type CreditLotStatus =
@@ -287,11 +304,15 @@ export type CreditSupplyTerms = {
   revenue_share_rates: Record<string, number>
   revenue_share_basis: 'revenue' | 'margin'
   min_share_payout_usd: number
+  // Keep a verified key disabled until an operator accepts it.
+  manual_review: boolean
 }
 
 export async function getCreditSupplyTerms() {
   return unwrap(
-    await api.get<Envelope<CreditSupplyTerms>>('/api/supplier/terms')
+    // The root endpoint: the seller-facing /api/supplier/terms posts only the
+    // offer and leaves the operator-only buy-out rates out.
+    await api.get<Envelope<CreditSupplyTerms>>('/api/credit-supply/terms')
   )
 }
 

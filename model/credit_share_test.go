@@ -68,10 +68,10 @@ func TestAContributedKeyIsAcceptedWithoutPaymentAndEarnsAsItServes(t *testing.T)
 	channel, err := GetChannelById(7, false)
 	require.NoError(t, err)
 	assert.Equal(t, common.ChannelStatusEnabled, channel.Status)
-	assert.InDelta(t, 1, ratio_setting.GetChannelCostRatio(7), 1e-9,
-		"a contributed key has no purchase price to write as a cost multiplier")
+	assert.InDelta(t, 0.5, ratio_setting.GetChannelCostRatio(7), 1e-9,
+		"the share is the closest cost basis reconciliation can express; at full list every request would read as 0%% margin")
 
-	listPrice, ok := ratio_setting.ListPriceUSD("claude-sonnet-5", 1_000_000, 0, 0)
+	listPrice, ok := ratio_setting.ListPriceUSD("claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: int64(1_000_000), CachedTokens: int64(0), CompletionTokens: int64(0)})
 	require.True(t, ok)
 	revenue(7, 40)
 	revenue(7, 60)
@@ -213,7 +213,7 @@ func TestTheMarginBasisNetsOffWhatWePaidUpFront(t *testing.T) {
 	supplier.UserId = 42
 	require.NoError(t, UpdateCreditSupplier(supplier.Id, supplier))
 	seedSupplierChannel(t, 7)
-	listPrice, ok := ratio_setting.ListPriceUSD("claude-sonnet-5", 1_000_000, 0, 0)
+	listPrice, ok := ratio_setting.ListPriceUSD("claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: int64(1_000_000), CachedTokens: int64(0), CompletionTokens: int64(0)})
 	require.True(t, ok)
 
 	lot := &CreditLot{
@@ -231,7 +231,7 @@ func TestTheMarginBasisNetsOffWhatWePaidUpFront(t *testing.T) {
 	require.ErrorIs(t, err, ErrCreditLotNeedsPayment)
 	_, err = PayCreditLot(lot.Id, CreditLotPayment{Actor: "root"})
 	require.NoError(t, err)
-	assert.InDelta(t, 0.1, ratio_setting.GetChannelCostRatio(7), 1e-9)
+	assert.InDelta(t, 0.5, ratio_setting.GetChannelCostRatio(7), 1e-9, "on a mixed deal the share, the larger and ongoing cost, is the basis")
 
 	revenue(7, 100)
 	fresh, err := GetCreditLotById(lot.Id)
@@ -304,7 +304,7 @@ func TestPostedRevenueShareTermsAreValidatedAndSnapshotIsWhatCounts(t *testing.T
 	share, ok := terms.RevenueShareRate("Anthropic")
 	require.True(t, ok)
 	assert.InDelta(t, 0.5, share, 1e-9)
-	assert.Equal(t, CreditShareBasisMargin, terms.ShareBasis())
+	assert.Equal(t, CreditShareBasisRevenue, terms.ShareBasis(), "sellers see and check what their credits sold for; that is what the share is of")
 
 	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":0.2},"revenue_share_rates":{"anthropic":1.4}}`))
 	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":0.2},"revenue_share_basis":"gut feel"}`))

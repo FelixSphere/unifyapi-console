@@ -81,9 +81,18 @@ describe('credit supply operator surface', () => {
     assert.match(section, /revenue_share_basis/)
   })
 
-  test('the buy terms are posted from the operator screen', () => {
+  test('the supply terms are posted from the operator screen', () => {
     assert.match(section, /TermsCard/)
     assert.match(section, /key: 'CreditSupplyTerms'/)
+    // Share per vendor, basis, minimum payout and manual review are all
+    // operator-editable; buy-out rates are marked operator-only.
+    assert.match(section, /revenue-share-basis/)
+    assert.match(section, /manual-review/)
+    assert.match(section, /Operator buy-out rates/)
+    // The operator screen reads the FULL terms from the root endpoint; the
+    // seller endpoint omits the buy-out rates and would blank the card.
+    const adminApi = readFileSync(join(HERE, '../credit-supply-api.ts'), 'utf8')
+    assert.match(adminApi, /\/api\/credit-supply\/terms/)
     // No application queue any more: suppliers are created by their first sale.
     const suppliers = readFileSync(
       join(HERE, '../credit-supply-suppliers.tsx'),

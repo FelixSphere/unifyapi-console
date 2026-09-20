@@ -371,43 +371,7 @@ export function CreditLotsPanel({
                     )}
                   </TableCell>
                   <TableCell className='tabular-nums'>
-                    {isRevenueShare(lot) ? (
-                      <>
-                        <div>{formatUSD(earnedShareUSD(lot))}</div>
-                        <div className='text-muted-foreground text-xs'>
-                          {unpaidShareUSD(lot) > 0
-                            ? t('{{amount}} owed', {
-                                amount: formatUSD(unpaidShareUSD(lot)),
-                              })
-                            : t('paid up')}
-                        </div>
-                      </>
-                    ) : lot.paid_at ? (
-                      <>
-                        <div>{formatUSD(lot.paid_usd)}</div>
-                        <div className='text-muted-foreground text-xs'>
-                          {t('paid {{date}}', {
-                            date: new Date(
-                              lot.paid_at * 1000
-                            ).toLocaleDateString(),
-                          })}
-                          {lot.payout_reference
-                            ? ` · ${lot.payout_reference}`
-                            : ''}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div>
-                          {lot.status === 'rejected'
-                            ? '—'
-                            : formatUSD(purchasePriceUSD(lot))}
-                        </div>
-                        <div className='text-muted-foreground text-xs'>
-                          {paidDueHint(lot, t)}
-                        </div>
-                      </>
-                    )}
+                    <PaidCell lot={lot} />
                   </TableCell>
                   <TableCell className='text-sm'>
                     {lot.expires_at
@@ -961,4 +925,43 @@ function paidDueHint(
   return t('owed so far: {{amount}}', {
     amount: formatUSD(payableUSD(lot)),
   })
+}
+
+// PaidCell is what a lot has earned or been paid: the share owed on a
+// contributed key, the payment on a bought one, or the price still due.
+function PaidCell({ lot }: { lot: CreditLot }) {
+  const { t } = useTranslation()
+  if (isRevenueShare(lot)) {
+    return (
+      <>
+        <div>{formatUSD(earnedShareUSD(lot))}</div>
+        <div className='text-muted-foreground text-xs'>
+          {unpaidShareUSD(lot) > 0
+            ? t('{{amount}} owed', { amount: formatUSD(unpaidShareUSD(lot)) })
+            : t('paid up')}
+        </div>
+      </>
+    )
+  }
+  if (lot.paid_at) {
+    return (
+      <>
+        <div>{formatUSD(lot.paid_usd)}</div>
+        <div className='text-muted-foreground text-xs'>
+          {t('paid {{date}}', {
+            date: new Date(lot.paid_at * 1000).toLocaleDateString(),
+          })}
+          {lot.payout_reference ? ` · ${lot.payout_reference}` : ''}
+        </div>
+      </>
+    )
+  }
+  return (
+    <>
+      <div>
+        {lot.status === 'rejected' ? '—' : formatUSD(purchasePriceUSD(lot))}
+      </div>
+      <div className='text-muted-foreground text-xs'>{paidDueHint(lot, t)}</div>
+    </>
+  )
 }
