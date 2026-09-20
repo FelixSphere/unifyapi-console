@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/bytedance/gopkg/util/gopool"
 
 	"github.com/QuantumNous/new-api/constant"
 
@@ -1126,6 +1127,33 @@ type ManageRequest struct {
 	Mode   string `json:"mode"`
 }
 
+// notifyOperatorCredit sends the "credit added" notice for a positive delta,
+// off the request path so a slow mail server never delays the operator. The
+// balance is read after the adjustment so the notice states what the user can
+// spend now, from the wallet they actually spend from.
+//
+// operatorCreditNotified is a test seam: it is signalled once the send has
+// been attempted (or skipped). nil outside tests.
+var operatorCreditNotified chan<- int
+
+func notifyOperatorCredit(user *model.User, added int) {
+	if added <= 0 {
+		return
+	}
+	snapshot := *user
+	gopool.Go(func() {
+		balance, err := model.GetUserQuota(snapshot.Id, true)
+		if err != nil {
+			common.SysError(fmt.Sprintf("operator credit notice for user %d: balance unavailable: %s", snapshot.Id, err.Error()))
+			balance = 0
+		}
+		service.NotifyOperatorCredit(&snapshot, added, balance)
+		if operatorCreditNotified != nil {
+			operatorCreditNotified <- snapshot.Id
+		}
+	})
+}
+
 // ManageUser Only admin user can do this
 func ManageUser(c *gin.Context) {
 	var req ManageRequest
@@ -1219,6 +1247,7 @@ func ManageUser(c *gin.Context) {
 			recordManageAuditFor(c, user.Id, "user.quota_add", map[string]interface{}{
 				"quota": logger.LogQuota(req.Value),
 			})
+			notifyOperatorCredit(&user, req.Value)
 		case "subtract":
 			if req.Value <= 0 {
 				common.ApiErrorI18n(c, i18n.MsgUserQuotaChangeZero)
@@ -1241,6 +1270,8 @@ func ManageUser(c *gin.Context) {
 				"from": logger.LogQuota(req.Value - delta),
 				"to":   logger.LogQuota(req.Value),
 			})
+			// An override that raises the balance is money added too.
+			notifyOperatorCredit(&user, delta)
 		default:
 			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 			return
