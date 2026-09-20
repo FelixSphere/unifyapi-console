@@ -631,6 +631,15 @@ func (user *User) Insert(inviterId int) error {
 	return nil
 }
 
+// recordSignupCredit writes the audit line for the ordinary signup credit on
+// the paths that grant it outside finishInsertWithInitialQuota (partnership
+// and Builder signups, whose "initial quota" argument is the program grant).
+func (user *User) recordSignupCredit() {
+	if common.QuotaForNewUser > 0 {
+		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
+	}
+}
+
 func (user *User) finishInsert(inviterId int) {
 	user.finishInsertWithInitialQuota(inviterId, common.QuotaForNewUser, "新用户注册赠送")
 }
@@ -709,6 +718,7 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 func (user *User) FinalizePartnershipOAuthUserCreation(grantedQuota int) {
 	// Program grants are capped and must not stack with ordinary affiliate
 	// signup rewards. The caller may still retain InviterId for attribution.
+	user.recordSignupCredit()
 	user.finalizeOAuthUserCreationWithInitialQuota(0, grantedQuota, "Partnership registration grant")
 }
 

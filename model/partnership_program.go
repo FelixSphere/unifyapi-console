@@ -796,9 +796,10 @@ func (user *User) InsertForPartnership(code string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	// Partnership grants are the only signup credit on this path. Keep the
-	// ordinary affiliate relationship for attribution, but do not stack the
-	// generic invitee/inviter rewards on top of a capped Program offer.
+	// The ordinary signup credit and the program grant are both recorded;
+	// the generic invitee/inviter rewards are not stacked on top of a capped
+	// Program offer (the inviter is kept for attribution only).
+	user.recordSignupCredit()
 	user.finishInsertWithInitialQuota(0, grantedQuota, "Partnership registration grant")
 	return grantedQuota, nil
 }
@@ -814,7 +815,12 @@ func (user *User) InsertForPartnershipWithTx(tx *gorm.DB, code string) (int, err
 			return err
 		}
 		user.Group = offer.CustomerGroup
-		user.Quota = 0
+		// UNIFYAPI-FORK: a partnership signup is still a new login, so it gets
+		// the ordinary signup credit every registration gets (operator rule,
+		// 2026-09-20: "每个用户给的 default quota" applies to every new user).
+		// The program grant, when one is claimed below, comes on top of it.
+		// Affiliate invitee/inviter rewards remain excluded on this path.
+		user.Quota = common.QuotaForNewUser
 		user.AffCode = common.GetRandomString(4)
 		if user.Setting == "" {
 			user.SetSetting(dto.UserSetting{})
@@ -845,7 +851,7 @@ func (user *User) InsertForPartnershipWithTx(tx *gorm.DB, code string) (int, err
 			}
 			if result.RowsAffected == 1 {
 				grantedQuota = offer.Program.GrantQuota
-				user.Quota = grantedQuota
+				user.Quota += grantedQuota
 				if team != nil {
 					if err := recordTeamGrantClaim(tx, team.Id, grantedQuota); err != nil {
 						return err
@@ -853,19 +859,21 @@ func (user *User) InsertForPartnershipWithTx(tx *gorm.DB, code string) (int, err
 				}
 			}
 		}
+		pooledCredit := 0
 		if poolTenantId != 0 {
-			// The grant belongs to the customer, so it goes into the customer's
-			// wallet rather than sitting in a column nothing spends from.
+			// The credit -- signup credit and grant alike -- belongs to the
+			// customer, so it goes into the customer's wallet rather than
+			// sitting in a column nothing spends from.
 			user.TenantId = poolTenantId
-			user.Quota = 0
+			pooledCredit, user.Quota = user.Quota, 0
 		}
 		if err := tx.Create(user).Error; err != nil {
 			return err
 		}
 		if poolTenantId != 0 {
-			if grantedQuota != 0 {
+			if pooledCredit != 0 {
 				if err := tx.Model(&Tenant{}).Where("id = ?", poolTenantId).
-					Update("quota", gorm.Expr("quota + ?", grantedQuota)).Error; err != nil {
+					Update("quota", gorm.Expr("quota + ?", pooledCredit)).Error; err != nil {
 					return err
 				}
 			}

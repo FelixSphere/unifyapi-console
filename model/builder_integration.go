@@ -372,6 +372,7 @@ func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderPr
 		existingID = owner.Id
 	}
 	var link BuilderIdentity
+	createdUserId := 0
 	err = DB.Transaction(func(tx *gorm.DB) error {
 		return withNormalizedEmailLock(tx, email, func(tx *gorm.DB) error {
 			offer, err := ResolveBuilderProgram(tx, selector, true)
@@ -428,7 +429,15 @@ func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderPr
 				if err != nil {
 					return err
 				}
-				user = User{Username: "builder_" + common.GetRandomString(12), Email: NormalizeEmail(email), DisplayName: "Builder", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: offer.CustomerGroup, Quota: 0, AffCode: common.GetRandomString(4), TenantId: teamTenantId}
+				// A member connecting over the bridge is a new login and gets
+				// the ordinary signup credit every registration gets. On a
+				// team wallet the credit is the team's and goes straight into
+				// that wallet; on a pre-customer program EnsureTenantForUserTx
+				// moves it onto the member's own wallet.
+				user = User{Username: "builder_" + common.GetRandomString(12), Email: NormalizeEmail(email), DisplayName: "Builder", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: offer.CustomerGroup, Quota: common.QuotaForNewUser, AffCode: common.GetRandomString(4), TenantId: teamTenantId}
+				if teamTenantId != 0 {
+					user.Quota = 0
+				}
 				if err := user.prepareForInsert(tx); err != nil {
 					return err
 				}
@@ -440,9 +449,18 @@ func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderPr
 					if _, err := EnsureTenantForUserTx(tx, user.Id); err != nil {
 						return err
 					}
-				} else if err := claimTeamTenantOwner(tx, teamTenantId, user.Id); err != nil {
-					return err
+				} else {
+					if common.QuotaForNewUser > 0 {
+						if err := tx.Model(&Tenant{}).Where("id = ?", teamTenantId).
+							Update("quota", gorm.Expr("quota + ?", common.QuotaForNewUser)).Error; err != nil {
+							return err
+						}
+					}
+					if err := claimTeamTenantOwner(tx, teamTenantId, user.Id); err != nil {
+						return err
+					}
 				}
+				createdUserId = user.Id
 			}
 			var enrollment PartnershipEnrollment
 			if err := tx.Where("program_id = ? AND user_id = ?", offer.Program.Id, user.Id).First(&enrollment).Error; errors.Is(err, gorm.ErrRecordNotFound) {
@@ -464,6 +482,9 @@ func ConnectBuilderIdentityWithProgram(subject, email string, selector BuilderPr
 			return tx.Create(&link).Error
 		})
 	})
+	if err == nil && createdUserId != 0 {
+		(&User{Id: createdUserId}).recordSignupCredit()
+	}
 	return &link, err
 }
 
