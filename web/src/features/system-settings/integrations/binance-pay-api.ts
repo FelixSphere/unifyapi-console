@@ -8,6 +8,13 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
 import { api } from '@/lib/api'
 
+import {
+  normaliseStatusAccounts,
+  type BinancePayResolvedAddress,
+} from './binance-pay-networks'
+
+export type { BinancePayResolvedAddress }
+
 // Health of the Binance Pay receiving accounts, for the settings page.
 
 export interface BinancePayLastCheck {
@@ -15,11 +22,6 @@ export interface BinancePayLastCheck {
   ok: boolean
   error?: string
   source: string
-}
-
-export interface BinancePayResolvedAddress {
-  network: string
-  address: string
 }
 
 export interface BinancePayAccountStatus {
@@ -51,7 +53,11 @@ export interface BinancePayStatusResponse {
 
 export async function getBinancePayStatus(): Promise<BinancePayStatusResponse> {
   const res = await api.get('/api/option/binance-pay/status')
-  return res.data.data as BinancePayStatusResponse
+  const raw = res.data.data as BinancePayStatusResponse | undefined
+  return {
+    compliance_confirmed: raw?.compliance_confirmed ?? false,
+    accounts: normaliseStatusAccounts(raw?.accounts),
+  }
 }
 
 export interface BinancePayTestResult {

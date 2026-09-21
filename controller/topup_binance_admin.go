@@ -299,17 +299,19 @@ func AdminMatchBinancePay(c *gin.Context) {
 // ---------------------------------------------------------------------------
 
 type binancePayAccountStatusView struct {
-	Platform         string                             `json:"platform"`
-	Label            string                             `json:"label"`
-	PaymentMethod    string                             `json:"payment_method"`
-	Enabled          bool                               `json:"enabled"`
-	HasCredentials   bool                               `json:"has_credentials"`
-	ApiKeyLength     int                                `json:"api_key_length"`
-	SecretLength     int                                `json:"secret_length"`
-	PayId            string                             `json:"pay_id"`
-	PayIdValid       bool                               `json:"pay_id_valid"`
-	SupportsPay      bool                               `json:"supports_pay"`
-	AddressCount     int                                `json:"address_count"`
+	Platform       string `json:"platform"`
+	Label          string `json:"label"`
+	PaymentMethod  string `json:"payment_method"`
+	Enabled        bool   `json:"enabled"`
+	HasCredentials bool   `json:"has_credentials"`
+	ApiKeyLength   int    `json:"api_key_length"`
+	SecretLength   int    `json:"secret_length"`
+	PayId          string `json:"pay_id"`
+	PayIdValid     bool   `json:"pay_id_valid"`
+	SupportsPay    bool   `json:"supports_pay"`
+	AddressCount   int    `json:"address_count"`
+	// Networks and Addresses are always arrays, never null: the settings page
+	// iterates them, and a nil slice would serialise as null and crash it.
 	Networks         []string                           `json:"networks"`
 	Addresses        []setting.BinancePayDepositAddress `json:"addresses"`
 	Configured       bool                               `json:"configured"`
@@ -347,8 +349,8 @@ func binancePayStatusFor(account setting.BinancePayAccount, pendingByMethod map[
 		PayIdValid:       account.PayIdForPayers() != "",
 		SupportsPay:      account.SupportsPayTransfers(),
 		AddressCount:     len(account.Addresses()),
-		Networks:         account.Networks(),
-		Addresses:        account.Addresses(),
+		Networks:         orEmptyStrings(account.Networks()),
+		Addresses:        orEmptyAddresses(account.Addresses()),
 		Configured:       account.Configured(),
 		PendingOrders:    pendingByMethod[account.PaymentMethod()],
 		ConfiguredReason: reason,
@@ -358,6 +360,20 @@ func binancePayStatusFor(account setting.BinancePayAccount, pendingByMethod map[
 		v.LastCheck = &hh
 	}
 	return v
+}
+
+func orEmptyStrings(in []string) []string {
+	if in == nil {
+		return []string{}
+	}
+	return in
+}
+
+func orEmptyAddresses(in []setting.BinancePayDepositAddress) []setting.BinancePayDepositAddress {
+	if in == nil {
+		return []setting.BinancePayDepositAddress{}
+	}
+	return in
 }
 
 // AdminBinancePayStatus GET returns both accounts' effective state: whether
@@ -471,5 +487,7 @@ func AdminBinancePayRefreshAddresses(c *gin.Context) {
 		common.ApiErrorMsg(c, "读取充币地址失败: "+err.Error())
 		return
 	}
-	common.ApiSuccess(c, gin.H{"platform": account.Platform, "networks": account.Networks(), "addresses": resolved})
+	common.ApiSuccess(c, gin.H{"platform": account.Platform,
+		"networks":  orEmptyStrings(account.Networks()),
+		"addresses": orEmptyAddresses(resolved)})
 }
