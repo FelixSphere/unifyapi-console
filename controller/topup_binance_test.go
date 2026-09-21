@@ -770,3 +770,29 @@ func TestAdminRefreshAddressesEndpoint(t *testing.T) {
 	assert.Equal(t, false, body["success"])
 	assert.Contains(t, body["message"], "网络")
 }
+
+// An unconfigured account has no networks and no addresses. Go serialises a
+// nil slice as null, and the settings page reads .length off both -- a null
+// there crashed the whole page into the error boundary once, which the
+// operator saw as a "500" that no server ever sent.
+func TestAdminBinancePayStatusNeverReturnsNullArrays(t *testing.T) {
+	setupBinancePayControllerDB(t)
+	setting.BinancePayEnabled, setting.BinancePayUSEnabled = false, false
+	setting.BinancePayDepositAddresses, setting.BinancePayUSDepositAddresses = "[]", "[]"
+	setting.BinancePayDepositNetworks, setting.BinancePayUSDepositNetworks = "", ""
+
+	c, rec := adminContext(t, http.MethodGet, "/api/option/binance-pay/status", "")
+	AdminBinancePayStatus(c)
+	require.NotContains(t, rec.Body.String(), `"addresses":null`)
+	require.NotContains(t, rec.Body.String(), `"networks":null`)
+
+	accounts := decodeBody(t, rec)["data"].(map[string]any)["accounts"].([]any)
+	require.Len(t, accounts, 2)
+	for _, raw := range accounts {
+		account := raw.(map[string]any)
+		assert.NotNil(t, account["addresses"], account["platform"])
+		assert.NotNil(t, account["networks"], account["platform"])
+		assert.Empty(t, account["addresses"])
+		assert.Empty(t, account["networks"])
+	}
+}

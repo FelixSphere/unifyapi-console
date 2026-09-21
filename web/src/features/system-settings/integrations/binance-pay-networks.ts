@@ -6,9 +6,9 @@ GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
 Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
-// Pure helpers for the Binance Pay deposit-network picker. Kept out of the
-// React component so tests can import them without pulling the whole
-// settings UI into the test process.
+// Pure helpers for the Binance Pay settings page. Kept out of the React
+// component so tests can import them without pulling the whole settings UI
+// into the test process.
 
 /**
  * The deposit networks an operator can accept, as Binance names them. The
@@ -41,4 +41,34 @@ export function parseNetworks(raw: string): string[] {
   } catch {
     return []
   }
+}
+
+export interface BinancePayResolvedAddress {
+  network: string
+  address: string
+}
+
+/**
+ * An empty Go slice serialises as `null`, so a freshly configured account
+ * arrives with `networks: null` and `addresses: null`. Rendering code must
+ * never meet one -- reading `.length` off it crashes the whole settings page
+ * into the error boundary, which is what shipped once. Normalise at the edge
+ * instead of guarding at every use.
+ */
+export function normaliseStatusAccounts<
+  A extends {
+    networks?: string[] | null
+    addresses?: BinancePayResolvedAddress[] | null
+  },
+>(accounts: A[] | null | undefined) {
+  return (accounts ?? []).map((account) => ({
+    ...account,
+    networks: account.networks ?? [],
+    addresses: (account.addresses ?? []).filter(
+      (address) =>
+        !!address &&
+        typeof address.network === 'string' &&
+        typeof address.address === 'string'
+    ),
+  }))
 }
