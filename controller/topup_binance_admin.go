@@ -299,21 +299,23 @@ func AdminMatchBinancePay(c *gin.Context) {
 // ---------------------------------------------------------------------------
 
 type binancePayAccountStatusView struct {
-	Platform         string            `json:"platform"`
-	Label            string            `json:"label"`
-	PaymentMethod    string            `json:"payment_method"`
-	Enabled          bool              `json:"enabled"`
-	HasCredentials   bool              `json:"has_credentials"`
-	ApiKeyLength     int               `json:"api_key_length"`
-	SecretLength     int               `json:"secret_length"`
-	PayId            string            `json:"pay_id"`
-	PayIdValid       bool              `json:"pay_id_valid"`
-	SupportsPay      bool              `json:"supports_pay"`
-	AddressCount     int               `json:"address_count"`
-	Configured       bool              `json:"configured"`
-	PendingOrders    int               `json:"pending_orders"`
-	LastCheck        *binancePayHealth `json:"last_check,omitempty"`
-	ConfiguredReason string            `json:"configured_reason"`
+	Platform         string                             `json:"platform"`
+	Label            string                             `json:"label"`
+	PaymentMethod    string                             `json:"payment_method"`
+	Enabled          bool                               `json:"enabled"`
+	HasCredentials   bool                               `json:"has_credentials"`
+	ApiKeyLength     int                                `json:"api_key_length"`
+	SecretLength     int                                `json:"secret_length"`
+	PayId            string                             `json:"pay_id"`
+	PayIdValid       bool                               `json:"pay_id_valid"`
+	SupportsPay      bool                               `json:"supports_pay"`
+	AddressCount     int                                `json:"address_count"`
+	Networks         []string                           `json:"networks"`
+	Addresses        []setting.BinancePayDepositAddress `json:"addresses"`
+	Configured       bool                               `json:"configured"`
+	PendingOrders    int                                `json:"pending_orders"`
+	LastCheck        *binancePayHealth                  `json:"last_check,omitempty"`
+	ConfiguredReason string                             `json:"configured_reason"`
 }
 
 func binancePayStatusFor(account setting.BinancePayAccount, pendingByMethod map[string]int) binancePayAccountStatusView {
@@ -324,10 +326,13 @@ func binancePayStatusFor(account setting.BinancePayAccount, pendingByMethod map[
 	case !account.HasCredentials():
 		reason = "api key or secret is not a 64-character Binance key"
 	case account.PayIdForPayers() == "" && len(account.Addresses()) == 0:
-		if account.SupportsPayTransfers() {
-			reason = "needs a valid Pay ID (6-20 digits) or a deposit address"
-		} else {
-			reason = "needs a deposit address (Binance.US has no Binance Pay)"
+		switch {
+		case len(account.Networks()) == 0 && account.SupportsPayTransfers():
+			reason = "needs a valid Pay ID (6-20 digits) or a deposit network"
+		case len(account.Networks()) == 0:
+			reason = "needs a deposit network (Binance.US has no Binance Pay)"
+		default:
+			reason = "deposit addresses not read from Binance yet: save, then refresh"
 		}
 	}
 	v := binancePayAccountStatusView{
@@ -342,6 +347,8 @@ func binancePayStatusFor(account setting.BinancePayAccount, pendingByMethod map[
 		PayIdValid:       account.PayIdForPayers() != "",
 		SupportsPay:      account.SupportsPayTransfers(),
 		AddressCount:     len(account.Addresses()),
+		Networks:         account.Networks(),
+		Addresses:        account.Addresses(),
 		Configured:       account.Configured(),
 		PendingOrders:    pendingByMethod[account.PaymentMethod()],
 		ConfiguredReason: reason,
@@ -412,6 +419,14 @@ func AdminBinancePayTest(c *gin.Context) {
 		return
 	}
 	result["deposits_24h"] = len(deposits)
+	// A working key is the moment to make the addresses match the key.
+	if resolved, err := refreshBinancePayAddresses(ctx, account, reader); err != nil {
+		recordBinancePayHealth(account.Platform, "test", err)
+		common.ApiErrorMsg(c, "读取充币地址失败: "+err.Error())
+		return
+	} else {
+		result["addresses"] = resolved
+	}
 	if account.SupportsPayTransfers() {
 		pays, err := reader.PayTransactions(ctx, startMs, endMs)
 		if err != nil {
@@ -423,4 +438,38 @@ func AdminBinancePayTest(c *gin.Context) {
 	}
 	recordBinancePayHealth(account.Platform, "test", nil)
 	common.ApiSuccess(c, result)
+}
+
+// AdminBinancePayRefreshAddresses POST {platform} re-reads the account's
+// deposit addresses from Binance for its selected networks and stores them.
+// The settings page calls it after saving networks, and offers it as
+// "Refresh from Binance".
+func AdminBinancePayRefreshAddresses(c *gin.Context) {
+	var req AdminBinancePayTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	account, ok := setting.BinancePayAccountForPlatform(req.Platform)
+	if !ok {
+		common.ApiErrorMsg(c, "未知平台")
+		return
+	}
+	if !account.HasCredentials() {
+		common.ApiErrorMsg(c, "该账户的 API Key / Secret 不是有效的 64 位币安密钥，请先保存正确的密钥")
+		return
+	}
+	if len(account.Networks()) == 0 {
+		common.ApiErrorMsg(c, "请先选择至少一个充币网络并保存")
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), binancePayReconcileTimeout)
+	defer cancel()
+	resolved, err := refreshBinancePayAddresses(ctx, account, binancePayHistoryReaderFactory(account))
+	recordBinancePayHealth(account.Platform, "operator", err)
+	if err != nil {
+		common.ApiErrorMsg(c, "读取充币地址失败: "+err.Error())
+		return
+	}
+	common.ApiSuccess(c, gin.H{"platform": account.Platform, "networks": account.Networks(), "addresses": resolved})
 }

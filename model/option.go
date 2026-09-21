@@ -136,6 +136,8 @@ func InitOptionMap() {
 	common.OptionMap["BinancePayUSSecretKey"] = setting.BinancePayUSSecretKey
 	common.OptionMap["BinancePayUSReceiverNickname"] = setting.BinancePayUSReceiverNickname
 	common.OptionMap["BinancePayUSDepositAddresses"] = setting.BinancePayUSDepositAddresses
+	common.OptionMap["BinancePayDepositNetworks"] = setting.BinancePayDepositNetworks
+	common.OptionMap["BinancePayUSDepositNetworks"] = setting.BinancePayUSDepositNetworks
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
@@ -664,6 +666,10 @@ func updateOptionMapLocked(key string, value string) (err error) {
 		setting.BinancePayUSReceiverNickname = value
 	case "BinancePayUSDepositAddresses":
 		setting.BinancePayUSDepositAddresses = value
+	case "BinancePayDepositNetworks":
+		setting.BinancePayDepositNetworks = value
+	case "BinancePayUSDepositNetworks":
+		setting.BinancePayUSDepositNetworks = value
 	case "TopupGroupRatio":
 		err = common.UpdateTopupGroupRatioByJSONString(value)
 	case "GitHubClientId":

@@ -68,6 +68,36 @@ func setupBinancePayControllerDB(t *testing.T) {
 	setting.BinancePayDepositAddresses = `[{"network":"TRX","address":"TXYZ"}]`
 	setting.BinancePayUSEnabled, setting.BinancePayUSApiKey, setting.BinancePayUSSecretKey = true, testBinanceKey, testBinanceSecret
 	setting.BinancePayUSDepositAddresses = `[{"network":"TRX","address":"TUSA"}]`
+	setting.BinancePayDepositNetworks, setting.BinancePayUSDepositNetworks = "", ""
+	t.Cleanup(func() { setting.BinancePayDepositNetworks, setting.BinancePayUSDepositNetworks = "", "" })
+	// Persisting a snapshot goes through model.UpdateOption in production,
+	// which drags in the whole option/config machinery; here it just sets the
+	// setting variable, which is the part the code under test reads back.
+	prevStore := binancePayStoreOption
+	binancePayStoreOption = func(key, value string) error {
+		switch key {
+		case "BinancePayDepositAddresses":
+			setting.BinancePayDepositAddresses = value
+		case "BinancePayUSDepositAddresses":
+			setting.BinancePayUSDepositAddresses = value
+		default:
+			return errors.New("unexpected option " + key)
+		}
+		return nil
+	}
+	t.Cleanup(func() { binancePayStoreOption = prevStore })
+	// Address refresh is exercised explicitly; keep the reconciler from
+	// rewriting the snapshots the tests set up.
+	binancePayAddrMu.Lock()
+	for _, p := range []string{setting.BinancePayPlatformGlobal, setting.BinancePayPlatformUS} {
+		binancePayAddrLastRefresh[p] = time.Now()
+	}
+	binancePayAddrMu.Unlock()
+	t.Cleanup(func() {
+		binancePayAddrMu.Lock()
+		binancePayAddrLastRefresh = map[string]time.Time{}
+		binancePayAddrMu.Unlock()
+	})
 	setting.BinancePayCurrency = "USDT"
 	setting.BinancePayOrderTTLMinutes = 60
 	setting.BinancePayOverpayTolerancePercent = 5
@@ -109,9 +139,19 @@ func insertBinanceOrderFor(t *testing.T, account setting.BinancePayAccount, trad
 }
 
 type fakeBinanceReader struct {
-	pay      []service.BinancePayTransaction
-	deposits []service.BinanceDeposit
-	calls    int
+	pay       []service.BinancePayTransaction
+	deposits  []service.BinanceDeposit
+	addresses map[string]string // network -> address the account owns
+	calls     int
+	addrCalls int
+}
+
+func (f *fakeBinanceReader) DepositAddress(_ context.Context, coin, network string) (service.BinanceDepositAddress, error) {
+	f.addrCalls++
+	if a, ok := f.addresses[network]; ok {
+		return service.BinanceDepositAddress{Coin: coin, Address: a}, nil
+	}
+	return service.BinanceDepositAddress{}, errors.New("no address for network " + network)
 }
 
 func (f *fakeBinanceReader) PayTransactions(context.Context, int64, int64) ([]service.BinancePayTransaction, error) {
@@ -387,6 +427,10 @@ func (failingReader) PayTransactions(context.Context, int64, int64) ([]service.B
 	return nil, errors.New(`binance /sapi/v1/pay/transactions: http 400: {"code":-2008,"msg":"Invalid Api-Key ID."}`)
 }
 
+func (failingReader) DepositAddress(context.Context, string, string) (service.BinanceDepositAddress, error) {
+	return service.BinanceDepositAddress{}, errors.New(`binance /sapi/v1/capital/deposit/address: http 400: {"code":-2008,"msg":"Invalid Api-Key ID."}`)
+}
+
 func (failingReader) DepositHistory(context.Context, string, int64, int64) ([]service.BinanceDeposit, error) {
 	return nil, errors.New(`binance /sapi/v1/capital/deposit/hisrec: http 400: {"code":-2008,"msg":"Invalid Api-Key ID."}`)
 }
@@ -620,7 +664,8 @@ func TestAdminBinancePayTestReportsWhatBinanceSaid(t *testing.T) {
 	setupBinancePayControllerDB(t)
 	useFakeBinanceReaders(t, map[string]service.BinanceHistoryReader{
 		setting.BinancePayPlatformGlobal: failingReader{},
-		setting.BinancePayPlatformUS:     &fakeBinanceReader{deposits: []service.BinanceDeposit{depositRow("u1", "5", "TUSA", 1)}},
+		setting.BinancePayPlatformUS: &fakeBinanceReader{deposits: []service.BinanceDeposit{depositRow("u1", "5", "TUSA", 1)},
+			addresses: map[string]string{"TRX": "TUSA"}},
 	})
 
 	c, rec := adminContext(t, http.MethodPost, "/api/option/binance-pay/test", `{"platform":"binance.us"}`)
@@ -646,4 +691,82 @@ func TestAdminBinancePayTestReportsWhatBinanceSaid(t *testing.T) {
 	body = decodeBody(t, rec)
 	assert.Equal(t, false, body["success"])
 	assert.Contains(t, body["message"], "64")
+}
+
+// ---------------------------------------------------------------------------
+// Deposit addresses come from Binance, not from a text box
+// ---------------------------------------------------------------------------
+
+// The address a customer is told to pay must belong to the account whose
+// key does the reading. The refresh replaces a hand-typed snapshot with what
+// Binance says, and the reconciler then matches against that.
+func TestRefreshReplacesHandTypedAddressesWithTheAccountsOwn(t *testing.T) {
+	setupBinancePayControllerDB(t)
+	setting.BinancePayUSDepositNetworks = `["TRON","bsc"]` // aliases, mixed case
+	setting.BinancePayUSDepositAddresses = `[{"network":"TRX","address":"TOTHER_ACCOUNT"}]`
+
+	reader := &fakeBinanceReader{addresses: map[string]string{"TRX": "TJUgo", "BSC": "0xf46d"}}
+	resolved, err := refreshBinancePayAddresses(context.Background(), usAccount(), reader)
+	require.NoError(t, err)
+	assert.Equal(t, []setting.BinancePayDepositAddress{{Network: "TRX", Address: "TJUgo"}, {Network: "BSC", Address: "0xf46d"}}, resolved)
+	assert.Equal(t, 2, reader.addrCalls)
+
+	// Stored, normalised, and now what the account matches against.
+	assert.Equal(t, resolved, usAccount().Addresses())
+	assert.True(t, usAccount().Configured())
+
+	insertBinanceOrderFor(t, usAccount(), "BNPUS-1", 20, 20.0137, time.Minute)
+	reader.deposits = []service.BinanceDeposit{
+		depositRow("old", "20.0137", "TOTHER_ACCOUNT", 1), // the other account's address: ignored
+		depositRow("new", "20.0137", "TJUgo", 1),
+	}
+	require.NoError(t, reconcileBinancePay(context.Background(), usAccount(), reader, "test"))
+	assert.Equal(t, common.TopUpStatusSuccess, binanceStatusOf(t, "BNPUS-1"))
+	var ledger []model.BinancePayTransaction
+	require.NoError(t, model.DB.Find(&ledger).Error)
+	require.Len(t, ledger, 1)
+	assert.Equal(t, "us:deposit:tx-new", ledger[0].TransactionId)
+}
+
+// A legacy snapshot with no networks selected still yields networks, so the
+// first refresh after the upgrade heals it instead of disabling the account.
+func TestNetworksFallBackToLegacySnapshot(t *testing.T) {
+	a := setting.BinancePayAccount{Platform: setting.BinancePayPlatformUS,
+		DepositAddresses: `[{"network":"TRON","address":"TVBx"},{"network":"BNB","address":"0xd2"},{"network":"TRX","address":"dup"}]`}
+	assert.Equal(t, []string{"TRX", "BSC"}, a.Networks())
+	a.DepositNetworks = `["ETH"]`
+	assert.Equal(t, []string{"ETH"}, a.Networks(), "selected networks win over the snapshot")
+}
+
+// A read failure must not blank a working configuration.
+func TestRefreshKeepsSnapshotWhenBinanceFails(t *testing.T) {
+	setupBinancePayControllerDB(t)
+	setting.BinancePayUSDepositNetworks = `["TRX"]`
+	before := usAccount().DepositAddresses
+	_, err := refreshBinancePayAddresses(context.Background(), usAccount(), failingReader{})
+	require.Error(t, err)
+	assert.Equal(t, before, usAccount().DepositAddresses)
+}
+
+func TestAdminRefreshAddressesEndpoint(t *testing.T) {
+	setupBinancePayControllerDB(t)
+	setting.BinancePayUSDepositNetworks = `["TRX"]`
+	useFakeBinanceReaders(t, map[string]service.BinanceHistoryReader{
+		setting.BinancePayPlatformUS: &fakeBinanceReader{addresses: map[string]string{"TRX": "TJUgo"}},
+	})
+	c, rec := adminContext(t, http.MethodPost, "/api/option/binance-pay/refresh-addresses", `{"platform":"binance.us"}`)
+	AdminBinancePayRefreshAddresses(c)
+	body := decodeBody(t, rec)
+	require.Equal(t, true, body["success"], rec.Body.String())
+	addrs := body["data"].(map[string]any)["addresses"].([]any)
+	require.Len(t, addrs, 1)
+	assert.Equal(t, "TJUgo", addrs[0].(map[string]any)["address"])
+
+	// Without networks the endpoint says so instead of guessing.
+	setting.BinancePayUSDepositNetworks, setting.BinancePayUSDepositAddresses = "", ""
+	c, rec = adminContext(t, http.MethodPost, "/api/option/binance-pay/refresh-addresses", `{"platform":"binance.us"}`)
+	AdminBinancePayRefreshAddresses(c)
+	body = decodeBody(t, rec)
+	assert.Equal(t, false, body["success"])
+	assert.Contains(t, body["message"], "网络")
 }

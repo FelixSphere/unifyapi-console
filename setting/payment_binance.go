@@ -72,7 +72,14 @@ var (
 	BinancePaySecretKey        string
 	BinancePayReceiverId       string // Pay ID (Binance UID) shown to payers
 	BinancePayReceiverNickname string
-	BinancePayDepositAddresses string // JSON [{"network":"TRX","address":"T..."}]
+	// Networks the account accepts on-chain deposits on, JSON ["TRX","BSC"].
+	// The ADDRESSES are not typed by hand: they are read from Binance for the
+	// account the key belongs to (see controller.refreshBinancePayAddresses)
+	// and cached in BinancePayDepositAddresses. A hand-typed address that
+	// belonged to a different account is exactly how a customer's transfer
+	// once landed where the console could not see it.
+	BinancePayDepositNetworks  string
+	BinancePayDepositAddresses string // resolved snapshot, JSON [{"network","address"}]
 )
 
 // ---------------------------------------------------------------------------
@@ -84,7 +91,8 @@ var (
 	BinancePayUSApiKey           string
 	BinancePayUSSecretKey        string
 	BinancePayUSReceiverNickname string
-	BinancePayUSDepositAddresses string
+	BinancePayUSDepositNetworks  string
+	BinancePayUSDepositAddresses string // resolved snapshot
 )
 
 type BinancePayDepositAddress struct {
@@ -101,7 +109,64 @@ type BinancePayAccount struct {
 	SecretKey        string
 	ReceiverId       string
 	ReceiverNickname string
+	DepositNetworks  string
 	DepositAddresses string
+}
+
+// binanceNetworkAliases maps what people type to Binance's network codes.
+var binanceNetworkAliases = map[string]string{
+	"TRON": "TRX", "TRC20": "TRX", "TRX": "TRX",
+	"BEP20": "BSC", "BNB": "BSC", "BSC": "BSC", "BNB SMART CHAIN": "BSC",
+	"ERC20": "ETH", "ETH": "ETH", "ETHEREUM": "ETH",
+	"SOL": "SOL", "SOLANA": "SOL",
+	"MATIC": "MATIC", "POLYGON": "MATIC",
+	"ARBITRUM": "ARBITRUM", "ARB": "ARBITRUM",
+	"OPTIMISM": "OPTIMISM", "OP": "OPTIMISM",
+	"AVAXC": "AVAXC", "AVAX": "AVAXC",
+	"TON": "TON", "APT": "APT", "BASE": "BASE",
+}
+
+// NormalizeBinanceNetwork turns "TRC20" / "Tron" / "trx" into "TRX".
+func NormalizeBinanceNetwork(raw string) string {
+	code := strings.ToUpper(strings.TrimSpace(raw))
+	if v, ok := binanceNetworkAliases[code]; ok {
+		return v
+	}
+	return code
+}
+
+// ParseBinancePayNetworks parses the JSON list (or a comma-separated
+// string) of network codes, normalised and de-duplicated.
+func ParseBinancePayNetworks(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "[]" {
+		return nil
+	}
+	var list []string
+	if strings.HasPrefix(raw, "[") {
+		if err := common.UnmarshalJsonStr(raw, &list); err != nil {
+			return nil
+		}
+	} else {
+		list = strings.Split(raw, ",")
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(list))
+	for _, n := range list {
+		code := NormalizeBinanceNetwork(n)
+		if code == "" {
+			continue
+		}
+		if _, dup := seen[code]; dup {
+			continue
+		}
+		seen[code] = struct{}{}
+		out = append(out, code)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // BinancePayAccounts returns both accounts, binance.com first.
@@ -114,6 +179,7 @@ func BinancePayAccounts() []BinancePayAccount {
 			SecretKey:        strings.TrimSpace(BinancePaySecretKey),
 			ReceiverId:       strings.TrimSpace(BinancePayReceiverId),
 			ReceiverNickname: strings.TrimSpace(BinancePayReceiverNickname),
+			DepositNetworks:  BinancePayDepositNetworks,
 			DepositAddresses: BinancePayDepositAddresses,
 		},
 		{
@@ -122,6 +188,7 @@ func BinancePayAccounts() []BinancePayAccount {
 			ApiKey:           strings.TrimSpace(BinancePayUSApiKey),
 			SecretKey:        strings.TrimSpace(BinancePayUSSecretKey),
 			ReceiverNickname: strings.TrimSpace(BinancePayUSReceiverNickname),
+			DepositNetworks:  BinancePayUSDepositNetworks,
 			DepositAddresses: BinancePayUSDepositAddresses,
 		},
 	}
@@ -192,10 +259,47 @@ func (a BinancePayAccount) SupportsPayTransfers() bool {
 	return a.Platform == BinancePayPlatformGlobal
 }
 
-// Addresses parses the account's deposit addresses, dropping blank rows. A
-// malformed value yields none rather than an error.
+// Networks are the deposit networks the operator selected. When none are
+// selected yet but a legacy hand-typed address snapshot exists, its networks
+// are used, so the next refresh replaces those addresses with the account's
+// real ones instead of leaving the account unconfigured.
+func (a BinancePayAccount) Networks() []string {
+	if nets := ParseBinancePayNetworks(a.DepositNetworks); len(nets) > 0 {
+		return nets
+	}
+	seen := map[string]struct{}{}
+	var out []string
+	for _, addr := range ParseBinancePayDepositAddresses(a.DepositAddresses) {
+		code := NormalizeBinanceNetwork(addr.Network)
+		if _, dup := seen[code]; dup || code == "" {
+			continue
+		}
+		seen[code] = struct{}{}
+		out = append(out, code)
+	}
+	return out
+}
+
+// Addresses are the account's deposit addresses as last read from Binance
+// (the resolved snapshot), one per selected network.
 func (a BinancePayAccount) Addresses() []BinancePayDepositAddress {
 	return ParseBinancePayDepositAddresses(a.DepositAddresses)
+}
+
+// NetworksOptionKey / AddressesOptionKey name the option rows the resolver
+// writes for this account.
+func (a BinancePayAccount) NetworksOptionKey() string {
+	if a.Platform == BinancePayPlatformUS {
+		return "BinancePayUSDepositNetworks"
+	}
+	return "BinancePayDepositNetworks"
+}
+
+func (a BinancePayAccount) AddressesOptionKey() string {
+	if a.Platform == BinancePayPlatformUS {
+		return "BinancePayUSDepositAddresses"
+	}
+	return "BinancePayDepositAddresses"
 }
 
 // binanceApiKeyShape is what a Binance HMAC API key or secret looks like on
@@ -243,7 +347,7 @@ func ParseBinancePayDepositAddresses(raw string) []BinancePayDepositAddress {
 	}
 	out := make([]BinancePayDepositAddress, 0, len(parsed))
 	for _, a := range parsed {
-		a.Network = strings.ToUpper(strings.TrimSpace(a.Network))
+		a.Network = NormalizeBinanceNetwork(a.Network)
 		a.Address = strings.TrimSpace(a.Address)
 		if a.Network == "" || a.Address == "" {
 			continue

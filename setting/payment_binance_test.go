@@ -93,3 +93,11 @@ func TestParseBinancePayDepositAddressesDropsBlankAndBadRows(t *testing.T) {
 	assert.Nil(t, ParseBinancePayDepositAddresses(""))
 	assert.Nil(t, ParseBinancePayDepositAddresses(`[{"network":"BSC"}]`))
 }
+
+func TestParseBinancePayNetworksNormalisesAliases(t *testing.T) {
+	assert.Equal(t, []string{"TRX", "BSC", "ETH"}, ParseBinancePayNetworks(`["TRON","BEP20","erc20","trc20"]`))
+	assert.Equal(t, []string{"TRX", "BSC"}, ParseBinancePayNetworks("Tron, BNB"))
+	assert.Nil(t, ParseBinancePayNetworks(""))
+	assert.Nil(t, ParseBinancePayNetworks("[]"))
+	assert.Nil(t, ParseBinancePayNetworks("[not json"))
+}
