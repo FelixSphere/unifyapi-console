@@ -133,6 +133,21 @@ submission. A lot **snapshots** its share and basis at submission, so changing
 the terms never reprices a key that is already earning. A vendor with no share
 is refused, not taken at 0.
 
+**Absent and empty are different.** A term the stored option does not mention
+inherits the default; a map the operator has emptied stays empty and closes
+that offer. The distinction is the difference between a working rollout and a
+dead one: every `CreditSupplyTerms` row written before revenue share existed
+omits `revenue_share_rates`, and reading that as "switched off" would have
+served zero vendor cards to every seller. Production carried exactly such a
+row. Pinned by `TestALegacyTermsRowDoesNotShipTheFeatureInert`.
+
+**A threshold that can only be a typo is repaired, not obeyed.** `min_face_usd`
+and `min_share_payout_usd` above $1,000,000 fall back to the default with a
+loud log, because an absurd minimum passes every validation rule and then
+blocks every submission in silence. The repair is per field: one bad threshold
+must not reject the whole document and take the operator's real buy rates down
+with it. The same row on production carried a $100bn minimum sale.
+
 ### What the share is a share of
 
 - `revenue` (default) — everything customers **actually paid** for traffic

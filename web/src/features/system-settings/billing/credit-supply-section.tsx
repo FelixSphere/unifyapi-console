@@ -121,6 +121,11 @@ function attentionReason(
 
 // TermsCard edits the posted buy terms. Saving writes the CreditSupplyTerms
 // option; lots already submitted keep the rate they were submitted under.
+// Mirrors model.maxSaneMinimumUSD. A stored $100bn minimum sale -- which is
+// what production carried -- passes every validation rule and silently blocks
+// every submission, so the screen that writes it refuses the typo up front.
+const MAX_SANE_MINIMUM_USD = 1_000_000
+
 function TermsCard() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -236,6 +241,7 @@ function TermsCard() {
             <Input
               type='number'
               min={0}
+              max={MAX_SANE_MINIMUM_USD}
               value={current.min_share_payout_usd ?? 0}
               onChange={(event) =>
                 setDraft({
@@ -303,6 +309,7 @@ function TermsCard() {
             <Input
               type='number'
               min={0}
+              max={MAX_SANE_MINIMUM_USD}
               value={current.min_face_usd}
               onChange={(event) =>
                 setDraft({

@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/QuantumNous/new-api/common"
 	"sort"
 	"strings"
 	"sync"
@@ -69,6 +70,14 @@ type CreditSupplyTerms struct {
 	// field existed keep the default.)
 	ManualReview bool `json:"manual_review"`
 }
+
+// maxSaneMinimumUSD bounds the two "minimum" thresholds. They are the one
+// class of term that is not structurally invalid at any value -- a rate above
+// 1 is obviously wrong, a minimum of $100,000,000,000 is not -- and yet an
+// absurd one silently blocks every submission instead of mispricing one. So
+// they get the same treatment maxChannelCostRatio gives a cost multiplier: a
+// value past here is a typo, not a commercial decision.
+const maxSaneMinimumUSD = 1_000_000
 
 func DefaultCreditSupplyTerms() CreditSupplyTerms {
 	return CreditSupplyTerms{
@@ -138,6 +147,29 @@ func (t CreditSupplyTerms) PayoutUSD(faceUSD, rate float64, method string) float
 	return amount
 }
 
+// repairCreditSupplyTerms puts a stored threshold that can only be a typo back
+// to its default, loudly, instead of rejecting the whole document.
+//
+// Rejecting would be worse than it sounds: the option is one row, so one bad
+// threshold would take the operator's real buy rates down with it and quietly
+// reprice the buy-out path off the code defaults. Repairing the single field
+// keeps every deliberate term the operator did post.
+func repairCreditSupplyTerms(t *CreditSupplyTerms) {
+	defaults := DefaultCreditSupplyTerms()
+	if t.MinFaceUSD > maxSaneMinimumUSD {
+		common.SysError(fmt.Sprintf(
+			"credit supply: stored minimum sale of $%.0f is not a commercial decision, using the default $%.0f -- post a real one in Billing -> Credit Supply",
+			t.MinFaceUSD, defaults.MinFaceUSD))
+		t.MinFaceUSD = defaults.MinFaceUSD
+	}
+	if t.MinSharePayoutUSD > maxSaneMinimumUSD {
+		common.SysError(fmt.Sprintf(
+			"credit supply: stored minimum payout of $%.0f is not a commercial decision, using the default $%.0f",
+			t.MinSharePayoutUSD, defaults.MinSharePayoutUSD))
+		t.MinSharePayoutUSD = defaults.MinSharePayoutUSD
+	}
+}
+
 func ValidateCreditSupplyTerms(t CreditSupplyTerms) error {
 	if len(t.BuyRates) == 0 && len(t.RevenueShareRates) == 0 {
 		return errors.New("post at least one vendor share (or an operator buy rate)")
@@ -203,14 +235,29 @@ func UpdateCreditSupplyTermsByJSONString(raw string) error {
 	if strings.TrimSpace(raw) == "" {
 		return nil
 	}
+	// An ABSENT key and an EXPLICITLY EMPTY one mean different things, and
+	// conflating them is what makes a rollout ship inert. A stored row written
+	// by a version that predates a term has no key for it and must inherit the
+	// default; a row where the operator cleared the map has the key, is empty,
+	// and means "we do not take keys on those terms". Unmarshalling onto a
+	// defaults-seeded struct cannot tell the two apart on its own -- absent
+	// leaves the default in place, which is right, but so does an explicit
+	// {} -- so presence is read first and only a present key clears its default.
+	var present map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &present); err != nil {
+		return err
+	}
 	terms := DefaultCreditSupplyTerms()
-	terms.BuyRates = nil
-	// Absent means "we do not take keys on those terms", not "keep the
-	// defaults": the posted terms are exactly what the operator posted.
-	terms.RevenueShareRates = nil
+	if _, ok := present["buy_rates"]; ok {
+		terms.BuyRates = nil
+	}
+	if _, ok := present["revenue_share_rates"]; ok {
+		terms.RevenueShareRates = nil
+	}
 	if err := json.Unmarshal([]byte(raw), &terms); err != nil {
 		return err
 	}
+	repairCreditSupplyTerms(&terms)
 	if err := ValidateCreditSupplyTerms(terms); err != nil {
 		return err
 	}
