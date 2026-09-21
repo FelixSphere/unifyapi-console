@@ -34,6 +34,7 @@ const (
 
 	binancePayTransactionsPath = "/sapi/v1/pay/transactions"
 	binanceDepositHistoryPath  = "/sapi/v1/capital/deposit/hisrec"
+	binanceDepositAddressPath  = "/sapi/v1/capital/deposit/address"
 
 	// BinancePayHistoryPageSize is the hard maximum of /sapi/v1/pay/transactions.
 	BinancePayHistoryPageSize = 100
@@ -118,11 +119,24 @@ func (d BinanceDeposit) IsCredited() bool {
 	return d.Status == BinanceDepositStatusSuccess || d.Status == BinanceDepositStatusCreditedNoWithd
 }
 
+// BinanceDepositAddress is the account's own deposit address for one coin on
+// one network, as Binance reports it.
+type BinanceDepositAddress struct {
+	Coin    string `json:"coin"`
+	Address string `json:"address"`
+	Tag     string `json:"tag"`
+	URL     string `json:"url"`
+}
+
 // BinanceHistoryReader is what the reconciler depends on, so tests can feed it
 // canned history without a network.
 type BinanceHistoryReader interface {
 	PayTransactions(ctx context.Context, startTimeMs, endTimeMs int64) ([]BinancePayTransaction, error)
 	DepositHistory(ctx context.Context, coin string, startTimeMs, endTimeMs int64) ([]BinanceDeposit, error)
+	// DepositAddress returns the account's deposit address for coin on
+	// network. It is the source of truth for where customers send money: an
+	// address typed by hand may belong to another account.
+	DepositAddress(ctx context.Context, coin, network string) (BinanceDepositAddress, error)
 }
 
 type BinanceClient struct {
@@ -222,6 +236,24 @@ func (c *BinanceClient) DepositHistory(ctx context.Context, coin string, startTi
 	var out []BinanceDeposit
 	if err := c.signedGet(ctx, binanceDepositHistoryPath, params, &out); err != nil {
 		return nil, err
+	}
+	return out, nil
+}
+
+// DepositAddress reads the account's deposit address for coin on network
+// (GET /sapi/v1/capital/deposit/address, weight 10).
+func (c *BinanceClient) DepositAddress(ctx context.Context, coin, network string) (BinanceDepositAddress, error) {
+	params := url.Values{}
+	params.Set("coin", strings.ToUpper(strings.TrimSpace(coin)))
+	if network = strings.ToUpper(strings.TrimSpace(network)); network != "" {
+		params.Set("network", network)
+	}
+	var out BinanceDepositAddress
+	if err := c.signedGet(ctx, binanceDepositAddressPath, params, &out); err != nil {
+		return BinanceDepositAddress{}, err
+	}
+	if strings.TrimSpace(out.Address) == "" {
+		return BinanceDepositAddress{}, fmt.Errorf("binance returned no %s deposit address for network %s", coin, network)
 	}
 	return out, nil
 }

@@ -398,11 +398,73 @@ func RunBinancePayReconciler() {
 	}
 }
 
+// binancePayAddressRefreshEvery bounds how often the reconciler re-reads an
+// account's deposit addresses from Binance. Addresses are stable; this is
+// only to self-heal after a key change.
+const binancePayAddressRefreshEvery = 30 * time.Minute
+
+var (
+	binancePayAddrMu          sync.Mutex
+	binancePayAddrLastRefresh = map[string]time.Time{}
+	// binancePayStoreOption persists a resolved snapshot; tests swap it.
+	binancePayStoreOption = func(key, value string) error { return model.UpdateOption(key, value) }
+)
+
+// refreshBinancePayAddresses reads, from Binance, the account's own deposit
+// address for every selected network and stores the result as the account's
+// address snapshot. This is what makes "where customers send money" and
+// "which account the key reads" the same account by construction. It
+// returns the resolved addresses; on any read error nothing is written, so a
+// transient failure never blanks a working configuration.
+func refreshBinancePayAddresses(ctx context.Context, account setting.BinancePayAccount, reader service.BinanceHistoryReader) ([]setting.BinancePayDepositAddress, error) {
+	networks := account.Networks()
+	if len(networks) == 0 {
+		return nil, nil
+	}
+	currency := setting.GetBinancePayCurrency()
+	resolved := make([]setting.BinancePayDepositAddress, 0, len(networks))
+	for _, network := range networks {
+		addr, err := reader.DepositAddress(ctx, currency, network)
+		if err != nil {
+			return nil, fmt.Errorf("deposit address %s/%s: %w", currency, network, err)
+		}
+		resolved = append(resolved, setting.BinancePayDepositAddress{Network: network, Address: strings.TrimSpace(addr.Address)})
+	}
+	encoded, err := common.Marshal(resolved)
+	if err != nil {
+		return nil, err
+	}
+	if string(encoded) != strings.TrimSpace(account.DepositAddresses) {
+		if err := binancePayStoreOption(account.AddressesOptionKey(), string(encoded)); err != nil {
+			return nil, fmt.Errorf("store addresses: %w", err)
+		}
+		logger.LogInfo(ctx, fmt.Sprintf("Binance Pay 收款地址已从币安同步 platform=%s networks=%v", account.Platform, networks))
+	}
+	binancePayAddrMu.Lock()
+	binancePayAddrLastRefresh[account.Platform] = time.Now()
+	binancePayAddrMu.Unlock()
+	return resolved, nil
+}
+
+func binancePayAddressesStale(platform string) bool {
+	binancePayAddrMu.Lock()
+	defer binancePayAddrMu.Unlock()
+	return time.Since(binancePayAddrLastRefresh[platform]) > binancePayAddressRefreshEvery
+}
+
 // reconcileAllBinancePayAccounts runs one pass per configured account. An
 // error on one account (bad key, region block) must not stop the other.
 func reconcileAllBinancePayAccounts(ctx context.Context, callerIp string) {
 	for _, account := range binancePayConfiguredAccounts() {
-		err := reconcileBinancePay(ctx, account, binancePayHistoryReaderFactory(account), callerIp)
+		reader := binancePayHistoryReaderFactory(account)
+		if binancePayAddressesStale(account.Platform) {
+			if _, err := refreshBinancePayAddresses(ctx, account, reader); err != nil {
+				logger.LogWarn(ctx, fmt.Sprintf("Binance Pay 收款地址同步失败 platform=%s error=%q", account.Platform, err.Error()))
+			} else if fresh, ok := setting.BinancePayAccountForPlatform(account.Platform); ok {
+				account = fresh // match against the addresses just resolved
+			}
+		}
+		err := reconcileBinancePay(ctx, account, reader, callerIp)
 		recordBinancePayHealth(account.Platform, "reconciler", err)
 		if err != nil {
 			logger.LogWarn(ctx, fmt.Sprintf("Binance Pay 对账失败 platform=%s error=%q", account.Platform, err.Error()))

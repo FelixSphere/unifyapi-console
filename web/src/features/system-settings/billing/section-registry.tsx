@@ -248,13 +248,13 @@ const BILLING_SECTIONS = [
               BinancePayReceiverId: settings.BinancePayReceiverId ?? '',
               BinancePayReceiverNickname:
                 settings.BinancePayReceiverNickname ?? '',
-              BinancePayDepositAddresses:
-                settings.BinancePayDepositAddresses ?? '[]',
+              BinancePayDepositNetworks:
+                settings.BinancePayDepositNetworks ?? '[]',
               BinancePayUSEnabled: settings.BinancePayUSEnabled ?? false,
               BinancePayUSReceiverNickname:
                 settings.BinancePayUSReceiverNickname ?? '',
-              BinancePayUSDepositAddresses:
-                settings.BinancePayUSDepositAddresses ?? '[]',
+              BinancePayUSDepositNetworks:
+                settings.BinancePayUSDepositNetworks ?? '[]',
               BinancePayCurrency: settings.BinancePayCurrency ?? 'USDT',
               BinancePayUnitPrice: settings.BinancePayUnitPrice ?? 1,
               BinancePayMinTopUp: settings.BinancePayMinTopUp ?? 1,

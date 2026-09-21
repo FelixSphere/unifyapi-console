@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   Loader2,
   PlugZap,
+  RefreshCw,
   XCircle,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -34,7 +35,6 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
 import {
@@ -47,13 +47,11 @@ import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 import {
   getBinancePayStatus,
+  refreshBinancePayAddresses,
   testBinancePayAccount,
   type BinancePayAccountStatus,
 } from './binance-pay-api'
-import {
-  depositAddressesToLines,
-  parseDepositAddressLines,
-} from './binance-pay-deposit-addresses'
+import { DEPOSIT_NETWORKS, parseNetworks } from './binance-pay-networks'
 
 // ============================================================================
 // Binance Pay (personal accounts) gateway settings
@@ -70,11 +68,11 @@ export interface BinancePaySettingsValues {
   BinancePayEnabled: boolean
   BinancePayReceiverId: string
   BinancePayReceiverNickname: string
-  /** JSON: [{"network":"TRX","address":"T..."}] */
-  BinancePayDepositAddresses: string
+  /** JSON: ["TRX","BSC"] — addresses are resolved from Binance, not typed */
+  BinancePayDepositNetworks: string
   BinancePayUSEnabled: boolean
   BinancePayUSReceiverNickname: string
-  BinancePayUSDepositAddresses: string
+  BinancePayUSDepositNetworks: string
   BinancePayCurrency: string
   BinancePayUnitPrice: number
   BinancePayMinTopUp: number
@@ -90,12 +88,6 @@ const keyShape = z
     message: 'A Binance API key or secret is exactly 64 letters and digits',
   })
 
-const addressLines = z
-  .string()
-  .refine((v) => parseDepositAddressLines(v).invalidLine === null, {
-    message: 'Use "NETWORK address" per line, e.g. TRX TXYZ…',
-  })
-
 const schema = z.object({
   // binance.com
   BinancePayEnabled: z.boolean(),
@@ -108,13 +100,13 @@ const schema = z.object({
       message: 'A Pay ID (Binance UID) is 6 to 20 digits',
     }),
   BinancePayReceiverNickname: z.string().trim(),
-  BinancePayDepositAddressesText: addressLines,
+  BinancePayDepositNetworks: z.array(z.string()),
   // Binance.US
   BinancePayUSEnabled: z.boolean(),
   BinancePayUSApiKey: keyShape,
   BinancePayUSSecretKey: keyShape,
   BinancePayUSReceiverNickname: z.string().trim(),
-  BinancePayUSDepositAddressesText: addressLines,
+  BinancePayUSDepositNetworks: z.array(z.string()),
   // shared
   BinancePayCurrency: z
     .string()
@@ -130,14 +122,6 @@ const schema = z.object({
 })
 
 type Values = z.infer<typeof schema>
-
-function addressesJson(text: string): string {
-  return JSON.stringify(parseDepositAddressLines(text).addresses)
-}
-
-function normalisedStoredAddresses(json: string): string {
-  return addressesJson(depositAddressesToLines(json))
-}
 
 function AccountStatusLine({
   status,
@@ -252,6 +236,7 @@ export function BinancePaySettingsSection({
     refetchInterval: 30_000,
   })
   const [testing, setTesting] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState<string | null>(null)
 
   const statusFor = (platform: string) =>
     statusQuery.data?.accounts.find((a) => a.platform === platform)
@@ -264,15 +249,15 @@ export function BinancePaySettingsSection({
       BinancePaySecretKey: '',
       BinancePayReceiverId: defaultValues.BinancePayReceiverId,
       BinancePayReceiverNickname: defaultValues.BinancePayReceiverNickname,
-      BinancePayDepositAddressesText: depositAddressesToLines(
-        defaultValues.BinancePayDepositAddresses
+      BinancePayDepositNetworks: parseNetworks(
+        defaultValues.BinancePayDepositNetworks
       ),
       BinancePayUSEnabled: defaultValues.BinancePayUSEnabled,
       BinancePayUSApiKey: '',
       BinancePayUSSecretKey: '',
       BinancePayUSReceiverNickname: defaultValues.BinancePayUSReceiverNickname,
-      BinancePayUSDepositAddressesText: depositAddressesToLines(
-        defaultValues.BinancePayUSDepositAddresses
+      BinancePayUSDepositNetworks: parseNetworks(
+        defaultValues.BinancePayUSDepositNetworks
       ),
       BinancePayCurrency: defaultValues.BinancePayCurrency || 'USDT',
       BinancePayUnitPrice: defaultValues.BinancePayUnitPrice || 1,
@@ -319,12 +304,12 @@ export function BinancePaySettingsSection({
       defaultValues.BinancePayReceiverNickname
     )
     if (
-      addressesJson(values.BinancePayDepositAddressesText) !==
-      normalisedStoredAddresses(defaultValues.BinancePayDepositAddresses)
+      JSON.stringify(values.BinancePayDepositNetworks) !==
+      JSON.stringify(parseNetworks(defaultValues.BinancePayDepositNetworks))
     ) {
       updates.push({
-        key: 'BinancePayDepositAddresses',
-        value: addressesJson(values.BinancePayDepositAddressesText),
+        key: 'BinancePayDepositNetworks',
+        value: JSON.stringify(values.BinancePayDepositNetworks),
       })
     }
 
@@ -341,12 +326,12 @@ export function BinancePaySettingsSection({
       defaultValues.BinancePayUSReceiverNickname
     )
     if (
-      addressesJson(values.BinancePayUSDepositAddressesText) !==
-      normalisedStoredAddresses(defaultValues.BinancePayUSDepositAddresses)
+      JSON.stringify(values.BinancePayUSDepositNetworks) !==
+      JSON.stringify(parseNetworks(defaultValues.BinancePayUSDepositNetworks))
     ) {
       updates.push({
-        key: 'BinancePayUSDepositAddresses',
-        value: addressesJson(values.BinancePayUSDepositAddressesText),
+        key: 'BinancePayUSDepositNetworks',
+        value: JSON.stringify(values.BinancePayUSDepositNetworks),
       })
     }
 
@@ -389,6 +374,24 @@ export function BinancePaySettingsSection({
       await updateOption.mutateAsync(update)
     }
     toast.success(t('Binance Pay settings saved'))
+    // Saving a key or a network changes which addresses customers should be
+    // shown, so resolve them now rather than waiting for the reconciler.
+    for (const platform of ['binance.com', 'binance.us']) {
+      const nets =
+        platform === 'binance.us'
+          ? values.BinancePayUSDepositNetworks
+          : values.BinancePayDepositNetworks
+      if (nets.length === 0) continue
+      const response = await refreshBinancePayAddresses(platform)
+      if (!response.success) {
+        toast.error(
+          t('Could not read {{platform}} deposit addresses: {{error}}', {
+            platform,
+            error: response.message ?? '',
+          })
+        )
+      }
+    }
     form.reset({
       ...values,
       BinancePayApiKey: '',
@@ -427,6 +430,27 @@ export function BinancePaySettingsSection({
     }
   }
 
+  async function handleRefresh(platform: string) {
+    setRefreshing(platform)
+    try {
+      const response = await refreshBinancePayAddresses(platform)
+      if (response.success) {
+        toast.success(
+          t('Read {{n}} deposit address(es) from Binance', {
+            n: response.data?.addresses?.length ?? 0,
+          })
+        )
+      } else {
+        toast.error(response.message || t('Could not read deposit addresses'))
+      }
+    } catch {
+      toast.error(t('Could not read deposit addresses'))
+    } finally {
+      setRefreshing(null)
+      void statusQuery.refetch()
+    }
+  }
+
   const renderAccountCard = (opts: {
     platform: 'binance.com' | 'binance.us'
     title: string
@@ -435,9 +459,7 @@ export function BinancePaySettingsSection({
     apiKeyField: 'BinancePayApiKey' | 'BinancePayUSApiKey'
     secretField: 'BinancePaySecretKey' | 'BinancePayUSSecretKey'
     nicknameField: 'BinancePayReceiverNickname' | 'BinancePayUSReceiverNickname'
-    addressesField:
-      | 'BinancePayDepositAddressesText'
-      | 'BinancePayUSDepositAddressesText'
+    networksField: 'BinancePayDepositNetworks' | 'BinancePayUSDepositNetworks'
     showPayId: boolean
   }) => {
     const status = statusFor(opts.platform)
@@ -587,31 +609,96 @@ export function BinancePaySettingsSection({
 
         <FormField
           control={form.control}
-          name={opts.addressesField}
+          name={opts.networksField}
           render={({ field }) => (
             <FormItem>
               <FormLabel>
                 {opts.showPayId
-                  ? t('On-chain deposit addresses (optional)')
-                  : t('On-chain deposit addresses (required)')}
+                  ? t('On-chain deposit networks (optional)')
+                  : t('On-chain deposit networks (required)')}
               </FormLabel>
               <FormControl>
-                <Textarea
-                  rows={3}
-                  placeholder={'TRX TXYZ…\nBSC 0x…'}
-                  className='font-mono text-xs'
-                  {...field}
-                />
+                <div className='flex flex-wrap gap-2'>
+                  {DEPOSIT_NETWORKS.map((network) => {
+                    const selected = field.value.includes(network.code)
+                    return (
+                      <Button
+                        key={network.code}
+                        type='button'
+                        size='sm'
+                        variant={selected ? 'default' : 'outline'}
+                        aria-pressed={selected}
+                        onClick={() =>
+                          field.onChange(
+                            selected
+                              ? field.value.filter(
+                                  (code: string) => code !== network.code
+                                )
+                              : [...field.value, network.code]
+                          )
+                        }
+                      >
+                        {network.label}
+                      </Button>
+                    )
+                  })}
+                </div>
               </FormControl>
               <FormDescription>
                 {t(
-                  'One per line as "NETWORK address", copied from Deposit in this account\'s wallet for the asset below. The arriving amount must match the order.'
+                  'Pick the networks you accept. The address for each is read from Binance for the account this API key belongs to, so customers are never shown an address the reconciler cannot see. Exchange deposit addresses only — a Binance Web3 / self-custody wallet address belongs to a different account, and transfers to it never appear in this account’s deposit history.'
                 )}
               </FormDescription>
               <FormMessage />
             </FormItem>
           )}
         />
+
+        <div className='rounded-md border p-3 text-xs'>
+          <div className='mb-2 flex flex-wrap items-center justify-between gap-2'>
+            <span className='font-medium'>
+              {t('Deposit addresses read from Binance')}
+            </span>
+            <Button
+              type='button'
+              variant='outline'
+              size='sm'
+              className='gap-2'
+              disabled={refreshing !== null || !status?.has_credentials}
+              title={
+                status && !status.has_credentials
+                  ? t('Save a valid API key and secret first')
+                  : undefined
+              }
+              onClick={() => void handleRefresh(opts.platform)}
+            >
+              {refreshing === opts.platform ? (
+                <Loader2 className='h-4 w-4 animate-spin' />
+              ) : (
+                <RefreshCw className='h-4 w-4' />
+              )}
+              {t('Refresh from Binance')}
+            </Button>
+          </div>
+          {status && status.addresses.length > 0 ? (
+            <ul className='space-y-1'>
+              {status.addresses.map((address) => (
+                <li key={address.network} className='flex items-center gap-2'>
+                  <span className='text-muted-foreground w-24 shrink-0'>
+                    {address.network}
+                  </span>
+                  <code className='truncate font-mono'>{address.address}</code>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className='text-muted-foreground'>
+              {t(
+                'None yet. Select the networks above, save, then refresh — customers cannot pay on-chain until an address is known.'
+              )}
+            </p>
+          )}
+        </div>
       </div>
     )
   }
@@ -679,7 +766,7 @@ export function BinancePaySettingsSection({
         apiKeyField: 'BinancePayApiKey',
         secretField: 'BinancePaySecretKey',
         nicknameField: 'BinancePayReceiverNickname',
-        addressesField: 'BinancePayDepositAddressesText',
+        networksField: 'BinancePayDepositNetworks',
         showPayId: true,
       })}
 
@@ -693,7 +780,7 @@ export function BinancePaySettingsSection({
         apiKeyField: 'BinancePayUSApiKey',
         secretField: 'BinancePayUSSecretKey',
         nicknameField: 'BinancePayUSReceiverNickname',
-        addressesField: 'BinancePayUSDepositAddressesText',
+        networksField: 'BinancePayUSDepositNetworks',
         showPayId: false,
       })}
 

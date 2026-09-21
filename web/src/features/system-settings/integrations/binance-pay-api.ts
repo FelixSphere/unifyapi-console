@@ -17,6 +17,11 @@ export interface BinancePayLastCheck {
   source: string
 }
 
+export interface BinancePayResolvedAddress {
+  network: string
+  address: string
+}
+
 export interface BinancePayAccountStatus {
   platform: string
   label: string
@@ -29,6 +34,10 @@ export interface BinancePayAccountStatus {
   pay_id_valid: boolean
   supports_pay: boolean
   address_count: number
+  /** Networks the operator accepts deposits on */
+  networks: string[]
+  /** Addresses as last read from Binance for this account */
+  addresses: BinancePayResolvedAddress[]
   configured: boolean
   pending_orders: number
   last_check?: BinancePayLastCheck
@@ -50,6 +59,26 @@ export interface BinancePayTestResult {
   label: string
   deposits_24h?: number
   pay_transactions_24h?: number
+}
+
+/**
+ * Re-read this account's own deposit addresses from Binance and store them.
+ */
+export async function refreshBinancePayAddresses(platform: string): Promise<{
+  success?: boolean
+  message?: string
+  data?: {
+    platform: string
+    networks: string[]
+    addresses: BinancePayResolvedAddress[]
+  }
+}> {
+  const res = await api.post(
+    '/api/option/binance-pay/refresh-addresses',
+    { platform },
+    { skipBusinessError: true } as Record<string, unknown>
+  )
+  return res.data
 }
 
 export async function testBinancePayAccount(platform: string): Promise<{

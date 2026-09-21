@@ -227,6 +227,7 @@ func SetApiRouter(router *gin.Engine) {
 			// UNIFYAPI-FORK: Binance Pay account health for the settings page.
 			optionRoute.GET("/binance-pay/status", controller.AdminBinancePayStatus)
 			optionRoute.POST("/binance-pay/test", controller.AdminBinancePayTest)
+			optionRoute.POST("/binance-pay/refresh-addresses", controller.AdminBinancePayRefreshAddresses)
 			optionRoute.GET("/waffo-pancake/catalog", controller.ListWaffoPancakeCatalog)
 			optionRoute.POST("/waffo-pancake/pair", controller.CreateWaffoPancakePair)
 			optionRoute.POST("/waffo-pancake/save", controller.SaveWaffoPancake)

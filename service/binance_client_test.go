@@ -144,3 +144,22 @@ func TestSignedGetSurfacesBinanceErrors(t *testing.T) {
 	_, err = c3.DepositHistory(context.Background(), "USDT", 1, 2)
 	require.Error(t, err)
 }
+
+func TestDepositAddressReadsTheAccountsOwnAddress(t *testing.T) {
+	c := newTestBinanceClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/sapi/v1/capital/deposit/address", r.URL.Path)
+		values, _ := url.ParseQuery(r.URL.RawQuery)
+		assert.Equal(t, "USDT", values.Get("coin"))
+		assert.Equal(t, "TRX", values.Get("network"))
+		_, _ = w.Write([]byte(`{"coin":"USDT","address":"TJUgoEkhD5H9RtQiRyyM4RgCRA2ujJsbcS","tag":"","url":"https://tronscan.org/#/address/TJUgo"}`))
+	})
+	got, err := c.DepositAddress(context.Background(), "usdt", "trx")
+	require.NoError(t, err)
+	assert.Equal(t, "TJUgoEkhD5H9RtQiRyyM4RgCRA2ujJsbcS", got.Address)
+
+	empty := newTestBinanceClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"coin":"USDT","address":"","tag":"","url":""}`))
+	})
+	_, err = empty.DepositAddress(context.Background(), "USDT", "TRX")
+	require.Error(t, err, "an empty address must not be stored as a place to send money")
+}

@@ -347,6 +347,8 @@ export type BillingSettings = {
   BinancePayUSSecretKey: string
   BinancePayUSReceiverNickname: string
   BinancePayUSDepositAddresses: string
+  BinancePayDepositNetworks: string
+  BinancePayUSDepositNetworks: string
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number
