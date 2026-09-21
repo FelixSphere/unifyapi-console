@@ -310,10 +310,16 @@ func TestPostedRevenueShareTermsAreValidatedAndSnapshotIsWhatCounts(t *testing.T
 	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":0.2},"revenue_share_basis":"gut feel"}`))
 	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":0.2},"min_share_payout_usd":-1}`))
 
-	// Omitting the rates is how the operator stops taking keys on those terms.
-	require.NoError(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":0.2}}`))
+	// CLEARING the rates is how the operator stops taking keys on those terms.
+	// Omitting them is not: every row written before revenue share existed
+	// omits them, and reading that as "switched off" ships the feature dead on
+	// arrival. See TestALegacyTermsRowDoesNotShipTheFeatureInert.
+	require.NoError(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":0.2},"revenue_share_rates":{}}`))
 	_, ok = GetCreditSupplyTerms().RevenueShareRate("anthropic")
 	assert.False(t, ok)
+	require.NoError(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":0.2}}`))
+	_, ok = GetCreditSupplyTerms().RevenueShareRate("anthropic")
+	assert.True(t, ok, "an absent map inherits the posted default")
 
 	// A key already earning keeps the deal it was taken on.
 	require.NoError(t, UpdateCreditSupplyTermsByJSONString(

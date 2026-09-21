@@ -781,3 +781,61 @@ func TestSupplierChannelsStayOutOfPromotionalPoolGroups(t *testing.T) {
 	assert.Contains(t, groups, "vip")
 	assert.NotContains(t, groups, "promo-pool", "grant-funded traffic pays the customer nothing, so it must not draw on a contributed key")
 }
+
+// The exact CreditSupplyTerms row production carried on 2026-09-20, read off
+// the box before the release. It predates revenue share entirely: an operator
+// pressed Save on the old terms card, which round-tripped the SELLER endpoint's
+// response (hence the "vendors" array, which is not a term at all) back into
+// the option. Every later key is simply absent.
+const productionStoredTermsRow = `{"buy_rates":{"anthropic":0.25,"google":0.12,"openai":0.15},"channel_priority":10,"min_face_usd":100000000000,"platform_credit_bonus":0,"vendors":[{"key":"openai","label":"OpenAI","channel_type":1,"base_url":"https://api.openai.com","models":["gpt-4o-mini"]},{"key":"anthropic","label":"Anthropic","channel_type":14,"base_url":"https://api.anthropic.com","models":["claude-sonnet-5"]}]}`
+
+func TestALegacyTermsRowDoesNotShipTheFeatureInert(t *testing.T) {
+	previous := CreditSupplyTerms2JSONString()
+	t.Cleanup(func() { require.NoError(t, UpdateCreditSupplyTermsByJSONString(previous)) })
+
+	require.NoError(t, UpdateCreditSupplyTermsByJSONString(productionStoredTermsRow))
+	terms := GetCreditSupplyTerms()
+
+	// The whole point: a row that predates revenue share must not read as
+	// "this operator turned revenue share off". Nobody turned anything off.
+	share, taking := terms.RevenueShareRate("anthropic")
+	require.True(t, taking, "a key absent from a legacy row inherits the default; otherwise the feature deploys dead")
+	assert.InDelta(t, 0.50, share, 1e-9)
+	assert.Len(t, terms.RevenueShareRates, 3, "all three posted vendors, from the defaults")
+	assert.Equal(t, CreditShareBasisRevenue, terms.ShareBasis())
+	assert.InDelta(t, 20, terms.MinSharePayoutUSD, 1e-9)
+
+	// A threshold that can only be a typo is repaired, not obeyed: $100bn
+	// blocks every submission while passing every validation rule.
+	assert.InDelta(t, 100, terms.MinFaceUSD, 1e-9)
+
+	// ...and the terms the operator really did post survive the repair. This is
+	// why one bad field must not reject the document: these are live buy rates.
+	assert.InDelta(t, 0.25, terms.BuyRates["anthropic"], 1e-9)
+	assert.InDelta(t, 0.12, terms.BuyRates["google"], 1e-9)
+	assert.InDelta(t, 0.15, terms.BuyRates["openai"], 1e-9)
+	assert.EqualValues(t, 10, terms.ChannelPriority)
+	assert.False(t, terms.ManualReview, "absent manual_review is the default, not a lock")
+}
+
+func TestClearingAVendorMapIsStillHonoured(t *testing.T) {
+	previous := CreditSupplyTerms2JSONString()
+	t.Cleanup(func() { require.NoError(t, UpdateCreditSupplyTermsByJSONString(previous)) })
+
+	// Present-but-empty is a decision and keeps its meaning: an operator who
+	// clears the share rates closes the offer. Only ABSENT inherits.
+	require.NoError(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":0.2},"revenue_share_rates":{}}`))
+	terms := GetCreditSupplyTerms()
+	_, taking := terms.RevenueShareRate("anthropic")
+	assert.False(t, taking, "an explicitly emptied map closes the offer")
+	assert.Empty(t, terms.RevenueShareRates)
+
+	// And a posted rate still overrides the default rather than merging with it.
+	require.NoError(t, UpdateCreditSupplyTermsByJSONString(`{"revenue_share_rates":{"anthropic":0.6}}`))
+	terms = GetCreditSupplyTerms()
+	assert.Len(t, terms.RevenueShareRates, 1, "posted rates replace the defaults, they do not merge")
+	share, _ := terms.RevenueShareRate("anthropic")
+	assert.InDelta(t, 0.6, share, 1e-9)
+	_, google := terms.RevenueShareRate("google")
+	assert.False(t, google)
+}
