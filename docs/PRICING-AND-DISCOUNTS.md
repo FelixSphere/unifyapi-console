@@ -497,7 +497,8 @@ Jev 不生成文本，它接收 `state` + 一组带类型的问题，返回校�
 注意区分两种"免费"：Vercel AI Gateway 的**限时免费**到 2026-09-25 截止，那是渠道方的促销；
 TypeSafe 自己的价目表上输出一直免费，直连 key 不受该日期影响。
 
-**这一行只定价，不代表可用。** TypeSafe 的接口是 `POST https://api.typesafe.ai/v1/systemone`，
-请求体形状与 OpenAI 的 chat/completions 完全不同，我们现有的任何渠道适配器都无法转发。
-要真正开卖，需要二选一：挂一个能把它包成 chat 形状的聚合渠道，或者新写一个适配器
-（后者等于给客户开一个新的 API 形状，属于产品决策）。
+**怎么调用。** TypeSafe 的接口是 `POST https://api.typesafe.ai/v1/systemone`，请求体形状与
+OpenAI 的 chat/completions 完全不同，因此它有自己的渠道类型和端点，见
+[TypeSafe System One 渠道](typesafe-system-one.md)：客户用我们的 base URL + 我们的 key 调
+`POST /v1/systemone`，请求体和响应体都原样透传。**它不是聊天模型**——对该渠道发起 chat /
+embedding / rerank 调用会被明确拒绝，而不是被翻译成某种我们发明的映射。

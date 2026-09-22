@@ -348,11 +348,12 @@ var unifyapiCatalog = []CatalogEntry{
 	// aggregators list, so a channel pointing straight at TypeSafe needs a
 	// model mapping to the dotted id.
 	//
-	// NOT REACHABLE THROUGH ANY ADAPTOR WE HAVE. TypeSafe serves
-	// POST /v1/systemone taking {state, questions} -- not an OpenAI
-	// chat-completions shape -- so this row prices the model and nothing more.
-	// Serving it needs either an aggregator channel that wraps it or a new
-	// adaptor, which is a product decision, not a pricing one.
+	// Served by the TypeSafe channel (relay/channel/typesafe), which forwards
+	// POST /v1/systemone verbatim in both directions. It is NOT a chat model:
+	// a chat, embedding or rerank call to that channel is refused rather than
+	// translated, because a state and typed questions cannot be guessed from
+	// chat messages. A channel still has to carry the model before anyone can
+	// call it.
 	{Model: "jev-1.13", Vendor: "", InputUSD: 0.042, OutputUSD: 0, CacheReadUSD: 0, CacheWriteUSD: 0,
 		Unverified: true, FreeOutput: true,
 		QuoteSource: "https://docs.typesafe.ai/models ($42 per billion input tokens; output free)", QuoteDate: "2026-09-21"}}

@@ -44,6 +44,7 @@ const (
 	RelayModeVideoSubmit
 
 	RelayModeRerank
+	RelayModeSystemOne
 
 	RelayModeResponses
 
@@ -88,6 +89,8 @@ func Path2RelayMode(path string) int {
 		relayMode = RelayModeAudioTranslation
 	} else if strings.HasPrefix(path, "/v1/rerank") {
 		relayMode = RelayModeRerank
+	} else if strings.HasPrefix(path, "/v1/systemone") {
+		relayMode = RelayModeSystemOne
 	} else if strings.HasPrefix(path, "/v1/realtime") {
 		relayMode = RelayModeRealtime
 	} else if strings.HasPrefix(path, "/v1beta/models") || strings.HasPrefix(path, "/v1/models") {
