@@ -53,7 +53,32 @@ typed questions，任何映射都只能是我们发明的，客户却要为这�
 |---|---|---|---|---|
 | TypeSafe 直连 | 留空（即 `https://api.typesafe.ai`） | 留空 | `jev-1.13` → `jev-1.13.0` | 厂商文档 |
 | OpenRouter | `https://openrouter.ai/api` | 留空 | **不需要**，裸名 `jev-1.13` 会自动映射到 `typesafe/` 命名空间 | 文档 + 端点探测（`/api/v1/systemone` 返回 401，乱填的路径返回 404） |
-| FlatKey | `https://router.flatkey.ai` | **向 FlatKey 索取** | `jev-1.13` → `typesafe/jev-1.13` | 模型确实在售（"Flatkey catalog"，官方 $0.042/$0，他们 -20%），但其网关未公开 `/v1/systemone` |
+| FlatKey | **用不了**，见下 | — | — | 2026-09-21 实测：其网关没有任何 System One 端点 |
+
+### FlatKey 为什么配不通（2026-09-21 实测，不需要密钥即可复现）
+
+FlatKey 转售 `typesafe/jev-1.13`，但**只通过 OpenAI 兼容的 chat 接口**，没有开放厂商原生的
+System One 端点。我们这个渠道故意不接受 chat（没有 state 和带类型的问题，任何映射都是编的），
+所以 FlatKey 目前无法作为 Jev 的上游，换哪个路径都不行。
+
+证据（每条都配了一个"乱填路径"的对照组，单看 401 或 404 都会得出错误结论）：
+
+```
+POST https://router.flatkey.ai/v1/systemone          -> 301  Location: https://console.flatkey.ai/v1/systemone
+POST https://router.flatkey.ai/v1/zzz-does-not-exist -> 301  （对照组：完全相同，说明这是兜底跳转，不是真路由）
+POST https://console.flatkey.ai/v1/chat/completions  -> 401  {"message":"Token not provided","type":"new_api_error"}
+POST https://console.flatkey.ai/v1/systemone         -> 404  {"message":"Invalid URL (POST /v1/systemone)"}
+POST https://console.flatkey.ai/v1/zzz-does-not-exist-> 404  （对照组：与上一条字字相同）
+```
+
+`/v1/chat/completions` 返回 401 而 System One 的所有候选路径都和对照组一样返回 404，
+这才说明前者是真实路由、后者根本不存在。同时试过 `/v1/system-one`、`/v1/typesafe/systemone`、
+`/typesafe/v1/systemone`、`/api/v1/systemone`，无一例外。
+
+运营看到的报错是这样来的：`router.flatkey.ai` 把**所有**未知路径 301 跳到
+`console.flatkey.ai`，Go 的 HTTP 客户端默默跟随，跨域时按 net/http 的规则丢掉
+Authorization 头，于是 console 以 404 回答，报错里只剩一个路径名，看不出答话的其实是另一台主机。
+现在这种情况会在错误信息里点名最终 URL。
 
 "System One 端点路径"是渠道设置里的一个可选字段：留空走厂商的 `/v1/systemone`；聚合商把这套
 API 挂在别处时填它们的路径即可，不需要改代码。Base URL 已经以该路径结尾时不会重复拼接。
