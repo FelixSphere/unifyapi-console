@@ -36,6 +36,13 @@ curl https://app.unifyapi.ai/v1/systemone \
 请求体和响应体**原样透传**。我们只在渠道配置了模型重命名时改写 `model` 字段，其余
 字段一个不动——包括 TypeSafe 以后新增的字段。
 
+改写 `model` 是**按字节就地替换**（`sjson.SetBytes`，与本仓库改写请求体的既有写法一致），
+不做整包解码再编码。这一点在这里比别处更重要：决策模型的输入就是客户的业务状态，数字是数据
+本身；解成 `any` 会把每个数字变成 float64，再编码回去就变了样——id `9007199254740993` 变成
+`...992`，`12345678901234567890` 丢掉末尾三位。客户会为一次针对他们从没发过的数字做出的判断
+付费，而且全链路不会有任何提示。就地替换连字段顺序和我们没见过的键一起保住，上游读到的就是
+客户写的那份，只有模型名不同。嵌套在 `state` 里名为 `model` 的字段是客户的数据，不会被动。
+
 问题类型有三种：`noul`（是/否）、`choice`（多选一）、`score`（按档位打分）。完整语义见
 厂商文档 <https://docs.typesafe.ai/api>。
 
@@ -53,7 +60,47 @@ typed questions，任何映射都只能是我们发明的，客户却要为这�
 |---|---|---|---|---|
 | TypeSafe 直连 | 留空（即 `https://api.typesafe.ai`） | 留空 | `jev-1.13` → `jev-1.13.0` | 厂商文档 |
 | OpenRouter | `https://openrouter.ai/api` | 留空 | **不需要**，裸名 `jev-1.13` 会自动映射到 `typesafe/` 命名空间 | 文档 + 端点探测（`/api/v1/systemone` 返回 401，乱填的路径返回 404） |
-| FlatKey | `https://router.flatkey.ai` | **向 FlatKey 索取** | `jev-1.13` → `typesafe/jev-1.13` | 模型确实在售（"Flatkey catalog"，官方 $0.042/$0，他们 -20%），但其网关未公开 `/v1/systemone` |
+| FlatKey | `https://router.flatkey.ai` | `/api/alpha/decisions` | `jev-1.13` → `typesafe/jev-1.13` | 厂商给出 + 端点探测（401，而同前缀的对照路径 301） |
+
+### OpenRouter 这条核实到什么程度（别把话说满）
+
+已证实的：`https://openrouter.ai/api/v1/systemone` 返回 401（有鉴权网关挡着的真实路由），
+同一主机上乱填的路径返回 404 `Not Found`，且**没有重定向**。请求体与厂商一致
+（`{model, state, questions}`）。
+
+**尚未证实的**：`typesafe/jev-1.13` 不在 OpenRouter 公开的 `/api/v1/models` 里（该列表 445 个
+模型，无一条 typesafe/jev）。那个列表是 chat 模型目录，System One 是另一个接口面，不在里面是
+合理的，但**这只是推断，不是证据**。另外注意 `https://openrouter.ai/typesafe/jev-1.13` 这种
+模型页对**乱填的模型名也返回 200**（前端 SPA 兜底），所以"页面能打开"不能作为证据。
+
+要坐实只有一个办法：拿一把 OpenRouter 的 key 发一次真实请求。在那之前，这个上游是"路由确认
+存在、模型 id 未确认"。
+
+### FlatKey 的端点不在 `/v1` 下（2026-09-22 更正）
+
+FlatKey 把 System One 挂在 **`/api/alpha/decisions`**，不在 `/v1` 命名空间里，模型名用
+`typesafe/jev-1.13`。请求体与厂商一致（`questions` 是以问题名为键的**对象**，不是数组），我们的
+`SystemOneRequest.Questions` 正是 `map[string]any`，直接对得上。
+
+端点探测（401 表示真实路由被鉴权挡住，同前缀的乱填路径返回 301 兜底跳转）：
+
+```
+POST https://router.flatkey.ai/api/alpha/decisions   -> 401  Token not provided
+POST https://router.flatkey.ai/api/alpha/zzz-control -> 301  （对照组）
+POST https://router.flatkey.ai/api/zzz-control       -> 301  （对照组）
+```
+
+**之前为什么会 404。** 端点路径留空时我们发往 `/v1/systemone`；`router.flatkey.ai` 把**所有**
+未知路径 301 跳到 `console.flatkey.ai`，Go 的客户端默默跟随，跨域时按 net/http 的规则丢掉
+`Authorization`，于是 console 用它自己的 404 回答，报错里只剩一个路径名，看不出答话的是另一台
+主机。现在这种情况会在错误信息里点名最终 URL。
+
+**这里踩过一个推理上的坑，值得记住。** 我扫了 `/v1/systemone`、`/v1/system-one`、
+`/v1/typesafe/systemone`、`/typesafe/v1/systemone`、`/api/v1/systemone`，每条都配了对照组，
+全部不存在，于是得出"FlatKey 没有 System One 端点"。**这个结论不成立**：对照组只能证明
+*我试过的那些路径*不存在，永远证明不了端点不存在——穷举猜测无法证否。真实路径是
+`/api/alpha/decisions`，"decisions"这个词根本不在我的猜测集合里。**路径要向上游要，不要靠猜；
+穷举猜不中只说明猜错了，不说明东西不在。**
 
 "System One 端点路径"是渠道设置里的一个可选字段：留空走厂商的 `/v1/systemone`；聚合商把这套
 API 挂在别处时填它们的路径即可，不需要改代码。Base URL 已经以该路径结尾时不会重复拼接。
