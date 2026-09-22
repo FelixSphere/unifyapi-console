@@ -90,29 +90,19 @@ func GetPricing(c *gin.Context) {
 func applyDefaultGroupModelPricing(pricing []model.Pricing) []model.Pricing {
 	out := make([]model.Pricing, len(pricing))
 	copy(out, pricing)
-
-	// A per-model override is not the only way a new user gets a discount.
-	// When no override names the model, HandleGroupRatio falls through to the
-	// `default` group's own ratio, and the customer is billed at that. Reading
-	// only the overrides made Model Square advertise list price on a model the
-	// till discounted -- the two newest models at the time, priced correctly
-	// and advertised wrongly. Read the group ratio once; ContainsGroupRatio
-	// first, because GetGroupRatio logs every miss and this runs on every
-	// Model Square request.
-	groupFallback := 1.0
-	if ratio_setting.ContainsGroupRatio(model.DefaultUserGroup) {
-		groupFallback = ratio_setting.GetGroupRatio(model.DefaultUserGroup)
-	}
-
+	// Only a per-model override the operator set ON PURPOSE is advertised.
+	//
+	// The `default` group also carries a broad group ratio, and the relay does
+	// fall back to it when no override names the model -- so a model with no
+	// override can still be billed below list. That is deliberately NOT
+	// published here. Operator rule, 2026-09-22: a model the operator never
+	// chose to discount must not be advertised as discounted; inferring a
+	// per-model price from the group ratio commits us to a number nobody set.
+	// Quoting list while charging less is the safe direction of that gap.
 	for i := range out {
 		ratio, ok := ratio_setting.GetGroupModelDiscount(model.DefaultUserGroup, out[i].ModelName)
 		if !ok {
-			if groupFallback == 1 {
-				// No discount from either source: leave the field absent so the
-				// client shows the list price alone rather than "0% off".
-				continue
-			}
-			ratio = groupFallback
+			continue
 		}
 		out[i].DefaultGroupModelRatio = &ratio
 	}
