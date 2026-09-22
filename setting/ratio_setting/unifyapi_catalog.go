@@ -49,6 +49,14 @@ type CatalogEntry struct {
 	CacheWriteUSD float64
 	Unverified    bool // no models.dev listing; needs a manual quote
 
+	// FreeOutput marks a model whose vendor meters no output tokens at all, so
+	// OutputUSD of zero is the real price rather than a missing one. It exists
+	// because the catalog otherwise rejects a zero or below-input output price,
+	// a rule that caught transposed pairs for every model until a decision-only
+	// model arrived. Setting it is a claim about the vendor, not a discount:
+	// use it only where the vendor bills input alone.
+	FreeOutput bool
+
 	// AdminAdded marks a price typed into the console rather than compiled in --
 	// see unifyapi_extra_models.go. It flows through to the pricing page and the
 	// drift checker because nobody is watching these for vendor price changes,
@@ -325,4 +333,26 @@ var unifyapiCatalog = []CatalogEntry{
 	// `deepseek-v4-flash` id to V4.1 Flash; that entry's price is left alone
 	// here because repricing it is a customer-visible change.
 	{Model: "deepseek-flash", Vendor: "", InputUSD: 0.3, OutputUSD: 1.2, CacheReadUSD: 0.006, CacheWriteUSD: 0, Unverified: true,
-		QuoteSource: "https://api-docs.deepseek.com/quick_start/pricing (peak tier; DeepSeek-V4.1-Flash)", QuoteDate: "2026-09-17"}}
+		QuoteSource: "https://api-docs.deepseek.com/quick_start/pricing (peak tier; DeepSeek-V4.1-Flash)", QuoteDate: "2026-09-17"},
+
+	// ---- TypeSafe (System One) ----
+	// Jev is a decision-only model: it returns a typed choice with calibrated
+	// probabilities instead of text, so there is no autoregressive decoding and
+	// NO output tokens to meter. Output is free for that mechanical reason, not
+	// as a promotion -- the "free until 2026-09-25" offers circulating are
+	// Vercel AI Gateway's, not TypeSafe's, and do not apply to a direct key.
+	// Hence FreeOutput: a zero here is the vendor's price, not a missing one.
+	//
+	// The vendor's own ids are `jev-1.13.0`, with aliases `jev-latest` and
+	// `jev-preview`; `jev-1.13` is the form the operator sells and the form
+	// aggregators list, so a channel pointing straight at TypeSafe needs a
+	// model mapping to the dotted id.
+	//
+	// NOT REACHABLE THROUGH ANY ADAPTOR WE HAVE. TypeSafe serves
+	// POST /v1/systemone taking {state, questions} -- not an OpenAI
+	// chat-completions shape -- so this row prices the model and nothing more.
+	// Serving it needs either an aggregator channel that wraps it or a new
+	// adaptor, which is a product decision, not a pricing one.
+	{Model: "jev-1.13", Vendor: "", InputUSD: 0.042, OutputUSD: 0, CacheReadUSD: 0, CacheWriteUSD: 0,
+		Unverified: true, FreeOutput: true,
+		QuoteSource: "https://docs.typesafe.ai/models ($42 per billion input tokens; output free)", QuoteDate: "2026-09-21"}}
