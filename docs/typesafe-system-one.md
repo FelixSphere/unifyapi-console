@@ -74,3 +74,13 @@ typed questions，任何映射都只能是我们发明的，客户却要为这�
 
 预扣费按 state 加上每个问题的 instructions 和 criteria 的文本量估算，结算时以厂商返回的
 `usage` 为准。state 是对象或数组时会递归展开计算，不会因为它不是字符串就估成 0。
+
+## 渠道测试
+
+后台的"测试渠道"对 TypeSafe 渠道会自动发一个最小的 System One 请求（一个 `noul` 问题、
+state 为 `ping`），而不是聊天请求——端点类型选"自动检测"即可，选错也没关系，渠道类型说了算。
+下拉里也有一项 `TypeSafe System One (/v1/systemone)`，手动选它是同样的效果。
+
+早期版本没有这条：测试会按聊天请求发出去，被适配器按设计拒绝，于是一个健康的渠道显示
+测试失败，错误信息是 `typesafe serves System One requests at /v1/systemone`。看到这条说明
+跑的是修复前的版本。
