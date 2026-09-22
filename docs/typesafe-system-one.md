@@ -55,6 +55,20 @@ typed questions，任何映射都只能是我们发明的，客户却要为这�
 | OpenRouter | `https://openrouter.ai/api` | 留空 | **不需要**，裸名 `jev-1.13` 会自动映射到 `typesafe/` 命名空间 | 文档 + 端点探测（`/api/v1/systemone` 返回 401，乱填的路径返回 404） |
 | FlatKey | **用不了**，见下 | — | — | 2026-09-21 实测：其网关没有任何 System One 端点 |
 
+### OpenRouter 这条核实到什么程度（别把话说满）
+
+已证实的：`https://openrouter.ai/api/v1/systemone` 返回 401（有鉴权网关挡着的真实路由），
+同一主机上乱填的路径返回 404 `Not Found`，且**没有重定向**。请求体与厂商一致
+（`{model, state, questions}`）。
+
+**尚未证实的**：`typesafe/jev-1.13` 不在 OpenRouter 公开的 `/api/v1/models` 里（该列表 445 个
+模型，无一条 typesafe/jev）。那个列表是 chat 模型目录，System One 是另一个接口面，不在里面是
+合理的，但**这只是推断，不是证据**。另外注意 `https://openrouter.ai/typesafe/jev-1.13` 这种
+模型页对**乱填的模型名也返回 200**（前端 SPA 兜底），所以"页面能打开"不能作为证据。
+
+要坐实只有一个办法：拿一把 OpenRouter 的 key 发一次真实请求。在那之前，这个上游是"路由确认
+存在、模型 id 未确认"。
+
 ### FlatKey 为什么配不通（2026-09-21 实测，不需要密钥即可复现）
 
 FlatKey 转售 `typesafe/jev-1.13`，但**只通过 OpenAI 兼容的 chat 接口**，没有开放厂商原生的
