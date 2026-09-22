@@ -468,7 +468,7 @@ curl -s "$CONSOLE/api/pricing/reconcile?start=...&end=...&group_by=model" | \
 
 ```bash
 # 看最近几次跑了什么（system task 记录）
-curl -s "$CONSOLE/api/system_task?type=pricing_change_notify&limit=5" -H "Authorization: Bearer $ROOT_TOKEN" | jq '.data[] | {status, result, error}'
+curl -s "$CONSOLE/api/system-task/list?type=pricing_change_notify&limit=5" -H "Authorization: Bearer $ROOT_TOKEN" | jq '.data'
 ```
 
 ---
