@@ -49,17 +49,12 @@ func notifyCreditLotEvent(lot model.CreditLot, event string) {
 	NotifyRootUser(fmt.Sprintf("credit_lot_%s_%d", event, lot.Id), subject, content)
 }
 
-// outstanding says what is still owed for a retired lot, which depends on how
-// it was acquired: a lot bought outright was paid for at activation and owes
-// nothing, a contributed key owes its owner the unpaid part of its dividend,
-// and an operator-entered lot settles on consumption as it always did.
+// outstanding says what is still owed to the seller for a retired lot: the
+// part of the share its traffic earned that has not been settled yet.
 func outstanding(lot model.CreditLot) string {
-	if lot.IsRevenueShare() {
-		return fmt.Sprintf("Revenue share still owed to the contributor: $%.2f of $%.2f earned on $%.2f of revenue.",
-			lot.UnpaidShareUSD(), lot.EarnedShareUSD(), lot.ShareRevenueUSD)
+	if unpaid := lot.UnpaidShareUSD(); unpaid > 0 {
+		return fmt.Sprintf("Share still owed to the seller: $%.2f of $%.2f earned on $%.2f of revenue.",
+			unpaid, lot.EarnedShareUSD(), lot.ShareRevenueUSD)
 	}
-	if payable := lot.PayableUSD(); payable > 0 {
-		return fmt.Sprintf("Still payable to the supplier for this lot: $%.2f.", payable)
-	}
-	return "It was bought outright and is paid for in full."
+	return "Everything this key earned has been settled."
 }

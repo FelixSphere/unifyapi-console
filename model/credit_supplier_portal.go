@@ -61,7 +61,6 @@ func SubmitSupplierCreditLot(supplier *CreditSupplier, channel *Channel, lot *Cr
 	lot.ChannelId = channel.Id
 	// Freeze the bonus this sale was quoted under; the operator may change the
 	// posted terms before getting round to paying.
-	lot.PayoutQuoteMultiplier = 1 + terms.PlatformCreditBonus
 	lot.Status = CreditLotStatusPending
 	lot.Source = CreditLotSourceSupplier
 	// The supplier's own attestation, made in the portal moments ago.

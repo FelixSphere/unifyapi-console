@@ -91,20 +91,18 @@ func GetCreditLots(c *gin.Context) {
 // creditLotPayload is what the screen may set. Consumption, notification state
 // and retirement are never accepted from the caller.
 type creditLotPayload struct {
-	SupplierId      int     `json:"supplier_id"`
-	Vendor          string  `json:"vendor"`
-	ChannelId       int     `json:"channel_id"`
-	FaceValueUSD    float64 `json:"face_value_usd"`
-	AcquisitionRate float64 `json:"acquisition_rate"`
-	LowWaterUSD     float64 `json:"low_water_usd"`
-	ExpiresAt       int64   `json:"expires_at"`
-	Status          string  `json:"status"`
-	Note            string  `json:"note"`
-	// DealType and RevenueSharePct describe a key the operator is entering on
-	// a contributor's behalf. They are set once, at creation: UpdateCreditLot
-	// never reads them, because the deal somebody agreed to is not an editable
-	// field.
-	DealType        string  `json:"deal_type"`
+	SupplierId   int     `json:"supplier_id"`
+	Vendor       string  `json:"vendor"`
+	ChannelId    int     `json:"channel_id"`
+	FaceValueUSD float64 `json:"face_value_usd"`
+	LowWaterUSD  float64 `json:"low_water_usd"`
+	ExpiresAt    int64   `json:"expires_at"`
+	Status       string  `json:"status"`
+	Note         string  `json:"note"`
+	// RevenueSharePct is the share the seller keeps on a key the operator is
+	// entering on their behalf. It is set once, at creation: UpdateCreditLot
+	// never reads it, because the deal somebody agreed to is not an editable
+	// field. Left at zero it falls back to the posted rate for the vendor.
 	RevenueSharePct float64 `json:"revenue_share_pct"`
 }
 
@@ -114,19 +112,24 @@ func (p creditLotPayload) lot() *model.CreditLot {
 		Vendor:          p.Vendor,
 		ChannelId:       p.ChannelId,
 		FaceValueUSD:    p.FaceValueUSD,
-		AcquisitionRate: p.AcquisitionRate,
 		LowWaterUSD:     p.LowWaterUSD,
 		ExpiresAt:       p.ExpiresAt,
 		Status:          p.Status,
 		Source:          model.CreditLotSourceAdmin,
 		Note:            p.Note,
-		DealType:        p.DealType,
+		DealType:        model.CreditLotDealRevenueShare,
 		RevenueSharePct: p.RevenueSharePct,
 	}
-	if lot.DealType == model.CreditLotDealRevenueShare {
-		// The basis is posted, not negotiated per lot, and is frozen here.
-		lot.RevenueShareBasis = model.GetCreditSupplyTerms().ShareBasis()
+	terms := model.GetCreditSupplyTerms()
+	if lot.RevenueSharePct <= 0 {
+		// An operator entering a key on a seller's behalf gets the posted rate
+		// unless they deliberately type another; there is no third number.
+		if posted, taking := terms.RevenueShareRate(lot.Vendor); taking {
+			lot.RevenueSharePct = posted
+		}
 	}
+	// The basis is posted, not negotiated per lot, and is frozen here.
+	lot.RevenueShareBasis = terms.ShareBasis()
 	return lot
 }
 
@@ -170,31 +173,6 @@ func UpdateCreditLot(c *gin.Context) {
 // buy-out rates the seller endpoint deliberately leaves out.
 func GetCreditSupplyTermsAdmin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": model.GetCreditSupplyTerms()})
-}
-
-// PayCreditLot settles a verified sale: pays the supplier (platform credit is
-// booked here; an external transfer is recorded by reference) and activates
-// the lot in the same step.
-func PayCreditLot(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid lot id"})
-		return
-	}
-	var req struct {
-		Method    string `json:"method"`
-		Reference string `json:"reference"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid request body"})
-		return
-	}
-	lot, err := model.PayCreditLot(id, model.CreditLotPayment{Actor: optionChangeActor(c), Method: req.Method, Reference: req.Reference})
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error(), "data": lot})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": lot})
 }
 
 func TransitionCreditLot(c *gin.Context) {

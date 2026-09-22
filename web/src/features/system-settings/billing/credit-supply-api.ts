@@ -73,7 +73,6 @@ export type CreditLot = {
   // Live status of the bound channel (1 = enabled), attached on read.
   channel_status: number
   face_value_usd: number
-  acquisition_rate: number
   consumed_usd: number
   unpriced_requests: number
   low_water_usd: number
@@ -92,15 +91,10 @@ export type CreditLot = {
   verification_note: string
   payout_method: 'platform_credit' | 'external' | ''
   payout_account: string
-  payout_reference: string
-  paid_usd: number
-  paid_at: number
-  paid_by: string
   retired_at: number
   created_at: number
   updated_at: number
   // The dividend side. A purchase lot carries zeroes here.
-  deal_type: CreditLotDeal
   revenue_share_pct: number
   revenue_share_basis: 'revenue' | 'margin' | ''
   share_revenue_usd: number
@@ -113,13 +107,11 @@ export type CreditLotInput = {
   vendor: string
   channel_id: number
   face_value_usd: number
-  acquisition_rate: number
   low_water_usd: number
   expires_at: number
   status: 'pending' | 'active'
   note: string
   // Set once, at creation: the deal a contributor agreed to is not editable.
-  deal_type?: CreditLotDeal
   revenue_share_pct?: number
 }
 
@@ -150,7 +142,6 @@ export type CreditSupplyVendorTotals = {
   face_usd: number
   consumed_usd: number
   remaining_usd: number
-  payable_usd: number
   share_revenue_usd: number
   share_unpaid_usd: number
 }
@@ -187,9 +178,6 @@ export type CreditSupplyOverview = {
   face_usd: number
   consumed_usd: number
   remaining_usd: number
-  payable_usd: number
-  awaiting_payment_usd: number
-  paid_usd: number
   unpriced_lots: number
   share: CreditShareTotals
   min_share_payout_usd: number
@@ -282,24 +270,9 @@ export async function transitionCreditLot(input: {
 // Settle a verified sale: pays the supplier (platform credit is booked
 // server-side; an external transfer is recorded by reference) and activates
 // the lot in one step.
-export async function payCreditLot(input: {
-  id: number
-  method?: 'platform_credit' | 'external'
-  reference?: string
-}) {
-  return unwrap(
-    await api.post<Envelope<CreditLot>>(
-      `/api/credit-supply/lots/${input.id}/pay`,
-      { method: input.method ?? '', reference: input.reference ?? '' }
-    )
-  )
-}
-
 export type CreditSupplyTerms = {
-  buy_rates: Record<string, number>
   channel_priority: number
   min_face_usd: number
-  platform_credit_bonus: number
   // The other offer: contribute the key, keep a share of what it earns.
   revenue_share_rates: Record<string, number>
   revenue_share_basis: 'revenue' | 'margin'

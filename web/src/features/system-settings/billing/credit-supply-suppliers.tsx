@@ -35,7 +35,7 @@ import {
   type CreditSupplier,
   type CreditSupplierInput,
 } from './credit-supply-api'
-import { formatUSD, payableUSD, unpaidShareUSD } from './credit-supply-logic'
+import { formatUSD, unpaidShareUSD } from './credit-supply-logic'
 
 type SupplierFormState = {
   name: string
@@ -169,7 +169,6 @@ export function CreditSuppliersPanel({
       active: own.filter((lot) => lot.status === 'active').length,
       face: own.reduce((sum, lot) => sum + lot.face_value_usd, 0),
       consumed: own.reduce((sum, lot) => sum + lot.consumed_usd, 0),
-      payable: own.reduce((sum, lot) => sum + payableUSD(lot), 0),
       shareUnpaid: own.reduce((sum, lot) => sum + unpaidShareUSD(lot), 0),
     }
   }
@@ -192,7 +191,6 @@ export function CreditSuppliersPanel({
               <TableHead>{t('Lots')}</TableHead>
               <TableHead>{t('Face value')}</TableHead>
               <TableHead>{t('Consumed')}</TableHead>
-              <TableHead>{t('Payable to date')}</TableHead>
               <TableHead>{t('Revenue share owed')}</TableHead>
               <TableHead>{t('Payout account')}</TableHead>
               <TableHead>{t('Status')}</TableHead>
@@ -232,9 +230,6 @@ export function CreditSuppliersPanel({
                   </TableCell>
                   <TableCell className='tabular-nums'>
                     {formatUSD(totals.consumed)}
-                  </TableCell>
-                  <TableCell className='tabular-nums'>
-                    {formatUSD(totals.payable)}
                   </TableCell>
                   <TableCell className='tabular-nums'>
                     {totals.shareUnpaid > 0

@@ -123,27 +123,27 @@ func TestCreditLotChannelBindingIsExclusiveWhileLive(t *testing.T) {
 	now := common.GetTimestamp()
 
 	require.ErrorIs(t, CreateCreditLot(&CreditLot{
-		SupplierId: supplier.Id, Vendor: "anthropic", FaceValueUSD: 100, AcquisitionRate: 0.5,
+		SupplierId: supplier.Id, Vendor: "anthropic", FaceValueUSD: 100, RevenueSharePct: 0.5,
 		Status: CreditLotStatusActive,
 	}, "test"), ErrCreditLotNeedsChannel, "active lots must be bound")
 
 	require.Error(t, CreateCreditLot(&CreditLot{
-		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 99, FaceValueUSD: 100, AcquisitionRate: 0.5,
+		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 99, FaceValueUSD: 100, RevenueSharePct: 0.5,
 	}, "test"), "a channel that does not exist cannot be bound")
 
 	require.Error(t, CreateCreditLot(&CreditLot{
-		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 100, AcquisitionRate: 1.2,
+		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 100, RevenueSharePct: 1.2,
 	}, "test"), "paying above face value is a typo, not a deal")
 
 	first := &CreditLot{
-		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 100, AcquisitionRate: 0.5,
+		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 100, RevenueSharePct: 0.5,
 		ExpiresAt: now + 3600, Status: CreditLotStatusActive,
 	}
 	require.NoError(t, CreateCreditLot(first, "test"))
 	assert.InDelta(t, 0.5, ratio_setting.GetChannelCostRatio(7), 1e-9,
 		"activating a lot writes its acquisition rate into the channel cost ratio")
 
-	second := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 50, AcquisitionRate: 0.4}
+	second := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 50, RevenueSharePct: 0.4}
 	require.ErrorIs(t, CreateCreditLot(second, "test"), ErrCreditLotChannelBound)
 
 	// Once the first lot is retired the channel is free again.
@@ -159,7 +159,7 @@ func TestCreditLotTransitionsFollowTheLifecycle(t *testing.T) {
 	require.NoError(t, DB.Model(channel).Update("status", common.ChannelStatusManuallyDisabled).Error)
 
 	lot := &CreditLot{
-		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 100, AcquisitionRate: 0.6,
+		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 100, RevenueSharePct: 0.6,
 		Source: CreditLotSourceSupplier,
 	}
 	require.NoError(t, CreateCreditLot(lot, "test"))
@@ -169,15 +169,15 @@ func TestCreditLotTransitionsFollowTheLifecycle(t *testing.T) {
 	_, err := TransitionCreditLot(lot.Id, CreditLotTransition{To: CreditLotStatusSuspended, Actor: "test", Reason: "supplier asked us to pause"})
 	require.ErrorIs(t, err, ErrCreditLotTransition, "pending cannot be suspended, only approved or rejected")
 
-	// A supplier's lot is bought, not approved: verify, then pay.
+	// A seller's key is verified before it can serve anything; only then can
+	// it be accepted, and accepting it writes the share as the cost basis.
 	_, err = TransitionCreditLot(lot.Id, approve("test"))
-	require.ErrorIs(t, err, ErrCreditLotTransition, "a supplier submission cannot be activated for free")
+	require.ErrorIs(t, err, ErrCreditLotTransition, "an unverified submission cannot go live")
 	_, err = MarkCreditLotVerified(lot.Id, "system", "key answered", 0)
 	require.NoError(t, err)
-	approved, err := PayCreditLot(lot.Id, CreditLotPayment{Actor: "test", Method: CreditLotPayoutExternal, Reference: "wire-1"})
+	approved, err := TransitionCreditLot(lot.Id, approve("test"))
 	require.NoError(t, err)
 	assert.Equal(t, CreditLotStatusActive, approved.Status)
-	assert.InDelta(t, 60, approved.PaidUSD, 1e-9, "face 100 at the 0.6 rate the lot was submitted with")
 	assert.InDelta(t, 0.6, ratio_setting.GetChannelCostRatio(7), 1e-9)
 	reloaded, err := GetChannelById(7, false)
 	require.NoError(t, err)
@@ -197,24 +197,25 @@ func TestCreditLotTransitionsFollowTheLifecycle(t *testing.T) {
 		Updates(map[string]interface{}{"status": CreditLotStatusExhausted, "consumed_usd": 100}).Error)
 	_, err = TransitionCreditLot(lot.Id, approve("test"))
 	require.ErrorIs(t, err, ErrCreditLotTransition)
-	// ...and this one was bought outright, so "something left to draw" cannot
-	// be manufactured by raising the face value: that would hand over credits
-	// nobody paid for. More credit from the same seller is a new sale.
-	require.ErrorIs(t, UpdateCreditLot(lot.Id, &CreditLot{
-		Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 250, AcquisitionRate: 0.6,
-	}, "test"), ErrCreditLotPaidFaceValue)
+	// Nothing was paid up front, so the face value is an estimate the operator
+	// can correct, and correcting it upwards is how an exhausted key comes back.
+	require.NoError(t, UpdateCreditLot(lot.Id, &CreditLot{
+		Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 250, RevenueSharePct: 0.6,
+	}, "test"))
+	revived, err := TransitionCreditLot(lot.Id, approve("test"))
+	require.NoError(t, err)
+	assert.Equal(t, CreditLotStatusActive, revived.Status)
 }
 
-// The operator-entered lot is the one that is settled on consumption rather
-// than bought up front, so its face value is an estimate the operator corrects
-// -- and correcting it upwards is how an exhausted lot comes back.
+// A key's face value is an estimate of what the seller had; the operator
+// corrects it, and correcting it upwards is how an exhausted key comes back.
 func TestAnUnpaidLotIsReactivatedByRaisingItsFaceValue(t *testing.T) {
 	setupCreditSupplyTestDB(t)
 	supplier := seedSupplier(t, "acme")
 	seedSupplierChannel(t, 7)
 	lot := &CreditLot{
 		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7,
-		FaceValueUSD: 100, AcquisitionRate: 0.6, Status: CreditLotStatusActive,
+		FaceValueUSD: 100, RevenueSharePct: 0.6, Status: CreditLotStatusActive,
 	}
 	require.NoError(t, CreateCreditLot(lot, "test"))
 	require.NoError(t, DB.Model(&CreditLot{}).Where("id = ?", lot.Id).
@@ -223,20 +224,20 @@ func TestAnUnpaidLotIsReactivatedByRaisingItsFaceValue(t *testing.T) {
 	_, err := TransitionCreditLot(lot.Id, approve("test"))
 	require.ErrorIs(t, err, ErrCreditLotTransition, "nothing left to draw")
 	require.NoError(t, UpdateCreditLot(lot.Id, &CreditLot{
-		Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 250, AcquisitionRate: 0.6,
+		Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 250, RevenueSharePct: 0.6,
 	}, "test"))
 	reactivated, err := TransitionCreditLot(lot.Id, approve("test"))
 	require.NoError(t, err)
 	assert.Equal(t, CreditLotStatusActive, reactivated.Status)
 	assert.InDelta(t, 150, reactivated.RemainingUSD(), 1e-9)
-	assert.InDelta(t, 100*0.6, reactivated.PayableUSD(), 1e-9, "consumption still accrues on an unpaid lot")
+	assert.InDelta(t, 100, reactivated.ConsumedUSD, 1e-9, "what was already drawn stays drawn")
 }
 
 func TestConsumptionDrawsDownAtListPriceAndRetiresOnExhaustion(t *testing.T) {
 	setupCreditSupplyTestDB(t)
 	supplier := seedSupplier(t, "acme")
 	seedSupplierChannel(t, 7)
-	// Set a cost ratio deliberately different from the acquisition rate so
+	// Set a cost ratio deliberately different from the share so
 	// the test can tell list price from upstream cost.
 	listPrice, ok := ratio_setting.ListPriceUSD("claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	require.True(t, ok, "the test model must be in the compiled catalogue")
@@ -247,7 +248,7 @@ func TestConsumptionDrawsDownAtListPriceAndRetiresOnExhaustion(t *testing.T) {
 
 	lot := &CreditLot{
 		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7,
-		FaceValueUSD: listPrice * 2.5, AcquisitionRate: 0.4, LowWaterUSD: listPrice,
+		FaceValueUSD: listPrice * 2.5, RevenueSharePct: 0.4, LowWaterUSD: listPrice,
 		Status: CreditLotStatusActive,
 	}
 	require.NoError(t, CreateCreditLot(lot, "test"))
@@ -259,7 +260,6 @@ func TestConsumptionDrawsDownAtListPriceAndRetiresOnExhaustion(t *testing.T) {
 	fresh, err := GetCreditLotById(lot.Id)
 	require.NoError(t, err)
 	assert.InDelta(t, listPrice, fresh.ConsumedUSD, 1e-9)
-	assert.InDelta(t, listPrice*0.4, fresh.PayableUSD(), 1e-9)
 	assert.Equal(t, CreditLotStatusActive, fresh.Status)
 	assert.Empty(t, events, "well above low water")
 
@@ -317,7 +317,7 @@ func TestConsumptionOnAnExpiredLotRetiresItWithoutDrawing(t *testing.T) {
 	CreditLotEventHook = func(lot CreditLot, event string) { events = append(events, event) }
 
 	lot := &CreditLot{
-		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 1000, AcquisitionRate: 0.5,
+		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 1000, RevenueSharePct: 0.5,
 		ExpiresAt: common.GetTimestamp() + 60, Status: CreditLotStatusActive,
 	}
 	require.NoError(t, CreateCreditLot(lot, "test"))
@@ -337,7 +337,7 @@ func TestConsumptionOnAnExpiredLotRetiresItWithoutDrawing(t *testing.T) {
 	_, err = TransitionCreditLot(lot.Id, approve("test"))
 	require.ErrorIs(t, err, ErrCreditLotTransition, "still expired")
 	require.NoError(t, UpdateCreditLot(lot.Id, &CreditLot{
-		Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 1000, AcquisitionRate: 0.5, ExpiresAt: 0,
+		Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 1000, RevenueSharePct: 0.5, ExpiresAt: 0,
 	}, "test"))
 	back, err := TransitionCreditLot(lot.Id, approve("test"))
 	require.NoError(t, err)
@@ -354,7 +354,7 @@ func TestChannelSupplierLookupAttributesBoundChannels(t *testing.T) {
 	_, _, ok := LookupChannelSupplier(7)
 	assert.False(t, ok, "unbound channels keep their host-derived vendor")
 
-	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 100, AcquisitionRate: 0.5, Status: CreditLotStatusActive}
+	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 100, RevenueSharePct: 0.5, Status: CreditLotStatusActive}
 	require.NoError(t, CreateCreditLot(lot, "test"))
 
 	key, label, ok := LookupChannelSupplier(7)
@@ -388,11 +388,11 @@ func TestCreditSupplyOverviewAggregatesAndFlagsAttention(t *testing.T) {
 	now := common.GetTimestamp()
 
 	require.NoError(t, CreateCreditLot(&CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7,
-		FaceValueUSD: 1000, AcquisitionRate: 0.5, Status: CreditLotStatusActive}, "test"))
+		FaceValueUSD: 1000, RevenueSharePct: 0.5, Status: CreditLotStatusActive}, "test"))
 	require.NoError(t, CreateCreditLot(&CreditLot{SupplierId: supplier.Id, Vendor: "openai", ChannelId: 8,
-		FaceValueUSD: 500, AcquisitionRate: 0.4, ExpiresAt: now + 2*86400, Status: CreditLotStatusActive}, "test"))
+		FaceValueUSD: 500, RevenueSharePct: 0.4, ExpiresAt: now + 2*86400, Status: CreditLotStatusActive}, "test"))
 	pending := &CreditLot{SupplierId: supplier.Id, Vendor: "openai", ChannelId: 9,
-		FaceValueUSD: 200, AcquisitionRate: 0.3, Source: CreditLotSourceSupplier}
+		FaceValueUSD: 200, RevenueSharePct: 0.3, Source: CreditLotSourceSupplier}
 	require.NoError(t, CreateCreditLot(pending, "test"))
 	require.NoError(t, DB.Model(&CreditLot{}).Where("channel_id = 7").Update("consumed_usd", 400).Error)
 
@@ -403,7 +403,6 @@ func TestCreditSupplyOverviewAggregatesAndFlagsAttention(t *testing.T) {
 	assert.InDelta(t, 1700, overview.FaceUSD, 1e-9)
 	assert.InDelta(t, 400, overview.ConsumedUSD, 1e-9)
 	assert.InDelta(t, 1300, overview.RemainingUSD, 1e-9)
-	assert.InDelta(t, 200, overview.PayableUSD, 1e-9)
 	require.Len(t, overview.ByVendor, 2)
 	assert.Equal(t, "anthropic", overview.ByVendor[0].Vendor, "largest face value first")
 	assert.InDelta(t, 700, overview.ByVendor[1].FaceUSD, 1e-9)
@@ -436,7 +435,7 @@ func TestApprovalIsRefusedWithoutTheTransferConfirmation(t *testing.T) {
 	seedSupplierChannel(t, 7)
 	// Operator-entered lots are the only ones approved without a payment, and
 	// then the operator carries the right-to-transfer confirmation.
-	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 100, AcquisitionRate: 0.5, Source: CreditLotSourceAdmin}
+	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 100, RevenueSharePct: 0.5, Source: CreditLotSourceAdmin}
 	require.NoError(t, CreateCreditLot(lot, "portal:user:9"))
 
 	_, err := TransitionCreditLot(lot.Id, CreditLotTransition{To: CreditLotStatusActive, Actor: "root"})
@@ -476,7 +475,7 @@ func TestSecretsAreRefusedInFreeText(t *testing.T) {
 	require.ErrorIs(t, err, ErrCreditLotSecretInText)
 	supplier := seedSupplier(t, "acme")
 	seedSupplierChannel(t, 7)
-	err = CreateCreditLot(&CreditLot{SupplierId: supplier.Id, Vendor: "openai", ChannelId: 7, FaceValueUSD: 10, AcquisitionRate: 0.5, Note: "Bearer eyJhbGciOi..."}, "test")
+	err = CreateCreditLot(&CreditLot{SupplierId: supplier.Id, Vendor: "openai", ChannelId: 7, FaceValueUSD: 10, RevenueSharePct: 0.5, Note: "Bearer eyJhbGciOi..."}, "test")
 	require.ErrorIs(t, err, ErrCreditLotSecretInText)
 	assert.False(t, textLooksLikeProviderSecret("monthly wire, net 15"))
 }
@@ -486,7 +485,7 @@ func TestRetirementLeavesAnAuditEvent(t *testing.T) {
 	supplier := seedSupplier(t, "acme")
 	seedSupplierChannel(t, 7)
 	listPrice, _ := ratio_setting.ListPriceUSD("claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
-	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: listPrice / 2, AcquisitionRate: 0.5, Status: CreditLotStatusActive}
+	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: listPrice / 2, RevenueSharePct: 0.5, Status: CreditLotStatusActive}
 	require.NoError(t, CreateCreditLot(lot, "root"))
 	RecordCreditSupplyConsumption(CreditSupplyUsage{ChannelId: 7, ModelName: "claude-sonnet-5", TokenUsage: ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0}})
 	events, err := GetCreditLotEvents(lot.Id, 0)
@@ -521,7 +520,7 @@ func TestSupplierApplicationBecomesPendingAndCannotSubmitUntilApproved(t *testin
 
 	seedSupplierChannel(t, 7)
 	channel := &Channel{Type: 14, Key: "sk-pending", Name: "pending", Models: "claude-sonnet-5", Group: "default"}
-	lot := &CreditLot{Vendor: "anthropic", FaceValueUSD: 100, AcquisitionRate: 0.5}
+	lot := &CreditLot{Vendor: "anthropic", FaceValueUSD: 100, RevenueSharePct: 0.5}
 	err = SubmitSupplierCreditLot(applied, channel, lot, "user:9")
 	require.ErrorIs(t, err, ErrCreditSupplierSuspended, "pending suppliers cannot submit lots")
 
@@ -546,21 +545,26 @@ func TestCreditSupplyTermsArePostedAndValidated(t *testing.T) {
 	previous := CreditSupplyTerms2JSONString()
 	t.Cleanup(func() { require.NoError(t, UpdateCreditSupplyTermsByJSONString(previous)) })
 	terms := GetCreditSupplyTerms()
-	rate, ok := terms.BuyRate("Anthropic")
+	share, ok := terms.RevenueShareRate("Anthropic")
 	require.True(t, ok)
-	assert.InDelta(t, 0.20, rate, 1e-9, "2折 by default")
-	rate, _ = terms.BuyRate("openai")
-	assert.InDelta(t, 0.30, rate, 1e-9, "3折 by default")
-	_, ok = terms.BuyRate("mistral")
-	assert.False(t, ok, "vendors we do not buy are refused, not bought at 0")
+	assert.InDelta(t, 0.50, share, 1e-9, "五五分 by default")
+	_, ok = terms.RevenueShareRate("mistral")
+	assert.False(t, ok, "a vendor we do not take is refused, not taken at 0")
 
-	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":1.2}}`), "paying more than face value is a typo")
-	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"Anthropic":0.2}}`), "keys are lower-case vendor ids")
-	require.NoError(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":0.25,"openai":0.35},"channel_priority":20,"min_face_usd":50,"platform_credit_bonus":0.1}`))
+	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"revenue_share_rates":{"anthropic":1.2}}`), "keeping more than everything is a typo")
+	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"revenue_share_rates":{"Anthropic":0.5}}`), "keys are lower-case vendor ids")
+	require.NoError(t, UpdateCreditSupplyTermsByJSONString(`{"revenue_share_rates":{}}`), "clearing every vendor pauses intake; it is not a mistake")
+
+	// Buying credits outright is gone: a stored row that still carries the old
+	// keys is not an error, they are simply no longer terms.
+	require.NoError(t, UpdateCreditSupplyTermsByJSONString(
+		`{"buy_rates":{"anthropic":0.25},"platform_credit_bonus":0.1,"revenue_share_rates":{"anthropic":0.55},"channel_priority":20,"min_face_usd":50}`))
 	terms = GetCreditSupplyTerms()
-	assert.InDelta(t, 275, terms.PayoutUSD(1000, 0.25, CreditLotPayoutPlatformCredit), 1e-9, "10% bonus for taking platform credit")
-	assert.InDelta(t, 250, terms.PayoutUSD(1000, 0.25, CreditLotPayoutExternal), 1e-9)
+	share, _ = terms.RevenueShareRate("anthropic")
+	assert.InDelta(t, 0.55, share, 1e-9)
 	assert.EqualValues(t, 20, terms.ChannelPriority)
+	assert.InDelta(t, 50, terms.MinFaceUSD, 1e-9)
+	assert.NotContains(t, CreditSupplyTerms2JSONString(), "buy_rates", "the withdrawn deal is not written back out")
 }
 
 func TestFirstSaleCreatesTheSupplierWithoutAnApplication(t *testing.T) {
@@ -574,42 +578,6 @@ func TestFirstSaleCreatesTheSupplierWithoutAnApplication(t *testing.T) {
 	again, err := EnsureCreditSupplierForUser(&User{Id: 11, Username: "Tel Aviv Labs"})
 	require.NoError(t, err)
 	assert.Equal(t, first.Id, again.Id, "idempotent per login")
-}
-
-func TestVerifiedSaleCannotBeApprovedOnlyPaid(t *testing.T) {
-	setupCreditSupplyTestDB(t)
-	supplier := seedSupplier(t, "seller-one")
-	seedSupplierChannel(t, 7)
-	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 1000, AcquisitionRate: 0.2, Source: CreditLotSourceSupplier, PayoutMethod: CreditLotPayoutExternal, PayoutAccount: "IBAN ..."}
-	require.NoError(t, CreateCreditLot(lot, "user:1"))
-	_, err := TransitionCreditLot(lot.Id, CreditLotTransition{To: CreditLotStatusActive, Actor: "root", TransferRightsConfirmed: true})
-	require.Error(t, err, "a supplier's submission is never activated for free")
-	verified, err := MarkCreditLotVerified(lot.Id, "system", "ok", 0.75)
-	require.NoError(t, err)
-	assert.Equal(t, CreditLotStatusVerified, verified.Status)
-	assert.InDelta(t, 0.75, verified.ConsumedUSD, 1e-9, "the verification's list-price cost is drawn from the lot")
-	assert.InDelta(t, 999.25, verified.RemainingUSD(), 1e-9)
-	_, err = MarkCreditLotVerified(lot.Id, "system", "twice", 0)
-	require.Error(t, err)
-	_, err = TransitionCreditLot(lot.Id, CreditLotTransition{To: CreditLotStatusActive, Actor: "root", TransferRightsConfirmed: true})
-	require.ErrorIs(t, err, ErrCreditLotNeedsPayment)
-	overview, err := GetCreditSupplyOverview()
-	require.NoError(t, err)
-	assert.InDelta(t, 200, overview.AwaitingPaymentUSD, 1e-9)
-	paid, err := PayCreditLot(lot.Id, CreditLotPayment{Actor: "root", Reference: "ref-1"})
-	require.NoError(t, err)
-	assert.Equal(t, CreditLotStatusActive, paid.Status)
-	assert.InDelta(t, 200, paid.PaidUSD, 1e-9)
-	overview, _ = GetCreditSupplyOverview()
-	assert.InDelta(t, 200, overview.PaidUSD, 1e-9)
-	assert.Zero(t, overview.AwaitingPaymentUSD)
-	// Rejecting a verified sale still works and needs a reason.
-	lot2 := &CreditLot{SupplierId: supplier.Id, Vendor: "openai", FaceValueUSD: 500, AcquisitionRate: 0.3, Source: CreditLotSourceSupplier}
-	require.NoError(t, CreateCreditLot(lot2, "user:1"))
-	_, err = MarkCreditLotVerified(lot2.Id, "system", "ok", 0)
-	require.NoError(t, err)
-	_, err = TransitionCreditLot(lot2.Id, CreditLotTransition{To: CreditLotStatusRejected, Actor: "root", Reason: "duplicate of #1"})
-	require.NoError(t, err)
 }
 
 func TestUpdateCreditSupplierIsAPatchThatKeepsTheLogin(t *testing.T) {
@@ -635,12 +603,12 @@ func TestVerifiedLotOwnsItsChannelAndIsFlaggedBeforeExpiry(t *testing.T) {
 	setupCreditSupplyTestDB(t)
 	supplier := seedSupplier(t, "acme")
 	seedSupplierChannel(t, 7)
-	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 500, AcquisitionRate: 0.2, Source: CreditLotSourceSupplier, ExpiresAt: common.GetTimestamp() + 3*86400}
+	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 500, RevenueSharePct: 0.2, Source: CreditLotSourceSupplier, ExpiresAt: common.GetTimestamp() + 3*86400}
 	require.NoError(t, CreateCreditLot(lot, "user:1"))
 	_, err := MarkCreditLotVerified(lot.Id, "system", "ok", 0)
 	require.NoError(t, err)
 	// A verified sale is awaiting payment: its channel is taken.
-	second := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 100, AcquisitionRate: 0.2}
+	second := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 100, RevenueSharePct: 0.2}
 	require.ErrorIs(t, CreateCreditLot(second, "root"), ErrCreditLotChannelBound)
 	overview, err := GetCreditSupplyOverview()
 	require.NoError(t, err)
@@ -655,7 +623,7 @@ func TestRejectingASupplierSaleDeletesItsChannel(t *testing.T) {
 	setupCreditSupplyTestDB(t)
 	supplier := seedSupplier(t, "acme")
 	seedSupplierChannel(t, 7)
-	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 500, AcquisitionRate: 0.2, Source: CreditLotSourceSupplier}
+	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 500, RevenueSharePct: 0.2, Source: CreditLotSourceSupplier}
 	require.NoError(t, CreateCreditLot(lot, "user:1"))
 	_, err := MarkCreditLotVerified(lot.Id, "system", "ok", 0)
 	require.NoError(t, err)
@@ -668,7 +636,7 @@ func TestRejectingASupplierSaleDeletesItsChannel(t *testing.T) {
 
 	// An operator-entered lot keeps its channel (the operator owns that key).
 	seedSupplierChannel(t, 8)
-	own := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 8, FaceValueUSD: 500, AcquisitionRate: 0.2}
+	own := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 8, FaceValueUSD: 500, RevenueSharePct: 0.2}
 	require.NoError(t, CreateCreditLot(own, "root"))
 	_, err = TransitionCreditLot(own.Id, CreditLotTransition{To: CreditLotStatusRejected, Actor: "root", Reason: "entered twice"})
 	require.NoError(t, err)
@@ -680,7 +648,7 @@ func TestActiveLotWithAutoDisabledChannelNeedsAttention(t *testing.T) {
 	setupCreditSupplyTestDB(t)
 	supplier := seedSupplier(t, "acme")
 	seedSupplierChannel(t, 7)
-	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 500, AcquisitionRate: 0.2}
+	lot := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7, FaceValueUSD: 500, RevenueSharePct: 0.2}
 	require.NoError(t, CreateCreditLot(lot, "root"))
 	_, err := TransitionCreditLot(lot.Id, approve("root"))
 	require.NoError(t, err)
@@ -746,7 +714,7 @@ func TestPayoutAccountIsRequiredValidatedAndPatchSafe(t *testing.T) {
 	assert.Equal(t, CreditLotPayoutPlatformCredit, got.ExternalPayoutMethod())
 }
 
-func TestVerifiedShareLotActivatesWithoutAClickButABoughtLotDoesNot(t *testing.T) {
+func TestAVerifiedKeyActivatesWithoutAClickButAnUnverifiedOneDoesNot(t *testing.T) {
 	setupCreditSupplyTestDB(t)
 	supplier := seedSupplier(t, "acme")
 	seedSupplierChannel(t, 7)
@@ -761,13 +729,13 @@ func TestVerifiedShareLotActivatesWithoutAClickButABoughtLotDoesNot(t *testing.T
 	assert.Equal(t, common.ChannelStatusEnabled, channel.Status)
 	assert.InDelta(t, 0.5, ratio_setting.GetChannelCostRatio(7), 1e-9)
 
+	// An unverified key never auto-activates: the request through it is the
+	// whole point of the check.
 	seedSupplierChannel(t, 8)
-	bought := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 8, FaceValueUSD: 500, AcquisitionRate: 0.2, Source: CreditLotSourceSupplier, PayoutMethod: CreditLotPayoutExternal, PayoutAccount: "x"}
-	require.NoError(t, CreateCreditLot(bought, "user:1"))
-	_, err = MarkCreditLotVerified(bought.Id, "system", "ok", 0)
-	require.NoError(t, err)
-	_, err = ActivateVerifiedShareLot(bought.Id, "system")
-	require.Error(t, err, "a purchase is activated by paying for it, never automatically")
+	unverified := &CreditLot{SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 8, FaceValueUSD: 500, RevenueSharePct: 0.5, Source: CreditLotSourceSupplier, PayoutMethod: CreditLotPayoutExternal, PayoutAccount: "x"}
+	require.NoError(t, CreateCreditLot(unverified, "user:1"))
+	_, err = ActivateVerifiedShareLot(unverified.Id, "system")
+	require.Error(t, err, "a key that has not answered a request does not go live")
 }
 
 func TestSupplierChannelsStayOutOfPromotionalPoolGroups(t *testing.T) {
@@ -809,12 +777,12 @@ func TestALegacyTermsRowDoesNotShipTheFeatureInert(t *testing.T) {
 	// blocks every submission while passing every validation rule.
 	assert.InDelta(t, 100, terms.MinFaceUSD, 1e-9)
 
-	// ...and the terms the operator really did post survive the repair. This is
-	// why one bad field must not reject the document: these are live buy rates.
-	assert.InDelta(t, 0.25, terms.BuyRates["anthropic"], 1e-9)
-	assert.InDelta(t, 0.12, terms.BuyRates["google"], 1e-9)
-	assert.InDelta(t, 0.15, terms.BuyRates["openai"], 1e-9)
+	// ...and the terms the operator really did post survive the repair, which
+	// is why one bad field must not reject the whole document. The row's
+	// buy_rates and its "vendors" array are simply not terms any more and are
+	// ignored without complaint.
 	assert.EqualValues(t, 10, terms.ChannelPriority)
+	assert.NotContains(t, CreditSupplyTerms2JSONString(), "buy_rates")
 	assert.False(t, terms.ManualReview, "absent manual_review is the default, not a lock")
 }
 

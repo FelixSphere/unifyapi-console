@@ -144,7 +144,7 @@ func TestSubmissionUnderManualReviewWaitsDisabledUntilAccepted(t *testing.T) {
 	assert.Zero(t, channelCount, "a refused submission leaves no channel behind")
 
 	c, recorder = portalContext(t, 42, http.MethodPost, "/api/supplier/lots", `{
-		"vendor":"anthropic","face_value_usd":1000,"acquisition_rate":0.5,"deal_type":"purchase",
+		"vendor":"anthropic","face_value_usd":1000,"ignored_acquisition_rate":0.5,"deal_type":"purchase",
 		"upstream_key":"sk-ant-supplier-key","models":["claude-sonnet-5"],
 		"note":"startup credits","transfer_rights_confirmed":true
 	}`)
@@ -244,9 +244,9 @@ func TestSupplierSeesOnlyTheirOwnStatementsAndUsage(t *testing.T) {
 	require.NoError(t, model.DB.Create(&model.Channel{Id: 1, Key: "k", Name: "a", Status: 1, Models: "claude-sonnet-5", Group: "default"}).Error)
 	require.NoError(t, model.DB.Create(&model.Channel{Id: 2, Key: "k", Name: "b", Status: 1, Models: "claude-sonnet-5", Group: "default"}).Error)
 	require.NoError(t, model.DB.Create(&model.Channel{Id: 3, Key: "k", Name: "c", Status: 1, Models: "claude-sonnet-5", Group: "default"}).Error)
-	lotA := &model.CreditLot{SupplierId: acme.Id, Vendor: "anthropic", ChannelId: 1, FaceValueUSD: 100, AcquisitionRate: 0.5, Status: "active"}
-	lotB := &model.CreditLot{SupplierId: acme.Id, Vendor: "anthropic", ChannelId: 2, FaceValueUSD: 100, AcquisitionRate: 0.5, Status: "active"}
-	lotOther := &model.CreditLot{SupplierId: other.Id, Vendor: "anthropic", ChannelId: 3, FaceValueUSD: 100, AcquisitionRate: 0.5, Status: "active"}
+	lotA := &model.CreditLot{SupplierId: acme.Id, Vendor: "anthropic", ChannelId: 1, FaceValueUSD: 100, RevenueSharePct: 0.5, Status: "active"}
+	lotB := &model.CreditLot{SupplierId: acme.Id, Vendor: "anthropic", ChannelId: 2, FaceValueUSD: 100, RevenueSharePct: 0.5, Status: "active"}
+	lotOther := &model.CreditLot{SupplierId: other.Id, Vendor: "anthropic", ChannelId: 3, FaceValueUSD: 100, RevenueSharePct: 0.5, Status: "active"}
 	for _, lot := range []*model.CreditLot{lotA, lotB, lotOther} {
 		require.NoError(t, model.CreateCreditLot(lot, "test"))
 	}
@@ -348,10 +348,6 @@ func TestSellingIsShareOnlyVerifiedAndLiveAtOnce(t *testing.T) {
 	var logs int64
 	require.NoError(t, model.DB.Model(&model.Log{}).Count(&logs).Error)
 	assert.Zero(t, logs, "a verification is not revenue")
-
-	// There is no purchase to pay for, and nothing waiting to be paid.
-	_, err = model.PayCreditLot(lotId, model.CreditLotPayment{Actor: "root"})
-	require.Error(t, err)
 
 	// Customers buy $80 through it: the seller sees what it sold for and their half.
 	model.RecordCreditSupplyConsumption(model.CreditSupplyUsage{
@@ -505,17 +501,23 @@ func TestContributingAKeyTakesAShareInsteadOfAPayment(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, recorder.Code, "a settled balance cannot be settled again")
 }
 
-func TestOperatorTermsIncludeBuyRatesButSellerTermsDoNot(t *testing.T) {
+func TestBothTermsEndpointsOfferOnlyTheShare(t *testing.T) {
 	setupSupplierPortalTest(t)
+	// Buying credits outright was withdrawn, so no endpoint quotes a buy rate
+	// to anybody. The operator's copy carries the terms a seller has no
+	// business seeing; the seller's copy carries the offer.
 	c, recorder := portalContext(t, 1, http.MethodGet, "/api/credit-supply/terms", "")
 	GetCreditSupplyTermsAdmin(c)
 	admin := recorder.Body.String()
-	assert.Contains(t, admin, `"buy_rates"`)
+	assert.NotContains(t, admin, `"buy_rates"`)
+	assert.NotContains(t, admin, `"platform_credit_bonus"`)
 	assert.Contains(t, admin, `"revenue_share_rates"`)
 	assert.Contains(t, admin, `"manual_review"`)
+
 	c, recorder = portalContext(t, 42, http.MethodGet, "/api/supplier/terms", "")
 	GetSupplierTerms(c)
 	seller := recorder.Body.String()
 	assert.NotContains(t, seller, `"buy_rates"`)
+	assert.Contains(t, seller, `"manual_review"`, "a seller is told whether their key goes live at once")
 	assert.Contains(t, seller, `"revenue_share_rates"`)
 }
