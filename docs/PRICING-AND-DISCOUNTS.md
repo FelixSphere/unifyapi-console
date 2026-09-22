@@ -430,25 +430,38 @@ models.dev 上查不到官方价的，加 `Unverified: true`，并在行尾注�
 
 ## 五、厂商改价时
 
-`scripts/pricing-drift` 每周一 06:00 UTC 跑一次（`.github/workflows/pricing-drift.yml`），
-发现漂移就开 issue（已有 open issue 就追加评论，不重复开）。
+`scripts/pricing-drift` **每天** 06:00 UTC 跑一次（`.github/workflows/pricing-drift.yml`）：
 
-**它不会自动改价。** 改官方价会在部署那一刻改变所有客户的账单，这必须有人拍。
+1. 拉 models.dev 实时价，和目录逐字段比对；
+2. 拉公开的 `GET /api/pricing`，标出哪些漂移的模型**正在售卖**（在某个启用渠道上）——报告里带 `[on sale]`；
+3. 有漂移就用 `-fix` 把目录**源码**改到厂商现价（go/ast 精确改写对应字段，注释、行序、其他行一字不动），
+   同时刷新离线 fixture、bump `PricingSnapshotDate`，然后开一个 **draft PR**（分支 `pricing-drift/auto`，
+   已有就原地更新）。PR 正文按「在售模型的改价 → 未上架模型的改价 → 需要人决定的项」排列，并附基线测试结果。
+
+**它不会 merge，也不碰生产。** 改官方价会在部署那一刻改变所有客户的账单，merge 就是那个决定。
+新价上线后，console 的日任务会给近 30 天用过该模型的客户发邮件（见下一节）。
+
+merge 前要看的三件事，PR 正文里也列了：
+
+- **涨价先问毛利吃不吃得下**：`GET /api/pricing/reconcile?group_by=model` 看受影响模型；吃不下就同步调 `ModelDiscount`，或接受毛利下降。
+- **基线测试红了是设计如此**：`TestPinnedDollarsForTheModelsThatCarryTheTraffic` 和若干测试里手抄了厂商美元数，就是为了让表不能给自己作证。有流量的模型动了价，人去厂商页面重读、在同一个 PR 里更新那些数字；如果厂商页面和 models.dev 不一致，以页面为准——给那行加 `QuoteSource`/`QuoteDate`，而不是 merge 这个 PR。自动化刻意不碰这些测试。
+- **「Needs a decision」里的项不在 diff 里**：模型下架、价格撤回，是删行还是标 `Unverified` 写明原因，在这个分支上补一个 commit。
+
+有手抄报价（`QuoteDate`）的行不会被自动改：目录里那个数是刻意选的，feed 落后时报 `feed-stale`，等 feed 追上再清掉 QuoteSource/QuoteDate。
 
 ```bash
 # 本地手查
 go run ./scripts/pricing-drift
-go run ./scripts/pricing-drift -json      # 机器可读
+go run ./scripts/pricing-drift -json                                    # 机器可读
+go run ./scripts/pricing-drift -served https://app.unifyapi.ai/api/pricing   # 标出在售模型
+# 本地复现自动化会开的 PR（只改工作区源码，不改任何配置）
+go run ./scripts/pricing-drift -fix -snapshot-date $(date -u +%F) \
+  -fixture-out scripts/pricing-drift/testdata/models-dev-$(date -u +%F).json -pr-body /tmp/pr.md
 ```
 
-**厂商涨价时要先问一句**：这个模型现在的毛利吃得下吗？
-
-```bash
-curl -s "$CONSOLE/api/pricing/reconcile?start=...&end=...&group_by=model" | \
-  jq '.data.lines[] | select(.label=="claude-opus-5")'
-```
-
-毛利已经很薄的模型吃不下涨价——那就得同步调 `ModelDiscount`，或者接受毛利下降。
+> 用默认 `GITHUB_TOKEN` 开的 PR 不会触发仓库自己的 `pull_request` 工作流。配一个 fine-grained PAT
+> 到 secret `PRICING_DRIFT_PAT`（contents + pull-requests 写权限），PR 就会带完整 CI；不配也能开 PR，
+> 只是要有人往分支推一下才跑 CI。
 
 ---
 
