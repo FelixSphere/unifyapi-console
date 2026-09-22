@@ -198,6 +198,7 @@ const endpointTypeOptions: Array<{ value: string; label: string }> = [
     label: 'Image Generation (/v1/images/generations)',
   },
   { value: 'embeddings', label: 'Embeddings (/v1/embeddings)' },
+  { value: 'system-one', label: 'TypeSafe System One (/v1/systemone)' },
 ]
 
 const endpointSelectContentClass = 'w-[460px] max-w-[calc(100vw-2rem)]'
@@ -209,6 +210,8 @@ const STREAM_INCOMPATIBLE_ENDPOINTS = new Set([
   'image-generation',
   'jina-rerank',
   'openai-response-compact',
+  // A decision model returns one typed answer; there is nothing to stream.
+  'system-one',
 ])
 
 const MODEL_PRICE_ERROR_CODE = 'model_price_error'

@@ -234,6 +234,8 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 			relayFormat = types.RelayFormatOpenAIImage
 		case constant.EndpointTypeEmbeddings:
 			relayFormat = types.RelayFormatEmbedding
+		case constant.EndpointTypeSystemOne:
+			relayFormat = types.RelayFormatSystemOne
 		default:
 			relayFormat = types.RelayFormatOpenAI
 		}
@@ -261,6 +263,14 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		if strings.HasPrefix(c.Request.URL.Path, "/v1/responses/compact") {
 			relayFormat = types.RelayFormatOpenAIResponsesCompaction
 		}
+	}
+
+	// A TypeSafe channel serves System One and nothing else, so testing it as
+	// chat would fail on a channel that is perfectly healthy -- and "Auto
+	// detect" would do exactly that. The channel type settles the format here
+	// rather than leaving it to a dropdown nobody should have to think about.
+	if channel.Type == constant.ChannelTypeTypeSafe {
+		relayFormat = types.RelayFormatSystemOne
 	}
 
 	request := buildTestRequest(testModel, endpointType, channel, isStream)
@@ -400,6 +410,16 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 				newAPIError: types.NewError(errors.New("invalid response compaction request type"), types.ErrorCodeConvertRequestFailed),
 			}
 		}
+	case relayconstant.RelayModeSystemOne:
+		// Nothing to convert: a System One request goes upstream as written.
+		if _, ok := request.(*dto.SystemOneRequest); !ok {
+			return testResult{
+				context:     c,
+				localErr:    errors.New("invalid system one request type"),
+				newAPIError: types.NewError(errors.New("invalid system one request type"), types.ErrorCodeConvertRequestFailed),
+			}
+		}
+		convertedRequest = request
 	default:
 		// Chat/Completion 等其他请求类型
 		if generalReq, ok := request.(*dto.GeneralOpenAIRequest); ok {
@@ -727,8 +747,30 @@ func detectErrorMessageFromJSONBytes(jsonBytes []byte) string {
 	return message
 }
 
+// systemOneTestRequest is the smallest valid System One call: one yes/no
+// question over a one-word state, so a connectivity test costs a few input
+// tokens and nothing else.
+func systemOneTestRequest(model string) dto.Request {
+	return &dto.SystemOneRequest{
+		Model: model,
+		State: "ping",
+		Questions: map[string]any{
+			"reachable": map[string]any{
+				"type":         "noul",
+				"instructions": "Is this a connectivity test?",
+				"criteria":     map[string]any{"true": "yes", "false": "no"},
+			},
+		},
+	}
+}
+
 func buildTestRequest(model string, endpointType string, channel *model.Channel, isStream bool) dto.Request {
 	testResponsesInput := json.RawMessage(`[{"role":"user","content":"hi"}]`)
+
+	// A TypeSafe channel has no chat surface to test; see testChannel.
+	if channel != nil && channel.Type == constant.ChannelTypeTypeSafe {
+		return systemOneTestRequest(model)
+	}
 
 	// 根据端点类型构建不同的测试请求
 	if endpointType != "" {
@@ -739,6 +781,8 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 				Model: model,
 				Input: []any{"hello world"},
 			}
+		case constant.EndpointTypeSystemOne:
+			return systemOneTestRequest(model)
 		case constant.EndpointTypeImageGeneration:
 			// 返回 ImageRequest
 			return &dto.ImageRequest{
