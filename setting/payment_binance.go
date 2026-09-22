@@ -22,6 +22,7 @@ package setting
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -124,6 +125,23 @@ var binanceNetworkAliases = map[string]string{
 	"OPTIMISM": "OPTIMISM", "OP": "OPTIMISM",
 	"AVAXC": "AVAXC", "AVAX": "AVAXC",
 	"TON": "TON", "APT": "APT", "BASE": "BASE",
+}
+
+// KnownBinanceNetworks lists the canonical network codes this console
+// understands, sorted so the list is stable wherever it is rendered. It is the
+// fallback for a feature that needs *a* network list when the operator has not
+// named one for an account.
+func KnownBinanceNetworks() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, code := range binanceNetworkAliases {
+		if !seen[code] {
+			seen[code] = true
+			out = append(out, code)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // NormalizeBinanceNetwork turns "TRC20" / "Tron" / "trx" into "TRX".

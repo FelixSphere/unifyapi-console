@@ -162,12 +162,43 @@ debited, and that gift is our marketing cost, not the seller's.
 ### The seller's flow
 
 1. **Payout account first.** Before anything else the seller files where their
-   share goes (`PUT /api/supplier/payout-account`): platform credit (the
-   wallet behind their login), or bank / PayPal / Wise / crypto with the
-   account holder and details in their own words, plus a currency. Nothing is
-   paid up front, so the account has to be on record before the first dollar
-   is owed. A submission without one is refused with
-   `code: payout_account_required`, which the page turns into the account form.
+   share goes (`PUT /api/supplier/payout-account`). Nothing is paid up front,
+   so the account has to be on record before the first dollar is owed. A
+   submission without one is refused with `code: payout_account_required`,
+   which the page turns into the account form.
+
+   The choices are **the platform's own payment methods**, not a list invented
+   for this feature, and they are served by the API
+   (`payout_rails` on `GET /api/supplier/me` and `GET /api/supplier/terms`)
+   rather than kept in the client:
+
+   | rail | needs | available when |
+   |---|---|---|
+   | `platform_credit` | nothing — the login is the account | always, if the supplier has a login |
+   | `bank_transfer` | holder + account details, any currency | always — a wire needs no gateway |
+   | `binance_pay` | holder + Binance Pay ID, settles in `BinancePayCurrency` | the binance.com account is on and has credentials |
+   | `binance_pay_us` | holder + network + address, settles in `BinancePayCurrency` | the Binance.US account is on and has credentials |
+   | `stripe` | — | **never** |
+
+   Three consequences are deliberate:
+
+   - Switching a Binance account off in **Payment Settings** stops offering it
+     as a payout rail. One switch, both directions.
+   - **Stripe is listed and permanently unavailable**, with the reason on
+     screen: Stripe moves money *in*. Paying a seller through it needs Stripe
+     Connect and a connected account per seller, which this platform does not
+     have. Listing it with the reason is honest; leaving it out looks like an
+     oversight, and offering it would be a promise we cannot keep.
+   - A rail that is switched off **stays usable for whoever already filed it**,
+     and still appears in their own picker. Otherwise editing an address would
+     throw away the rail they are being paid on, as a side effect of an
+     operator toggling a gateway.
+
+   An on-chain rail stores its details canonically as `<NETWORK>:<address>`;
+   the network must be one the operator named for that account and the address
+   must look like an address, checked before any money moves. The rails filed
+   before this change (`bank`, `paypal`, `wise`, `crypto`) still read — `bank`
+   is the same wire as `bank_transfer` — but none of them can be newly chosen.
 2. **Submit the key.** Vendor (the share is shown before anything is typed),
    the credit balance on the key at list price, optional expiry, the API key
    (write-only), optional model narrowing (never beyond our catalogue), and the
@@ -219,8 +250,8 @@ spend or revoke it in their own vendor account at any moment.
 - **Supply terms** — post and adjust the share per vendor, the basis, the
   minimum payout, the minimum balance, channel priority and manual review.
 - **Suppliers** — each seller with lots, drawn down, **revenue share owed**,
-  and their payout account (method and masked details in the table, in full in
-  the edit dialog: root is the one who has to send the money). **Pay revenue
+  and their payout account (the rail's name and masked details in the table,
+  in full in the edit dialog: root is the one who has to send the money). **Pay revenue
   share** settles everything a seller is owed across all their lots in one
   transaction (`POST /api/credit-supply/suppliers/:id/share-payout`): platform
   credit lands in their wallet inside it; an external transfer needs the

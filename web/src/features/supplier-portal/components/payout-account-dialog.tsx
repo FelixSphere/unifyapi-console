@@ -10,6 +10,11 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 // UNIFYAPI-FORK: where a seller's share is paid. Filed before the first sale,
 // because with a share deal nothing is paid up front and the account has to be
 // on record before the first dollar is owed rather than chased afterwards.
+//
+// The rails come from the server, which derives them from Payment Settings --
+// the same list, and the same names, the person sees when they top up. There
+// is deliberately no copy of that list here: a client-side copy is a copy that
+// drifts, and it would keep offering a rail after the operator switched it off.
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
@@ -25,47 +30,51 @@ import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 
 import {
-  PAYOUT_METHOD_LABELS,
   updateSupplierPayoutAccount,
+  type PayoutRail,
   type SupplierPayoutAccount,
-  type SupplierPayoutMethod,
 } from '../api'
-
-const DETAIL_HINTS: Record<SupplierPayoutMethod, string> = {
-  platform_credit: '',
-  bank: 'Bank name, IBAN or account number, SWIFT/BIC, and your address if your bank needs it.',
-  paypal: 'The e-mail address of your PayPal account.',
-  wise: 'The e-mail on your Wise account, or the account details Wise shows you.',
-  crypto: 'Wallet address and network (e.g. USDT on TRON, USDC on Base).',
-}
+import { splitOnChain } from '../lib/payout'
 
 export function PayoutAccountDialog({
   open,
   onOpenChange,
   current,
+  rails,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   current: SupplierPayoutAccount | null
+  rails: PayoutRail[]
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [form, setForm] = useState<SupplierPayoutAccount>({
-    method: 'platform_credit',
+    method: '',
     holder: '',
     details: '',
     currency: 'USD',
   })
+  const [network, setNetwork] = useState('')
+
+  // The seller's own rail is always among the options, even once it is no
+  // longer offered: the server sends it back for exactly that reason. Falling
+  // back to the first available rail would silently move somebody off the
+  // account they are being paid on.
+  const firstAvailable = rails.find((rail) => rail.available)?.id ?? ''
   useEffect(() => {
-    if (open) {
-      setForm({
-        method: current?.method || 'platform_credit',
-        holder: current?.holder ?? '',
-        details: current?.details ?? '',
-        currency: current?.currency || 'USD',
-      })
-    }
-  }, [open, current])
+    if (!open) return
+    const method = current?.method || firstAvailable
+    const details = current?.details ?? ''
+    const parsed = splitOnChain(details)
+    setForm({
+      method,
+      holder: current?.holder ?? '',
+      details,
+      currency: current?.currency || 'USD',
+    })
+    setNetwork(parsed.network)
+  }, [open, current, firstAvailable])
 
   const mutation = useMutation({
     mutationFn: updateSupplierPayoutAccount,
@@ -77,21 +86,48 @@ export function PayoutAccountDialog({
     onError: (error: Error) => toast.error(error.message),
   })
 
-  const external = form.method !== 'platform_credit'
+  const rail = rails.find((entry) => entry.id === form.method)
+  const onChain = Boolean(rail?.networks?.length)
+  const address = onChain ? splitOnChain(form.details).address : form.details
+
+  const setAddress = (value: string) =>
+    setForm((previous) => ({
+      ...previous,
+      details: network ? `${network}:${value.trim()}` : value.trim(),
+    }))
+  const setNetworkAndDetails = (value: string) => {
+    setNetwork(value)
+    setForm((previous) => ({
+      ...previous,
+      details: `${value}:${splitOnChain(previous.details).address}`,
+    }))
+  }
+
   const submit = () => {
-    if (!form.method) {
+    if (!rail) {
       toast.error(t('Choose how you want to be paid.'))
       return
     }
-    if (external && (form.holder.trim() === '' || form.details.trim() === '')) {
+    if (!rail.available && rail.id !== current?.method) {
+      toast.error(rail.unavailable_reason || t('That method is unavailable.'))
+      return
+    }
+    if (
+      rail.needs_account &&
+      (form.holder.trim() === '' || address.trim() === '')
+    ) {
       toast.error(t('Enter the account holder and the account details.'))
       return
     }
+    if (onChain && !network) {
+      toast.error(t('Choose the network to send on.'))
+      return
+    }
     mutation.mutate({
-      method: form.method,
+      method: rail.id,
       holder: form.holder.trim(),
       details: form.details.trim(),
-      currency: form.currency.trim().toUpperCase() || 'USD',
+      currency: rail.currency || form.currency.trim().toUpperCase() || 'USD',
     })
   }
 
@@ -125,23 +161,35 @@ export function PayoutAccountDialog({
           <NativeSelect
             value={form.method}
             onChange={(event) =>
-              setForm({
-                ...form,
-                method: event.target.value as SupplierPayoutMethod,
-              })
+              setForm({ ...form, method: event.target.value })
             }
             data-testid='payout-method'
           >
-            {(Object.keys(PAYOUT_METHOD_LABELS) as SupplierPayoutMethod[]).map(
-              (method) => (
-                <NativeSelectOption key={method} value={method}>
-                  {t(PAYOUT_METHOD_LABELS[method])}
-                </NativeSelectOption>
-              )
-            )}
+            {rails.map((entry) => (
+              <NativeSelectOption
+                key={entry.id}
+                value={entry.id}
+                // An unavailable rail is shown rather than hidden so its
+                // absence is explained, not guessed at -- except the one the
+                // seller is already on, which stays selectable.
+                disabled={
+                  entry.available ? undefined : entry.id !== current?.method
+                }
+              >
+                {t(entry.label)}
+                {entry.available ? '' : ` — ${t('unavailable')}`}
+              </NativeSelectOption>
+            ))}
           </NativeSelect>
         </Field>
-        {external ? (
+        {rail && !rail.available && rail.unavailable_reason ? (
+          <Alert>
+            <AlertDescription className='text-sm'>
+              {t(rail.unavailable_reason)}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        {rail?.needs_account ? (
           <>
             <Field label={t('Account holder')}>
               <Input
@@ -154,34 +202,74 @@ export function PayoutAccountDialog({
                 }
               />
             </Field>
-            <Field label={t('Account details')}>
-              <Textarea
-                rows={3}
-                value={form.details}
-                placeholder={t(
-                  DETAIL_HINTS[form.method as SupplierPayoutMethod] ?? ''
-                )}
-                onChange={(event) =>
-                  setForm({ ...form, details: event.target.value })
-                }
-              />
-            </Field>
+            {onChain ? (
+              <>
+                <Field label={t('Network')}>
+                  <NativeSelect
+                    value={network}
+                    onChange={(event) =>
+                      setNetworkAndDetails(event.target.value)
+                    }
+                    data-testid='payout-network'
+                  >
+                    <NativeSelectOption value=''>
+                      {t('Choose a network')}
+                    </NativeSelectOption>
+                    {rail.networks?.map((code) => (
+                      <NativeSelectOption key={code} value={code}>
+                        {code}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                </Field>
+                <Field label={t('Receiving address')}>
+                  <Input
+                    value={address}
+                    data-testid='payout-address'
+                    placeholder={t(
+                      'Paste the address exactly as your wallet shows it'
+                    )}
+                    onChange={(event) => setAddress(event.target.value)}
+                  />
+                </Field>
+              </>
+            ) : (
+              <Field label={t('Account details')}>
+                <Textarea
+                  rows={3}
+                  value={form.details}
+                  placeholder={t(rail.hint ?? '')}
+                  onChange={(event) =>
+                    setForm({ ...form, details: event.target.value })
+                  }
+                />
+              </Field>
+            )}
             <Field label={t('Currency')}>
-              <Input
-                value={form.currency}
-                maxLength={5}
-                className='w-28 uppercase'
-                onChange={(event) =>
-                  setForm({ ...form, currency: event.target.value })
-                }
-              />
+              {rail.currency ? (
+                <p className='text-muted-foreground text-sm'>
+                  {t('{{currency}} — set by this payout method, not by you.', {
+                    currency: rail.currency,
+                  })}
+                </p>
+              ) : (
+                <Input
+                  value={form.currency}
+                  maxLength={5}
+                  className='w-28 uppercase'
+                  onChange={(event) =>
+                    setForm({ ...form, currency: event.target.value })
+                  }
+                />
+              )}
             </Field>
           </>
         ) : (
           <Alert>
             <AlertDescription className='text-sm'>
               {t(
-                'Your share is added to the balance of this UnifyAPI account each time we settle. No details needed.'
+                rail?.hint ??
+                  'Your share is added to the balance of this UnifyAPI account each time we settle. No details needed.'
               )}
             </AlertDescription>
           </Alert>
