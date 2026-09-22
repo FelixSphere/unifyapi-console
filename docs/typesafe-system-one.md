@@ -81,6 +81,11 @@ typed questions，任何映射都只能是我们发明的，客户却要为这�
 state 为 `ping`），而不是聊天请求——端点类型选"自动检测"即可，选错也没关系，渠道类型说了算。
 下拉里也有一项 `TypeSafe System One (/v1/systemone)`，手动选它是同样的效果。
 
-早期版本没有这条：测试会按聊天请求发出去，被适配器按设计拒绝，于是一个健康的渠道显示
-测试失败，错误信息是 `typesafe serves System One requests at /v1/systemone`。看到这条说明
-跑的是修复前的版本。
+早期版本有两个先后暴露的问题，看到对应错误说明跑的是修复前的版本：
+
+- `typesafe serves System One requests at /v1/systemone` —— 测试按聊天请求发出，被适配器
+  按设计拒绝（v0.1.107 修复）。
+- `invalid relay format` —— `GenRelayInfo` 里没有这个格式的分支，**任何**经过鉴权的
+  `/v1/systemone` 请求都会在这一步失败，不只是渠道测试。未鉴权探测返回 401 是鉴权中间件
+  挡下的，走不到这一层，所以当时没暴露出来。现在有一个守卫测试扫描路由表，要求每个对外
+  分发的 relay format 都必须有对应分支。

@@ -388,6 +388,16 @@ func GenRelayInfoRerank(c *gin.Context, request *dto.RerankRequest) *RelayInfo {
 	return info
 }
 
+// GenRelayInfoSystemOne builds the info for a TypeSafe System One evaluation.
+// It carries no extra sub-info: the request is forwarded verbatim and the
+// billing numbers come from the vendor's own usage.
+func GenRelayInfoSystemOne(c *gin.Context, request *dto.SystemOneRequest) *RelayInfo {
+	info := genBaseRelayInfo(c, request)
+	info.RelayMode = relayconstant.RelayModeSystemOne
+	info.RelayFormat = types.RelayFormatSystemOne
+	return info
+}
+
 func GenRelayInfoOpenAIAudio(c *gin.Context, request dto.Request) *RelayInfo {
 	info := genBaseRelayInfo(c, request)
 	info.RelayFormat = types.RelayFormatOpenAIAudio
@@ -593,6 +603,12 @@ func GenRelayInfo(c *gin.Context, relayFormat types.RelayFormat, request dto.Req
 			break
 		}
 		err = errors.New("request is not a RerankRequest")
+	case types.RelayFormatSystemOne:
+		if request, ok := request.(*dto.SystemOneRequest); ok {
+			info = GenRelayInfoSystemOne(c, request)
+			break
+		}
+		err = errors.New("request is not a SystemOneRequest")
 	case types.RelayFormatGemini:
 		info = GenRelayInfoGemini(c, request)
 	case types.RelayFormatEmbedding:
