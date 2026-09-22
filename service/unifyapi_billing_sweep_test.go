@@ -211,6 +211,7 @@ func TestPinnedDollarsForTheModelsThatCarryTheTraffic(t *testing.T) {
 	// model -> what 1M input + 1M output costs at the vendor's list price.
 	pinned := map[string]float64{
 		"claude-opus-4-8":   5 + 25,      // Anthropic $5 / $25
+		"claude-opus-5-5":   4 + 20,      // Anthropic $4 / $20, page read 2026-09-22
 		"claude-sonnet-5":   2 + 10,      // Anthropic $2 / $10
 		"gpt-4o":            2.5 + 10,    // OpenAI $2.50 / $10
 		"gpt-5-mini":        0.25 + 2,    // OpenAI $0.25 / $2
