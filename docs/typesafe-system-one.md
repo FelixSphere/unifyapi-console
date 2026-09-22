@@ -36,6 +36,12 @@ curl https://app.unifyapi.ai/v1/systemone \
 请求体和响应体**原样透传**。我们只在渠道配置了模型重命名时改写 `model` 字段，其余
 字段一个不动——包括 TypeSafe 以后新增的字段。
 
+改写 `model` 时 `state` 里的**数字保持原文**。决策模型的输入就是客户的业务状态，数字是数据
+本身；按常规方式解成 `any` 会把每个数字变成 float64，再编码回去就变了样：id `9007199254740993`
+会变成 `...992`，`12345678901234567890` 会丢掉末尾三位。客户会为一次针对他们没发过的数字做出的
+判断付费，而且全链路不会有任何提示。解码用 `UseNumber`，每个数字保留客户写的那串字符。
+唯一不保留的是键的顺序，而 JSON 的键序不承载语义。
+
 问题类型有三种：`noul`（是/否）、`choice`（多选一）、`score`（按档位打分）。完整语义见
 厂商文档 <https://docs.typesafe.ai/api>。
 
@@ -94,45 +100,6 @@ POST https://router.flatkey.ai/api/zzz-control       -> 301  （对照组）
 *我试过的那些路径*不存在，永远证明不了端点不存在——穷举猜测无法证否。真实路径是
 `/api/alpha/decisions`，"decisions"这个词根本不在我的猜测集合里。**路径要向上游要，不要靠猜；
 穷举猜不中只说明猜错了，不说明东西不在。**
-
-### OpenRouter 这条核实到什么程度（别把话说满）
-
-已证实的：`https://openrouter.ai/api/v1/systemone` 返回 401（有鉴权网关挡着的真实路由），
-同一主机上乱填的路径返回 404 `Not Found`，且**没有重定向**。请求体与厂商一致
-（`{model, state, questions}`）。
-
-**尚未证实的**：`typesafe/jev-1.13` 不在 OpenRouter 公开的 `/api/v1/models` 里（该列表 445 个
-模型，无一条 typesafe/jev）。那个列表是 chat 模型目录，System One 是另一个接口面，不在里面是
-合理的，但**这只是推断，不是证据**。另外注意 `https://openrouter.ai/typesafe/jev-1.13` 这种
-模型页对**乱填的模型名也返回 200**（前端 SPA 兜底），所以"页面能打开"不能作为证据。
-
-要坐实只有一个办法：拿一把 OpenRouter 的 key 发一次真实请求。在那之前，这个上游是"路由确认
-存在、模型 id 未确认"。
-
-### FlatKey 为什么配不通（2026-09-21 实测，不需要密钥即可复现）
-
-FlatKey 转售 `typesafe/jev-1.13`，但**只通过 OpenAI 兼容的 chat 接口**，没有开放厂商原生的
-System One 端点。我们这个渠道故意不接受 chat（没有 state 和带类型的问题，任何映射都是编的），
-所以 FlatKey 目前无法作为 Jev 的上游，换哪个路径都不行。
-
-证据（每条都配了一个"乱填路径"的对照组，单看 401 或 404 都会得出错误结论）：
-
-```
-POST https://router.flatkey.ai/v1/systemone          -> 301  Location: https://console.flatkey.ai/v1/systemone
-POST https://router.flatkey.ai/v1/zzz-does-not-exist -> 301  （对照组：完全相同，说明这是兜底跳转，不是真路由）
-POST https://console.flatkey.ai/v1/chat/completions  -> 401  {"message":"Token not provided","type":"new_api_error"}
-POST https://console.flatkey.ai/v1/systemone         -> 404  {"message":"Invalid URL (POST /v1/systemone)"}
-POST https://console.flatkey.ai/v1/zzz-does-not-exist-> 404  （对照组：与上一条字字相同）
-```
-
-`/v1/chat/completions` 返回 401 而 System One 的所有候选路径都和对照组一样返回 404，
-这才说明前者是真实路由、后者根本不存在。同时试过 `/v1/system-one`、`/v1/typesafe/systemone`、
-`/typesafe/v1/systemone`、`/api/v1/systemone`，无一例外。
-
-运营看到的报错是这样来的：`router.flatkey.ai` 把**所有**未知路径 301 跳到
-`console.flatkey.ai`，Go 的 HTTP 客户端默默跟随，跨域时按 net/http 的规则丢掉
-Authorization 头，于是 console 以 404 回答，报错里只剩一个路径名，看不出答话的其实是另一台主机。
-现在这种情况会在错误信息里点名最终 URL。
 
 "System One 端点路径"是渠道设置里的一个可选字段：留空走厂商的 `/v1/systemone`；聚合商把这套
 API 挂在别处时填它们的路径即可，不需要改代码。Base URL 已经以该路径结尾时不会重复拼接。

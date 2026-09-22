@@ -9,6 +9,8 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 package relay
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -56,18 +58,11 @@ func SystemOneHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	requestBody := common.ReaderOnly(storage)
 	if request.Model != requestedModel {
 		// The channel renamed the model, so the body has to say the new name.
-		// Round-tripping through a map keeps every other key the client sent,
-		// including any the vendor adds after this code was written.
 		raw, err := io.ReadAll(common.ReaderOnly(storage))
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
-		fields := map[string]any{}
-		if err := common.Unmarshal(raw, &fields); err != nil {
-			return types.NewError(fmt.Errorf("could not apply the channel's model mapping: %w", err), types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
-		}
-		fields["model"] = request.Model
-		rewritten, err := common.Marshal(fields)
+		rewritten, err := rewriteSystemOneModel(raw, request.Model)
 		if err != nil {
 			return types.NewError(fmt.Errorf("could not apply the channel's model mapping: %w", err), types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
@@ -155,4 +150,29 @@ func describeUpstreamRedirect(requestedURL string, resp *http.Response) string {
 func sameSiteForCredentials(from, to string) bool {
 	from, to = strings.ToLower(from), strings.ToLower(to)
 	return to == from || strings.HasSuffix(to, "."+from)
+}
+
+// rewriteSystemOneModel replaces the model name and nothing else.
+//
+// A decision model's input IS the customer's business state, so the numbers in
+// it are the data, not decoration. Decoding into `any` the ordinary way turns
+// every JSON number into a float64, and re-encoding then prints it back
+// differently: an id of 9007199254740993 comes out 9007199254740992, and
+// 12345678901234567890 loses its last three digits. The customer would be
+// billed for a decision made about numbers they never sent, and nothing
+// anywhere would say so. UseNumber keeps each number as the exact text the
+// client wrote, so only the model field changes.
+//
+// Round-tripping through a map is still what keeps every other key -- including
+// ones the vendor adds after this code is written. The only thing it does not
+// preserve is the order of the keys, which JSON does not carry meaning in.
+func rewriteSystemOneModel(raw []byte, model string) ([]byte, error) {
+	fields := map[string]any{}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&fields); err != nil {
+		return nil, err
+	}
+	fields["model"] = model
+	return json.Marshal(fields)
 }
