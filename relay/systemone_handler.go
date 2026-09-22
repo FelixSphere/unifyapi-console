@@ -9,8 +9,8 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 package relay
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,6 +25,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/sjson"
 )
 
 // SystemOneHelper relays a TypeSafe System One evaluation.
@@ -154,25 +155,22 @@ func sameSiteForCredentials(from, to string) bool {
 
 // rewriteSystemOneModel replaces the model name and nothing else.
 //
-// A decision model's input IS the customer's business state, so the numbers in
-// it are the data, not decoration. Decoding into `any` the ordinary way turns
-// every JSON number into a float64, and re-encoding then prints it back
-// differently: an id of 9007199254740993 comes out 9007199254740992, and
-// 12345678901234567890 loses its last three digits. The customer would be
-// billed for a decision made about numbers they never sent, and nothing
-// anywhere would say so. UseNumber keeps each number as the exact text the
-// client wrote, so only the model field changes.
+// It edits the bytes in place rather than decoding and re-encoding, which is
+// how this repo already rewrites request bodies (see ApplyParamOverride). That
+// matters more here than anywhere else: a decision model's input IS the
+// customer's business state, so the numbers in it are the data, not
+// formatting. Decoding into `any` the ordinary way turns every JSON number
+// into a float64 and prints it back differently -- an id of 9007199254740993
+// comes out 9007199254740992, and 12345678901234567890 loses its last three
+// digits. The customer would be billed for a decision made about numbers they
+// never sent, and nothing anywhere would say so.
 //
-// Round-tripping through a map is still what keeps every other key -- including
-// ones the vendor adds after this code is written. The only thing it does not
-// preserve is the order of the keys, which JSON does not carry meaning in.
+// Editing in place also keeps field order and every key we have never heard
+// of, including ones the vendor adds after this code is written, so the body
+// the upstream reads is the one the client wrote apart from the model name.
 func rewriteSystemOneModel(raw []byte, model string) ([]byte, error) {
-	fields := map[string]any{}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	if err := decoder.Decode(&fields); err != nil {
-		return nil, err
+	if !json.Valid(raw) {
+		return nil, errors.New("request body is not valid JSON")
 	}
-	fields["model"] = model
-	return json.Marshal(fields)
+	return sjson.SetBytes(raw, "model", model)
 }

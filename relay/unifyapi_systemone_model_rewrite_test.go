@@ -9,7 +9,7 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 package relay
 
 import (
-	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,20 +29,16 @@ func TestTheModelMappingLeavesTheCustomersNumbersExactlyAsTheyWroteThem(t *testi
 	got, err := rewriteSystemOneModel(raw, "typesafe/jev-1.13")
 	require.NoError(t, err)
 
-	text := string(got)
-	for _, exact := range []string{
-		`"invoice_id":9007199254740993`,       // float64 rounds this to ...992
-		`"amount_cents":12345678901234567890`, // and this to ...567000
-		`"ratio":1.0`,
-		`"pct":0.30`,
-		`"tiny":1e-7`,
-	} {
-		assert.Contains(t, text, exact, "a number must survive byte for byte")
-	}
-	assert.Contains(t, text, `"model":"typesafe/jev-1.13"`)
-	assert.NotContains(t, text, `"jev-1.13"`+`,`, "the old model name must be gone")
+	// The whole body, byte for byte, with only the model name different.
+	want := `{"model":"typesafe/jev-1.13","state":{"invoice_id":9007199254740993,` +
+		`"amount_cents":12345678901234567890,"ratio":1.0,"pct":0.30,"tiny":1e-7},` +
+		`"questions":{"approve":{"type":"noul"}}}`
+	assert.Equal(t, want, string(got),
+		"a decode-and-re-encode would round 9007199254740993 to ...992 and trim "+
+			"12345678901234567890 to ...567000, and would reorder the keys")
 }
 
+// Whatever the vendor adds after this code is written has to survive, in place.
 func TestTheModelMappingKeepsEveryOtherFieldIncludingOnesWeDoNotKnow(t *testing.T) {
 	raw := []byte(`{"model":"jev-1.13","state":{"text":"route this"},` +
 		`"questions":{"route":{"type":"choice","criteria":{"fast":"latency first"}}},` +
@@ -51,12 +47,21 @@ func TestTheModelMappingKeepsEveryOtherFieldIncludingOnesWeDoNotKnow(t *testing.
 	got, err := rewriteSystemOneModel(raw, "typesafe/jev-1.13")
 	require.NoError(t, err)
 
-	var before, after map[string]any
-	require.NoError(t, json.Unmarshal(raw, &before))
-	require.NoError(t, json.Unmarshal(got, &after))
+	assert.Equal(t, strings.Replace(string(raw), `"jev-1.13"`, `"typesafe/jev-1.13"`, 1), string(got))
+}
 
-	before["model"] = "typesafe/jev-1.13"
-	assert.Equal(t, before, after, "only the model name may differ")
+// A state can legitimately contain a key called "model"; only the top-level
+// one names the model being billed.
+func TestTheModelMappingTouchesOnlyTheTopLevelModelField(t *testing.T) {
+	raw := []byte(`{"model":"jev-1.13","state":{"model":"the customer's own field"},` +
+		`"questions":{"q":{"type":"noul"}}}`)
+
+	got, err := rewriteSystemOneModel(raw, "typesafe/jev-1.13")
+	require.NoError(t, err)
+
+	assert.Contains(t, string(got), `"model":"typesafe/jev-1.13"`)
+	assert.Contains(t, string(got), `"state":{"model":"the customer's own field"}`,
+		"a nested field that happens to be called model is the customer's data")
 }
 
 func TestTheModelMappingRefusesABodyThatIsNotJSON(t *testing.T) {
