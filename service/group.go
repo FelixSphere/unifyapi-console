@@ -13,6 +13,20 @@ import (
 
 func GetUserUsableGroups(userGroup string) map[string]string {
 	groupsCopy := setting.GetUserUsableGroupsCopy()
+	// A provisioned customer's group is that customer's identity: the name is
+	// the customer's name and the ratio is their commercial terms. It must
+	// never be offered to anybody else, however it got into UserUsableGroups
+	// -- provisioning used to add it, and an operator can still add it by hand.
+	//
+	// Filtered BEFORE the special-usable rules below, so an operator who
+	// deliberately grants one user access to a partner group with "+:" still
+	// can; only the blanket exposure goes. The caller's own group is restored
+	// by the fallback at the end of this function.
+	for group := range groupsCopy {
+		if group != userGroup && model.IsCustomerOwnedGroup(group) {
+			delete(groupsCopy, group)
+		}
+	}
 	if userGroup != "" {
 		specialSettings, b := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.Get(userGroup)
 		if b {

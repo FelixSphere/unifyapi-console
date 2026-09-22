@@ -142,7 +142,17 @@ func EnsurePartnershipGroupRatio(group string) error {
 	if err := ensureTopupGroupRatio(group); err != nil {
 		return err
 	}
-	return ensureUserUsableGroup(group)
+	// Deliberately NOT added to UserUsableGroups. That option is the list of
+	// groups ANY user may select, so putting a customer's group in it published
+	// the customer's name and commercial terms to every other user -- including
+	// anonymous callers of /api/pricing -- and let them bill under it. The
+	// operator's pricing screens do not need it: the Group Pricing editor
+	// builds its list from GroupRatio union UserUsableGroups union
+	// TopupGroupRatio, and the two ratios above already put the group there.
+	// The customer's own members reach their group through the fallback in
+	// service.GetUserUsableGroups.
+	InvalidateCustomerOwnedGroupsCache()
+	return nil
 }
 
 // ensureTopupGroupRatio gives the group the same top-up ratio a hand-created
@@ -153,18 +163,6 @@ func ensureTopupGroupRatio(group string) error {
 			return false
 		}
 		raw[group] = provisionedTopupRatio
-		return true
-	})
-}
-
-// ensureUserUsableGroup makes the group selectable and visible, labelled with
-// its own name, which is what an operator sees in the pricing screens.
-func ensureUserUsableGroup(group string) error {
-	return ensureGroupSettingEntry("UserUsableGroups", group, func(raw map[string]any) bool {
-		if _, exists := raw[group]; exists {
-			return false
-		}
-		raw[group] = group
 		return true
 	})
 }
