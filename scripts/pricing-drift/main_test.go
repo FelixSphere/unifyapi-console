@@ -141,7 +141,8 @@ func TestUnverifiableCountIsStable(t *testing.T) {
 	// Keep the ten prior exceptions visible as well. The 21st is deepseek-flash
 	// (DeepSeek-V4.1-Flash, 2026-09-10), newer than the pinned fixture; the 22nd
 	// is jev-1.13 (TypeSafe System One), which models.dev does not carry at all.
-	require.Equal(t, 22, count,
+	// The 23rd is claude-opus-5-5, launched after the fixture was pinned.
+	require.Equal(t, 23, count,
 		"unverifiable entries require a documented reason and a maintained quote")
 	for _, name := range []string{"happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max", "wan3.0-video", "wan3.0-video-prime"} {
 		entry, ok := ratio_setting.CatalogEntryFor(name)

@@ -90,6 +90,10 @@ func TestTheEvaluationURLForEveryUpstreamWeSupport(t *testing.T) {
 		{"typesafe, trailing slash", "https://api.typesafe.ai/", "", "https://api.typesafe.ai/v1/systemone"},
 		{"typesafe, full endpoint pasted", "https://api.typesafe.ai/v1/systemone", "", "https://api.typesafe.ai/v1/systemone"},
 		{"openrouter", "https://openrouter.ai/api", "", "https://openrouter.ai/api/v1/systemone"},
+		// FlatKey mounts System One outside /v1 entirely, at a path no amount
+		// of guessing would have found. This is the operator's real config.
+		{"flatkey", "https://router.flatkey.ai", "/api/alpha/decisions", "https://router.flatkey.ai/api/alpha/decisions"},
+		{"flatkey, base with trailing slash", "https://router.flatkey.ai/", "/api/alpha/decisions", "https://router.flatkey.ai/api/alpha/decisions"},
 		{"aggregator with its own prefix", "https://router.example.ai", "/decide/v1/systemone", "https://router.example.ai/decide/v1/systemone"},
 		{"path override without a leading slash", "https://router.example.ai", "decide", "https://router.example.ai/decide"},
 		{"override already present in the base", "https://router.example.ai/decide", "/decide", "https://router.example.ai/decide"},

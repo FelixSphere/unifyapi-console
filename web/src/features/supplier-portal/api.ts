@@ -58,24 +58,31 @@ export type SupplierTerms = {
   manual_review: boolean
 }
 
-export type SupplierPayoutMethod =
-  | 'platform_credit'
-  | 'bank'
-  | 'paypal'
-  | 'wise'
-  | 'crypto'
-
-export const PAYOUT_METHOD_LABELS: Record<SupplierPayoutMethod, string> = {
-  platform_credit: 'Platform credit (added to your UnifyAPI balance)',
-  bank: 'Bank transfer',
-  paypal: 'PayPal',
-  wise: 'Wise',
-  crypto: 'Crypto wallet (USDT / USDC)',
+// A way a share can be paid. The server derives the list from the platform's
+// own Payment Settings, so the seller reads the same names here as on the
+// wallet page and a rail switched off there stops being offered here. Never
+// hard-code this list: a copy in the client is a copy that drifts.
+export type PayoutRail = {
+  id: string
+  label: string
+  hint?: string
+  // Whether a holder and account details are needed. Platform credit is the
+  // one rail where they are not: the login is the account.
+  needs_account: boolean
+  // Non-empty on an on-chain rail; the chains the operator actually works
+  // with. The address is stored as "<NETWORK>:<address>".
+  networks?: string[]
+  // Set when the rail settles in one asset and the seller does not choose.
+  currency?: string
+  available: boolean
+  unavailable_reason?: string
+  // A rail nobody new is offered, kept because somebody already filed it.
+  legacy?: boolean
 }
 
 // Where the seller's share goes. Required before the first sale.
 export type SupplierPayoutAccount = {
-  method: SupplierPayoutMethod | ''
+  method: string
   holder: string
   details: string
   currency: string
@@ -104,7 +111,8 @@ export type SupplierPortalData = {
     status: 'pending' | 'active' | 'suspended' | 'rejected'
     status_reason: string
     counterparty: string
-    payout_method: SupplierPayoutMethod | ''
+    payout_method: string
+    payout_method_label: string
     payout_holder: string
     payout_details: string
     payout_currency: string
@@ -123,6 +131,7 @@ export type SupplierPortalData = {
   share_payouts: SupplierSharePayout[]
   vendors: SupplierVendorPreset[]
   terms: SupplierTerms
+  payout_rails: PayoutRail[]
 }
 
 export type SupplierDailyUsage = {

@@ -115,6 +115,9 @@ type portalSupplierView struct {
 	PayoutDetails    string `json:"payout_details"`
 	PayoutCurrency   string `json:"payout_currency"`
 	HasPayoutAccount bool   `json:"has_payout_account"`
+	// PayoutMethodLabel is the rail's name, so a screen never has to keep its
+	// own copy of the list and drift from it.
+	PayoutMethodLabel string `json:"payout_method_label"`
 }
 
 // UpdateSupplierPayoutAccount files where the calling seller is paid. It is
@@ -143,6 +146,7 @@ func supplierView(s *model.CreditSupplier) portalSupplierView {
 		Status: s.Status, StatusReason: s.StatusReason, Counterparty: s.CounterpartyKey(),
 		PayoutMethod: s.PayoutMethod, PayoutHolder: s.PayoutHolder, PayoutDetails: s.PayoutDetails,
 		PayoutCurrency: s.PayoutCurrency, HasPayoutAccount: s.HasPayoutAccount(),
+		PayoutMethodLabel: s.PayoutMethodLabel(),
 	}
 }
 
@@ -241,6 +245,7 @@ func GetSupplierPortal(c *gin.Context) {
 		"share_payouts": payouts,
 		"vendors":       supplierVendorPresets(),
 		"terms":         postedTerms(model.GetCreditSupplyTerms()),
+		"payout_rails":  payoutRailsFor(supplier),
 	}})
 }
 
@@ -250,7 +255,29 @@ func GetSupplierTerms(c *gin.Context) {
 	data := postedTerms(terms)
 	data["channel_priority"] = terms.ChannelPriority
 	data["vendors"] = supplierVendorPresets()
+	data["payout_rails"] = payoutRailsFor(nil)
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": data})
+}
+
+// payoutRailsFor is the list the seller's dialog renders. It is the rails
+// Payment Settings actually has an account for, plus -- when the seller
+// already filed a rail that is no longer offered -- that one, so opening the
+// dialog cannot silently switch them onto something else and then save it.
+func payoutRailsFor(supplier *model.CreditSupplier) []model.PayoutRail {
+	rails := model.PayoutRails()
+	if supplier == nil || supplier.PayoutMethod == "" {
+		return rails
+	}
+	current := model.NormalizePayoutMethod(supplier.PayoutMethod)
+	for _, rail := range rails {
+		if rail.Id == current {
+			return rails
+		}
+	}
+	if rail, ok := model.PayoutRailFor(current); ok {
+		return append(rails, rail)
+	}
+	return rails
 }
 
 // postedTerms is the offer, and only the offer: the share a seller keeps and

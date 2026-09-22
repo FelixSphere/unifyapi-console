@@ -31,6 +31,21 @@ describe('supplier portal surface', () => {
     assert.doesNotMatch(api, /credit-pool\/lots/)
   })
 
+  test('the payout rails come from the server, never from a list kept here', () => {
+    const payoutDialog = readFileSync(
+      join(HERE, '../components/payout-account-dialog.tsx'),
+      'utf8'
+    )
+    // A client-side copy of the payment methods is a copy that drifts: it
+    // would keep offering a rail after the operator switched it off in
+    // Payment Settings, which is the whole thing this replaced.
+    assert.doesNotMatch(api, /PAYOUT_METHOD_LABELS/)
+    assert.doesNotMatch(payoutDialog, /PAYOUT_METHOD_LABELS/)
+    assert.doesNotMatch(payoutDialog, /'paypal'|'wise'|'bank'\s*:/)
+    assert.match(payoutDialog, /rails\.map/)
+    assert.match(payoutDialog, /unavailable_reason/)
+  })
+
   test('a submission carries the attestation and a write-only key; the share is posted, never typed', () => {
     assert.match(dialog, /transfer_rights_confirmed: true/)
     assert.match(dialog, /PasswordInput/)
