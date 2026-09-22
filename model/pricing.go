@@ -46,11 +46,13 @@ type Pricing struct {
 	CustomerGroupModelRatio *float64 `json:"customer_group_model_ratio,omitempty"`
 
 	// DefaultGroupModelRatio is the FINAL multiplier the `default` group -- every
-	// new registration -- pays for this model, when the operator has set one.
+	// new registration -- pays for this model. It comes from the per-model
+	// override when the operator set one, and otherwise from the `default`
+	// group's own ratio, which is what the relay bills in that case.
 	// It is the same for every viewer, anonymous included: it is the public
 	// "new-user price", not anyone's contract. Model Square renders it as
-	// "xx% off by default" next to the official price. Absent means new users
-	// pay list for this model.
+	// "xx% off by default" next to the official price. Absent means neither
+	// source discounts this model, so new users really do pay list.
 	DefaultGroupModelRatio *float64 `json:"default_group_model_ratio,omitempty"`
 }
 

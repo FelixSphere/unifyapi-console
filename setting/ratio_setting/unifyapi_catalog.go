@@ -147,6 +147,14 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "claude-opus-4-7", Vendor: "anthropic", InputUSD: 5, OutputUSD: 25, CacheReadUSD: 0.5, CacheWriteUSD: 6.25},
 	{Model: "claude-opus-4-8", Vendor: "anthropic", InputUSD: 5, OutputUSD: 25, CacheReadUSD: 0.5, CacheWriteUSD: 6.25},
 	{Model: "claude-opus-5", Vendor: "anthropic", InputUSD: 5, OutputUSD: 25, CacheReadUSD: 0.5, CacheWriteUSD: 6.25},
+	// Opus 5.5 is the first Opus to come in UNDER the tier's long-standing
+	// $5/$25, and it also breaks the 0.1x cached-read rule the whole Opus line
+	// has used: Anthropic prices its cache hits at 0.05x input ($0.20), which
+	// is why this row carries a quote. Cache write is the ordinary 1.25x
+	// 5-minute rate. models.dev has not picked the model up yet, so the row is
+	// Unverified and, per ValidateCatalog, names no vendor until it does.
+	{Model: "claude-opus-5-5", Vendor: "", InputUSD: 4, OutputUSD: 20, CacheReadUSD: 0.2, CacheWriteUSD: 5, Unverified: true,
+		QuoteSource: "https://platform.claude.com/docs/en/about-claude/pricing ($4 in / $20 out per 1M; 5m cache write $5; cache hits $0.20 = 0.05x input)", QuoteDate: "2026-09-22"},
 	{Model: "claude-sonnet-4-5", Vendor: "anthropic", InputUSD: 3, OutputUSD: 15, CacheReadUSD: 0.3, CacheWriteUSD: 3.75},
 	{Model: "claude-sonnet-4-6", Vendor: "anthropic", InputUSD: 3, OutputUSD: 15, CacheReadUSD: 0.3, CacheWriteUSD: 3.75},
 	{Model: "claude-sonnet-5", Vendor: "anthropic", InputUSD: 2, OutputUSD: 10, CacheReadUSD: 0.2, CacheWriteUSD: 2.5},
