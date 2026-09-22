@@ -39,6 +39,7 @@ var publishedModels = []string{
 	"claude-opus-4-7",
 	"claude-opus-4-8",
 	"claude-opus-5",
+	"claude-opus-5-5",
 	"claude-sonnet-4-5",
 	"claude-sonnet-4-6",
 	"claude-sonnet-5",
@@ -139,6 +140,10 @@ func TestBaselineRatiosDeriveFromOfficialPrices(t *testing.T) {
 		// 1.25x cache write for every Opus tier.
 		{"claude-opus-4-8", 5, 25, 0.5, 6.25, 2.5, 5, 0.1, 1.25},
 		{"claude-opus-5", 5, 25, 0.5, 6.25, 2.5, 5, 0.1, 1.25},
+		// Opus 5.5 undercuts the tier at $4/$20 AND prices cache hits at 0.05x
+		// input instead of the 0.1x every other Opus uses, so both the model
+		// ratio and the cache ratio differ from the rows above.
+		{"claude-opus-5-5", 4, 20, 0.2, 5, 2, 5, 0.05, 1.25},
 		{"claude-sonnet-5", 2, 10, 0.2, 2.5, 1, 5, 0.1, 1.25},
 		{"claude-fable-5", 10, 50, 1, 12.5, 5, 5, 0.1, 1.25},
 		// Fable 5.1 keeps the $10/$50 base price but Anthropic cut cache
@@ -377,6 +382,7 @@ func TestUnverifiedEntriesAreDeclared(t *testing.T) {
 		"deepseek-v3.2-thinking",      //
 		"deepseek-flash",              // V4.1 Flash, released 2026-09-10; newer than the pinned fixture, quoted off DeepSeek's page
 		"jev-1.13",                    // TypeSafe System One, released 2026-09-15; not on models.dev, quoted off docs.typesafe.ai
+		"claude-opus-5-5",             // launched after the pinned fixture; quoted off platform.claude.com/pricing
 		"gemini-3.1-flash-lite-image", // Nano Banana 2 Lite; newer than the pinned fixture
 		"gemini-3.5-flash",            // newer than the pinned fixture; quoted off Google's page
 		"gemini-3.7-flash",            // same, and on promotional pricing until 2026-12-31

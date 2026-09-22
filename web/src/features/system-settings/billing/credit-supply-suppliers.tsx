@@ -240,7 +240,7 @@ export function CreditSuppliersPanel({
                     {supplier.payout_method ? (
                       <>
                         <div>
-                          {supplier.payout_method}
+                          {supplier.payout_rail_label || supplier.payout_method}
                           {supplier.payout_currency
                             ? ` · ${supplier.payout_currency}`
                             : ''}
@@ -391,7 +391,7 @@ export function CreditSuppliersPanel({
                   {t('Payout account (filed by the seller)')}
                 </div>
                 <div className='mt-1'>
-                  {editing.payout_method}
+                  {editing.payout_rail_label || editing.payout_method}
                   {editing.payout_currency
                     ? ` · ${editing.payout_currency}`
                     : ''}

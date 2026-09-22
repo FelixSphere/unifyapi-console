@@ -28,6 +28,9 @@ export type CreditSupplier = {
   note: string
   // Where the seller is paid; filed by the seller, read in full by root.
   payout_method: string
+  // The rail's name, computed server-side from the same list the seller chose
+  // from, so this screen never keeps its own copy to drift from.
+  payout_rail_label: string
   payout_holder: string
   payout_details: string
   payout_currency: string
@@ -46,6 +49,7 @@ export type CreditSupplierInput = Omit<
   | 'attestation_version'
   | 'attested_at'
   | 'payout_method'
+  | 'payout_rail_label'
   | 'payout_holder'
   | 'payout_details'
   | 'payout_currency'

@@ -693,7 +693,9 @@ func TestPayoutAccountIsRequiredValidatedAndPatchSafe(t *testing.T) {
 	got, err := SetSupplierPayoutAccount(supplier.Id, SupplierPayoutAccount{Method: "Bank", Holder: " Acme Labs Ltd ", Details: "IBAN IL620108000000099999999", Currency: "ils"})
 	require.NoError(t, err)
 	assert.True(t, got.HasPayoutAccount())
-	assert.Equal(t, "bank", got.PayoutMethod)
+	// "Bank" and the legacy "bank" both settle on the rail id the wallet side
+	// would recognise, so one name is stored however it was typed.
+	assert.Equal(t, PayoutRailBankTransfer, got.PayoutMethod)
 	assert.Equal(t, "Acme Labs Ltd", got.PayoutHolder)
 	assert.Equal(t, "ILS", got.PayoutCurrency)
 	assert.Equal(t, CreditLotPayoutExternal, got.ExternalPayoutMethod())
@@ -703,7 +705,7 @@ func TestPayoutAccountIsRequiredValidatedAndPatchSafe(t *testing.T) {
 	// An operator patch that says nothing about payout leaves it alone.
 	require.NoError(t, UpdateCreditSupplier(supplier.Id, &CreditSupplier{Note: "met at the Tel Aviv meetup"}))
 	after, _ := GetCreditSupplierById(supplier.Id)
-	assert.Equal(t, "bank", after.PayoutMethod)
+	assert.Equal(t, PayoutRailBankTransfer, after.PayoutMethod)
 	assert.Equal(t, "IBAN IL620108000000099999999", after.PayoutDetails)
 
 	// Platform credit needs no details and clears any old ones.

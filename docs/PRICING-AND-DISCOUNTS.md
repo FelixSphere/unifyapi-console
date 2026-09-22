@@ -105,6 +105,7 @@ psql "$SQL_DSN" -f seed-pricing.sql
 | `deepseek-v4-flash`、`deepseek-v4-pro` | 人工报价覆盖 feed（DeepSeek 08-16 涨价） |
 | `deepseek-flash` | DeepSeek-V4.1-Flash，2026-09-10 上线；models.dev 快照尚未收录，按厂商价目表峰值人工报价（2026-09-17） |
 | `jev-1.13` | TypeSafe System One（决策模型），2026-09-15 发布；models.dev 不收录，按厂商文档人工报价（2026-09-21）。**输出免费**是机制使然（无自回归解码、无输出 token 可计），目录行以 `FreeOutput` 标记；**目前没有适配器能转发它**，见下 |
+| `claude-opus-5-5` | Claude Opus 5.5，2026-09-22 上线；models.dev 快照（2026-09-11）尚未收录，按 Anthropic 官方价目表人工报价。**两处不随大流**：$4/$20 低于 Opus 档位一贯的 $5/$25，且缓存命中按输入的 **0.05×**（$0.20）计价，而不是其它 Opus 的 0.1× |
 | `qwen3.5-flash` | 人工核对过阿里云新加坡价目表，价格本来就对 |
 | `glm-5-turbo` | 中国区独有，只有人民币价、且按输入长度分档 |
 | `deepseek-v3`、`deepseek-v3.2`、`deepseek-v3.2-thinking` | **厂商已下架**，没有官方价可填 |
