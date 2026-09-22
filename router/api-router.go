@@ -279,6 +279,8 @@ func SetApiRouter(router *gin.Engine) {
 			supplierRoute.PUT("/payout-account", middleware.CriticalRateLimit(), controller.UpdateSupplierPayoutAccount)
 			supplierRoute.POST("/lots", middleware.CriticalRateLimit(), controller.SubmitSupplierLot)
 			supplierRoute.GET("/usage", controller.GetSupplierUsage)
+			supplierRoute.GET("/usage/detail", controller.GetSupplierUsageDetail)
+			supplierRoute.GET("/usage/export", controller.ExportSupplierUsageCSV)
 			supplierRoute.GET("/statements", controller.GetSupplierStatements)
 		}
 

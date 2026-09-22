@@ -521,3 +521,91 @@ func TestBothTermsEndpointsOfferOnlyTheShare(t *testing.T) {
 	assert.Contains(t, seller, `"manual_review"`, "a seller is told whether their key goes live at once")
 	assert.Contains(t, seller, `"revenue_share_rates"`)
 }
+
+// The seller's trust problem in one test: they cannot audit our revenue, but
+// they CAN audit the usage it is computed from, against their own vendor
+// console. So the usage we report has to be theirs, all of it, and nothing
+// that belongs to anybody else.
+func TestASellerCanCheckTheirOwnUsageAndSeesNobodyElses(t *testing.T) {
+	setupSupplierPortalTest(t)
+	require.NoError(t, model.DB.Create(&model.User{Id: 42, Username: "seller", AffCode: "seller-aff"}).Error)
+	require.NoError(t, model.DB.Create(&model.User{Id: 43, Username: "other", AffCode: "other-aff"}).Error)
+	mine := &model.CreditSupplier{Name: "Mine", Code: "mine", UserId: 42, PayoutMethod: "platform_credit"}
+	theirs := &model.CreditSupplier{Name: "Theirs", Code: "theirs", UserId: 43, PayoutMethod: "platform_credit"}
+	require.NoError(t, model.CreateCreditSupplier(mine))
+	require.NoError(t, model.CreateCreditSupplier(theirs))
+	for id := 1; id <= 3; id++ {
+		require.NoError(t, model.DB.Create(&model.Channel{Id: id, Key: "k", Name: "c", Status: 1, Models: "claude-sonnet-5", Group: "default"}).Error)
+	}
+	for _, spec := range []struct {
+		supplier  *model.CreditSupplier
+		channelId int
+	}{{mine, 1}, {mine, 2}, {theirs, 3}} {
+		lot := &model.CreditLot{SupplierId: spec.supplier.Id, Vendor: "anthropic", ChannelId: spec.channelId,
+			FaceValueUSD: 1000, RevenueSharePct: 0.5, Status: "active"}
+		require.NoError(t, model.CreateCreditLot(lot, "test"))
+	}
+
+	now := common.GetTimestamp()
+	log := func(channelId int, model_ string, prompt, cached, completion int, quota int, username string) {
+		require.NoError(t, model.LOG_DB.Create(&model.Log{
+			UserId: 99, Username: username, CreatedAt: now, Type: model.LogTypeConsume,
+			ModelName: model_, ChannelId: channelId, Quota: quota,
+			PromptTokens: prompt, CachedTokens: cached, CompletionTokens: completion,
+		}).Error)
+	}
+	// Two models on my two keys, plus somebody else's traffic on a third.
+	log(1, "claude-sonnet-5", 1000, 400, 200, int(3*common.QuotaPerUnit), "alice")
+	log(2, "claude-sonnet-5", 500, 0, 100, int(1*common.QuotaPerUnit), "bob")
+	log(1, "claude-opus-4-8", 100, 0, 50, int(6*common.QuotaPerUnit), "alice")
+	log(3, "claude-sonnet-5", 9999, 0, 9999, int(99*common.QuotaPerUnit), "carol")
+
+	c, recorder := portalContext(t, 42, http.MethodGet, "/api/supplier/usage/detail?days=7", "")
+	GetSupplierUsageDetail(c)
+	payload := decode(t, recorder)
+	require.Equal(t, true, payload["success"], recorder.Body.String())
+	data := payload["data"].(map[string]any)
+	rows := data["rows"].([]any)
+	require.Len(t, rows, 2, "one row per model per day, my two keys folded together")
+
+	byModel := map[string]map[string]any{}
+	for _, raw := range rows {
+		row := raw.(map[string]any)
+		byModel[row["model"].(string)] = row
+	}
+	sonnet := byModel["claude-sonnet-5"]
+	require.NotNil(t, sonnet)
+	assert.EqualValues(t, 2, sonnet["requests"], "both my keys, one model, one day")
+	assert.EqualValues(t, 1500, sonnet["prompt_tokens"], "the number their vendor console shows")
+	assert.EqualValues(t, 400, sonnet["cached_tokens"])
+	assert.EqualValues(t, 300, sonnet["completion_tokens"])
+	assert.InDelta(t, 4.0, sonnet["sold_usd"], 1e-9, "what customers paid for it")
+	assert.InDelta(t, 2.0, sonnet["share_usd"], 1e-9, "half, at the share their keys were taken on")
+	assert.Greater(t, sonnet["list_usd"], 0.0, "priced against the vendor's published rate")
+	assert.Equal(t, true, sonnet["priced"])
+
+	totals := data["totals"].(map[string]any)
+	assert.EqualValues(t, 3, totals["requests"], "mine only; 4 rows were logged")
+	assert.InDelta(t, 10.0, totals["sold_usd"], 1e-9)
+	assert.InDelta(t, 5.0, totals["share_usd"], 1e-9)
+
+	// Nothing about who the customers were, ever.
+	body := recorder.Body.String()
+	for _, leak := range []string{"alice", "bob", "carol", "user_id", "username"} {
+		assert.NotContains(t, body, leak, "a seller audits their usage, not our customers")
+	}
+
+	// The same rows as a file they can diff against a vendor export.
+	c, recorder = portalContext(t, 42, http.MethodGet, "/api/supplier/usage/export?days=7", "")
+	ExportSupplierUsageCSV(c)
+	csv := recorder.Body.String()
+	assert.Contains(t, recorder.Header().Get("Content-Disposition"), "unifyapi-usage-mine-")
+	assert.Contains(t, csv, "day,model,requests,prompt_tokens,cached_tokens,cache_write_tokens,completion_tokens,vendor_list_usd,sold_usd,your_share_usd")
+	assert.Contains(t, csv, "claude-sonnet-5,2,1500,400,0,300,")
+	assert.NotContains(t, csv, "carol")
+
+	// A login with no keys at all is not a seller and gets nothing.
+	c, recorder = portalContext(t, 7, http.MethodGet, "/api/supplier/usage/detail", "")
+	GetSupplierUsageDetail(c)
+	assert.Equal(t, http.StatusNotFound, recorder.Code)
+}

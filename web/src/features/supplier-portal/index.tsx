@@ -53,6 +53,7 @@ import {
 } from './api'
 import { PayoutAccountDialog } from './components/payout-account-dialog'
 import { SubmitLotDialog } from './components/submit-lot-dialog'
+import { UsageProofCard } from './components/usage-proof-card'
 
 const VENDOR_LABELS: Record<string, string> = {
   anthropic: 'Anthropic',
@@ -437,6 +438,15 @@ export function SupplierPortal() {
                     ) : null}
                   </CardContent>
                 </Card>
+
+                <UsageProofCard
+                  vendorLabel={
+                    data.lots[0]
+                      ? (VENDOR_LABELS[data.lots[0].vendor] ??
+                        data.lots[0].vendor)
+                      : t('your vendor')
+                  }
+                />
 
                 <Card>
                   <CardHeader>

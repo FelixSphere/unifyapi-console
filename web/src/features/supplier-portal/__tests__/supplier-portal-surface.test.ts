@@ -91,6 +91,26 @@ describe('supplier portal surface', () => {
     assert.match(payout, /Never paste an API key/)
   })
 
+  test('a seller can audit the usage their share is computed from', () => {
+    // The trust argument, pinned: the seller is shown token counts in the
+    // shape their own vendor console reports them, told to compare, told the
+    // key is theirs to revoke, and handed a file they can diff.
+    const proof = readFileSync(
+      join(HERE, '../components/usage-proof-card.tsx'),
+      'utf8'
+    )
+    assert.match(proof, /prompt_tokens/)
+    assert.match(proof, /cached_tokens/)
+    assert.match(proof, /completion_tokens/)
+    assert.match(proof, /Compare the token counts/)
+    assert.match(proof, /cap or revoke it in your vendor account/)
+    assert.match(proof, /supplierUsageExportUrl/)
+    assert.match(page, /<UsageProofCard/)
+    // It reads its own endpoint, not the operator's reconciliation one.
+    assert.match(api, /\/api\/supplier\/usage\/detail/)
+    assert.doesNotMatch(proof, /username|user_id/)
+  })
+
   test('the duplicate contribution module is gone', () => {
     const ops = readFileSync(join(HERE, '../../ops/index.tsx'), 'utf8')
     assert.doesNotMatch(ops, /CreditContributions/)
