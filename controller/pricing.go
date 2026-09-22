@@ -11,6 +11,34 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// hideGroupsTheCallerMayNotSee rewrites each row's EnableGroup to the groups the
+// caller is actually allowed to use.
+//
+// filterPricingByUsableGroups decides which ROWS to return but leaves
+// EnableGroup untouched, and the whole payload goes out on /api/pricing, which
+// needs no authentication. So every model a customer could use listed that
+// customer's group name to anyone who asked -- which is how the customer list
+// was readable from the open internet.
+//
+// "all" is left alone: it names no customer.
+func hideGroupsTheCallerMayNotSee(pricing []model.Pricing, usableGroup map[string]string) []model.Pricing {
+	out := make([]model.Pricing, len(pricing))
+	copy(out, pricing)
+	for i := range out {
+		if common.StringsContains(out[i].EnableGroup, "all") {
+			continue
+		}
+		visible := make([]string, 0, len(out[i].EnableGroup))
+		for _, group := range out[i].EnableGroup {
+			if _, ok := usableGroup[group]; ok {
+				visible = append(visible, group)
+			}
+		}
+		out[i].EnableGroup = visible
+	}
+	return out
+}
+
 func filterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string]string) []model.Pricing {
 	if len(pricing) == 0 {
 		return pricing
@@ -60,6 +88,10 @@ func GetPricing(c *gin.Context) {
 
 	usableGroup = service.GetUserUsableGroups(group)
 	pricing = filterPricingByUsableGroups(pricing, usableGroup)
+	// Publish only the groups this caller may use. An anonymous visitor -- the
+	// marketing site, which reads default_group_model_ratio and nothing else --
+	// therefore sees `default` and no customer at all.
+	pricing = hideGroupsTheCallerMayNotSee(pricing, usableGroup)
 	pricing = applyDefaultGroupModelPricing(pricing)
 	// check groupRatio contains usableGroup
 	for group := range ratio_setting.GetGroupRatioCopy() {
