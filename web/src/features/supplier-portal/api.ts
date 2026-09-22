@@ -256,3 +256,47 @@ export function contributableVendors(
 ) {
   return vendors.filter((vendor) => sharePreview(terms, vendor.key) > 0)
 }
+
+// One day of one model on the seller's keys, in the shape their own vendor
+// console reports it. The point of the shape is comparison: if the tokens
+// agree with their console, our consumption figure is honest, and the revenue
+// follows from it by arithmetic against a published price list.
+export type SupplierUsageRow = {
+  day: string
+  model: string
+  requests: number
+  prompt_tokens: number
+  cached_tokens: number
+  cache_write_tokens: number
+  completion_tokens: number
+  list_usd: number
+  priced: boolean
+  sold_usd: number
+  share_usd: number
+}
+
+export type SupplierUsageDetail = {
+  rows: SupplierUsageRow[]
+  totals: {
+    requests: number
+    list_usd: number
+    sold_usd: number
+    share_usd: number
+    unpriced_requests: number
+  }
+  vendors: SupplierVendorPreset[]
+}
+
+export async function getSupplierUsageDetail(days = 30) {
+  return unwrap(
+    await api.get<Envelope<SupplierUsageDetail>>('/api/supplier/usage/detail', {
+      params: { days },
+    })
+  )
+}
+
+// The export URL is handed to the browser rather than fetched: it is a file
+// download, and the session cookie carries the identity.
+export function supplierUsageExportUrl(days = 30) {
+  return `/api/supplier/usage/export?days=${days}`
+}

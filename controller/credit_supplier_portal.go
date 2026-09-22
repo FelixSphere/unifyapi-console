@@ -498,6 +498,96 @@ func SubmitSupplierLot(c *gin.Context) {
 	}})
 }
 
+// supplierUsageWindow reads the half-open window a seller asked for, in whole
+// days, defaulting to the last 30.
+func supplierUsageWindow(c *gin.Context) (int64, int64) {
+	const day = int64(86400)
+	now := common.GetTimestamp()
+	end := now + day
+	start := end - 31*day
+	if raw := c.Query("days"); raw != "" {
+		if days, err := strconv.Atoi(raw); err == nil && days > 0 && days <= 366 {
+			start = end - int64(days+1)*day
+		}
+	}
+	return start, end
+}
+
+// sellerSharePct is the share the seller's live keys were taken on. Keys can
+// in principle carry different shares; the highest is used so the figure this
+// screen shows is never lower than what they are actually owed.
+func sellerSharePct(lots []*model.CreditLot) float64 {
+	share := 0.0
+	for _, lot := range lots {
+		if lot.RevenueSharePct > share {
+			share = lot.RevenueSharePct
+		}
+	}
+	return share
+}
+
+// GetSupplierUsageDetail is the seller's own audit trail: their traffic in the
+// shape their vendor console reports it, so the two can be put side by side.
+func GetSupplierUsageDetail(c *gin.Context) {
+	supplier, ok := portalSupplier(c)
+	if !ok {
+		return
+	}
+	lots, err := model.GetCreditLots(model.CreditLotFilter{SupplierId: supplier.Id})
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	start, end := supplierUsageWindow(c)
+	rows, err := model.GetSupplierUsageDetail(supplier.Id, start, end, sellerSharePct(lots))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	var listUSD, soldUSD, shareUSD float64
+	var requests, unpriced int64
+	for _, row := range rows {
+		listUSD += row.ListUSD
+		soldUSD += row.SoldUSD
+		shareUSD += row.ShareUSD
+		requests += row.Requests
+		if !row.Priced {
+			unpriced += row.Requests
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
+		"rows": rows,
+		"totals": gin.H{
+			"requests": requests, "list_usd": listUSD, "sold_usd": soldUSD,
+			"share_usd": shareUSD, "unpriced_requests": unpriced,
+		},
+		"vendors": supplierVendorPresets(),
+	}})
+}
+
+// ExportSupplierUsageCSV hands the same rows over as a file, so a seller can
+// diff them against an export from their vendor rather than reading a screen.
+func ExportSupplierUsageCSV(c *gin.Context) {
+	supplier, ok := portalSupplier(c)
+	if !ok {
+		return
+	}
+	lots, err := model.GetCreditLots(model.CreditLotFilter{SupplierId: supplier.Id})
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	start, end := supplierUsageWindow(c)
+	rows, err := model.GetSupplierUsageDetail(supplier.Id, start, end, sellerSharePct(lots))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	filename := fmt.Sprintf("unifyapi-usage-%s-%s.csv", supplier.Code, time.Unix(start, 0).Format("20060102"))
+	c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
+	c.Data(http.StatusOK, "text/csv; charset=utf-8", []byte(model.SupplierUsageCSV(rows)))
+}
+
 func GetSupplierUsage(c *gin.Context) {
 	supplier, ok := portalSupplier(c)
 	if !ok {

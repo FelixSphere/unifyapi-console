@@ -194,6 +194,26 @@ pending ──verify ok──▶ verified ──auto (or accept)──▶ active
    └──verify failed───▶ rejected ◀───────reject──────────┘   active ⇄ suspended
 ```
 
+### What the seller can check for themselves
+
+The one thing a seller cannot verify is the revenue: our price list, our
+customers. What they **can** verify is the usage that revenue is computed
+from, and that is the number they actually worry about.
+
+`GET /api/supplier/usage/detail` reports their traffic **in the shape their
+own vendor console reports it**: day, model, input / cached / output tokens,
+the list-price value of it, what it sold for, and their share.
+`GET /api/supplier/usage/export` hands over the same rows as CSV for diffing
+against a vendor export. Both are scoped to the channels their own lots are
+bound to, and neither carries a user id or username: a seller audits their
+usage, never our customers.
+
+If the token counts agree with their console, our consumption figure is
+honest, and the revenue follows from it by arithmetic against a published
+price list. If they ever disagree, the seller holds the strongest remedy
+there is, and the screen says so: **the key is theirs**. They can cap the
+spend or revoke it in their own vendor account at any moment.
+
 ### The operator's flow
 
 - **Supply terms** — post and adjust the share per vendor, the basis, the
