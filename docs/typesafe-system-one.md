@@ -47,11 +47,21 @@ typed questions，任何映射都只能是我们发明的，客户却要为这�
 
 ## 运营怎么配
 
-1. **渠道 → 创建渠道**，类型选 **TypeSafe (System One)**。
-2. Base URL 留空即用 `https://api.typesafe.ai`；填了也可以，填到 `/v1/systemone` 为止也不会
-   重复拼接。
-3. 密钥填 TypeSafe 的 API key。
-4. 模型列表默认预填 `jev-1.13`。
+**渠道 → 创建渠道**，类型选 **TypeSafe (System One)**，然后按上游填：
+
+| 上游 | Base URL | System One 端点路径 | 模型映射 | 核实情况 |
+|---|---|---|---|---|
+| TypeSafe 直连 | 留空（即 `https://api.typesafe.ai`） | 留空 | `jev-1.13` → `jev-1.13.0` | 厂商文档 |
+| OpenRouter | `https://openrouter.ai/api` | 留空 | **不需要**，裸名 `jev-1.13` 会自动映射到 `typesafe/` 命名空间 | 文档 + 端点探测（`/api/v1/systemone` 返回 401，乱填的路径返回 404） |
+| FlatKey | `https://router.flatkey.ai` | **向 FlatKey 索取** | `jev-1.13` → `typesafe/jev-1.13` | 模型确实在售（"Flatkey catalog"，官方 $0.042/$0，他们 -20%），但其网关未公开 `/v1/systemone` |
+
+"System One 端点路径"是渠道设置里的一个可选字段：留空走厂商的 `/v1/systemone`；聚合商把这套
+API 挂在别处时填它们的路径即可，不需要改代码。Base URL 已经以该路径结尾时不会重复拼接。
+
+密钥填对应上游的 API key。模型列表默认预填 `jev-1.13`。
+
+**别名不要卖。** 厂商的 `jev-latest` / `jev-preview` 会随厂商换代改变客户实际买到的模型和价格，
+目录里只有带版本号的 `jev-1.13`。
 
 厂商自己的版本化 id 是 `jev-1.13.0`，另有别名 `jev-latest` / `jev-preview`。我们对外卖的名字
 是 `jev-1.13`，所以**直连 TypeSafe 的渠道需要加一条模型映射** `jev-1.13` → `jev-1.13.0`。

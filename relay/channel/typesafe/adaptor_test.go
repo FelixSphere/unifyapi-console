@@ -80,17 +80,28 @@ func TestABodyThatIsNotSystemOneJSONIsRefused(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestTheEndpointIsAppendedOnceHoweverTheOperatorTypedTheBaseURL(t *testing.T) {
+// The three upstreams the operator actually uses, pinned by exact URL. A
+// wrong path here is a 404 from someone else's gateway, which reads like our
+// bug and is expensive to diagnose -- it already cost one round trip.
+func TestTheEvaluationURLForEveryUpstreamWeSupport(t *testing.T) {
 	adaptor := &Adaptor{}
-	for _, tc := range []struct{ base, want string }{
-		{"https://api.typesafe.ai", "https://api.typesafe.ai/v1/systemone"},
-		{"https://api.typesafe.ai/", "https://api.typesafe.ai/v1/systemone"},
-		{"https://api.typesafe.ai/v1/systemone", "https://api.typesafe.ai/v1/systemone"},
-		{"https://gateway.example.com/typesafe", "https://gateway.example.com/typesafe/v1/systemone"},
+	for _, tc := range []struct{ name, base, path, want string }{
+		{"typesafe direct", "https://api.typesafe.ai", "", "https://api.typesafe.ai/v1/systemone"},
+		{"typesafe, trailing slash", "https://api.typesafe.ai/", "", "https://api.typesafe.ai/v1/systemone"},
+		{"typesafe, full endpoint pasted", "https://api.typesafe.ai/v1/systemone", "", "https://api.typesafe.ai/v1/systemone"},
+		{"openrouter", "https://openrouter.ai/api", "", "https://openrouter.ai/api/v1/systemone"},
+		{"aggregator with its own prefix", "https://router.example.ai", "/decide/v1/systemone", "https://router.example.ai/decide/v1/systemone"},
+		{"path override without a leading slash", "https://router.example.ai", "decide", "https://router.example.ai/decide"},
+		{"override already present in the base", "https://router.example.ai/decide", "/decide", "https://router.example.ai/decide"},
 	} {
-		got, err := adaptor.GetRequestURL(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: tc.base}})
-		require.NoError(t, err, tc.base)
-		assert.Equal(t, tc.want, got, "base url %q", tc.base)
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := adaptor.GetRequestURL(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{
+				ChannelBaseUrl:       tc.base,
+				ChannelOtherSettings: dto.ChannelOtherSettings{SystemOnePath: tc.path},
+			}})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
 	}
 
 	_, err := adaptor.GetRequestURL(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}})

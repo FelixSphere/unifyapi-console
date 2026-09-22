@@ -301,6 +301,7 @@ const SENSITIVE_FORM_FIELDS = [
   'upstream_model_update_check_enabled',
   'upstream_model_update_auto_sync_enabled',
   'upstream_model_update_ignored_models',
+  'system_one_path',
 ] satisfies (keyof ChannelFormValues)[]
 
 function readAdvancedSettingsPreference(): boolean {
@@ -2213,6 +2214,33 @@ export function ChannelMutateDrawer({
                                   )}
                                 />
                               </>
+                            )}
+
+                            {/* TypeSafe System One (type 61) */}
+                            {currentType === 61 && (
+                              <FormField
+                                control={form.control}
+                                name='system_one_path'
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>
+                                      {t('System One Endpoint Path')}
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        placeholder={t('e.g., /v1/systemone')}
+                                        {...field}
+                                      />
+                                    </FormControl>
+                                    <FormDescription>
+                                      {t(
+                                        'Leave empty for /v1/systemone, which TypeSafe and OpenRouter both use. Set it only for an aggregator that mounts the System One API somewhere else.'
+                                      )}
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
                             )}
 
                             {/* Custom (type 8) */}

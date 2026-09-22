@@ -49,17 +49,32 @@ type Adaptor struct{}
 
 func (a *Adaptor) Init(_ *relaycommon.RelayInfo) {}
 
+// GetRequestURL builds the evaluation endpoint.
+//
+// The vendor serves /v1/systemone, and an aggregator that fronts it may mount
+// the same API anywhere: OpenRouter keeps the vendor's path under its own /api
+// base, others use a different prefix entirely. So the path is configuration.
+// Precedence: the channel's System One path if set, otherwise the vendor's,
+// and a base that already ends in the path it needs is left alone so an
+// operator who pasted the full endpoint does not call /v1/systemone twice.
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	base := strings.TrimSuffix(info.ChannelBaseUrl, "/")
 	if base == "" {
 		return "", errors.New("typesafe channel has no base url")
 	}
-	// An operator who typed the full endpoint into the channel should not end
-	// up calling /v1/systemone/v1/systemone.
-	if strings.HasSuffix(base, RequestPath) {
+
+	path := strings.TrimSpace(info.ChannelOtherSettings.SystemOnePath)
+	if path == "" {
+		path = RequestPath
+	} else if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	path = strings.TrimSuffix(path, "/")
+
+	if strings.HasSuffix(base, path) {
 		return base, nil
 	}
-	return base + RequestPath, nil
+	return base + path, nil
 }
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
