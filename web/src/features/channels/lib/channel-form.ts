@@ -266,6 +266,7 @@ export const channelFormSchema = z
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
     aws_key_type: z.enum(['ak_sk', 'api_key']).optional(), // AWS specific
     azure_responses_version: z.string().optional(), // Azure specific
+    system_one_path: z.string().optional(), // TypeSafe System One specific
     // Field passthrough controls (stored in settings JSON)
     allow_service_tier: z.boolean().optional(), // OpenAI/Anthropic
     disable_store: z.boolean().optional(), // OpenAI only
@@ -438,6 +439,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   vertex_key_type: 'json',
   aws_key_type: 'ak_sk',
   azure_responses_version: '',
+  system_one_path: '',
   // Field passthrough controls
   allow_service_tier: false,
   disable_store: false,
@@ -515,12 +517,14 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
   let advancedCustom = ''
+  let systemOnePath = ''
 
   if (channel.settings) {
     try {
       const parsed = JSON.parse(channel.settings)
       vertexKeyType = parsed.vertex_key_type || 'json'
       azureResponsesVersion = parsed.azure_responses_version || ''
+      systemOnePath = parsed.system_one_path || ''
       isEnterpriseAccount = parsed.openrouter_enterprise === true
       awsKeyType = parsed.aws_key_type || 'ak_sk'
       allowServiceTier = parsed.allow_service_tier === true
@@ -581,6 +585,7 @@ export function transformChannelToFormDefaults(
     is_enterprise_account: isEnterpriseAccount,
     vertex_key_type: vertexKeyType,
     azure_responses_version: azureResponsesVersion,
+    system_one_path: systemOnePath,
     aws_key_type: awsKeyType,
     allow_service_tier: allowServiceTier,
     disable_store: disableStore,
@@ -654,6 +659,13 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.azure_responses_version = formData.azure_responses_version
   } else if ('azure_responses_version' in settingsObj) {
     delete settingsObj.azure_responses_version
+  }
+
+  // Add system_one_path for TypeSafe channels (type 61)
+  if (formData.type === 61 && formData.system_one_path) {
+    settingsObj.system_one_path = formData.system_one_path
+  } else if ('system_one_path' in settingsObj) {
+    delete settingsObj.system_one_path
   }
 
   // Add enterprise account setting for OpenRouter (type 20)
