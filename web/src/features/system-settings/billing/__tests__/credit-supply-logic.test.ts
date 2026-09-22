@@ -17,9 +17,7 @@ import {
   formatRate,
   formatUSD,
   lotHealth,
-  payableUSD,
   remainingUSD,
-  shareBasisUSD,
   timestampFromInput,
   unpaidShareUSD,
   dateTimeInputValue,
@@ -35,7 +33,6 @@ function lot(overrides: Partial<CreditLot> = {}): CreditLot {
     channel_id: 7,
     channel_status: 1,
     face_value_usd: 1000,
-    acquisition_rate: 0.45,
     consumed_usd: 250,
     unpriced_requests: 0,
     low_water_usd: 100,
@@ -54,14 +51,9 @@ function lot(overrides: Partial<CreditLot> = {}): CreditLot {
     verification_note: '',
     payout_method: '',
     payout_account: '',
-    payout_reference: '',
-    paid_usd: 0,
-    paid_at: 0,
-    paid_by: '',
     retired_at: 0,
     created_at: NOW - 86400,
     updated_at: NOW,
-    deal_type: 'purchase',
     revenue_share_pct: 0,
     revenue_share_basis: '',
     share_revenue_usd: 0,
@@ -75,10 +67,6 @@ describe('credit supply arithmetic', () => {
   test('remaining never goes negative and payable follows the rate', () => {
     assert.equal(remainingUSD(lot()), 750)
     assert.equal(remainingUSD(lot({ consumed_usd: 1200 })), 0)
-    assert.ok(Math.abs(payableUSD(lot()) - 112.5) < 1e-9)
-    // A sale bought outright was paid in full at activation, so consuming it
-    // does not make it owed a second time.
-    assert.equal(payableUSD(lot({ paid_usd: 450, paid_at: NOW - 3600 })), 0)
     assert.equal(consumedPct(lot()), 25)
     assert.equal(consumedPct(lot({ consumed_usd: 5000 })), 100)
     assert.equal(consumedPct(lot({ face_value_usd: 0 })), 0)
@@ -185,33 +173,18 @@ describe('datetime-local round trip', () => {
   })
 })
 
-describe('contributed keys earn a share of what they serve', () => {
+describe('a key earns its seller a share of what it sells', () => {
   const contributed = (overrides: Partial<CreditLot> = {}) =>
     lot({
-      deal_type: 'revenue_share',
       revenue_share_pct: 0.5,
-      revenue_share_basis: 'margin',
-      acquisition_rate: 0,
       share_revenue_usd: 100,
       share_cost_usd: 0,
       ...overrides,
     })
 
-  test('a purchase earns nothing however much it serves', () => {
-    assert.equal(shareBasisUSD(lot({ share_revenue_usd: 500 })), 0)
-    assert.equal(earnedShareUSD(lot({ share_revenue_usd: 500 })), 0)
-  })
-
-  test('the margin basis nets off what we paid up front, the revenue basis does not', () => {
+  test('the share is half of what the key sold for', () => {
     assert.equal(earnedShareUSD(contributed()), 50)
-    assert.equal(earnedShareUSD(contributed({ share_cost_usd: 20 })), 40)
-    assert.equal(
-      earnedShareUSD(
-        contributed({ share_cost_usd: 20, revenue_share_basis: 'revenue' })
-      ),
-      50
-    )
-    // A key that cost more than it made owes nothing, never a negative.
+    // A key that somehow cost more than it made owes nothing, never a negative.
     assert.equal(earnedShareUSD(contributed({ share_cost_usd: 250 })), 0)
   })
 
@@ -222,17 +195,12 @@ describe('contributed keys earn a share of what they serve', () => {
     assert.equal(unpaidShareUSD(contributed({ paid_share_usd: 49.999 })), 0)
   })
 
-  test('a contributed key is accepted, not paid for', () => {
+  test('a verified key is accepted, and nothing is paid for up front', () => {
     assert.deepEqual(
       availableTransitions(contributed({ status: 'verified' }), NOW).map(
         (t) => t.to
       ),
       ['active', 'rejected']
-    )
-    // A sale still goes through Pay & activate, which is rendered separately.
-    assert.deepEqual(
-      availableTransitions(lot({ status: 'verified' }), NOW).map((t) => t.to),
-      ['rejected']
     )
   })
 })

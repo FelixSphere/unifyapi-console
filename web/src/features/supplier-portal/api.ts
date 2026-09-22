@@ -27,10 +27,8 @@ export type SupplierLot = {
   channel_id: number
   channel_name: string
   face_value_usd: number
-  acquisition_rate: number
   consumed_usd: number
   remaining_usd: number
-  payable_usd: number
   unpriced_requests: number
   expires_at: number
   status: CreditLotStatus
@@ -40,12 +38,7 @@ export type SupplierLot = {
   created_at: number
   verified_at: number
   payout_method: 'platform_credit' | 'external' | ''
-  payout_usd: number
-  paid_usd: number
-  paid_at: number
-  payout_reference: string
   // The dividend side of a contributed key; zeroes on a sale.
-  deal_type: SupplierDeal
   revenue_share_pct: number
   share_revenue_usd: number
   share_earned_usd: number
@@ -122,8 +115,6 @@ export type SupplierPortalData = {
     face_usd: number
     consumed_usd: number
     remaining_usd: number
-    awaiting_payment_usd: number
-    paid_usd: number
     share_revenue_usd: number
     share_earned_usd: number
     share_paid_usd: number
@@ -234,7 +225,6 @@ export async function submitSupplierLot(submission: SupplierLotSubmission) {
         lot_id: number
         channel_id: number
         status: CreditLotStatus
-        deal_type: SupplierDeal
         revenue_share_pct: number
       }>
     >('/api/supplier/lots', submission)

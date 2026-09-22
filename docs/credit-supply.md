@@ -2,14 +2,10 @@
 
 The credit supply is the **supply side** of the console. Third parties who hold
 vendor credits (OpenAI, Anthropic, Google, OpenRouter, ...) let us consume them
-and we route customer traffic through their key. There are two deals, and one
-pipeline serves both:
+and we route customer traffic through their key. There is one deal:
 
-- **Sell the credits.** One payment, at the posted rate, made before a single
-  request goes through the key.
-- **Contribute the key.** Nothing up front; the owner keeps a share of
-  everything it earns, settled as it builds up. See
-  [Contributed keys](#contributed-keys-a-share-of-what-they-earn).
+- **Hand us the key.** Nothing is paid up front; the owner keeps a posted
+  share of what the credits sell for, settled as it builds up.
 
 Operators manage it in **System Settings → Billing → Credit Supply**;
 contributors see their own slice in the **Supplier portal**.
@@ -124,9 +120,11 @@ The operator posts the terms once, in Billing → Credit Supply → *Supply term
 | `revenue_share_basis` | `revenue` | what the share is a share **of** — see below |
 | `min_share_payout_usd` | 20 | a balance waits until it reaches this before it is paid |
 | `min_face_usd` | 100 | smallest balance we take on |
+
+Clearing every vendor share pauses intake without deleting the terms: sellers
+then see no vendors and every submission is refused.
 | `channel_priority` | 10 | supplier channels outrank our own accounts (0) so they drain first |
 | `manual_review` | false | keep a verified key disabled until an operator accepts it |
-| `buy_rates.<vendor>` | 0.20 / 0.30 | **operator-only**: rates for lots an operator enters as an outright purchase |
 
 Every term is editable on the screen and takes effect for the next
 submission. A lot **snapshots** its share and basis at submission, so changing
@@ -150,12 +148,9 @@ with it. The same row on production carried a $100bn minimum sale.
 
 ### What the share is a share of
 
-- `revenue` (default) — everything customers **actually paid** for traffic
-  the key served, in dollars. This is the figure the seller sees as *Sold for*,
-  can check against their own vendor dashboard's consumption, and is paid on.
-- `margin` — that, less anything we paid for the credits up front. Identical
-  to `revenue` for a contributed key (nothing was paid); only differs on a
-  mixed operator-entered lot.
+Everything customers **actually paid** for traffic the key served, in dollars.
+This is the figure the seller sees as *Sold for*, can check against their own
+vendor dashboard's consumption, and is paid on.
 
 Grant-funded and unbilled traffic (promotional credit pools) pays the customer
 nothing, so it would earn the seller nothing while drawing their credits down.
@@ -286,3 +281,21 @@ Vendor terms commonly restrict transferring or reselling promotional credits.
 The pool records who supplied each lot and under what terms so the operator can
 evidence provenance; it does not and cannot establish that a supplier had the
 right to sell. Confirm that before approving a lot.
+
+## Withdrawn: buying credits outright
+
+Until 2026-09-22 an operator could also **buy** a seller's credits at a posted
+rate: one payment, made before a single request went through the key. It is
+gone, and `ErrCreditLotBuyOutWithdrawn` refuses it by name so an old caller is
+told what happened rather than quietly getting a different deal.
+
+The reason is the risk sat entirely on our side. We paid cash against a face
+value only the seller could see, on a key they could revoke the next minute,
+for credits that might expire before they were drawn. Nothing about it was ever
+offered to a seller either: the submission path always forced a revenue share.
+Production had zero bought lots when it was removed, so nothing was migrated.
+
+`credit_lots.deal_type` and the columns that served the purchase
+(`paid_usd`, `paid_at`, `paid_by`, `payout_reference`, `payout_quote_multiplier`)
+are left on the table, unread. Dropping a column earns nothing and costs a
+migration.

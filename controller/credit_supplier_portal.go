@@ -153,10 +153,8 @@ type portalLotView struct {
 	ChannelId        int     `json:"channel_id"`
 	ChannelName      string  `json:"channel_name"`
 	FaceValueUSD     float64 `json:"face_value_usd"`
-	AcquisitionRate  float64 `json:"acquisition_rate"`
 	ConsumedUSD      float64 `json:"consumed_usd"`
 	RemainingUSD     float64 `json:"remaining_usd"`
-	PayableUSD       float64 `json:"payable_usd"`
 	UnpricedRequests int64   `json:"unpriced_requests"`
 	ExpiresAt        int64   `json:"expires_at"`
 	Status           string  `json:"status"`
@@ -166,12 +164,7 @@ type portalLotView struct {
 	CreatedAt        int64   `json:"created_at"`
 	VerifiedAt       int64   `json:"verified_at"`
 	PayoutMethod     string  `json:"payout_method"`
-	PayoutUSD        float64 `json:"payout_usd"`
-	PaidUSD          float64 `json:"paid_usd"`
-	PaidAt           int64   `json:"paid_at"`
-	PayoutReference  string  `json:"payout_reference"`
 	// The dividend side of a contributed key. Zero on a lot bought outright.
-	DealType        string  `json:"deal_type"`
 	RevenueSharePct float64 `json:"revenue_share_pct"`
 	ShareRevenueUSD float64 `json:"share_revenue_usd"`
 	ShareEarnedUSD  float64 `json:"share_earned_usd"`
@@ -207,18 +200,15 @@ func GetSupplierPortal(c *gin.Context) {
 
 	views := make([]portalLotView, 0, len(lots))
 	totals := gin.H{}
-	terms := model.GetCreditSupplyTerms()
-	var face, consumed, remaining, awaiting, paid float64
+	var face, consumed, remaining float64
 	for _, lot := range lots {
 		views = append(views, portalLotView{
 			Id: lot.Id, Vendor: lot.Vendor, ChannelId: lot.ChannelId, ChannelName: channelNames[lot.ChannelId],
-			FaceValueUSD: lot.FaceValueUSD, AcquisitionRate: lot.AcquisitionRate, ConsumedUSD: lot.ConsumedUSD,
-			RemainingUSD: lot.RemainingUSD(), PayableUSD: lot.PayableUSD(), UnpricedRequests: lot.UnpricedRequests,
+			FaceValueUSD: lot.FaceValueUSD, ConsumedUSD: lot.ConsumedUSD,
+			RemainingUSD: lot.RemainingUSD(), UnpricedRequests: lot.UnpricedRequests,
 			ExpiresAt: lot.ExpiresAt, Status: lot.Status, StatusReason: lot.StatusReason, Source: lot.Source, RetiredAt: lot.RetiredAt, CreatedAt: lot.CreatedAt,
 			VerifiedAt: lot.VerifiedAt, PayoutMethod: lot.PayoutMethod,
-			PayoutUSD: lot.PayoutUSD(terms),
-			PaidUSD:   lot.PaidUSD, PaidAt: lot.PaidAt, PayoutReference: lot.PayoutReference,
-			DealType: lot.DealType, RevenueSharePct: lot.RevenueSharePct,
+			RevenueSharePct: lot.RevenueSharePct,
 			ShareRevenueUSD: lot.ShareRevenueUSD, ShareEarnedUSD: lot.EarnedShareUSD(),
 			SharePaidUSD: lot.PaidShareUSD, ShareUnpaidUSD: lot.UnpaidShareUSD(),
 		})
@@ -228,16 +218,10 @@ func GetSupplierPortal(c *gin.Context) {
 		face += lot.FaceValueUSD
 		consumed += lot.ConsumedUSD
 		remaining += lot.RemainingUSD()
-		if lot.Status == model.CreditLotStatusVerified {
-			awaiting += lot.PayoutUSD(terms)
-		}
-		paid += lot.PaidUSD
 	}
 	totals["face_usd"] = face
 	totals["consumed_usd"] = consumed
 	totals["remaining_usd"] = remaining
-	totals["awaiting_payment_usd"] = awaiting
-	totals["paid_usd"] = paid
 	share := model.SumCreditShare(lots)
 	totals["share_revenue_usd"] = share.RevenueUSD
 	totals["share_earned_usd"] = share.EarnedUSD
@@ -256,12 +240,10 @@ func GetSupplierPortal(c *gin.Context) {
 		"totals":        totals,
 		"share_payouts": payouts,
 		"vendors":       supplierVendorPresets(),
-		"terms":         postedTerms(terms),
+		"terms":         postedTerms(model.GetCreditSupplyTerms()),
 	}})
 }
 
-// supplierLotSubmission is what a supplier may propose. The rate is their
-// asking price; the operator may edit it before approving.
 // GetSupplierTerms is the price list a seller sees before typing anything.
 func GetSupplierTerms(c *gin.Context) {
 	terms := model.GetCreditSupplyTerms()
@@ -271,8 +253,8 @@ func GetSupplierTerms(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": data})
 }
 
-// postedTerms is the offer, and only the offer: both ways of handing us a key
-// and what each pays. Everything else about the terms is operator business.
+// postedTerms is the offer, and only the offer: the share a seller keeps and
+// the thresholds around it. Everything else is operator business.
 func postedTerms(terms model.CreditSupplyTerms) gin.H {
 	// Sellers are offered one deal: a share of what their credits sell for.
 	// The buy rates still exist for lots an operator enters by hand, and are

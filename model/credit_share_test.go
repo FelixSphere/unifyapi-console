@@ -31,7 +31,7 @@ func contribute(t *testing.T, channelId int, sharePct float64, basis string) (*C
 	seedSupplierChannel(t, channelId)
 	lot := &CreditLot{
 		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: channelId,
-		FaceValueUSD: 1000, AcquisitionRate: 0, DealType: CreditLotDealRevenueShare,
+		FaceValueUSD: 1000, DealType: CreditLotDealRevenueShare,
 		RevenueSharePct: sharePct, RevenueShareBasis: basis,
 		Source: CreditLotSourceSupplier, PayoutMethod: CreditLotPayoutPlatformCredit,
 	}
@@ -53,10 +53,6 @@ func TestAContributedKeyIsAcceptedWithoutPaymentAndEarnsAsItServes(t *testing.T)
 	_, lot := contribute(t, 7, 0.5, CreditShareBasisMargin)
 	_, err := MarkCreditLotVerified(lot.Id, "system", "key answered", 0)
 	require.NoError(t, err)
-
-	// Nothing was sold, so there is nothing to pay for at the till.
-	_, err = PayCreditLot(lot.Id, CreditLotPayment{Actor: "root"})
-	require.ErrorIs(t, err, ErrCreditLotNothingToPay)
 
 	// Accepting it is still a decision, and still needs the answer to the
 	// right-to-transfer question.
@@ -82,7 +78,6 @@ func TestAContributedKeyIsAcceptedWithoutPaymentAndEarnsAsItServes(t *testing.T)
 	assert.Zero(t, fresh.ShareCostUSD, "nothing was paid for these credits up front")
 	assert.InDelta(t, 50, fresh.EarnedShareUSD(), 1e-9, "half of it")
 	assert.InDelta(t, 50, fresh.UnpaidShareUSD(), 1e-9)
-	assert.Zero(t, fresh.PayableUSD(), "the dividend is not a purchase payable")
 	assert.InDelta(t, listPrice*2, fresh.ConsumedUSD, 1e-9, "the key is still drawn down at list price")
 
 	usage, err := GetCreditLotUsage(lot.Id, 7)
@@ -203,99 +198,36 @@ func TestTheMinimumPayoutHoldsSmallBalancesBackUntilTheOperatorInsists(t *testin
 	assert.InDelta(t, 5, forced.AmountUSD, 1e-9)
 }
 
-// The margin basis exists for the mixed deal: a smaller payment up front plus a
-// share of what is left. With nothing paid up front the two bases agree, which
-// is why margin is the safe default.
-func TestTheMarginBasisNetsOffWhatWePaidUpFront(t *testing.T) {
-	setupCreditSupplyTestDB(t)
-	require.NoError(t, DB.Create(&User{Id: 42, Username: "acme"}).Error)
-	supplier := seedSupplier(t, "acme")
-	supplier.UserId = 42
-	require.NoError(t, UpdateCreditSupplier(supplier.Id, supplier))
-	seedSupplierChannel(t, 7)
-	listPrice, ok := ratio_setting.ListPriceUSD("claude-sonnet-5", ratio_setting.TokenUsage{PromptTokens: int64(1_000_000), CachedTokens: int64(0), CompletionTokens: int64(0)})
-	require.True(t, ok)
-
-	lot := &CreditLot{
-		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7,
-		FaceValueUSD: listPrice * 10, AcquisitionRate: 0.1,
-		DealType: CreditLotDealRevenueShare, RevenueSharePct: 0.5,
-		RevenueShareBasis: CreditShareBasisMargin,
-		Source:            CreditLotSourceSupplier, PayoutMethod: CreditLotPayoutPlatformCredit,
-	}
-	require.NoError(t, CreateCreditLot(lot, "acme"))
-	_, err := MarkCreditLotVerified(lot.Id, "system", "ok", 0)
-	require.NoError(t, err)
-	// Something is owed up front, so this one is bought before it is used.
-	_, err = TransitionCreditLot(lot.Id, approve("root"))
-	require.ErrorIs(t, err, ErrCreditLotNeedsPayment)
-	_, err = PayCreditLot(lot.Id, CreditLotPayment{Actor: "root"})
-	require.NoError(t, err)
-	assert.InDelta(t, 0.5, ratio_setting.GetChannelCostRatio(7), 1e-9, "on a mixed deal the share, the larger and ongoing cost, is the basis")
-
-	revenue(7, 100)
-	fresh, err := GetCreditLotById(lot.Id)
-	require.NoError(t, err)
-	assert.InDelta(t, listPrice*0.1, fresh.ShareCostUSD, 1e-9, "one request's worth of face value at the rate we paid")
-	assert.InDelta(t, (100-listPrice*0.1)*0.5, fresh.EarnedShareUSD(), 1e-9)
-
-	// On the revenue basis the same traffic would split the gross instead.
-	fresh.RevenueShareBasis = CreditShareBasisRevenue
-	assert.InDelta(t, 50, fresh.EarnedShareUSD(), 1e-9)
-}
-
-func TestALotBoughtOutrightEarnsNoDividend(t *testing.T) {
-	setupCreditSupplyTestDB(t)
-	supplier := seedSupplier(t, "acme")
-	seedSupplierChannel(t, 7)
-	lot := &CreditLot{
-		SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7,
-		FaceValueUSD: 1000, AcquisitionRate: 0.4, Status: CreditLotStatusActive,
-	}
-	require.NoError(t, CreateCreditLot(lot, "root"))
-	assert.Equal(t, CreditLotDealPurchase, lot.DealType, "the default deal is the one that existed before")
-	revenue(7, 100)
-
-	fresh, err := GetCreditLotById(lot.Id)
-	require.NoError(t, err)
-	assert.Zero(t, fresh.ShareRevenueUSD, "revenue is only tracked where somebody is owed a share of it")
-	assert.Zero(t, fresh.EarnedShareUSD())
-	_, err = PaySupplierShare(supplier.Id, SharePayoutRequest{Actor: "root", Method: CreditLotPayoutExternal, Reference: "x"})
-	require.ErrorIs(t, err, ErrNoShareToPay)
-}
-
-func TestTheTwoDealsAreValidatedAgainstEachOther(t *testing.T) {
+func TestTheOneDealIsValidatedAndTheWithdrawnOneRefused(t *testing.T) {
 	setupCreditSupplyTestDB(t)
 	supplier := seedSupplier(t, "acme")
 	seedSupplierChannel(t, 7)
 	base := func() *CreditLot {
 		return &CreditLot{
 			SupplierId: supplier.Id, Vendor: "anthropic", ChannelId: 7,
-			FaceValueUSD: 1000, AcquisitionRate: 0.4,
+			FaceValueUSD: 1000, RevenueSharePct: 0.4,
 		}
 	}
-	sold := base()
-	sold.RevenueSharePct = 0.5
-	require.Error(t, CreateCreditLot(sold, "root"), "a lot bought outright has no dividend")
 
-	shared := base()
-	shared.DealType = CreditLotDealRevenueShare
-	shared.AcquisitionRate = 0
-	require.Error(t, CreateCreditLot(shared, "root"), "a contributed key with no share is a gift, not a deal")
+	// Buying credits outright is refused by name, so an old caller is told
+	// what happened rather than quietly getting a different deal.
+	bought := base()
+	bought.DealType = CreditLotDealPurchase
+	require.ErrorIs(t, CreateCreditLot(bought, "root"), ErrCreditLotBuyOutWithdrawn)
 
-	shared = base()
-	shared.DealType = CreditLotDealRevenueShare
-	shared.RevenueSharePct = 1.5
-	require.Error(t, CreateCreditLot(shared, "root"))
+	noShare := base()
+	noShare.RevenueSharePct = 0
+	require.Error(t, CreateCreditLot(noShare, "root"), "a key with no share is a gift, not a deal")
 
-	shared = base()
-	shared.DealType = CreditLotDealRevenueShare
-	shared.RevenueSharePct = 0.5
-	require.Error(t, CreateCreditLot(shared, "root"), "the basis is part of the deal and is recorded with it")
+	tooMuch := base()
+	tooMuch.RevenueSharePct = 1.5
+	require.Error(t, CreateCreditLot(tooMuch, "root"), "a seller cannot keep more than everything")
 
-	unknown := base()
-	unknown.DealType = "barter"
-	require.Error(t, CreateCreditLot(unknown, "root"))
+	// The ordinary case: no deal type given at all is the only deal there is.
+	ok := base()
+	require.NoError(t, CreateCreditLot(ok, "root"))
+	assert.Equal(t, CreditLotDealRevenueShare, ok.DealType)
+	assert.Equal(t, CreditShareBasisRevenue, ok.RevenueShareBasis, "an unset basis takes the posted one")
 }
 
 func TestPostedRevenueShareTermsAreValidatedAndSnapshotIsWhatCounts(t *testing.T) {
@@ -306,18 +238,18 @@ func TestPostedRevenueShareTermsAreValidatedAndSnapshotIsWhatCounts(t *testing.T
 	assert.InDelta(t, 0.5, share, 1e-9)
 	assert.Equal(t, CreditShareBasisRevenue, terms.ShareBasis(), "sellers see and check what their credits sold for; that is what the share is of")
 
-	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":0.2},"revenue_share_rates":{"anthropic":1.4}}`))
-	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":0.2},"revenue_share_basis":"gut feel"}`))
-	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":0.2},"min_share_payout_usd":-1}`))
+	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"revenue_share_rates":{"anthropic":1.4}}`))
+	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"revenue_share_basis":"gut feel"}`))
+	require.Error(t, UpdateCreditSupplyTermsByJSONString(`{"min_share_payout_usd":-1}`))
 
-	// CLEARING the rates is how the operator stops taking keys on those terms.
-	// Omitting them is not: every row written before revenue share existed
-	// omits them, and reading that as "switched off" ships the feature dead on
-	// arrival. See TestALegacyTermsRowDoesNotShipTheFeatureInert.
-	require.NoError(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":0.2},"revenue_share_rates":{}}`))
+	// CLEARING the rates is how the operator pauses intake. Omitting them is
+	// not: every row written before revenue share existed omits them, and
+	// reading that as "switched off" ships the feature dead on arrival. See
+	// TestALegacyTermsRowDoesNotShipTheFeatureInert.
+	require.NoError(t, UpdateCreditSupplyTermsByJSONString(`{"revenue_share_rates":{}}`))
 	_, ok = GetCreditSupplyTerms().RevenueShareRate("anthropic")
 	assert.False(t, ok)
-	require.NoError(t, UpdateCreditSupplyTermsByJSONString(`{"buy_rates":{"anthropic":0.2}}`))
+	require.NoError(t, UpdateCreditSupplyTermsByJSONString(`{"min_face_usd":100}`))
 	_, ok = GetCreditSupplyTerms().RevenueShareRate("anthropic")
 	assert.True(t, ok, "an absent map inherits the posted default")
 

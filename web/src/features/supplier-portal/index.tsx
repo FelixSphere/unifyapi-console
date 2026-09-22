@@ -100,7 +100,6 @@ export function SupplierPortal() {
     Boolean(activeTerms) &&
     data?.supplier.status !== 'suspended' &&
     hasPayoutAccount
-  const payments = (data?.lots ?? []).filter((lot) => lot.paid_at > 0)
   const payoutAccount = data?.supplier
     ? {
         method: data.supplier.payout_method,
@@ -286,9 +285,7 @@ export function SupplierPortal() {
                 />
                 <Headline
                   label={t('Paid to you')}
-                  value={formatUSD(
-                    data.totals.share_paid_usd + data.totals.paid_usd
-                  )}
+                  value={formatUSD(data.totals.share_paid_usd)}
                   hint={t('Across all payouts')}
                 />
                 <Headline
@@ -451,30 +448,6 @@ export function SupplierPortal() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className='grid gap-2'>
-                    {payments.map((lot) => (
-                      <div
-                        key={lot.id}
-                        className='flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2 text-sm'
-                      >
-                        <span>
-                          {t('Sale #{{id}}', { id: lot.id })} ·{' '}
-                          {VENDOR_LABELS[lot.vendor] ?? lot.vendor}
-                          <span className='text-muted-foreground'>
-                            {' '}
-                            ·{' '}
-                            {new Date(lot.paid_at * 1000).toLocaleDateString()}
-                          </span>
-                        </span>
-                        <span className='flex items-center gap-2 tabular-nums'>
-                          {formatUSD(lot.paid_usd)}
-                          <Badge variant='outline'>
-                            {lot.payout_method === 'platform_credit'
-                              ? t('Platform credit')
-                              : lot.payout_reference || t('Transfer')}
-                          </Badge>
-                        </span>
-                      </div>
-                    ))}
                     {(data.share_payouts ?? []).map((payout) => (
                       <div
                         key={`share-${payout.id}`}
@@ -502,8 +475,7 @@ export function SupplierPortal() {
                         </span>
                       </div>
                     ))}
-                    {payments.length === 0 &&
-                    (data.share_payouts ?? []).length === 0 ? (
+                    {(data.share_payouts ?? []).length === 0 ? (
                       <p className='text-muted-foreground text-sm'>
                         {t('No payments yet.')}
                       </p>
@@ -549,17 +521,6 @@ export function SupplierPortal() {
 
 function SoldForCell({ lot }: { lot: SupplierLot }) {
   const { t } = useTranslation()
-  if (lot.deal_type !== 'revenue_share') {
-    // A lot an operator bought outright: paid once, at its rate.
-    return (
-      <>
-        <div>{formatUSD(lot.paid_usd)}</div>
-        <div className='text-muted-foreground text-xs'>
-          {t('bought outright')}
-        </div>
-      </>
-    )
-  }
   return (
     <>
       <div>{formatUSD(lot.share_revenue_usd)}</div>
@@ -572,9 +533,6 @@ function SoldForCell({ lot }: { lot: SupplierLot }) {
 
 function ShareCell({ lot }: { lot: SupplierLot }) {
   const { t } = useTranslation()
-  if (lot.deal_type !== 'revenue_share') {
-    return <span className='text-muted-foreground'>—</span>
-  }
   return (
     <>
       <div>
