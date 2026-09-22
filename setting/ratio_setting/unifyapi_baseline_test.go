@@ -71,6 +71,7 @@ var publishedModels = []string{
 	"glm-5.1",
 	"glm-5.2",
 	"glm-5.3",
+	"jev-1.13",
 	"gpt-4.1-mini",
 	"gpt-4o",
 	"gpt-4o-mini",
@@ -375,6 +376,7 @@ func TestUnverifiedEntriesAreDeclared(t *testing.T) {
 		"deepseek-v3.2",               //
 		"deepseek-v3.2-thinking",      //
 		"deepseek-flash",              // V4.1 Flash, released 2026-09-10; newer than the pinned fixture, quoted off DeepSeek's page
+		"jev-1.13",                    // TypeSafe System One, released 2026-09-15; not on models.dev, quoted off docs.typesafe.ai
 		"gemini-3.1-flash-lite-image", // Nano Banana 2 Lite; newer than the pinned fixture
 		"gemini-3.5-flash",            // newer than the pinned fixture; quoted off Google's page
 		"gemini-3.7-flash",            // same, and on promotional pricing until 2026-12-31

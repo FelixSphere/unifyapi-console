@@ -278,10 +278,19 @@ func ValidateCatalog() []error {
 		if entry.PerCallUSD == 0 && entry.InputUSD <= 0 {
 			problems = append(problems, fmt.Errorf("%s: input price must be positive, got %g", entry.Model, entry.InputUSD))
 		}
-		if entry.PerCallUSD == 0 && entry.OutputUSD <= 0 {
-			problems = append(problems, fmt.Errorf("%s: output price must be positive, got %g", entry.Model, entry.OutputUSD))
+		// UNIFYAPI-FORK: an output price of exactly zero is legitimate for a
+		// decision-only model, which emits no output tokens to meter (Jev; see
+		// the System One block in the catalog). Everything else must still
+		// carry a positive output price, and the transposition guard below
+		// still catches a swapped pair, because a transposed row has a
+		// positive output price that is merely lower than its input price.
+		if entry.PerCallUSD == 0 && entry.OutputUSD < 0 {
+			problems = append(problems, fmt.Errorf("%s: output price must not be negative, got %g", entry.Model, entry.OutputUSD))
 		}
-		if entry.OutputUSD < entry.InputUSD {
+		if entry.PerCallUSD == 0 && entry.OutputUSD == 0 && !entry.FreeOutput {
+			problems = append(problems, fmt.Errorf("%s: output price is zero without FreeOutput -- set FreeOutput only when the vendor genuinely meters no output tokens", entry.Model))
+		}
+		if entry.OutputUSD > 0 && entry.OutputUSD < entry.InputUSD {
 			problems = append(problems, fmt.Errorf("%s: output price %g is below input price %g, which no vendor charges -- likely transposed",
 				entry.Model, entry.OutputUSD, entry.InputUSD))
 		}

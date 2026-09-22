@@ -104,6 +104,7 @@ psql "$SQL_DSN" -f seed-pricing.sql
 | 49 个 | models.dev 自动核对，无漂移 |
 | `deepseek-v4-flash`、`deepseek-v4-pro` | 人工报价覆盖 feed（DeepSeek 08-16 涨价） |
 | `deepseek-flash` | DeepSeek-V4.1-Flash，2026-09-10 上线；models.dev 快照尚未收录，按厂商价目表峰值人工报价（2026-09-17） |
+| `jev-1.13` | TypeSafe System One（决策模型），2026-09-15 发布；models.dev 不收录，按厂商文档人工报价（2026-09-21）。**输出免费**是机制使然（无自回归解码、无输出 token 可计），目录行以 `FreeOutput` 标记；**目前没有适配器能转发它**，见下 |
 | `qwen3.5-flash` | 人工核对过阿里云新加坡价目表，价格本来就对 |
 | `glm-5-turbo` | 中国区独有，只有人民币价、且按输入长度分档 |
 | `deepseek-v3`、`deepseek-v3.2`、`deepseek-v3.2-thinking` | **厂商已下架**，没有官方价可填 |
@@ -486,3 +487,17 @@ curl -s "$CONSOLE/api/pricing/reconcile?start=...&end=...&group_by=model" | \
 | `web/src/features/system-settings/models/channel-cost-tab.tsx` | 后台「上游采购成本」tab |
 | `web/src/features/system-settings/models/profit-section.tsx` | 后台「利润」页 |
 | `web/src/features/system-settings/models/settlement-section.tsx` | 后台「对账结算」页 |
+
+### TypeSafe Jev：输出免费，且暂时无法转发
+
+Jev 不生成文本，它接收 `state` + 一组带类型的问题，返回校准后的概率。因此**没有输出 token 可计费**，
+`OutputUSD` 的 0 是厂商的真实价格而非漏填——目录用 `FreeOutput` 字段把这两种情况区分开，
+校验仍然拒绝"输出价为 0 却没有标记"和"输出价低于输入价"（换位错误）的行。
+
+注意区分两种"免费"：Vercel AI Gateway 的**限时免费**到 2026-09-25 截止，那是渠道方的促销；
+TypeSafe 自己的价目表上输出一直免费，直连 key 不受该日期影响。
+
+**这一行只定价，不代表可用。** TypeSafe 的接口是 `POST https://api.typesafe.ai/v1/systemone`，
+请求体形状与 OpenAI 的 chat/completions 完全不同，我们现有的任何渠道适配器都无法转发。
+要真正开卖，需要二选一：挂一个能把它包成 chat 形状的聚合渠道，或者新写一个适配器
+（后者等于给客户开一个新的 API 形状，属于产品决策）。
