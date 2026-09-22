@@ -18,6 +18,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -91,6 +92,116 @@ func filePayoutAccount(t *testing.T, userId int, body string) {
 	c, recorder := portalContext(t, userId, http.MethodPut, "/api/supplier/payout-account", body)
 	UpdateSupplierPayoutAccount(c)
 	require.Equal(t, true, decode(t, recorder)["success"], recorder.Body.String())
+}
+
+// withBinancePaymentSettings points Payment Settings at the accounts a test
+// needs and puts them back, because they are process-wide.
+func withBinancePaymentSettings(t *testing.T, global, us bool) {
+	t.Helper()
+	const fakeKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	prevGlobal, prevGlobalKey, prevGlobalSecret := setting.BinancePayEnabled, setting.BinancePayApiKey, setting.BinancePaySecretKey
+	prevUS, prevUSKey, prevUSSecret := setting.BinancePayUSEnabled, setting.BinancePayUSApiKey, setting.BinancePayUSSecretKey
+	prevNetworks := setting.BinancePayUSDepositNetworks
+	t.Cleanup(func() {
+		setting.BinancePayEnabled, setting.BinancePayApiKey, setting.BinancePaySecretKey = prevGlobal, prevGlobalKey, prevGlobalSecret
+		setting.BinancePayUSEnabled, setting.BinancePayUSApiKey, setting.BinancePayUSSecretKey = prevUS, prevUSKey, prevUSSecret
+		setting.BinancePayUSDepositNetworks = prevNetworks
+	})
+	setting.BinancePayEnabled = global
+	setting.BinancePayApiKey, setting.BinancePaySecretKey = "", ""
+	if global {
+		setting.BinancePayApiKey, setting.BinancePaySecretKey = fakeKey, fakeKey
+	}
+	setting.BinancePayUSEnabled = us
+	setting.BinancePayUSApiKey, setting.BinancePayUSSecretKey = "", ""
+	setting.BinancePayUSDepositNetworks = `["TRX"]`
+	if us {
+		setting.BinancePayUSApiKey, setting.BinancePayUSSecretKey = fakeKey, fakeKey
+	}
+}
+
+func railFromPayload(t *testing.T, rails any, id string) map[string]any {
+	t.Helper()
+	for _, entry := range rails.([]any) {
+		rail := entry.(map[string]any)
+		if rail["id"] == id {
+			return rail
+		}
+	}
+	t.Fatalf("rail %q is not in %v", id, rails)
+	return nil
+}
+
+// The seller's payout choices are the platform's own payment methods, so a
+// seller reads one set of names and an operator has one place to switch a
+// rail off. This is the wire-level check on that.
+func TestPayoutRailsOfferedAreThePlatformsOwnPaymentMethods(t *testing.T) {
+	setupSupplierPortalTest(t)
+	withBinancePaymentSettings(t, false, true)
+	require.NoError(t, model.DB.Create(&model.User{Id: 42, Username: "acme"}).Error)
+	require.NoError(t, model.DB.Create(&model.CreditSupplier{
+		Id: 1, Name: "Acme Labs", Code: "acme", UserId: 42, Status: model.CreditSupplierStatusActive,
+	}).Error)
+
+	c, recorder := portalContext(t, 42, http.MethodGet, "/api/supplier/me", "")
+	GetSupplierPortal(c)
+	rails := decode(t, recorder)["data"].(map[string]any)["payout_rails"]
+
+	assert.Equal(t, true, railFromPayload(t, rails, "bank_transfer")["available"])
+	assert.Equal(t, true, railFromPayload(t, rails, "binance_pay_us")["available"])
+	assert.Equal(t, []any{"TRX"}, railFromPayload(t, rails, "binance_pay_us")["networks"])
+	// Binance Pay is off in Payment Settings, so it is not on offer here --
+	// and the page can say why rather than showing a dead entry.
+	binance := railFromPayload(t, rails, "binance_pay")
+	assert.Equal(t, false, binance["available"])
+	assert.Contains(t, binance["unavailable_reason"], "Payment Settings")
+	assert.Contains(t, railFromPayload(t, rails, "stripe")["unavailable_reason"], "Stripe Connect")
+
+	// Filing against a switched-off rail is refused at the endpoint too, not
+	// only hidden in the picker.
+	c, recorder = portalContext(t, 42, http.MethodPut, "/api/supplier/payout-account",
+		`{"method":"binance_pay","holder":"Acme Ltd","details":"123456789"}`)
+	UpdateSupplierPayoutAccount(c)
+	payload := decode(t, recorder)
+	assert.Equal(t, false, payload["success"])
+	assert.Contains(t, payload["message"], "Payment Settings")
+
+	// The available one goes through, canonicalised, and comes back named.
+	c, recorder = portalContext(t, 42, http.MethodPut, "/api/supplier/payout-account",
+		`{"method":"binance_pay_us","holder":"Acme Ltd","details":"trc20:TQn9Y2khDD95J42FQtQTdwVVRZqqArtzBb","currency":"gbp"}`)
+	UpdateSupplierPayoutAccount(c)
+	payload = decode(t, recorder)
+	require.Equal(t, true, payload["success"], recorder.Body.String())
+	data := payload["data"].(map[string]any)
+	assert.Equal(t, "TRX:TQn9Y2khDD95J42FQtQTdwVVRZqqArtzBb", data["payout_details"])
+	assert.Equal(t, "Binance.US", data["payout_method_label"])
+	// The rail settles in the asset Payment Settings names, not in whatever
+	// the seller typed -- promising GBP on a stablecoin transfer is a promise
+	// the transfer cannot keep.
+	assert.Equal(t, "USDT", data["payout_currency"])
+	assert.Equal(t, true, data["has_payout_account"])
+}
+
+// A seller already on a rail that has since been switched off must still see
+// it in their own picker, or opening the dialog silently moves them onto the
+// first option and the next save throws their account away.
+func TestASellersOwnRailIsStillOfferedAfterItIsSwitchedOff(t *testing.T) {
+	setupSupplierPortalTest(t)
+	withBinancePaymentSettings(t, false, true)
+	require.NoError(t, model.DB.Create(&model.User{Id: 42, Username: "acme"}).Error)
+	require.NoError(t, model.DB.Create(&model.CreditSupplier{
+		Id: 1, Name: "Acme Labs", Code: "acme", UserId: 42, Status: model.CreditSupplierStatusActive,
+	}).Error)
+	filePayoutAccount(t, 42, `{"method":"binance_pay_us","holder":"Acme Ltd","details":"TRX:TQn9Y2khDD95J42FQtQTdwVVRZqqArtzBb"}`)
+
+	withBinancePaymentSettings(t, false, false)
+	c, recorder := portalContext(t, 42, http.MethodGet, "/api/supplier/me", "")
+	GetSupplierPortal(c)
+	data := decode(t, recorder)["data"].(map[string]any)
+	rail := railFromPayload(t, data["payout_rails"], "binance_pay_us")
+	assert.Equal(t, false, rail["available"], "nobody new may pick it")
+	assert.Equal(t, true, data["supplier"].(map[string]any)["has_payout_account"],
+		"an account already on file is still an account, so selling is not blocked")
 }
 
 func TestSupplierPortalIsInvisibleToUnlinkedLogins(t *testing.T) {
@@ -389,7 +500,7 @@ func TestExternalPayoutNeedsAReferenceAndBooksNoCredit(t *testing.T) {
 	t.Cleanup(func() { verifySupplierChannel = previous })
 	verifySupplierChannel = func(*model.Channel, string, int) (verificationUsage, error) { return verificationUsage{}, nil }
 	// sellerFor creates the supplier record on first contact; file the account.
-	c, recorder := portalContext(t, 7, http.MethodPut, "/api/supplier/payout-account", `{"method":"wise","holder":"Cashout Ltd","details":"IBAN GB00 0000 1234 5678 9012 34, SWIFT ABCDGB2L","currency":"eur"}`)
+	c, recorder := portalContext(t, 7, http.MethodPut, "/api/supplier/payout-account", `{"method":"bank_transfer","holder":"Cashout Ltd","details":"IBAN GB00 0000 1234 5678 9012 34, SWIFT ABCDGB2L","currency":"eur"}`)
 	UpdateSupplierPayoutAccount(c)
 	payload := decode(t, recorder)
 	require.Equal(t, true, payload["success"], recorder.Body.String())
@@ -401,7 +512,7 @@ func TestExternalPayoutNeedsAReferenceAndBooksNoCredit(t *testing.T) {
 	require.Equal(t, true, payload["success"], recorder.Body.String())
 	lot, err := model.GetCreditLotById(int(payload["data"].(map[string]any)["lot_id"].(float64)))
 	require.NoError(t, err)
-	assert.Equal(t, model.CreditLotPayoutExternal, lot.PayoutMethod, "a bank/wise/paypal account is an external payout")
+	assert.Equal(t, model.CreditLotPayoutExternal, lot.PayoutMethod, "anything but platform credit is a transfer the operator makes")
 	model.RecordCreditSupplyConsumption(model.CreditSupplyUsage{
 		ChannelId: lot.ChannelId, ModelName: "gpt-4o-mini",
 		TokenUsage: ratio_setting.TokenUsage{PromptTokens: 1000}, QuotaCharged: int(100 * common.QuotaPerUnit),

@@ -43,7 +43,6 @@ import {
 } from '@/features/system-settings/billing/credit-supply-logic'
 
 import {
-  PAYOUT_METHOD_LABELS,
   getSupplierPortal,
   getSupplierTerms,
   getSupplierUsage,
@@ -217,10 +216,8 @@ export function SupplierPortal() {
                 <div>
                   <div className='font-medium'>
                     {t(
-                      PAYOUT_METHOD_LABELS[
-                        data.supplier
-                          .payout_method as keyof typeof PAYOUT_METHOD_LABELS
-                      ] ?? data.supplier.payout_method
+                      data.supplier.payout_method_label ||
+                        data.supplier.payout_method
                     )}
                     {data.supplier.payout_currency
                       ? ` · ${data.supplier.payout_currency}`
@@ -523,6 +520,7 @@ export function SupplierPortal() {
           open={payoutOpen}
           onOpenChange={setPayoutOpen}
           current={payoutAccount}
+          rails={data?.payout_rails ?? []}
         />
       </SectionPageLayout.Content>
     </SectionPageLayout>

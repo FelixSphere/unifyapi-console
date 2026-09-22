@@ -83,9 +83,11 @@ type CreditSupplier struct {
 	// Where the share is paid. Required before a seller can submit a key:
 	// with revenue share nothing is paid up front, so the account has to be
 	// on file before the first dollar is owed, not chased afterwards.
-	// PayoutMethod is platform_credit, bank, paypal, wise or crypto; Holder
-	// and Details are the seller's own words (IBAN + SWIFT, PayPal e-mail,
-	// wallet + network). Root reads them in full; nobody else does.
+	// PayoutMethod is a rail id from PayoutRails() -- the same ids the wallet
+	// uses for taking money in, so the seller reads one set of names across
+	// the platform. Holder is the name on the account; Details is free text
+	// for a wire and a canonical "<NETWORK>:<address>" on an on-chain rail.
+	// Root reads them in full; nobody else does.
 	PayoutMethod    string `json:"payout_method" gorm:"type:varchar(24)"`
 	PayoutHolder    string `json:"payout_holder" gorm:"type:varchar(120)"`
 	PayoutDetails   string `json:"payout_details" gorm:"type:varchar(500)"`
@@ -94,6 +96,11 @@ type CreditSupplier struct {
 	Note            string `json:"note" gorm:"type:text"`
 	CreatedAt       int64  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt       int64  `json:"updated_at" gorm:"autoUpdateTime"`
+
+	// PayoutRailLabel is not stored: it is the rail's name, attached on read
+	// so the operator's table shows "Binance.US" rather than the raw id, and
+	// shows it from the same list the seller chose from.
+	PayoutRailLabel string `json:"payout_rail_label" gorm:"-"`
 }
 
 // CounterpartyKey is the stable id this supplier is settled under.
@@ -107,12 +114,6 @@ func IsSupplierCounterparty(counterparty string) bool {
 	return strings.HasPrefix(counterparty, creditSupplierCounterpartyPrefix)
 }
 
-// Payout methods a seller can choose. platform_credit needs no details: the
-// wallet behind their login is the account.
-var creditSupplierPayoutMethods = map[string]bool{
-	CreditLotPayoutPlatformCredit: true, "bank": true, "paypal": true, "wise": true, "crypto": true,
-}
-
 // SupplierPayoutAccount is what a seller files before they can sell.
 type SupplierPayoutAccount struct {
 	Method   string `json:"method"`
@@ -122,12 +123,24 @@ type SupplierPayoutAccount struct {
 }
 
 // HasPayoutAccount reports whether we know where to send this seller's money.
+// A rail that has since been switched off in Payment Settings still counts:
+// the account is on file, and an operator can still send to it by hand. What
+// must not happen is a seller being blocked from selling because somebody
+// toggled a gateway.
 func (s *CreditSupplier) HasPayoutAccount() bool {
-	if s.PayoutMethod == CreditLotPayoutPlatformCredit {
+	rail, ok := PayoutRailFor(s.PayoutMethod)
+	if !ok {
+		return false
+	}
+	if !rail.NeedsAccount {
+		// Platform credit: the login is the account, so there must be one.
 		return s.UserId > 0
 	}
-	return creditSupplierPayoutMethods[s.PayoutMethod] && strings.TrimSpace(s.PayoutHolder) != "" && strings.TrimSpace(s.PayoutDetails) != ""
+	return strings.TrimSpace(s.PayoutHolder) != "" && strings.TrimSpace(s.PayoutDetails) != ""
 }
+
+// PayoutMethodLabel names this supplier's rail for a screen.
+func (s *CreditSupplier) PayoutMethodLabel() string { return PayoutMethodLabel(s.PayoutMethod) }
 
 // ExternalPayoutMethod folds the seller's choice into the two ways a payout is
 // booked: platform credit lands in the wallet, everything else is a transfer
@@ -149,49 +162,78 @@ func (s *CreditSupplier) MaskedPayoutDetails() string {
 	return strings.Repeat("•", 6) + d[len(d)-4:]
 }
 
-func validatePayoutAccount(method, holder, details, currency string) error {
-	if method == "" {
-		return nil
+// validatePayoutAccount checks the account against the rail it names and
+// returns the account as it should be stored, so the caller never has to
+// re-derive the canonical form.
+func validatePayoutAccount(acct SupplierPayoutAccount) (SupplierPayoutAccount, error) {
+	rail, ok := PayoutRailFor(acct.Method)
+	if !ok {
+		return acct, fmt.Errorf("%q is not a way we can pay you", acct.Method)
 	}
-	if !creditSupplierPayoutMethods[method] {
-		return errors.New("payout method must be platform_credit, bank, paypal, wise or crypto")
+	acct.Method = rail.Id
+	if !rail.NeedsAccount {
+		acct.Holder, acct.Details = "", ""
+	} else if strings.TrimSpace(acct.Holder) == "" || strings.TrimSpace(acct.Details) == "" {
+		return acct, errors.New("an account holder and the account details are required for that payout method")
 	}
-	if method != CreditLotPayoutPlatformCredit && (strings.TrimSpace(holder) == "" || strings.TrimSpace(details) == "") {
-		return errors.New("an account holder and the account details are required for that payout method")
+	if textLooksLikeProviderSecret(acct.Holder, acct.Details) {
+		return acct, ErrCreditLotSecretInText
 	}
-	if textLooksLikeProviderSecret(holder, details) {
-		return ErrCreditLotSecretInText
+	if rail.OnChain() {
+		details, err := normalizeOnChainPayoutDetails(rail, acct.Details)
+		if err != nil {
+			return acct, err
+		}
+		acct.Details = details
 	}
-	if currency != "" && !regexp.MustCompile(`^[A-Z]{3,5}$`).MatchString(currency) {
-		return errors.New("currency must be a code such as USD or EUR")
+	if rail.Currency != "" {
+		// The rail settles in one asset; letting the seller type another one
+		// would only promise a currency the transfer cannot be made in.
+		acct.Currency = rail.Currency
 	}
-	return nil
+	if acct.Currency != "" && !payoutCurrencyPattern.MatchString(acct.Currency) {
+		return acct, errors.New("currency must be a code such as USD or EUR")
+	}
+	return acct, nil
 }
 
+var payoutCurrencyPattern = regexp.MustCompile(`^[A-Z]{3,5}$`)
+
 // SetSupplierPayoutAccount files or replaces where a seller is paid.
+//
+// A rail that is switched off in Payment Settings cannot be newly chosen --
+// there would be no account to send from. It can still be re-saved by whoever
+// already filed it: refusing that would mean a seller who edits their address
+// loses the rail they were being paid on because an operator toggled a gateway
+// in the meantime.
 func SetSupplierPayoutAccount(supplierId int, acct SupplierPayoutAccount) (*CreditSupplier, error) {
-	acct.Method = strings.ToLower(strings.TrimSpace(acct.Method))
+	acct.Method = NormalizePayoutMethod(acct.Method)
 	acct.Holder = strings.TrimSpace(acct.Holder)
 	acct.Details = strings.TrimSpace(acct.Details)
 	acct.Currency = strings.ToUpper(strings.TrimSpace(acct.Currency))
 	if acct.Method == "" {
 		return nil, errors.New("choose how you want to be paid")
 	}
-	if acct.Method == CreditLotPayoutPlatformCredit {
-		acct.Holder, acct.Details = "", ""
-	}
 	if acct.Currency == "" {
 		acct.Currency = "USD"
 	}
-	if err := validatePayoutAccount(acct.Method, acct.Holder, acct.Details, acct.Currency); err != nil {
+	acct, err := validatePayoutAccount(acct)
+	if err != nil {
 		return nil, err
 	}
+	rail, _ := PayoutRailFor(acct.Method)
 	var supplier CreditSupplier
-	err := DB.Transaction(func(tx *gorm.DB) error {
+	err = DB.Transaction(func(tx *gorm.DB) error {
 		if err := lockForUpdate(tx).First(&supplier, "id = ?", supplierId).Error; err != nil {
 			return err
 		}
-		if acct.Method == CreditLotPayoutPlatformCredit && supplier.UserId <= 0 {
+		if !rail.Available && NormalizePayoutMethod(supplier.PayoutMethod) != rail.Id {
+			if rail.Reason != "" {
+				return errors.New(rail.Reason)
+			}
+			return fmt.Errorf("%s is not available as a payout method right now", rail.Label)
+		}
+		if !rail.NeedsAccount && supplier.UserId <= 0 {
 			return errors.New("platform credit needs a login to credit; this supplier has none")
 		}
 		supplier.PayoutMethod = acct.Method
@@ -237,10 +279,21 @@ func ValidateCreditSupplier(s *CreditSupplier) error {
 	if textLooksLikeProviderSecret(s.PayoutTerms, s.Note, s.StatusReason) {
 		return ErrCreditLotSecretInText
 	}
-	s.PayoutMethod = strings.ToLower(strings.TrimSpace(s.PayoutMethod))
+	s.PayoutMethod = NormalizePayoutMethod(s.PayoutMethod)
 	s.PayoutCurrency = strings.ToUpper(strings.TrimSpace(s.PayoutCurrency))
-	if err := validatePayoutAccount(s.PayoutMethod, s.PayoutHolder, s.PayoutDetails, s.PayoutCurrency); err != nil {
-		return err
+	if s.PayoutMethod != "" {
+		// An operator editing a supplier is not choosing a rail on the
+		// seller's behalf, so availability is not checked here -- only that
+		// whatever is on the row is still a coherent account.
+		acct, err := validatePayoutAccount(SupplierPayoutAccount{
+			Method: s.PayoutMethod, Holder: s.PayoutHolder,
+			Details: s.PayoutDetails, Currency: s.PayoutCurrency,
+		})
+		if err != nil {
+			return err
+		}
+		s.PayoutMethod, s.PayoutHolder = acct.Method, acct.Holder
+		s.PayoutDetails, s.PayoutCurrency = acct.Details, acct.Currency
 	}
 	return nil
 }
@@ -476,6 +529,9 @@ func UpdateCreditSupplier(id int, patch *CreditSupplier) error {
 func GetCreditSuppliers() ([]*CreditSupplier, error) {
 	var suppliers []*CreditSupplier
 	err := DB.Order("id asc").Find(&suppliers).Error
+	for _, supplier := range suppliers {
+		supplier.PayoutRailLabel = supplier.PayoutMethodLabel()
+	}
 	return suppliers, err
 }
 
