@@ -53,7 +53,47 @@ typed questions，任何映射都只能是我们发明的，客户却要为这�
 |---|---|---|---|---|
 | TypeSafe 直连 | 留空（即 `https://api.typesafe.ai`） | 留空 | `jev-1.13` → `jev-1.13.0` | 厂商文档 |
 | OpenRouter | `https://openrouter.ai/api` | 留空 | **不需要**，裸名 `jev-1.13` 会自动映射到 `typesafe/` 命名空间 | 文档 + 端点探测（`/api/v1/systemone` 返回 401，乱填的路径返回 404） |
-| FlatKey | **用不了**，见下 | — | — | 2026-09-21 实测：其网关没有任何 System One 端点 |
+| FlatKey | `https://router.flatkey.ai` | `/api/alpha/decisions` | `jev-1.13` → `typesafe/jev-1.13` | 厂商给出 + 端点探测（401，而同前缀的对照路径 301） |
+
+### OpenRouter 这条核实到什么程度（别把话说满）
+
+已证实的：`https://openrouter.ai/api/v1/systemone` 返回 401（有鉴权网关挡着的真实路由），
+同一主机上乱填的路径返回 404 `Not Found`，且**没有重定向**。请求体与厂商一致
+（`{model, state, questions}`）。
+
+**尚未证实的**：`typesafe/jev-1.13` 不在 OpenRouter 公开的 `/api/v1/models` 里（该列表 445 个
+模型，无一条 typesafe/jev）。那个列表是 chat 模型目录，System One 是另一个接口面，不在里面是
+合理的，但**这只是推断，不是证据**。另外注意 `https://openrouter.ai/typesafe/jev-1.13` 这种
+模型页对**乱填的模型名也返回 200**（前端 SPA 兜底），所以"页面能打开"不能作为证据。
+
+要坐实只有一个办法：拿一把 OpenRouter 的 key 发一次真实请求。在那之前，这个上游是"路由确认
+存在、模型 id 未确认"。
+
+### FlatKey 的端点不在 `/v1` 下（2026-09-22 更正）
+
+FlatKey 把 System One 挂在 **`/api/alpha/decisions`**，不在 `/v1` 命名空间里，模型名用
+`typesafe/jev-1.13`。请求体与厂商一致（`questions` 是以问题名为键的**对象**，不是数组），我们的
+`SystemOneRequest.Questions` 正是 `map[string]any`，直接对得上。
+
+端点探测（401 表示真实路由被鉴权挡住，同前缀的乱填路径返回 301 兜底跳转）：
+
+```
+POST https://router.flatkey.ai/api/alpha/decisions   -> 401  Token not provided
+POST https://router.flatkey.ai/api/alpha/zzz-control -> 301  （对照组）
+POST https://router.flatkey.ai/api/zzz-control       -> 301  （对照组）
+```
+
+**之前为什么会 404。** 端点路径留空时我们发往 `/v1/systemone`；`router.flatkey.ai` 把**所有**
+未知路径 301 跳到 `console.flatkey.ai`，Go 的客户端默默跟随，跨域时按 net/http 的规则丢掉
+`Authorization`，于是 console 用它自己的 404 回答，报错里只剩一个路径名，看不出答话的是另一台
+主机。现在这种情况会在错误信息里点名最终 URL。
+
+**这里踩过一个推理上的坑，值得记住。** 我扫了 `/v1/systemone`、`/v1/system-one`、
+`/v1/typesafe/systemone`、`/typesafe/v1/systemone`、`/api/v1/systemone`，每条都配了对照组，
+全部不存在，于是得出"FlatKey 没有 System One 端点"。**这个结论不成立**：对照组只能证明
+*我试过的那些路径*不存在，永远证明不了端点不存在——穷举猜测无法证否。真实路径是
+`/api/alpha/decisions`，"decisions"这个词根本不在我的猜测集合里。**路径要向上游要，不要靠猜；
+穷举猜不中只说明猜错了，不说明东西不在。**
 
 ### OpenRouter 这条核实到什么程度（别把话说满）
 
