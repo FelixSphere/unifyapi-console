@@ -35,11 +35,17 @@ const partnershipGroupIntegrityLockKey = "unifyapi-partnership-group-integrity"
 // PartnershipProgram is an operator-managed registration offer. It only
 // controls account creation: normal top-up and request billing remain unchanged.
 type PartnershipProgram struct {
-	Id           int                   `json:"id" gorm:"primaryKey"`
-	Name         string                `json:"name" gorm:"type:varchar(120);not null"`
-	Code         string                `json:"code" gorm:"type:varchar(64);not null;uniqueIndex"`
-	Group        string                `json:"group" gorm:"type:varchar(255);not null"`
-	GrantQuota   int                   `json:"grant_quota" gorm:"type:int;not null;default:0"`
+	Id         int    `json:"id" gorm:"primaryKey"`
+	Name       string `json:"name" gorm:"type:varchar(120);not null"`
+	Code       string `json:"code" gorm:"type:varchar(64);not null;uniqueIndex"`
+	Group      string `json:"group" gorm:"type:varchar(255);not null"`
+	GrantQuota int    `json:"grant_quota" gorm:"type:int;not null;default:0"`
+	// Discount is a multiplier over the official price that every customer in
+	// this program gets, written into their Customer model prices when it is
+	// set (see ApplyProgramDiscount). 0 means the program sets none and each
+	// customer is priced by their group ratio alone. It is stored here so a
+	// later re-apply can tell its own rows from prices set by hand.
+	Discount     float64               `json:"discount" gorm:"not null;default:0"`
 	GrantLimit   int                   `json:"grant_limit" gorm:"type:int;not null;default:0"`
 	ClaimedCount int                   `json:"claimed_count" gorm:"type:int;not null;default:0"`
 	Enabled      bool                  `json:"enabled" gorm:"not null;default:false;index"`
@@ -119,6 +125,13 @@ func ValidatePartnershipProgram(program *PartnershipProgram) error {
 	}
 	if program.GrantQuota < 0 || program.GrantLimit < 0 {
 		return errors.New("grant quota and limit cannot be negative")
+	}
+	// A discount is a multiplier over the official price, so it lives in (0,1]:
+	// 0 is how an operator says "no program discount", and anything above 1
+	// would be a surcharge, which is not what this field means and would read
+	// as a discount in every screen that shows it.
+	if program.Discount < 0 || program.Discount > 1 {
+		return errors.New("discount must be between 0 and 1, where 0 means no program discount")
 	}
 	if program.EndsAt != 0 && program.StartsAt != 0 && program.EndsAt <= program.StartsAt {
 		return errors.New("end time must be after start time")
@@ -268,7 +281,14 @@ func UpdatePartnershipProgram(id int, input *PartnershipProgram) error {
 	if err := ValidatePartnershipProgram(input); err != nil {
 		return err
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
+	// Captured inside the transaction and used after it commits. Applying the
+	// discount writes the GroupModelDiscount option, which takes this same
+	// integrity lock in a transaction of its own -- nesting it here deadlocks a
+	// single-connection pool, the way recording a pricing change does.
+	previousDiscount := 0.0
+	discountChanged := false
+
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
 			if input.Group != "" {
 				if err := validatePartnershipProgramGroup(tx, input.Group); err != nil {
@@ -292,10 +312,13 @@ func UpdatePartnershipProgram(id int, input *PartnershipProgram) error {
 			if err := validatePartnershipCodeAvailable(tx, input.Code, current.Id, defaultCustomer.Id); err != nil {
 				return err
 			}
+			previousDiscount = current.Discount
+			discountChanged = !sameDiscount(current.Discount, input.Discount)
 			if err := tx.Model(&current).Updates(map[string]any{
 				"name":        input.Name,
 				"code":        input.Code,
 				"group":       input.Group,
+				"discount":    input.Discount,
 				"grant_quota": input.GrantQuota,
 				"grant_limit": input.GrantLimit,
 				"enabled":     input.Enabled,
@@ -335,6 +358,19 @@ func UpdatePartnershipProgram(id int, input *PartnershipProgram) error {
 			}).Error
 		})
 	})
+	if err != nil {
+		return err
+	}
+	// The program row is committed, so the discount it now carries is the one
+	// to apply. Failing here leaves the program updated and the customer
+	// prices not -- which is why the error names both halves rather than
+	// reading as "the update failed".
+	if discountChanged {
+		if _, err := ApplyProgramDiscount(id, previousDiscount, input.Discount); err != nil {
+			return fmt.Errorf("program saved, but applying the discount to its customers failed: %w", err)
+		}
+	}
+	return nil
 }
 
 func CreatePartnershipCustomer(programId int, customer *PartnershipCustomer) error {
@@ -347,7 +383,7 @@ func CreatePartnershipCustomer(programId int, customer *PartnershipCustomer) err
 	customer.Id = 0
 	customer.ProgramId = programId
 	customer.IsDefault = false
-	return DB.Transaction(func(tx *gorm.DB) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
 			if err := validatePartnershipProgramGroup(tx, customer.Group); err != nil {
 				return err
@@ -385,6 +421,20 @@ func CreatePartnershipCustomer(programId int, customer *PartnershipCustomer) err
 			return tx.Create(customer).Error
 		})
 	})
+	if err != nil {
+		return err
+	}
+	// A customer added after the program's discount was set would otherwise
+	// have no per-model prices and be billed LIST, which is the same gap a new
+	// catalogue model opens. Filling here is idempotent and preserves any
+	// price already set by hand, so it is safe on a re-enabled customer too.
+	var program PartnershipProgram
+	if lookupErr := DB.First(&program, programId).Error; lookupErr == nil && program.Discount > 0 {
+		if _, applyErr := ApplyProgramDiscount(programId, program.Discount, program.Discount); applyErr != nil {
+			return fmt.Errorf("customer saved, but applying the program discount failed: %w", applyErr)
+		}
+	}
+	return nil
 }
 
 func UpdatePartnershipCustomer(programId, customerId int, input *PartnershipCustomer) error {

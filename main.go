@@ -327,6 +327,17 @@ func InitResources() error {
 		return err
 	}
 
+	// A Partnership Program's discount is materialised per model, and the
+	// catalogue is compiled in -- so a release that adds a model leaves every
+	// customer in a discounted program without a row for it, and they would be
+	// billed LIST until somebody re-applied by hand. Filling the gaps here is
+	// idempotent: absent rows are written, prices set by hand are preserved.
+	// A failure is logged rather than fatal; the console is still serving, and
+	// the worst case is the state the previous release was already in.
+	if err := model.ReapplyProgramDiscounts(); err != nil {
+		common.SysError("failed to re-apply partnership program discounts: " + err.Error())
+	}
+
 	model.CheckSetup()
 
 	// Initialize options, should after model.InitDB()
