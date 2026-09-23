@@ -120,3 +120,86 @@ func TestAnAnonymousCallerIsOfferedNoCustomerAtAll(t *testing.T) {
 		"the public pricing route must not enumerate customers")
 	assert.Contains(t, usable, "default")
 }
+
+// The registry is a database read, and a database read can fail while the
+// table is still there -- a lock timeout, a permission change, a migration in
+// flight. When that happens the only safe answer is to show nothing: the first
+// call of a fresh process serves the first /api/pricing after a release, on a
+// route that needs no authentication. Before this, an unreadable registry read
+// as "no customers exist" and published every one of them.
+//
+// Simulated by renaming the column out from under the query, so HasTable still
+// succeeds and the read fails -- which is the shape of the real failure. A
+// missing TABLE is deliberately NOT this case: that genuinely means nobody has
+// been provisioned, and treating it as unknown hides every ordinary tier.
+func TestAnUnreadableCustomerRegistryHidesGroupsRatherThanPublishingThem(t *testing.T) {
+	setupCustomerGroupPrivacyTest(t)
+
+	require.NoError(t, model.DB.Exec(`ALTER TABLE partnership_customers RENAME COLUMN "group" TO group_moved`).Error)
+	model.InvalidateCustomerOwnedGroupsCache()
+
+	set, known := model.CustomerOwnedGroups()
+	require.False(t, known, "the registry must report that it could not be read")
+	require.Nil(t, set)
+
+	usable := GetUserUsableGroups("default")
+	assert.NotContains(t, usable, customerGroup,
+		"an unreadable registry must not publish a customer's name")
+	assert.Contains(t, usable, "default",
+		"the caller's own group is restored by the fallback and must survive")
+	assert.False(t, IsUserSelectableGroup("default", customerGroup),
+		"nor may it be billed under")
+}
+
+// The counterpart: no registry table at all is a KNOWN answer -- nobody has
+// been provisioned -- and must not hide ordinary tiers.
+func TestAMissingRegistryTableIsNotTreatedAsAFailure(t *testing.T) {
+	setupCustomerGroupPrivacyTest(t)
+
+	require.NoError(t, model.DB.Migrator().DropTable(&model.PartnershipCustomer{}))
+	model.InvalidateCustomerOwnedGroupsCache()
+
+	set, known := model.CustomerOwnedGroups()
+	assert.True(t, known, "an install with no customers knows it has none")
+	assert.Empty(t, set)
+	assert.Contains(t, GetUserUsableGroups("default"), tierGroup,
+		"an ordinary tier must stay visible when no customer registry exists")
+}
+
+// Selection is gated on visibility, and that is the property the whole fix
+// rests on: if a group can be billed under without being listed, every filter
+// above it is decoration. Pinned against the real state -- customer group
+// seeded into UserUsableGroups, which is where production has it.
+func TestNothingIsSelectableThatIsNotAlsoVisible(t *testing.T) {
+	setupCustomerGroupPrivacyTest(t)
+
+	for _, viewer := range []string{"", "default", tierGroup, customerGroup} {
+		visible := GetUserUsableGroups(viewer)
+		for _, candidate := range []string{"default", tierGroup, customerGroup, "Chinhin"} {
+			if !IsUserSelectableGroup(viewer, candidate) {
+				continue
+			}
+			_, listed := visible[candidate]
+			assert.True(t, listed,
+				"viewer %q may select %q without being shown it", viewer, candidate)
+		}
+	}
+}
+
+// A group nobody has registered as a customer is NOT protected by the registry
+// -- it is protected only by what the operator left in UserUsableGroups. This
+// test states that boundary rather than implying the fix covers more than it
+// does: Chinhin, GenAI and UnifyAI are customer names that reached the option
+// by hand, so they carry no registry row and the data has to be cleaned.
+func TestAnUnregisteredGroupIsGovernedOnlyByTheOptionItIsIn(t *testing.T) {
+	setupCustomerGroupPrivacyTest(t)
+
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(
+		`{"default":"default","HandAddedCustomer":""}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(
+		`{"default":0.9,"HandAddedCustomer":0.5}`))
+
+	assert.Contains(t, GetUserUsableGroups("default"), "HandAddedCustomer",
+		"no registry row means the code cannot know this is a customer -- "+
+			"removing it from UserUsableGroups is the only thing that hides it")
+}

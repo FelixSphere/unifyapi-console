@@ -48,28 +48,46 @@ func InvalidateCustomerOwnedGroupsCache() {
 	customerOwnedGroups.Unlock()
 }
 
-// CustomerOwnedGroups is the set of pricing groups that identify a customer.
+// CustomerOwnedGroups is the set of pricing groups that identify a customer,
+// and whether that set is KNOWN.
 //
-// A read failure returns what is known rather than an error: this guards a
-// disclosure, and the callers are list-building code with nowhere to report to.
-// The conservative direction on failure is the LAST known set, never an empty
-// one, so a database blip cannot briefly publish every customer name.
-func CustomerOwnedGroups() map[string]struct{} {
+// The second return is the whole point. This guards a disclosure, so the only
+// safe answer to "I cannot read the registry" is to treat every group as some
+// customer's and show none of it. Returning the last known set and a bare
+// map would read as "no customers exist" on the first call of a fresh process
+// -- which is the first /api/pricing after every release, on an
+// unauthenticated route. A stale private list is safe; an empty one is the
+// incident this file exists to prevent.
+func CustomerOwnedGroups() (map[string]struct{}, bool) {
 	customerOwnedGroups.RLock()
 	fresh := customerOwnedGroups.set != nil && time.Since(customerOwnedGroups.fetched) < customerOwnedGroupsTTL
 	cached := customerOwnedGroups.set
 	customerOwnedGroups.RUnlock()
 	if fresh {
-		return cached
+		return cached, true
 	}
 
 	if DB == nil || !DB.Migrator().HasTable(&PartnershipCustomer{}) {
-		return cached
+		// No registry TABLE is not the same as a registry we failed to read.
+		// An install that never provisioned a customer has none, and so does
+		// a unit test on an ad-hoc database; both genuinely know the answer is
+		// "nobody". Reporting those as unknown would hide every ordinary tier
+		// from every user, which is how the first version of this hardening
+		// broke three auto-group tests.
+		return map[string]struct{}{}, true
+	}
+	// `group` is a reserved word; every other query in this package reaches
+	// the column through commonGroupCol rather than trusting the driver to
+	// quote it, and the tests here run on SQLite while production is Postgres,
+	// so this is not a difference worth discovering in production.
+	groupCol := commonGroupCol
+	if groupCol == "" {
+		groupCol = "`group`"
 	}
 	var groups []string
 	if err := DB.Model(&PartnershipCustomer{}).
-		Distinct().Pluck("group", &groups).Error; err != nil {
-		return cached
+		Distinct(groupCol).Pluck(groupCol, &groups).Error; err != nil {
+		return cached, cached != nil
 	}
 
 	set := make(map[string]struct{}, len(groups))
@@ -84,15 +102,24 @@ func CustomerOwnedGroups() map[string]struct{} {
 	customerOwnedGroups.set = set
 	customerOwnedGroups.fetched = time.Now()
 	customerOwnedGroups.Unlock()
-	return set
+	return set, true
 }
 
-// IsCustomerOwnedGroup reports whether group identifies a customer other than
-// the caller's own.
+// IsCustomerOwnedGroup reports whether group identifies a customer.
+//
+// When the registry cannot be read it answers TRUE for every non-empty group.
+// Callers use this to decide what to reveal, so an unreadable registry must
+// hide everything rather than reveal everything. The cost of being wrong that
+// way is a user briefly not seeing an ordinary tier they could have picked;
+// the cost of being wrong the other way is publishing the customer list.
 func IsCustomerOwnedGroup(group string) bool {
 	if group == "" {
 		return false
 	}
-	_, owned := CustomerOwnedGroups()[group]
+	set, known := CustomerOwnedGroups()
+	if !known {
+		return true
+	}
+	_, owned := set[group]
 	return owned
 }
