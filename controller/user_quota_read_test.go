@@ -241,33 +241,48 @@ func TestEveryAdminQuotaModeLandsOnTheWallet(t *testing.T) {
 	assert.Equal(t, 20_000_000, spendable, "what is spent must equal what was set")
 }
 
-// TestAdminSubtractCanDriveABalanceNegative pins CURRENT behaviour, which is
-// inconsistent and is flagged for a product decision rather than changed here.
+// A NEGATIVE balance is a debt, and both operator paths must be able to record
+// one. Operator decision, 2026-09-22: "要展示负余额，代表客户欠我们的钱."
 //
-// SetUserQuota refuses a negative value outright ("quota cannot be negative"),
-// and the relay's spend path uses tryDecreaseUserQuotaWithTx with
-// `WHERE quota >= ?` so consumption can never overdraw. But the admin subtract
-// path applies an unguarded `quota - N`, so an operator can push a wallet to
-// -999,999,999 and the API reports success. Two writers of one field with
-// opposite rules.
+// This replaces a test that pinned the opposite asymmetry: subtract could push a
+// wallet below zero while override refused, so an operator could reach a debt
+// one way and not the other, and could not correct one back to an exact figure.
 //
-// Whether a negative balance is legitimate (a clawback or a debt) is a business
-// call. This test exists so the answer cannot change by accident: if a floor is
-// added, this test should fail and be replaced by one asserting the refusal.
-func TestAdminSubtractCanDriveABalanceNegative(t *testing.T) {
+// Spending is NOT affected by this, and the last assertion guards that: the
+// relay reserves with tryDecreaseUserQuotaWithTx (`WHERE quota >= ?`), so a
+// customer already in debt cannot run up more of it.
+func TestABalanceCanBeDrivenNegativeToRecordADebt(t *testing.T) {
 	setupAdminUserReadTest(t)
 	user := fundedTenantLogin(t, "funded", 1_000)
 
+	// By subtracting more than the balance...
 	require.NoError(t, model.DecreaseUserQuota(user.Id, 999_999_999, true))
-
 	spendable, err := model.GetUserQuota(user.Id, true)
 	require.NoError(t, err)
-	assert.Equal(t, 1_000-999_999_999, spendable,
-		"admin subtract is unguarded today; see the comment before changing this")
+	assert.Equal(t, 1_000-999_999_999, spendable)
 
-	// The asymmetry, asserted so the inconsistency is visible in one place.
-	assert.Error(t, model.SetUserQuota(user.Id, -1),
-		"override refuses what subtract will happily produce")
+	// ...and by setting the debt outright, which used to be refused.
+	require.NoError(t, model.SetUserQuota(user.Id, -250_000),
+		"an operator must be able to record a debt as an exact figure")
+	spendable, err = model.GetUserQuota(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, -250_000, spendable)
+
+	// And back out of it, so a debt is correctable rather than one-way.
+	require.NoError(t, model.SetUserQuota(user.Id, 5_000))
+	spendable, err = model.GetUserQuota(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 5_000, spendable)
+
+	// A negative AMOUNT is still a caller mistake, not a balance: "add -5"
+	// means subtract and must be refused.
+	assert.Error(t, model.IncreaseUserQuota(user.Id, -5, true))
+	assert.Error(t, model.DecreaseUserQuota(user.Id, -5, true))
+
+	// Spending cannot deepen a debt.
+	require.NoError(t, model.SetUserQuota(user.Id, -1))
+	_, err = model.TryDecreaseUserQuotaWithTx(model.DB, user.Id, 1)
+	assert.Error(t, err, "a customer in debt must not be able to spend further")
 }
 
 // TestSettlementCanOverdrawAWalletBeyondItsBalance pins CURRENT behaviour of
