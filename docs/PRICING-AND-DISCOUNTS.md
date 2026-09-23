@@ -479,6 +479,10 @@ go run ./scripts/pricing-drift -fix -snapshot-date $(date -u +%F) \
   -fixture-out scripts/pricing-drift/testdata/models-dev-$(date -u +%F).json -pr-body /tmp/pr.md
 ```
 
+> 自动开的 PR 会改 `testdata/` 下的 fixture，所以一定会触发 `test-guard`，需要你在该 head commit 上 approve
+> 才能 merge——这和"人来拍板"的初衷一致。为了不让每天的重跑白白清掉你的 approve，只有当改价结果和分支上已有的
+> 内容不同时才会推分支；内容相同只更新 PR 正文。
+>
 > 用默认 `GITHUB_TOKEN` 开的 PR 不会触发仓库自己的 `pull_request` 工作流。配一个 fine-grained PAT
 > 到 secret `PRICING_DRIFT_PAT`（contents + pull-requests 写权限），PR 就会带完整 CI；不配也能开 PR，
 > 只是要有人往分支推一下才跑 CI。
