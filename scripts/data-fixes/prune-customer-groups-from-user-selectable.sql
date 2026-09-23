@@ -19,6 +19,7 @@
 --   "Builder_hub_2026_Sep_Batch_UnifyAPI-2": "Builder_hub_2026_Sep_Batch_UnifyAPI-2"   <- provisioned
 --   "Kingdee": "Kingdee"                                                               <- provisioned
 --   "Chinhin": ""   "GenAI": ""   "UnifyAI": ""                                        <- added BY HAND
+--   "Vip User": ""                                                                     <- a tier we sell, also not public
 --
 -- Three of the five customer names carry no registry row, so a registry-driven
 -- delete leaves them published, and so does the code filter, which reads the
@@ -48,17 +49,24 @@ SELECT k AS group_removed,
 FROM options,
      LATERAL jsonb_object_keys(value::jsonb) AS k
 WHERE key = 'UserUsableGroups'
-  AND k NOT IN ('default', 'Vip User')
+  AND k <> 'default'
 ORDER BY 1;
 
 -- 3. Keep only the groups that are meant to be public.
---    EDIT THIS LIST if a tier is missing from it; anything not named here
---    stops being selectable by users who do not already belong to it.
+--
+--    Operator, 2026-09-22: `default` is the ONLY public group. `Vip User` is
+--    not one -- it is a tier we sell, so an unrelated user must not be able to
+--    pick it any more than they may pick a customer's.
+--
+--    A group removed here is not deleted and nobody loses access to their own:
+--    GroupRatio still prices it, the admin editor still lists it, and
+--    service.GetUserUsableGroups always adds the caller's own group back. What
+--    goes is the blanket offer of it to everybody else.
 UPDATE options
 SET value = (
         SELECT COALESCE(jsonb_object_agg(k, v), '{}'::jsonb)::text
         FROM jsonb_each(value::jsonb) AS e(k, v)
-        WHERE k IN ('default', 'Vip User')
+        WHERE k = 'default'
     )
 WHERE key = 'UserUsableGroups';
 

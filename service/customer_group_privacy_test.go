@@ -40,7 +40,14 @@ import (
 
 const (
 	customerGroup = "Builder_hub_2026_Sep_Batch_UnifyAPI-2"
-	tierGroup     = "Vip User"
+	// A group with no customer registry row. It stands for whatever the
+	// operator has left in UserUsableGroups, NOT for something public: the
+	// operator's rule of 2026-09-22 is that `default` is the only public
+	// group, and `Vip User` -- which this used to be named after -- is a tier
+	// we sell, so it is pruned from the option by the data fix. What these
+	// tests pin is narrower and still true: the registry filter removes
+	// customers and touches nothing else.
+	unregisteredGroup = "Trial Tier"
 )
 
 func setupCustomerGroupPrivacyTest(t *testing.T) {
@@ -65,9 +72,9 @@ func setupCustomerGroupPrivacyTest(t *testing.T) {
 
 	// Production's state: the customer group sits in the user-selectable list.
 	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(
-		`{"default":"default","`+tierGroup+`":"","`+customerGroup+`":"`+customerGroup+`"}`))
+		`{"default":"default","`+unregisteredGroup+`":"","`+customerGroup+`":"`+customerGroup+`"}`))
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(
-		`{"default":0.9,"`+tierGroup+`":1,"`+customerGroup+`":0.5}`))
+		`{"default":0.9,"`+unregisteredGroup+`":1,"`+customerGroup+`":0.5}`))
 
 	t.Cleanup(func() {
 		model.DB = originalDB
@@ -84,8 +91,8 @@ func TestAnotherCustomersGroupIsNeverOfferedToAUser(t *testing.T) {
 	assert.NotContains(t, usable, customerGroup,
 		"a customer's name must not be listed to an unrelated user")
 	assert.Contains(t, usable, "default", "the user's own group stays")
-	assert.Contains(t, usable, tierGroup,
-		"a tier that belongs to no customer is unaffected")
+	assert.Contains(t, usable, unregisteredGroup,
+		"a group with no customer row is left alone by the registry filter")
 }
 
 func TestAnotherCustomersGroupCannotBeSelected(t *testing.T) {
@@ -96,8 +103,8 @@ func TestAnotherCustomersGroupCannotBeSelected(t *testing.T) {
 	// let an ordinary user hold a key billed at another customer's rate.
 	assert.False(t, IsUserSelectableGroup("default", customerGroup),
 		"an unrelated user must not be able to bill under a customer's group")
-	assert.True(t, IsUserSelectableGroup("default", tierGroup),
-		"an ordinary tier must stay selectable")
+	assert.True(t, IsUserSelectableGroup("default", unregisteredGroup),
+		"the registry filter must not remove what it cannot identify as a customer")
 }
 
 func TestACustomersOwnMembersKeepTheirGroup(t *testing.T) {
@@ -162,8 +169,8 @@ func TestAMissingRegistryTableIsNotTreatedAsAFailure(t *testing.T) {
 	set, known := model.CustomerOwnedGroups()
 	assert.True(t, known, "an install with no customers knows it has none")
 	assert.Empty(t, set)
-	assert.Contains(t, GetUserUsableGroups("default"), tierGroup,
-		"an ordinary tier must stay visible when no customer registry exists")
+	assert.Contains(t, GetUserUsableGroups("default"), unregisteredGroup,
+		"no registry means no customers to hide, so nothing extra is removed")
 }
 
 // Selection is gated on visibility, and that is the property the whole fix
@@ -173,9 +180,9 @@ func TestAMissingRegistryTableIsNotTreatedAsAFailure(t *testing.T) {
 func TestNothingIsSelectableThatIsNotAlsoVisible(t *testing.T) {
 	setupCustomerGroupPrivacyTest(t)
 
-	for _, viewer := range []string{"", "default", tierGroup, customerGroup} {
+	for _, viewer := range []string{"", "default", unregisteredGroup, customerGroup} {
 		visible := GetUserUsableGroups(viewer)
-		for _, candidate := range []string{"default", tierGroup, customerGroup, "Chinhin"} {
+		for _, candidate := range []string{"default", unregisteredGroup, customerGroup, "Chinhin"} {
 			if !IsUserSelectableGroup(viewer, candidate) {
 				continue
 			}
