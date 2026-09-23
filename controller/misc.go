@@ -307,7 +307,7 @@ func SendPasswordResetEmail(c *gin.Context) {
 	if _, err := model.GetUniqueUserByEmail(email); err == nil {
 		code := common.GenerateVerificationCode(0)
 		common.RegisterVerificationCodeWithKey(email, code, common.PasswordResetPurpose)
-		link := fmt.Sprintf("%s/user/reset?email=%s&token=%s", system_setting.ServerAddress, email, code)
+		link := passwordResetLink(email, code)
 		// UNIFYAPI-BRAND: English copy, see email_templates_unifyapi.go
 		subject, content := unifyapiPasswordResetEmail(link)
 		err := common.SendEmailForPurpose("password-reset", subject, email, content)
