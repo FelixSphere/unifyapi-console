@@ -44,7 +44,7 @@ import (
 // maxRoutingGroupLength mirrors abilities.group varchar(64). A longer pricing
 // group is skipped, with a log line, rather than turning every channel save
 // into a database error.
-const maxRoutingGroupLength = 64
+const maxRoutingGroupLength = 255
 
 var pricingGroupChannelAccessLock sync.Mutex
 

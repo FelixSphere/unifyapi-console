@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -470,6 +471,24 @@ func validateTwoFactorAuth(twoFA *model.TwoFA, code string) bool {
 	return false
 }
 
+// maxChannelGroupLength matches the channels.group column width. Kept next to
+// the check so the two move together if the column is ever widened.
+const maxChannelGroupLength = 1024
+
+// validateChannelGroupLength refuses a group list that cannot be stored.
+func validateChannelGroupLength(group string) error {
+	if utf8.RuneCountInString(group) <= maxChannelGroupLength {
+		return nil
+	}
+	return fmt.Errorf(
+		"渠道分组列表过长：%d 字符，上限 %d。定价分组无需在渠道上勾选——每个 Group Pricing 分组都已自动获得所有渠道的访问权，"+
+			"保留 default 即可；"+
+			"the channel group list is %d characters, over the %d limit. Pricing groups do not need to be selected here: "+
+			"every Group Pricing group already has access to every channel, so leaving this at `default` is enough",
+		utf8.RuneCountInString(group), maxChannelGroupLength,
+		utf8.RuneCountInString(group), maxChannelGroupLength)
+}
+
 // validateChannel 通用的渠道校验函数
 func validateChannel(channel *model.Channel, isAdd bool) error {
 	if channel == nil {
@@ -483,6 +502,18 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 
 	if channel.Type == constant.ChannelTypeNewAPI && strings.TrimSpace(channel.GetBaseURL()) == "" {
 		return fmt.Errorf("New API channel base URL cannot be empty")
+	}
+
+	// channels.group is varchar(64). Postgres answers an overflow with a raw
+	// driver error ("value too long for type character varying(64)", SQLSTATE
+	// 22001), which tells the operator nothing about what to do. Say it here
+	// instead, and say the part that matters: since pricing groups route
+	// through every channel (model.GrantAllChannelsToPricingGroups), listing
+	// them on the channel is redundant -- a channel left at `default` already
+	// serves every Group Pricing key. One auto-provisioned Builder group name
+	// is 37 characters, so two of them cannot share this column at all.
+	if err := validateChannelGroupLength(channel.Group); err != nil {
+		return err
 	}
 
 	// 如果是添加操作，检查 channel 和 key 是否为空

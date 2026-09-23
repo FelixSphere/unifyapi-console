@@ -13,31 +13,91 @@ import (
 
 func GetUserUsableGroups(userGroup string) map[string]string {
 	groupsCopy := setting.GetUserUsableGroupsCopy()
-	if userGroup != "" {
-		specialSettings, b := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.Get(userGroup)
-		if b {
-			// 处理特殊可用分组
-			for specialGroup, desc := range specialSettings {
-				if strings.HasPrefix(specialGroup, "-:") {
-					// 移除分组
-					groupToRemove := strings.TrimPrefix(specialGroup, "-:")
-					delete(groupsCopy, groupToRemove)
-				} else if strings.HasPrefix(specialGroup, "+:") {
-					// 添加分组
-					groupToAdd := strings.TrimPrefix(specialGroup, "+:")
-					groupsCopy[groupToAdd] = desc
-				} else {
-					// 直接添加分组
-					groupsCopy[specialGroup] = desc
-				}
-			}
+	// A provisioned customer's group is that customer's identity: the name is
+	// the customer's name and the ratio is their commercial terms. It must
+	// never be offered to anybody else, however it got into UserUsableGroups
+	// -- provisioning used to add it, and an operator can still add it by hand.
+	//
+	// Filtered BEFORE the special-usable rules below, so an operator who
+	// deliberately grants one user access to a partner group with "+:" still
+	// can; only the blanket exposure goes. The caller's own group is restored
+	// by the fallback at the end of this function.
+	for group := range groupsCopy {
+		if group != userGroup && model.IsCustomerOwnedGroup(group) {
+			delete(groupsCopy, group)
 		}
+	}
+	if userGroup != "" {
+		applyGroupSpecialUsable(groupsCopy, userGroup)
 		// 如果userGroup不在UserUsableGroups中，返回UserUsableGroups + userGroup
 		if _, ok := groupsCopy[userGroup]; !ok {
 			groupsCopy[userGroup] = "用户分组"
 		}
 	}
 	return groupsCopy
+}
+
+// applyGroupSpecialUsable applies the operator's per-group overrides in place:
+// "-:X" removes X, "+:X" adds X, a bare name adds it.
+func applyGroupSpecialUsable(groups map[string]string, userGroup string) {
+	specialSettings, ok := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.Get(userGroup)
+	if !ok {
+		return
+	}
+	for specialGroup, desc := range specialSettings {
+		switch {
+		case strings.HasPrefix(specialGroup, "-:"):
+			delete(groups, strings.TrimPrefix(specialGroup, "-:"))
+		case strings.HasPrefix(specialGroup, "+:"):
+			groups[strings.TrimPrefix(specialGroup, "+:")] = desc
+		default:
+			groups[specialGroup] = desc
+		}
+	}
+}
+
+// GetUserBillableGroups is what a login may BE BILLED UNDER. It is deliberately
+// narrower than GetUserUsableGroups, which answers two other questions: what the
+// pricing page may SHOW, and which groups the auto walk may search for a
+// CHANNEL. Those two are safe to keep broad -- an auto walk changes the channel,
+// never the price, because auth pins ContextKeyUsingGroup to the login's own
+// group (see middleware/unifyapi_default_user_auto_routing_test.go).
+//
+// Billing is not safe to keep broad. UserUsableGroups has to keep `default` --
+// an empty allowlist makes filterPricingByUsableGroups return no models, so the
+// public catalogue goes blank -- but `default` carries the new-customer
+// discount (0.9 on production while every customer group is 1.0). Leaving it
+// billable let any customer point a token at it and pay 10% less than they had
+// agreed.
+//
+// Operator rule, 2026-09-22: a login bills under its OWN group, plus anything an
+// operator granted it explicitly with "+:". Nothing else. On this deployment
+// every named group is a customer contract, so self-service switching between
+// them has no legitimate use.
+func GetUserBillableGroups(userGroup string) map[string]string {
+	billable := make(map[string]string, 2)
+	if userGroup == "" {
+		// No session: nothing to bill under. The catalogue is still public,
+		// which is GetUserUsableGroups' job, not this one.
+		return billable
+	}
+	billable[userGroup] = setting.GetUsableGroupDescription(userGroup)
+	// An explicit grant still works, and an explicit "-:" can still take the
+	// login's own group away.
+	applyGroupSpecialUsable(billable, userGroup)
+	return billable
+}
+
+// IsUserBillableGroup reports whether a login may have a request priced under
+// groupName. Use this wherever a caller-supplied group reaches PRICING -- a
+// token's group, the playground's group override -- and IsUserSelectableGroup
+// where it only reaches routing.
+func IsUserBillableGroup(userGroup, groupName string) bool {
+	if groupName == "" || groupName == "auto" {
+		return false
+	}
+	_, billable := GetUserBillableGroups(userGroup)[groupName]
+	return billable && ratio_setting.ContainsGroupRatio(groupName)
 }
 
 func GroupInUserUsableGroups(userGroup, groupName string) bool {

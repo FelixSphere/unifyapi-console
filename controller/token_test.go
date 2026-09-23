@@ -202,6 +202,11 @@ func newAuthenticatedContext(t *testing.T, method string, target string, body an
 		ctx.Request.Header.Set("Content-Type", "application/json")
 	}
 	ctx.Set("id", userID)
+	// A real request always carries the caller's group: middleware/auth.go sets
+	// it, and the token handlers read it to decide which groups the caller may
+	// be billed under. Without it they fall back to a database read that a
+	// controller test has no reason to have wired up.
+	ctx.Set("group", "default")
 	return ctx, recorder
 }
 

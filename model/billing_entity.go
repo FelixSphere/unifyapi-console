@@ -150,10 +150,21 @@ func setBillingQuotaWithTx(tx *gorm.DB, userId int, quota int) (BillingEntity, e
 	return entity, nil
 }
 
+// SetUserQuota writes a balance outright, and a NEGATIVE balance is allowed on
+// purpose: it is how this deployment records that a customer owes us money.
+//
+// Operator decision, 2026-09-22. It also makes the three writers of this field
+// agree. Admin subtract has always been able to push a wallet below zero, so
+// refusing the same state here meant an operator could reach it one way and not
+// the other, and could not correct a debt back to an exact figure.
+//
+// The other "cannot be negative" guards in this file are a different check:
+// they reject a negative AMOUNT to add or subtract, which is a caller mistake
+// rather than a balance. Those stay.
+//
+// Spending is unaffected: the relay refuses a request once the balance is at or
+// below zero, so a customer in debt cannot run up more of it.
 func SetUserQuota(userId int, quota int) error {
-	if quota < 0 {
-		return errors.New("quota cannot be negative")
-	}
 	entity, err := setBillingQuotaWithTx(DB, userId, quota)
 	if err != nil {
 		return err
