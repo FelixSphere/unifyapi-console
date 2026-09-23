@@ -94,7 +94,12 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if playgroundRequest.Group != "" {
-						if !service.GroupInUserUsableGroups(usingGroup, playgroundRequest.Group) && playgroundRequest.Group != usingGroup {
+						// What may be BILLED UNDER, not what the catalogue may
+						// show: `default` stays visible so the public pricing
+						// page renders, but it carries the new-customer
+						// discount and must not be a group a customer can
+						// switch a request to.
+						if !service.IsUserBillableGroup(usingGroup, playgroundRequest.Group) && playgroundRequest.Group != usingGroup {
 							abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorGroupAccessDenied))
 							return
 						}
