@@ -62,6 +62,20 @@ SET value = (
     )
 WHERE key = 'UserUsableGroups';
 
+-- 3b. `default` must survive even if it was missing to begin with. An empty
+--     UserUsableGroups is not merely strict: GetPricing filters the MODEL LIST
+--     by the caller's usable groups, so an anonymous visitor with none would
+--     be served an empty Model Square. Being too private here breaks the
+--     public catalogue, which is why this runs as its own statement rather
+--     than being assumed.
+UPDATE options
+SET value = COALESCE(
+        (SELECT jsonb_insert(value::jsonb, '{default}', '""'::jsonb)::text),
+        '{"default":""}'
+    )
+WHERE key = 'UserUsableGroups'
+  AND NOT (value::jsonb ? 'default');
+
 -- 4. What remains. Check by eye that no entry is a customer name.
 SELECT jsonb_object_keys(value::jsonb) AS still_selectable
 FROM options WHERE key = 'UserUsableGroups'
