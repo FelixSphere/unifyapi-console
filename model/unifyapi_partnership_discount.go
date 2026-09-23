@@ -218,3 +218,46 @@ func mutatePricingOption(key, actor, reason string, mutate func(map[string]any) 
 	RecordPricingConfigChange(key, previous, merged, actor, reason)
 	return updateOptionMap(key, merged)
 }
+
+// ReapplyProgramDiscounts fills in the rows a program's discount is missing,
+// for every program that has one.
+//
+// It exists because the catalogue is compiled in: adding a model ships in a
+// release, and on the release before it no customer had a row for that model.
+// Without this, a new model would be sold at LIST to every customer in every
+// discounted program until somebody noticed and re-applied by hand, per
+// program. The operator's question that produced this was exactly right --
+// "so I have to edit the new model at every customer by hand?" -- and the
+// answer has to be no.
+//
+// Passing the program's own discount as BOTH previous and next is what makes
+// this safe to run unattended: an absent row is filled, a row this program
+// already owns is rewritten to the same value, and a price set by hand is
+// preserved by the same rule that protects it during a deliberate change.
+// So it is idempotent, and running it on every boot costs one option write
+// only when something is genuinely missing.
+func ReapplyProgramDiscounts() error {
+	if DB == nil {
+		return nil
+	}
+	if !DB.Migrator().HasTable(&PartnershipProgram{}) {
+		return nil
+	}
+	var programs []PartnershipProgram
+	if err := DB.Where("enabled = ? AND removed_at = 0 AND discount > 0", true).
+		Find(&programs).Error; err != nil {
+		return err
+	}
+	for _, program := range programs {
+		result, err := ApplyProgramDiscount(program.Id, program.Discount, program.Discount)
+		if err != nil {
+			return fmt.Errorf("program %q: %w", program.Name, err)
+		}
+		if result.ModelsWritten > 0 {
+			common.SysLog(fmt.Sprintf(
+				"partnership program %q: filled %d customer model price(s) at %g",
+				program.Name, result.ModelsWritten, program.Discount))
+		}
+	}
+	return nil
+}

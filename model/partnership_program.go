@@ -383,7 +383,7 @@ func CreatePartnershipCustomer(programId int, customer *PartnershipCustomer) err
 	customer.Id = 0
 	customer.ProgramId = programId
 	customer.IsDefault = false
-	return DB.Transaction(func(tx *gorm.DB) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
 			if err := validatePartnershipProgramGroup(tx, customer.Group); err != nil {
 				return err
@@ -421,6 +421,20 @@ func CreatePartnershipCustomer(programId int, customer *PartnershipCustomer) err
 			return tx.Create(customer).Error
 		})
 	})
+	if err != nil {
+		return err
+	}
+	// A customer added after the program's discount was set would otherwise
+	// have no per-model prices and be billed LIST, which is the same gap a new
+	// catalogue model opens. Filling here is idempotent and preserves any
+	// price already set by hand, so it is safe on a re-enabled customer too.
+	var program PartnershipProgram
+	if lookupErr := DB.First(&program, programId).Error; lookupErr == nil && program.Discount > 0 {
+		if _, applyErr := ApplyProgramDiscount(programId, program.Discount, program.Discount); applyErr != nil {
+			return fmt.Errorf("customer saved, but applying the program discount failed: %w", applyErr)
+		}
+	}
+	return nil
 }
 
 func UpdatePartnershipCustomer(programId, customerId int, input *PartnershipCustomer) error {

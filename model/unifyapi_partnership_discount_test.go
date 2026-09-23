@@ -171,3 +171,141 @@ func TestAProgramDiscountOutsideZeroToOneIsRefused(t *testing.T) {
 		Name: "x", Code: "xxx", Discount: 0.9,
 	}))
 }
+
+// The catalogue is compiled in, so "a new model shipped" looks like a row that
+// is simply absent. The operator's question was "then I have to edit the new
+// model at every customer by hand?" -- the answer has to be no, and this is
+// what makes it no.
+func TestANewCatalogueModelIsFilledInWithoutTouchingHandSetPrices(t *testing.T) {
+	programId := setupProgramDiscountTest(t)
+	models := ratio_setting.CatalogModels()
+	newcomer, negotiated := models[1], models[0]
+
+	// The boot pass reads the discount off the PROGRAM row, so setting it only
+	// in the option would test a state that cannot occur.
+	require.NoError(t, DB.Model(&PartnershipProgram{}).Where("id = ?", programId).
+		Update("discount", 0.85).Error)
+	_, err := ApplyProgramDiscount(programId, 0, 0.85)
+	require.NoError(t, err)
+
+	// One model has a negotiated price; another is missing entirely, which is
+	// the state every customer is in the moment a model joins the catalogue.
+	prices := customerModelPrices(t)
+	prices["Alpha Co"][negotiated] = 0.5
+	delete(prices["Alpha Co"], newcomer)
+	delete(prices["Beta Co"], newcomer)
+	encoded, err := common.Marshal(prices)
+	require.NoError(t, err)
+	require.NoError(t, DB.Model(&Option{}).Where("key = ?", "GroupModelDiscount").
+		Update("value", string(encoded)).Error)
+
+	require.NoError(t, ReapplyProgramDiscounts())
+
+	after := customerModelPrices(t)
+	assert.InDelta(t, 0.85, after["Alpha Co"][newcomer], 1e-9,
+		"the new model must be priced without anyone editing a customer")
+	assert.InDelta(t, 0.85, after["Beta Co"][newcomer], 1e-9)
+	assert.InDelta(t, 0.5, after["Alpha Co"][negotiated], 1e-9,
+		"and the negotiated price must survive the fill")
+}
+
+// Running it twice must do nothing the second time, because it runs on every
+// boot.
+func TestReapplyingOnBootIsIdempotent(t *testing.T) {
+	programId := setupProgramDiscountTest(t)
+	_, err := ApplyProgramDiscount(programId, 0, 0.85)
+	require.NoError(t, err)
+
+	require.NoError(t, ReapplyProgramDiscounts())
+	first := customerModelPrices(t)
+	require.NoError(t, ReapplyProgramDiscounts())
+	assert.Equal(t, first, customerModelPrices(t))
+}
+
+// A customer added after the discount was set is the same gap as a new model.
+func TestACustomerAddedLaterIsPricedByTheProgram(t *testing.T) {
+	programId := setupProgramDiscountTest(t)
+	require.NoError(t, DB.Model(&PartnershipProgram{}).Where("id = ?", programId).
+		Update("discount", 0.8).Error)
+	_, err := ApplyProgramDiscount(programId, 0, 0.8)
+	require.NoError(t, err)
+
+	// A customer's group has to exist in Group Pricing before the customer can
+	// be created -- the same rule the admin path enforces.
+	require.NoError(t, EnsurePartnershipGroupRatio("Delta Co"))
+
+	newcomer := PartnershipCustomer{Name: "Delta", Code: "delta", Group: "Delta Co", Enabled: true}
+	require.NoError(t, CreatePartnershipCustomer(programId, &newcomer))
+
+	after := customerModelPrices(t)
+	require.Contains(t, after, "Delta Co", "a customer joining later must be priced too")
+	for _, name := range ratio_setting.CatalogModels() {
+		assert.InDelta(t, 0.8, after["Delta Co"][name], 1e-9)
+	}
+}
+
+// Operator, 2026-09-22: a customer that belongs to no program has no program
+// discount and falls through to the ordinary group ratio. Nothing here may
+// write a row for them, because a row would REPLACE that group ratio and
+// silently take over their pricing.
+func TestACustomerInNoProgramIsLeftToTheGroupRatio(t *testing.T) {
+	programId := setupProgramDiscountTest(t)
+	require.NoError(t, DB.Create(&Option{
+		Key: "GroupModelDiscount", Value: `{}`,
+	}).Error)
+
+	_, err := ApplyProgramDiscount(programId, 0, 0.85)
+	require.NoError(t, err)
+	require.NoError(t, ReapplyProgramDiscounts())
+
+	after := customerModelPrices(t)
+	for _, group := range []string{"default", "vip", "partner"} {
+		assert.NotContains(t, after, group,
+			"%s belongs to no program, so its price stays the group ratio's business", group)
+	}
+}
+
+// OPERATOR RULE, 2026-09-22, stated as absolute: the discount the bill uses and
+// the discount the UI shows must always be the same number. Nobody may change
+// that.
+//
+// It is why a program discount is MATERIALISED into Customer model prices
+// instead of being consulted at billing time. A resolution-time fallback would
+// bill 0.85 while that editor showed nothing -- the same class of gap as
+// publishing a discount nobody set, pointing the other way.
+//
+// This test reads the value from where the UI reads it (the GroupModelDiscount
+// option, which is what the Customer model prices editor renders) and from
+// where the relay reads it (ratio_setting.GetGroupModelDiscount, which
+// HandleGroupRatio calls), and requires them to agree for every customer and
+// every model.
+func TestTheBilledDiscountIsTheDiscountTheEditorShows(t *testing.T) {
+	programId := setupProgramDiscountTest(t)
+	require.NoError(t, DB.Model(&PartnershipProgram{}).Where("id = ?", programId).
+		Update("discount", 0.85).Error)
+	_, err := ApplyProgramDiscount(programId, 0, 0.85)
+	require.NoError(t, err)
+
+	// One negotiated price, so the test covers a row the program does not own.
+	models := ratio_setting.CatalogModels()
+	shown := customerModelPrices(t)
+	shown["Alpha Co"][models[0]] = 0.6
+	encoded, err := common.Marshal(shown)
+	require.NoError(t, err)
+	require.NoError(t, DB.Model(&Option{}).Where("key = ?", "GroupModelDiscount").
+		Update("value", string(encoded)).Error)
+	require.NoError(t, updateOptionMap("GroupModelDiscount", string(encoded)))
+
+	shown = customerModelPrices(t)
+	require.NotEmpty(t, shown)
+
+	for group, perModel := range shown {
+		for modelName, uiValue := range perModel {
+			billed, ok := ratio_setting.GetGroupModelDiscount(group, modelName)
+			require.True(t, ok,
+				"%s / %s is shown in the editor but the relay finds no discount for it", group, modelName)
+			assert.InDelta(t, uiValue, billed, 1e-9,
+				"%s / %s: the editor shows %g and the bill uses %g", group, modelName, uiValue, billed)
+		}
+	}
+}
