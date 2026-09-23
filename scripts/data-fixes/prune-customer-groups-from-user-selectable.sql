@@ -52,6 +52,40 @@ WHERE key = 'UserUsableGroups'
   AND k <> 'default'
 ORDER BY 1;
 
+-- 2b. MANDATORY PRE-FLIGHT. Read this before COMMIT.
+--
+-- middleware/auth.go re-checks a token's group against GetUserUsableGroups on
+-- EVERY request, not just when the token is created. That is what makes this
+-- fix retroactive -- a token already bound to another customer's group stops
+-- working the moment this lands, with no token cleanup needed.
+--
+-- It is also the blast radius. Any token bound to a group removed below starts
+-- returning 403 "无权访问 X 分组" on its next request. Whether that is the
+-- vulnerability closing or an outage depends on one thing: does the token's
+-- owner belong to that group?
+--
+--   owner_in_group = true   -> keeps working. GetUserUsableGroups always adds
+--                             the caller's own group back.
+--   owner_in_group = false  -> WILL 403. Either this is the escalation being
+--                             revoked (intended), or it is a multi-group
+--                             arrangement somebody set up on purpose (an
+--                             outage). Decide per row BEFORE committing.
+--
+-- An empty result means no token is affected and the prune is inert for
+-- traffic.
+SELECT t."group"                AS token_group,
+       u."group"                AS owner_group,
+       (t."group" = u."group")  AS owner_in_group,
+       count(*)                 AS tokens,
+       min(u.username)          AS example_owner
+FROM tokens t
+JOIN users u ON u.id = t.user_id
+WHERE t."group" IS NOT NULL
+  AND t."group" NOT IN ('', 'auto', 'default')
+  AND t.status = 1
+GROUP BY t."group", u."group"
+ORDER BY owner_in_group, tokens DESC;
+
 -- 3. Keep only the groups that are meant to be public.
 --
 --    Operator, 2026-09-22: `default` is the ONLY public group. `Vip User` is
