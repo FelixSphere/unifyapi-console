@@ -173,10 +173,10 @@ type SubscriptionPlan struct {
 	MaxPurchasePerUser int `json:"max_purchase_per_user" gorm:"type:int;default:0"`
 
 	// Upgrade user group after purchase (empty = no change)
-	UpgradeGroup string `json:"upgrade_group" gorm:"type:varchar(64);default:''"`
+	UpgradeGroup string `json:"upgrade_group" gorm:"type:varchar(255);default:''"`
 
 	// Downgrade user group on expiry (empty = revert to the group held before purchase)
-	DowngradeGroup string `json:"downgrade_group" gorm:"type:varchar(64);default:''"`
+	DowngradeGroup string `json:"downgrade_group" gorm:"type:varchar(255);default:''"`
 
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
@@ -267,11 +267,11 @@ type UserSubscription struct {
 	LastResetTime int64 `json:"last_reset_time" gorm:"type:bigint;default:0"`
 	NextResetTime int64 `json:"next_reset_time" gorm:"type:bigint;default:0;index"`
 
-	UpgradeGroup  string `json:"upgrade_group" gorm:"type:varchar(64);default:''"`
-	PrevUserGroup string `json:"prev_user_group" gorm:"type:varchar(64);default:''"`
+	UpgradeGroup  string `json:"upgrade_group" gorm:"type:varchar(255);default:''"`
+	PrevUserGroup string `json:"prev_user_group" gorm:"type:varchar(255);default:''"`
 
 	// Downgrade target group on expiry (snapshot from plan; empty = revert to PrevUserGroup)
-	DowngradeGroup string `json:"downgrade_group" gorm:"type:varchar(64);default:''"`
+	DowngradeGroup string `json:"downgrade_group" gorm:"type:varchar(255);default:''"`
 
 	// Whether wallet fallback is allowed after this subscription's quota is exhausted (snapshot from plan)
 	AllowWalletOverflow bool `json:"allow_wallet_overflow"`
