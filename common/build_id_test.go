@@ -45,3 +45,5 @@ func TestExtractBuildID(t *testing.T) {
 		})
 	}
 }
+
+// temporary line proving the guard blocks; branch deleted afterwards
