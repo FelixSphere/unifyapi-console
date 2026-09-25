@@ -12,8 +12,20 @@
 # that are modified, deleted or renamed are gated.
 name: Test guard
 
+# Runs on pull_request, and again when someone comments. The comment trigger
+# exists because a comment does NOT fire pull_request: before it, approving by
+# comment left the job red until somebody remembered to re-run it by hand, and
+# "approve, then go and press Re-run failed jobs" is most of the friction this
+# gate ever had. Now an LGTM turns it green on its own.
+#
+# Note the asymmetry, which is in our favour: for issue_comment GitHub runs the
+# workflow file from the DEFAULT BRANCH, not from the PR's copy. The
+# pull_request run still executes the PR's own version and can therefore be
+# edited away by the PR being checked; the comment run cannot.
 on:
   pull_request:
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
@@ -21,20 +33,68 @@ permissions:
 
 jobs:
   existing-tests-unchanged:
-    if: github.repository == 'FelixSphere/unifyapi-console'
+    # On issue_comment: only for PRs, and only for comments that could plausibly
+    # be an approval -- otherwise every "thanks" re-runs this. The filter is an
+    # optimisation, not a gate: if it ever misses a phrasing, the manual re-run
+    # still works and nothing is let through.
+    if: >-
+      github.repository == 'FelixSphere/unifyapi-console'
+      && (
+        github.event_name == 'pull_request'
+        || (
+          github.event.issue.pull_request
+          && (
+            contains(github.event.comment.body, 'LGTM')
+            || contains(github.event.comment.body, 'APPROVED-TEST-CHANGE')
+          )
+        )
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # The two events carry the pull request in different places, so resolve it
+      # once here and let every later step read these outputs rather than
+      # branching on github.event_name three more times.
+      - name: Resolve the pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR_EVENT_NUMBER: ${{ github.event.pull_request.number }}
+          PR_EVENT_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then
+            num="$PR_EVENT_NUMBER"; base="$PR_EVENT_BASE"; head="$PR_EVENT_HEAD"
+          else
+            num="$ISSUE_NUMBER"
+            # A comment carries no SHAs, and the PR may have moved since it was
+            # opened, so read the current ones rather than trusting the event.
+            read -r base head < <(gh api "repos/${GITHUB_REPOSITORY}/pulls/${num}" \
+              --jq '"\(.base.sha) \(.head.sha)"')
+          fi
+          echo "resolved PR #${num}  base=${base}  head=${head}"
+          {
+            echo "number=${num}"
+            echo "base=${base}"
+            echo "head=${head}"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
         with:
           # Need the base commit to diff against, not just the merge head.
           fetch-depth: 0
+          # On issue_comment the default checkout is the default branch, which
+          # would diff the PR's tests against themselves and always pass.
+          ref: ${{ steps.pr.outputs.head }}
 
       - name: Find changed test files
         id: changed
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ steps.pr.outputs.base }}
+          HEAD_SHA: ${{ steps.pr.outputs.head }}
         run: |
           set -euo pipefail
           # Diff from the MERGE BASE, not from the base branch tip. base.sha is
@@ -69,8 +129,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           OPERATOR: Yuchengw
           TOKEN: APPROVED-TEST-CHANGE
-          PR: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head }}
         run: |
           set -euo pipefail
 
@@ -163,10 +223,10 @@ jobs:
             echo ""
             echo "Head commit was authored at: ${HEAD_TIME}"
             echo ""
-            echo "A comment does not re-trigger this check -- the pull_request event"
-            echo "does not fire on one. After approving, re-run this job (\"Re-run failed"
-            echo "jobs\" on the run page, or: gh run rerun --failed <run id>). It re-reads"
-            echo "the comments, so the approval is picked up."
+            echo "Approving by comment re-runs this check on its own -- the workflow"
+            echo "also listens for issue_comment, so posting LGTM is the whole action."
+            echo "It appears as a second run of this job, not as an update to this one,"
+            echo "so look for the newer run rather than this one turning green."
             echo ""
             echo "The review and SHA routes stay because they still work; the comment"
             echo "route exists at all because the operator is usually the PR author, and"
