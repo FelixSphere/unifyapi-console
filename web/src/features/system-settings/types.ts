@@ -392,6 +392,11 @@ export type SecuritySettings = {
   ModelRequestRateLimitSuccessCount: number
   ModelRequestRateLimitDurationMinutes: number
   ModelRequestRateLimitGroup: string
+  // UNIFYAPI-BRAND: token allowance. Requests and tokens are different
+  // dimensions -- one 200k-context call costs the same as "hello" to the
+  // request counter above.
+  ModelRequestTokenLimitCount: number
+  ModelRequestTokenLimitGroup: string
   CheckSensitiveEnabled: boolean
   CheckSensitiveOnPromptEnabled: boolean
   SensitiveWords: string
