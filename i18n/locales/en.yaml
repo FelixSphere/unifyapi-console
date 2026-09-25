@@ -272,7 +272,7 @@ distributor.invalid_playground_request: "Invalid playground request: {{.Error}}"
 distributor.group_access_denied: "No permission to access this group"
 distributor.get_channel_failed: "Failed to get an available channel for model {{.Model}}: {{.Error}}"
 distributor.no_available_channel: "No available channel for model {{.Model}}"
-distributor.unknown_model: "{{.Model}} is not a valid model ID"
+distributor.unknown_model: "Unknown model: {{.Model}} is not served by this gateway"
 distributor.invalid_midjourney_request: "Invalid Midjourney request: {{.Error}}"
 distributor.invalid_request_parse_model: "Invalid request, unable to parse model"
 
