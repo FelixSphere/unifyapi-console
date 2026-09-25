@@ -68,6 +68,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           OPERATOR: Yuchengw
+          TOKEN: APPROVED-TEST-CHANGE
           PR: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
@@ -83,6 +84,33 @@ jobs:
             {
               echo
               echo "Approved by \`${OPERATOR}\` on this commit."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Second accepted signal: a comment from the operator carrying the
+          # token and this head SHA.
+          #
+          # Needed because a review is not always available. Agents open PRs
+          # through `gh` authenticated as the operator, so the operator is the
+          # AUTHOR, and GitHub refuses a self-review: "Can not approve your own
+          # pull request". Between this rule shipping on 2026-09-23 and
+          # 2026-09-25 that made the gate unsatisfiable for every agent PR --
+          # not strict, impossible. A control nobody can satisfy gets removed,
+          # which is the outcome this rule least wants.
+          #
+          # The SHA is what keeps this as strong as the review path. It is not
+          # decoration: an approval naming an old commit stops matching the
+          # moment anything is pushed, so "approve, then push the test edit"
+          # still cannot slip through.
+          approved_comment=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+            --jq "[.[] | select(.user.login==\"${OPERATOR}\") | select(.body | test(\"${TOKEN}[[:space:]]+${HEAD_SHA}\"))] | length")
+
+          if [ "$approved_comment" -gt 0 ]; then
+            echo "Approved by ${OPERATOR} by comment on ${HEAD_SHA}."
+            {
+              echo
+              echo "Approved by \`${OPERATOR}\` by comment on this commit."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -109,8 +137,18 @@ jobs:
             echo "  3. What regression it could let through -- name the defect class the"
             echo "     current assertion catches, and whether the new one still catches it."
             echo ""
-            echo "Then wait for an approving review from the operator on this commit."
-            echo "Pushing after approval clears it, by design."
+            echo "Then get the operator's approval on THIS commit, either way:"
+            echo ""
+            echo "  - an approving review, or"
+            echo "  - a comment on the PR containing exactly:"
+            echo ""
+            echo "      APPROVED-TEST-CHANGE ${HEAD_SHA}"
+            echo ""
+            echo "The comment route exists because the operator is usually the PR"
+            echo "author -- GitHub refuses a self-review -- so a review is often"
+            echo "not offered at all."
+            echo ""
+            echo "Pushing after approval clears it, by design: the SHA stops matching."
             echo ""
             echo "Renames, reformatting and moving a test between files all count."
             echo "\"The behaviour changed on purpose\" is not an exemption -- it means the"
