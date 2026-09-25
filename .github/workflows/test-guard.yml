@@ -250,5 +250,10 @@ jobs:
             in_progress) echo "Still running; it will read the comment itself."; exit 0 ;;
           esac
 
-          gh run rerun "$run_id" --failed
+          # `gh run rerun` resolves the repository from the git remote, and this
+          # job has no checkout: it fails with "failed to determine base repo:
+          # fatal: not a git repository". The REST call takes the repository in
+          # the path, like every other call in this step, so it needs nothing
+          # from the filesystem.
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/rerun-failed-jobs"
           echo "Re-ran ${run_id}. It re-reads the PR comments, so the approval is picked up."
