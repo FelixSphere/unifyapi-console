@@ -111,9 +111,6 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	var freeModel bool
 	if !usePrice {
 		preConsumedTokens := common.Max(promptTokens, common.PreConsumedQuota)
-		if meta.MaxTokens != 0 {
-			preConsumedTokens += meta.MaxTokens
-		}
 		var success bool
 		var matchName string
 		modelRatio, success, matchName = ratio_setting.GetModelRatio(info.OriginModelName)
@@ -143,7 +140,10 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		audioRatio = ratio_setting.GetAudioRatio(info.OriginModelName)
 		audioCompletionRatio = ratio_setting.GetAudioCompletionRatio(info.OriginModelName)
 		ratio := modelRatio * groupRatioInfo.GroupRatio
-		quota, err := common.QuotaFromFloatStrict(float64(preConsumedTokens) * ratio)
+		// max_tokens is output, so it is held at the output price. Holding it at
+		// the input price under-reserved every model whose output costs more.
+		estimatedTokens := float64(preConsumedTokens) + float64(meta.MaxTokens)*completionRatio
+		quota, err := common.QuotaFromFloatStrict(estimatedTokens * ratio)
 		if err != nil {
 			return hosttypes.PriceData{}, err
 		}
