@@ -27,6 +27,32 @@ type openRouterRequestReasoning struct {
 	Exclude   bool   `json:"exclude,omitempty"`
 }
 
+// claudeOutputFormat maps OpenAI's response_format onto Anthropic's
+// output_format.
+//
+// Only json_schema carries over. "json_object" asks for valid JSON without
+// saying which shape, and Anthropic's output_format has no equivalent of that,
+// so sending one without a schema would be rejected -- that case is left as it
+// behaves today rather than converted into a 400 the caller did not have
+// before.
+func claudeOutputFormat(responseFormat *dto.ResponseFormat) json.RawMessage {
+	if responseFormat == nil || responseFormat.Type != "json_schema" || len(responseFormat.JsonSchema) == 0 {
+		return nil
+	}
+	var jsonSchema dto.FormatJsonSchema
+	if err := kitutil.Unmarshal(responseFormat.JsonSchema, &jsonSchema); err != nil || jsonSchema.Schema == nil {
+		return nil
+	}
+	encoded, err := kitutil.Marshal(map[string]any{
+		"type":   "json_schema",
+		"schema": jsonSchema.Schema,
+	})
+	if err != nil {
+		return nil
+	}
+	return encoded
+}
+
 func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, textRequest dto.GeneralOpenAIRequest) (*dto.ClaudeRequest, error) {
 	opts := convmeta.OptionsOf(info)
 	claudeTools := make([]any, 0, len(textRequest.Tools))
@@ -121,6 +147,19 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 		if claudeToolChoice != nil {
 			claudeRequest.ToolChoice = claudeToolChoice
 		}
+	}
+
+	// UNIFYAPI: carry the caller's structured-output request across to Anthropic.
+	//
+	// Anthropic Messages has no response_format, but it does have output_format,
+	// and dto.ClaudeRequest already carries that as a passthrough -- nothing was
+	// ever assigning it. So the field was dropped here in silence: the caller
+	// asked for json_schema, got HTTP 200 with free-form markdown prose, and
+	// their JSON parser failed on a response that said nothing about why. The
+	// Gemini converter has mapped this since it was written; only this one did
+	// not.
+	if outputFormat := claudeOutputFormat(textRequest.ResponseFormat); len(outputFormat) > 0 {
+		claudeRequest.OutputFormat = outputFormat
 	}
 
 	if claudeRequest.MaxTokens == nil || *claudeRequest.MaxTokens == 0 {
