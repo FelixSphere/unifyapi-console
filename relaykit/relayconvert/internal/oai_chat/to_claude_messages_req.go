@@ -35,7 +35,7 @@ type openRouterRequestReasoning struct {
 // so sending one without a schema would be rejected -- that case is left as it
 // behaves today rather than converted into a 400 the caller did not have
 // before.
-func claudeOutputFormat(responseFormat *dto.ResponseFormat) json.RawMessage {
+func claudeOutputConfig(responseFormat *dto.ResponseFormat) json.RawMessage {
 	if responseFormat == nil || responseFormat.Type != "json_schema" || len(responseFormat.JsonSchema) == 0 {
 		return nil
 	}
@@ -44,8 +44,10 @@ func claudeOutputFormat(responseFormat *dto.ResponseFormat) json.RawMessage {
 		return nil
 	}
 	encoded, err := kitutil.Marshal(map[string]any{
-		"type":   "json_schema",
-		"schema": jsonSchema.Schema,
+		"format": map[string]any{
+			"type":   "json_schema",
+			"schema": jsonSchema.Schema,
+		},
 	})
 	if err != nil {
 		return nil
@@ -158,8 +160,8 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 	// their JSON parser failed on a response that said nothing about why. The
 	// Gemini converter has mapped this since it was written; only this one did
 	// not.
-	if outputFormat := claudeOutputFormat(textRequest.ResponseFormat); len(outputFormat) > 0 {
-		claudeRequest.OutputFormat = outputFormat
+	if outputConfig := claudeOutputConfig(textRequest.ResponseFormat); len(outputConfig) > 0 {
+		claudeRequest.OutputConfig = outputConfig
 	}
 
 	if claudeRequest.MaxTokens == nil || *claudeRequest.MaxTokens == 0 {
