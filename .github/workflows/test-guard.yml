@@ -4,9 +4,20 @@
 #
 # Why this is a CI job and not CODEOWNERS: requiring code-owner review needs a
 # paid plan on private repositories, and several UnifyAI repos are private. This
-# works on every plan and enforces the same thing, because it checks for an
-# APPROVED review from the operator's own account -- which an agent cannot
-# produce with its own token.
+# works on every plan.
+#
+# It requires an approving review from a collaborator who is NOT the author.
+# It used to name one operator account, and that made it unsatisfiable: agents
+# here run with the operator's credentials, so the operator authors nearly every
+# PR, and GitHub refuses to let anyone approve their own pull request
+# ("Can not approve your own pull request"). The only way past it was
+# `gh pr merge --admin`, so a rule meant to force a second look was instead
+# teaching everyone to bypass the check -- worse than not having it.
+#
+# Not-the-author is also the protection that was actually wanted. The original
+# comment claimed an agent could not produce the approval "with its own token";
+# in this setup the agent HAS the operator's token, so naming an account never
+# provided that guarantee. Requiring a different human does.
 #
 # ADDING tests is always allowed and this job stays green for it. Only files
 # that are modified, deleted or renamed are gated.
@@ -63,26 +74,54 @@ jobs:
             echo "No existing test was modified, deleted or renamed." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Require the operator's approval
+      - name: Require an approving review from someone other than the author
         if: steps.changed.outputs.found == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          OPERATOR: Yuchengw
+          AUTHOR: ${{ github.event.pull_request.user.login }}
           PR: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
 
-          # The approval must be on THIS head commit. Otherwise "approve, then
-          # push the test edit" would slip straight through.
+          # Three conditions, and each one is load-bearing:
+          #
+          #   state == APPROVED        a COMMENTED review saying "approve" is
+          #                            not an approval, and is the easy mistake.
+          #   commit_id == HEAD_SHA    otherwise "approve, then push the test
+          #                            edit" slips straight through.
+          #   login != AUTHOR          the point of the rule. GitHub already
+          #                            refuses self-approval, so this is belt
+          #                            and braces rather than the load-bearing
+          #                            part -- but it states the intent in the
+          #                            check rather than relying on GitHub's.
+          #
+          # author_association is checked too: an approving review from someone
+          # with no write access to this repository must not unblock a test
+          # change. OWNER, MEMBER and COLLABORATOR are the ones that carry it.
+          #
+          # Spelled as three equality tests rather than a set membership test:
+          # jq's `inside` compares strings by SUBSTRING, so a set test would
+          # also accept any value that happens to be a substring of an accepted
+          # one. No current GitHub value collides that way, which is exactly the
+          # kind of accident that stops being true without anyone noticing.
           approved=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews" --paginate \
-            --jq "[.[] | select(.user.login==\"${OPERATOR}\" and .state==\"APPROVED\" and .commit_id==\"${HEAD_SHA}\")] | length")
+            --jq "[.[] | select(
+                    .state == \"APPROVED\"
+                    and .commit_id == \"${HEAD_SHA}\"
+                    and .user.login != \"${AUTHOR}\"
+                    and (.author_association == \"OWNER\"
+                         or .author_association == \"MEMBER\"
+                         or .author_association == \"COLLABORATOR\")
+                  )] | length")
 
           if [ "$approved" -gt 0 ]; then
-            echo "Approved by ${OPERATOR} on ${HEAD_SHA}."
+            who=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews" --paginate \
+              --jq "[.[] | select(.state==\"APPROVED\" and .commit_id==\"${HEAD_SHA}\" and .user.login!=\"${AUTHOR}\") | .user.login] | unique | join(\", \")")
+            echo "Approved by ${who} on ${HEAD_SHA}."
             {
               echo
-              echo "Approved by \`${OPERATOR}\` on this commit."
+              echo "Approved by \`${who}\` on this commit."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -109,7 +148,13 @@ jobs:
             echo "  3. What regression it could let through -- name the defect class the"
             echo "     current assertion catches, and whether the new one still catches it."
             echo ""
-            echo "Then wait for an approving review from the operator on this commit."
+            echo "Then wait for an APPROVING REVIEW -- not a comment -- from a"
+            echo "collaborator who is not the author of this PR, on this commit."
+            echo ""
+            echo "  gh pr review <n> --repo <owner/repo> --approve"
+            echo ""
+            echo "A comment whose body says \"Approve\" is not a review and does not"
+            echo "count. GitHub will not let the author approve their own PR."
             echo "Pushing after approval clears it, by design."
             echo ""
             echo "Renames, reformatting and moving a test between files all count."
