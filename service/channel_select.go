@@ -81,6 +81,11 @@ func (p *RetryParam) ResetRetryNextTry() {
 //	Retry=3: GroupB, priority1 (startRetryIndex=2, priorityRetry=1)
 //	         分组B, 优先级1
 func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
+	// UNIFYAPI-BRAND: refresh the channel-saturation snapshot before selecting.
+	// A no-op unless it is due, and deliberately here -- outside
+	// channelSyncLock -- so the selection path itself never touches Redis.
+	model.RefreshChannelRateLimits(param.Ctx)
+
 	var channel *model.Channel
 	var err error
 	selectGroup := param.TokenGroup
@@ -157,6 +162,12 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}
+	}
+	// UNIFYAPI-BRAND: count the request against the chosen channel's RPM window.
+	// Only on the success path -- a channel we did not end up using should not
+	// be charged for a request it never received.
+	if channel != nil {
+		model.RecordChannelRequest(param.Ctx, channel.Id)
 	}
 	return channel, selectGroup, nil
 }
