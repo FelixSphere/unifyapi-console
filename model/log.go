@@ -454,6 +454,16 @@ func maxInt(value, floor int) int {
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
+	// UNIFYAPI-BRAND: count this request's tokens against the channel's TPM
+	// window. Here rather than earlier because completion length is only known
+	// once the upstream has answered -- so a channel can overshoot by at most
+	// one request, which is inherent to token limiting, not a gap.
+	RecordChannelTokens(c, params.ChannelId, params.PromptTokens+params.CompletionTokens)
+
+	// UNIFYAPI-BRAND: and against the caller's own token window, for the TPM
+	// limiter in middleware/model_token_rate_limit.go.
+	RecordUserTokens(c, userId, params.PromptTokens+params.CompletionTokens)
+
 	// UNIFYAPI-FORK: draw the supplier credit lot down before anything can
 	// return early. Pool accounting protects the supplier's balance and must
 	// run even when consume logging itself is switched off.

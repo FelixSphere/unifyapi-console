@@ -26,7 +26,22 @@ func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dt
 }
 
 func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.ClaudeRequest) (any, error) {
+	NormalizeThinkingShape(request, "") // UNIFYAPI: thinking shape the model accepts
+	// UNIFYAPI: a caller may send output_format straight at /v1/messages, and it
+	// needs the same beta as the converted OpenAI path.
+	markStructuredOutputs(info, request)
 	return request, nil
+}
+
+// markStructuredOutputs records that the outbound request asks for
+// output_format, which Anthropic honours only when the beta is requested.
+func markStructuredOutputs(info *relaycommon.RelayInfo, request *dto.ClaudeRequest) {
+	if info == nil || request == nil {
+		return
+	}
+	if len(request.OutputFormat) > 0 {
+		info.ClaudeStructuredOutputs = true
+	}
 }
 
 func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.AudioRequest) (io.Reader, error) {
@@ -77,6 +92,12 @@ func CommonClaudeHeadersOperation(c *gin.Context, req *http.Header, info *relayc
 	if anthropicBeta != "" {
 		req.Set("anthropic-beta", anthropicBeta)
 	}
+	// UNIFYAPI: without this the converted output_format is accepted and
+	// ignored, and the caller gets prose on a 200 -- the silent failure the
+	// mapping was meant to end.
+	if info != nil && info.ClaudeStructuredOutputs {
+		model_setting.GetClaudeSettings().WriteStructuredOutputsBeta(req)
+	}
 	model_setting.GetClaudeSettings().WriteHeaders(info.OriginModelName, req)
 }
 
@@ -99,6 +120,13 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	result, err := relayconvert.ConvertRequest(c, info, types.RelayFormatClaude, request)
 	if err != nil {
 		return nil, err
+	}
+	// UNIFYAPI: reasoning_effort / reasoning{} arrive here as thinking.enabled
+	if claudeRequest, ok := result.Value.(*dto.ClaudeRequest); ok {
+		ApplyRequestedReasoning(claudeRequest, request)
+		NormalizeThinkingShape(claudeRequest, openAIRequestedEffort(request))
+		// UNIFYAPI: response_format became output_format during conversion.
+		markStructuredOutputs(info, claudeRequest)
 	}
 	return result.Value, nil
 }

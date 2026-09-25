@@ -21,6 +21,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// adaptiveThinkingLowEffortBudget is the budget_tokens boundary below which a
+// converted request asks for low effort. 1024 is Anthropic's own minimum for
+// budget_tokens, so a caller sitting at the floor is asking for the least
+// thinking the API allows, and anything above it is asking for more.
+const adaptiveThinkingLowEffortBudget = 1024
+
 func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 
 	info.InitChannelMeta(c)
@@ -106,6 +112,8 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 		info.UpstreamModelName = request.Model
 	}
+
+	applyAdaptiveThinkingCompatibility(request)
 
 	if info.ChannelSetting.SystemPrompt != "" {
 		if request.System == nil {
@@ -224,4 +232,42 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
 	return nil
+}
+
+// applyAdaptiveThinkingCompatibility rewrites thinking.type="enabled" into the
+// adaptive shape for models that reject the enabled shape outright.
+//
+// Anthropic's documented extended-thinking parameter is
+// thinking:{"type":"enabled","budget_tokens":N}. Some newer models answer that
+// with a hard 400 and require thinking:{"type":"adaptive"} plus
+// output_config.effort instead. Production carried exactly that failure on
+// claude-fable-5: a caller using the standard parameter got a 400 and no
+// working alternative, because the two existing conversions above key off the
+// MODEL NAME (an effort suffix, or a "-thinking" suffix) and the second one
+// only fires when the caller sent no thinking object at all. A caller that
+// explicitly asked for thinking therefore matched neither and was forwarded
+// verbatim.
+//
+// Running last is deliberate: it normalises whatever the branches above
+// produced as well as what the caller sent, so a "-thinking" model and an
+// explicit request converge on the same upstream shape.
+//
+// budget_tokens does not survive the translation — adaptive has no token
+// budget — so it is mapped to the coarser effort dial, and a request that named
+// no budget is treated as the high end.
+func applyAdaptiveThinkingCompatibility(request *dto.ClaudeRequest) {
+	if request == nil || request.Thinking == nil || request.Thinking.Type != "enabled" {
+		return
+	}
+	if !model_setting.GetClaudeSettings().RequiresAdaptiveThinking(request.Model) {
+		return
+	}
+
+	effort := "high"
+	if request.Thinking.BudgetTokens != nil && *request.Thinking.BudgetTokens <= adaptiveThinkingLowEffortBudget {
+		effort = "low"
+	}
+
+	request.Thinking = &dto.Thinking{Type: "adaptive"}
+	request.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":%q}`, effort))
 }

@@ -66,6 +66,30 @@ const isValidJSON = (value: string | undefined) => {
   }
 }
 
+// The token group map is groupName -> tokens, a flat integer, unlike the
+// request map which is a [total, success] pair. Validated separately so a pair
+// pasted into the wrong box is rejected instead of silently half-read.
+const isValidTokenGroupJSON = (value?: string) => {
+  if (!value || value.trim() === '') return true
+  try {
+    const parsed = JSON.parse(value)
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return false
+    }
+    for (const limit of Object.values(parsed)) {
+      if (typeof limit !== 'number' || !Number.isInteger(limit)) return false
+      if (limit < 0 || limit > 2147483647) return false
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
 const createRateLimitSchema = (t: (key: string) => string) =>
   z.object({
     ModelRequestRateLimitEnabled: z.boolean(),
@@ -76,6 +100,14 @@ const createRateLimitSchema = (t: (key: string) => string) =>
       .string()
       .optional()
       .refine(isValidJSON, {
+        message: t('Invalid JSON format or values out of allowed range'),
+      }),
+    // UNIFYAPI-BRAND: token allowance, a separate dimension from request count.
+    ModelRequestTokenLimitCount: z.number().min(0),
+    ModelRequestTokenLimitGroup: z
+      .string()
+      .optional()
+      .refine(isValidTokenGroupJSON, {
         message: t('Invalid JSON format or values out of allowed range'),
       }),
   })
@@ -313,6 +345,69 @@ export function RateLimitSection({ defaultValues }: RateLimitSectionProps) {
                     </div>
                   </FormDescription>
                 )}
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {/* UNIFYAPI-BRAND: token allowance */}
+          <FormField
+            control={form.control}
+            name='ModelRequestTokenLimitCount'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Max tokens per period')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='number'
+                    min={0}
+                    {...field}
+                    onChange={(e) =>
+                      field.onChange(parseInt(e.target.value) || 0)
+                    }
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Tokens a customer may spend per period. 0 means unlimited. A request carrying a large context costs the same as a small one to the request counter above, so this is the dimension that tracks real load. Counted after each request completes, so the limit can be exceeded by one request.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='ModelRequestTokenLimitGroup'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Group-based token limits')}</FormLabel>
+                <FormControl>
+                  <JsonCodeEditor
+                    value={field.value || ''}
+                    onChange={field.onChange}
+                    name={field.name}
+                    onBlur={field.onBlur}
+                    textareaRef={field.ref}
+                    placeholder={`{\n  "default": 15000000,\n  "vip": 30000000\n}`}
+                    aria-invalid={Boolean(
+                      form.formState.errors.ModelRequestTokenLimitGroup
+                    )}
+                  />
+                </FormControl>
+                <FormDescription>
+                  <div className='space-y-1 text-xs'>
+                    <p>
+                      {t('JSON object:')} {`{"groupName": maxTokens}`}
+                    </p>
+                    <p>
+                      {t(
+                        'A flat number per group, not a pair. A group not listed here uses the global limit above.'
+                      )}
+                    </p>
+                  </div>
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
