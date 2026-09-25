@@ -195,11 +195,31 @@ func Distribute() func(c *gin.Context) {
 				}
 
 				if err != nil {
+					// UNIFYAPI-FORK: a name we do not serve is the caller's
+					// mistake, not our outage. Answering 503 made SDKs retry a
+					// typo with backoff -- it reads to the customer as an
+					// outage -- and counted it against our own 5xx alarm, so a
+					// broken integration paged our on-call. OpenRouter answers
+					// 400 "is not a valid model ID" for the same request.
+					if !model.ModelIsServed(modelRequest.Model) {
+						abortWithOpenAiMessage(c, http.StatusBadRequest,
+							i18n.T(c, i18n.MsgDistributorUnknownModel, map[string]any{"Model": modelRequest.Model}),
+							types.ErrorCodeModelNotFound)
+						return
+					}
+					// UNIFYAPI-FORK: the routing group stays server-side. It was
+					// in the customer-facing body as "under group auto
+					// (distributor)", which names an internal routing concept
+					// the caller cannot act on. It is still worth having when
+					// someone asks why a model would not route, so it moves to
+					// the log rather than being dropped.
 					showGroup := routingGroup(c, usingGroup)
 					if showGroup == "auto" {
 						showGroup = fmt.Sprintf("auto(%s)", selectGroup)
 					}
-					message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Group": showGroup, "Model": modelRequest.Model, "Error": err.Error()})
+					logger.LogWarn(c, fmt.Sprintf("no channel for model %q in group %q: %v",
+						modelRequest.Model, showGroup, err))
+					message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Model": modelRequest.Model, "Error": err.Error()})
 					// 如果错误，但是渠道不为空，说明是数据库一致性问题
 					//if channel != nil {
 					//	common.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
@@ -209,7 +229,13 @@ func Distribute() func(c *gin.Context) {
 					return
 				}
 				if channel == nil {
-					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": routingGroup(c, usingGroup), "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+					if !model.ModelIsServed(modelRequest.Model) {
+						abortWithOpenAiMessage(c, http.StatusBadRequest,
+							i18n.T(c, i18n.MsgDistributorUnknownModel, map[string]any{"Model": modelRequest.Model}),
+							types.ErrorCodeModelNotFound)
+						return
+					}
+					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
 					return
 				}
 			}
