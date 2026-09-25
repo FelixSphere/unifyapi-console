@@ -21,11 +21,14 @@
 --   ModelRequestRateLimitCount        total requests, failures included.
 --                                     0 disables this check.
 --   ModelRequestRateLimitSuccessCount successful requests only (status < 400).
---                                     There is NO "0 means unlimited" escape
---                                     here -- the check always runs, so leaving
---                                     it at the code default of 1000 would cap
---                                     every customer at 1000/min the moment the
---                                     feature is switched on.
+--                                     0 disables this check too, same as above.
+--
+-- The trap is not that 0 fails to disable it -- it does. The trap is that the
+-- CODE DEFAULT IS 1000, not 0. Switching the feature on without setting this
+-- value caps every customer at 1000 successful requests a minute, which is
+-- below traffic we have already served. Pinned by
+-- TestZeroSuccessCountMeansUnlimited and
+-- TestSeededLimitsAdmitTheBusiestMinuteEverObserved.
 --
 -- HOW THESE NUMBERS WERE CHOSEN. Measured against production traffic on
 -- 2026-09-24, 47,707 relay calls from 9 users since 2026-08-04:
