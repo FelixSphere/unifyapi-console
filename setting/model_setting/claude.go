@@ -21,6 +21,15 @@ type ClaudeSettings struct {
 	DefaultMaxTokens                      map[string]int                 `json:"default_max_tokens"`
 	ThinkingAdapterEnabled                bool                           `json:"thinking_adapter_enabled"`
 	ThinkingAdapterBudgetTokensPercentage float64                        `json:"thinking_adapter_budget_tokens_percentage"`
+	// AdaptiveThinkingModels lists models that reject thinking.type="enabled"
+	// and accept only thinking.type="adaptive" with output_config.effort.
+	//
+	// This is configuration rather than a hardcoded prefix list because the
+	// hardcoded lists are what let this break: claude-fable-5 shipped, rejected
+	// the standard parameter, and nothing in the relay knew. A vendor that
+	// changes a parameter shape on the next model should cost an option edit,
+	// not a release.
+	AdaptiveThinkingModels []string `json:"adaptive_thinking_models"`
 }
 
 // 默认配置
@@ -31,6 +40,7 @@ var defaultClaudeSettings = ClaudeSettings{
 		"default": 8192,
 	},
 	ThinkingAdapterBudgetTokensPercentage: 0.8,
+	AdaptiveThinkingModels:                []string{"claude-fable-5"},
 }
 
 // 全局实例
@@ -48,6 +58,26 @@ func GetClaudeSettings() *ClaudeSettings {
 		claudeSettings.DefaultMaxTokens["default"] = 8192
 	}
 	return &claudeSettings
+}
+
+// RequiresAdaptiveThinking reports whether the model refuses
+// thinking.type="enabled".
+//
+// An entry matches the model exactly, or as a dated snapshot of it
+// ("claude-fable-5" matches "claude-fable-5-20260801"). It deliberately does
+// NOT match on bare prefix: "claude-fable-5" must not capture
+// "claude-fable-5.1", which accepts the enabled shape and would otherwise be
+// silently downgraded to adaptive, losing the caller's budget_tokens.
+func (c *ClaudeSettings) RequiresAdaptiveThinking(model string) bool {
+	for _, candidate := range c.AdaptiveThinkingModels {
+		if candidate == "" {
+			continue
+		}
+		if model == candidate || strings.HasPrefix(model, candidate+"-") {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *ClaudeSettings) WriteHeaders(originModel string, httpHeader *http.Header) {
