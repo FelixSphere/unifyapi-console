@@ -39,7 +39,18 @@ jobs:
           set -euo pipefail
           # M = modified, D = deleted, R = renamed. A (added) is deliberately
           # absent: new tests need no approval.
-          git diff --name-status --diff-filter=MDR "$BASE_SHA" "$HEAD_SHA" \
+          #
+          # THREE dots, not two. BASE_SHA is the base branch's tip when the
+          # event fired, not the point this branch left it, so a two-dot diff
+          # also reports whatever main did in the meantime -- in reverse. A
+          # test ADDED on main after the branch was cut reads as a DELETION by
+          # the branch, and the guard fails a PR that never touched it.
+          #
+          # That is not hypothetical: PR #180 was blocked this way over
+          # setting/rate_limit_seed_test.go, which main added in #176 and that
+          # PR never opened. Three dots diff against the merge base, so the
+          # answer is only what this branch did.
+          git diff --name-status --diff-filter=MDR "$BASE_SHA...$HEAD_SHA" \
             | cut -f2- | tr '\t' '\n' \
             | grep -E '(_test\.(go|py|rb)$|\.test\.(ts|tsx|js|jsx|mjs)$|\.spec\.(ts|tsx|js|jsx|mjs)$|(^|/)__tests__/|(^|/)tests?/|(^|/)testdata/)' \
             | sort -u > /tmp/changed_tests.txt || true
