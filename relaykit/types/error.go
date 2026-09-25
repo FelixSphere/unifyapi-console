@@ -335,7 +335,12 @@ func WithOpenAIError(openAIError OpenAIError, statusCode int, ops ...NewAPIError
 	}
 	// OpenRouter
 	if len(openAIError.Metadata) > 0 {
-		openAIError.Message = fmt.Sprintf("%s (%s)", openAIError.Message, openAIError.Metadata)
+		// UNIFYAPI-BRAND: was fmt.Sprintf("%s (%s)", message, metadata), which
+		// buried the provider's actual sentence inside a JSON blob and left it
+		// naming parameters the caller never sent. DescribeUpstreamError returns
+		// that exact string unless it can do better. See
+		// upstream_error_text_unifyapi.go.
+		openAIError.Message = DescribeUpstreamError(openAIError.Message, openAIError.Metadata)
 		e.Metadata = openAIError.Metadata
 		e.RelayError = openAIError
 		e.Err = errors.New(openAIError.Message)
