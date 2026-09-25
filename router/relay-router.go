@@ -73,6 +73,8 @@ func SetRelayRouter(router *gin.Engine) {
 	relayV1Router.Use(middleware.RelayConcurrencyLimit())
 	relayV1Router.Use(middleware.TokenAuth())
 	relayV1Router.Use(middleware.ModelRequestRateLimit())
+	// UNIFYAPI-BRAND: token allowance, the dimension request counts miss.
+	relayV1Router.Use(middleware.ModelRequestTokenRateLimit())
 	{
 		// WebSocket 路由（统一到 Relay）
 		wsRouter := relayV1Router.Group("")
@@ -207,6 +209,8 @@ func SetRelayRouter(router *gin.Engine) {
 	relayGeminiRouter.Use(middleware.RelayConcurrencyLimit())
 	relayGeminiRouter.Use(middleware.TokenAuth())
 	relayGeminiRouter.Use(middleware.ModelRequestRateLimit())
+	// UNIFYAPI-BRAND: token allowance, the dimension request counts miss.
+	relayGeminiRouter.Use(middleware.ModelRequestTokenRateLimit())
 	relayGeminiRouter.Use(middleware.Distribute())
 	{
 		// Gemini API 路径格式: /v1beta/models/{model_name}:{action}
