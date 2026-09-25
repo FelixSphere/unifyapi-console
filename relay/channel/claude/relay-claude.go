@@ -175,6 +175,16 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 	if claudeInfo.Usage != nil && claudeInfo.Usage.BillingUsage == nil {
 		claudeInfo.Usage.BillingUsage = dto.NewClaudeMessagesBillingUsage(buildMessageDeltaPatchUsage(nil, claudeInfo))
 	}
+	// Settlement bills BillingUsage, which message_start built with its
+	// placeholder output_tokens (usually 1). A stream cut off before
+	// message_delta never corrects it, so the estimate above must be carried
+	// across or the delivered output is billed as a single token.
+	if !claudeInfo.Done && claudeInfo.Usage != nil && claudeInfo.Usage.BillingUsage != nil &&
+		claudeInfo.Usage.BillingUsage.ClaudeUsage != nil &&
+		claudeInfo.Usage.BillingUsage.ClaudeUsage.OutputTokens < claudeInfo.Usage.CompletionTokens {
+		claudeInfo.Usage.BillingUsage.ClaudeUsage.OutputTokens = claudeInfo.Usage.CompletionTokens
+		claudeInfo.Usage.BillingUsage.Estimated = true
+	}
 
 	if info.RelayFormat == types.RelayFormatClaude {
 		//
