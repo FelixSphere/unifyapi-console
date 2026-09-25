@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"unicode"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -62,6 +63,49 @@ func fire(router http.Handler) int {
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil))
 	return rec.Code
+}
+
+func fireBody(router http.Handler) (int, string) {
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil))
+	return rec.Code, rec.Body.String()
+}
+
+func containsHan(s string) bool {
+	for _, r := range s {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestTheThrottleMessageCustomersSeeIsEnglish(t *testing.T) {
+	useRateLimitMiniRedis(t)
+
+	// Enabling the limiter is what makes these strings customer-facing for the
+	// first time. Upstream wrote both of them in Chinese.
+	t.Run("success limit", func(t *testing.T) {
+		withModelRateLimitSettings(t, true, 1, 0, 1)
+		router := routerForUser(201, "", http.StatusOK)
+		require.Equal(t, http.StatusOK, fire(router))
+
+		code, body := fireBody(router)
+		require.Equal(t, http.StatusTooManyRequests, code)
+		assert.False(t, containsHan(body), "throttle message must not be Chinese: %s", body)
+		assert.Contains(t, body, "Rate limit reached")
+	})
+
+	t.Run("total limit", func(t *testing.T) {
+		withModelRateLimitSettings(t, true, 1, 1, 0)
+		router := routerForUser(202, "", http.StatusOK)
+		require.Equal(t, http.StatusOK, fire(router))
+
+		code, body := fireBody(router)
+		require.Equal(t, http.StatusTooManyRequests, code)
+		assert.False(t, containsHan(body), "throttle message must not be Chinese: %s", body)
+		assert.Contains(t, body, "failed requests included")
+	})
 }
 
 func TestRequestsUnderTheLimitAreNeverThrottled(t *testing.T) {
