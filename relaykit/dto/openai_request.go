@@ -583,6 +583,7 @@ func (m *Message) ParseContent() []MediaContent {
 		if !ok {
 			continue
 		}
+		parsedBefore := len(contentList)
 
 		switch contentType {
 		case ContentTypeText:
@@ -663,6 +664,14 @@ func (m *Message) ParseContent() []MediaContent {
 						Url: videoUrl,
 					},
 				})
+			}
+		}
+		// UNIFYAPI: keep the caller's prompt-cache marker. Without it a Claude
+		// request sent in chat format never caches, and the customer pays full
+		// input price for every repeated prefix.
+		if marker, ok := contentItem["cache_control"]; ok && marker != nil && len(contentList) > parsedBefore {
+			if raw, err := json.Marshal(marker); err == nil {
+				contentList[len(contentList)-1].CacheControl = raw
 			}
 		}
 	}
