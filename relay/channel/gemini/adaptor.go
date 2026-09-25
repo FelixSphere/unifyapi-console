@@ -187,6 +187,10 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if err != nil {
 		return nil, err
 	}
+	// UNIFYAPI: reasoning_effort / reasoning{} on a plain model name -> thinkingConfig
+	if geminiRequest, ok := result.Value.(*dto.GeminiChatRequest); ok {
+		ApplyRequestedThinking(geminiRequest, info.UpstreamModelName, request)
+	}
 	return result.Value, nil
 }
 
@@ -246,6 +250,10 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	geminiRequest, ok := result.Value.(*dto.GeminiChatRequest)
 	if !ok {
 		return nil, fmt.Errorf("expected Gemini generateContent request, got %T", result.Value)
+	}
+	// UNIFYAPI: Responses reasoning.effort is dropped the same way as on chat
+	if request.Reasoning != nil && request.Reasoning.Effort != "" {
+		ApplyRequestedThinking(geminiRequest, info.UpstreamModelName, &dto.GeneralOpenAIRequest{ReasoningEffort: request.Reasoning.Effort})
 	}
 	return geminiRequest, nil
 }
