@@ -30,6 +30,13 @@ type ClaudeSettings struct {
 	// changes a parameter shape on the next model should cost an option edit,
 	// not a release.
 	AdaptiveThinkingModels []string `json:"adaptive_thinking_models"`
+	// AdaptiveThinkingUnsupportedModels is the mirror image: models that reject
+	// thinking.type="adaptive" ("adaptive thinking is not supported on this
+	// model") and accept only the enabled+budget_tokens shape. Measured on
+	// 2026-09-25 against production channels 101 and 156; OpenRouter accepts
+	// the adaptive shape for both, so a caller switching over got a 400 only
+	// from us.
+	AdaptiveThinkingUnsupportedModels []string `json:"adaptive_thinking_unsupported_models"`
 }
 
 // 默认配置
@@ -41,6 +48,7 @@ var defaultClaudeSettings = ClaudeSettings{
 	},
 	ThinkingAdapterBudgetTokensPercentage: 0.8,
 	AdaptiveThinkingModels:                []string{"claude-fable-5"},
+	AdaptiveThinkingUnsupportedModels:     []string{"claude-opus-4-5", "claude-sonnet-4-5"},
 }
 
 // 全局实例
@@ -69,7 +77,17 @@ func GetClaudeSettings() *ClaudeSettings {
 // "claude-fable-5.1", which accepts the enabled shape and would otherwise be
 // silently downgraded to adaptive, losing the caller's budget_tokens.
 func (c *ClaudeSettings) RequiresAdaptiveThinking(model string) bool {
-	for _, candidate := range c.AdaptiveThinkingModels {
+	return matchesModelList(c.AdaptiveThinkingModels, model)
+}
+
+// RejectsAdaptiveThinking reports whether the model refuses
+// thinking.type="adaptive". Same matching rule as RequiresAdaptiveThinking.
+func (c *ClaudeSettings) RejectsAdaptiveThinking(model string) bool {
+	return matchesModelList(c.AdaptiveThinkingUnsupportedModels, model)
+}
+
+func matchesModelList(list []string, model string) bool {
+	for _, candidate := range list {
 		if candidate == "" {
 			continue
 		}
