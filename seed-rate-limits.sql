@@ -69,3 +69,39 @@ INSERT INTO options (key, value) VALUES
   ('ModelRequestRateLimitGroup',
    '{"Vip User":[60000,30000],"Kingdee":[60000,30000],"GenAI":[60000,30000],"Chinhin":[60000,30000],"UnifyAI":[60000,30000],"Builder_hub_2026_Sep_Batch_UnifyAPI-2":[60000,30000]}')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+
+-- ---------------------------------------------------------------------------
+-- Token allowance (TPM)
+-- ---------------------------------------------------------------------------
+--
+-- Request counts are the wrong shape for LLM load: one call carrying a 200k
+-- context and one carrying "hello" are identical to the counters above, while
+-- costing wildly different amounts of upstream capacity and of our money. This
+-- adds the dimension that tracks spend.
+--
+-- Same window as the request limiter (ModelRequestRateLimitDurationMinutes), so
+-- an operator reasons about one window rather than two. 0 means unlimited.
+--
+-- Enforcement is "check the window so far, then admit", because neither the
+-- prompt nor the completion length is known before the upstream answers. A
+-- customer can therefore exceed the allowance by the single request that
+-- crosses the line, and is refused from the next one. That is inherent to token
+-- limiting, not a shortcut.
+--
+-- Measured against production on 2026-09-24, same 47,707 calls:
+--   per-user tokens/minute   peak 2,950,198   p99 1,034,708   p95 426,414
+--
+-- 15,000,000/min is about 5x the busiest minute ever recorded, matching the
+-- headroom chosen for the request counters.
+
+INSERT INTO options (key, value) VALUES
+  ('ModelRequestTokenLimitCount', '15000000')
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+
+-- Per-group overrides: group name -> tokens per window. A flat int, not a pair,
+-- because there is only one token counter. An unlisted group inherits the
+-- generous global default above.
+INSERT INTO options (key, value) VALUES
+  ('ModelRequestTokenLimitGroup',
+   '{"Vip User":30000000,"Kingdee":30000000,"GenAI":30000000,"Chinhin":30000000,"UnifyAI":30000000,"Builder_hub_2026_Sep_Batch_UnifyAPI-2":30000000}')
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;

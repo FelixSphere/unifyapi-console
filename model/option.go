@@ -162,6 +162,10 @@ func InitOptionMap() {
 	common.OptionMap["ModelRequestRateLimitDurationMinutes"] = strconv.Itoa(setting.ModelRequestRateLimitDurationMinutes)
 	common.OptionMap["ModelRequestRateLimitSuccessCount"] = strconv.Itoa(setting.ModelRequestRateLimitSuccessCount)
 	common.OptionMap["ModelRequestRateLimitGroup"] = setting.ModelRequestRateLimitGroup2JSONString()
+	// UNIFYAPI-FORK: per-customer TOKEN allowance. The request-count limiter
+	// above cannot distinguish a 200k-token context from "hello"; this can.
+	common.OptionMap["ModelRequestTokenLimitCount"] = strconv.Itoa(setting.ModelRequestTokenLimitCount)
+	common.OptionMap["ModelRequestTokenLimitGroup"] = setting.ModelRequestTokenLimitGroup2JSONString()
 	// UNIFYAPI-FORK: per-model customer discount. Kept separate from ModelRatio
 	// so the baseline can stay at the vendors' official prices -- see
 	// setting/ratio_setting/unifyapi_discount.go.
@@ -720,6 +724,11 @@ func updateOptionMapLocked(key string, value string) (err error) {
 		setting.ModelRequestRateLimitSuccessCount, _ = strconv.Atoi(value)
 	case "ModelRequestRateLimitGroup":
 		err = setting.UpdateModelRequestRateLimitGroupByJSONString(value)
+	// UNIFYAPI-FORK: per-customer token allowance.
+	case "ModelRequestTokenLimitCount":
+		setting.ModelRequestTokenLimitCount, _ = strconv.Atoi(value)
+	case "ModelRequestTokenLimitGroup":
+		err = setting.UpdateModelRequestTokenLimitGroupByJSONString(value)
 	case "RetryTimes":
 		common.RetryTimes, _ = strconv.Atoi(value)
 	case "DataExportInterval":
