@@ -56,6 +56,9 @@ export const channelSchema = z.object({
   model_mapping: z.string().nullish(),
   status_code_mapping: z.string().nullish(),
   priority: z.number().nullish(),
+  // UNIFYAPI-BRAND: per-channel upstream quota. null/0 means unlimited.
+  rate_limit_rpm: z.number().nullish(),
+  rate_limit_tpm: z.number().nullish(),
   auto_ban: z.number().nullish(),
   other_info: z.string().default(''),
   tag: z.string().nullish(),

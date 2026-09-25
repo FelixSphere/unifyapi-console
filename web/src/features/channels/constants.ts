@@ -289,6 +289,8 @@ export const DEFAULT_CHANNEL_VALUES = {
   status: CHANNEL_STATUS.ENABLED,
   priority: 0,
   weight: 0,
+  rate_limit_rpm: 0,
+  rate_limit_tpm: 0,
   auto_ban: 1,
   remark: '',
 } as const
@@ -372,6 +374,10 @@ export const FIELD_DESCRIPTIONS = {
     'Map request model names to actual provider model names (JSON format)',
   PRIORITY: 'Higher priority channels are selected first',
   WEIGHT: 'Used for load balancing. Higher weight = more requests',
+  RATE_LIMIT_RPM:
+    'Max requests per minute this channel may send upstream. 0 means unlimited. While over the limit the channel is skipped during selection, so traffic goes elsewhere instead of returning 429.',
+  RATE_LIMIT_TPM:
+    'Max tokens per minute for this channel. 0 means unlimited. Counted after each request completes, so the limit can be exceeded by one request.',
   TEST_MODEL: 'Model to use when testing channel connectivity',
   AUTO_BAN: 'Automatically disable channel on repeated failures',
   STATUS_CODE_MAPPING: 'Map response status codes (JSON format)',
