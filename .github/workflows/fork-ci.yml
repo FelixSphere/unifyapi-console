@@ -21,6 +21,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Hard gate, and first because it needs nothing installed. Guards what can
+      # reach production: that `latest` moves only on a tag push (the instance
+      # pulls with `--pull always` on restart, so a branch build claiming that
+      # tag would boot unreleased code at the next reboot), and that upstream's
+      # publishing workflows stay gated to upstream so a release merge cannot
+      # start pushing our build under their Docker Hub name.
+      - name: Check release invariants
+        working-directory: .
+        run: node scripts/check-release-invariants.mjs
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.3.14'
