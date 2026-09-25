@@ -42,6 +42,22 @@ func NormalizeThinkingShape(request *dto.ClaudeRequest, preferredEffort string) 
 	switch request.Thinking.Type {
 	case "enabled":
 		if !settings.RequiresAdaptiveThinking(request.Model) {
+			// The model accepts this shape, but Anthropic still rejects the
+			// request outright unless budget_tokens stays under max_tokens.
+			// The OpenAI chat converter sets budget_tokens from the effort word
+			// alone -- low 1280, medium 2048, high 4096 -- without consulting
+			// max_tokens, so reasoning_effort plus a small max_tokens is a
+			// guaranteed 400: "`max_tokens` must be greater than
+			// `thinking.budget_tokens`". That was still live on
+			// claude-opus-4-5 and claude-sonnet-4-5 after #190, because the
+			// adaptive branch below calls fitBudget and this one returned
+			// first. Same model, same max_tokens, reasoning:{"effort":"low"}
+			// answered 200 while reasoning_effort:"low" answered 400 -- one
+			// entry point clamped, the other did not.
+			if request.Thinking.BudgetTokens != nil {
+				budget := fitBudget(request, *request.Thinking.BudgetTokens)
+				request.Thinking.BudgetTokens = &budget
+			}
 			return
 		}
 		effort := preferredEffort
