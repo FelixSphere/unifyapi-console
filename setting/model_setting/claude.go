@@ -37,6 +37,15 @@ type ClaudeSettings struct {
 	// the adaptive shape for both, so a caller switching over got a 400 only
 	// from us.
 	AdaptiveThinkingUnsupportedModels []string `json:"adaptive_thinking_unsupported_models"`
+	// StructuredOutputsBeta is the anthropic-beta value that makes output_format
+	// do anything. Anthropic gates structured outputs behind a dated beta flag,
+	// and without it the field is accepted and ignored: the request succeeds and
+	// the model answers in prose. That is the exact silent failure the
+	// response_format mapping set out to fix, so the mapping alone is inert.
+	//
+	// Configurable because the date moves. A new beta string should cost an
+	// option edit, not a release.
+	StructuredOutputsBeta string `json:"structured_outputs_beta"`
 }
 
 // 默认配置
@@ -49,6 +58,7 @@ var defaultClaudeSettings = ClaudeSettings{
 	ThinkingAdapterBudgetTokensPercentage: 0.8,
 	AdaptiveThinkingModels:                []string{"claude-fable-5"},
 	AdaptiveThinkingUnsupportedModels:     []string{"claude-opus-4-5", "claude-sonnet-4-5"},
+	StructuredOutputsBeta:                 "structured-outputs-2025-11-13",
 }
 
 // 全局实例
@@ -156,4 +166,23 @@ func ValidateClaudeDefaultMaxTokens(value string) error {
 		}
 	}
 	return nil
+}
+
+// WriteStructuredOutputsBeta merges the structured-outputs beta into
+// anthropic-beta, preserving anything the caller already asked for there.
+//
+// anthropic-beta is a comma-separated list, so this must merge rather than set:
+// a caller combining structured outputs with another beta would otherwise lose
+// theirs.
+func (c *ClaudeSettings) WriteStructuredOutputsBeta(httpHeader *http.Header) {
+	if c.StructuredOutputsBeta == "" {
+		return
+	}
+	mergedValues := normalizeHeaderListValues(
+		append(append([]string(nil), httpHeader.Values("anthropic-beta")...), c.StructuredOutputsBeta),
+	)
+	if len(mergedValues) == 0 {
+		return
+	}
+	httpHeader.Set("anthropic-beta", strings.Join(mergedValues, ","))
 }
