@@ -318,7 +318,21 @@ var unifyapiCatalog = []CatalogEntry{
 	// and needs the same review as any other repricing, which is why they are
 	// still here rather than quietly deleted.
 	{Model: "deepseek-v3", Vendor: "", InputUSD: 0.287, OutputUSD: 1.147, CacheReadUSD: 0, CacheWriteUSD: 0, Unverified: true},
-	{Model: "deepseek-v3.2", Vendor: "", InputUSD: 0.18, OutputUSD: 0.35, CacheReadUSD: 0.04, CacheWriteUSD: 0, Unverified: true},
+	// deepseek-v3.2 was the one row of the three that LOST money on every
+	// request, measured against the supplier's own published price rather than
+	// inferred: FlatKey bills us $0.2261 in / $0.3774 out, and we were selling
+	// at $0.18 / $0.35 -- under cost on BOTH token types, so no input/output
+	// mix made it profitable.
+	//
+	// Repriced to FlatKey's rate divided by 0.85, which is the same 15% margin
+	// every other DeepSeek row already carries. That 0.85 is not a guess: the
+	// supplier's published price is exactly 0.85x DeepSeek's list for
+	// deepseek-v4-pro, deepseek-v4-flash and deepseek-v3.2-thinking, so
+	// dividing back recovers the list price this row should have had. The
+	// other two rows were left alone deliberately -- v3.2-thinking already
+	// sits within a cent of the same rule, and v3 is a separate decision.
+	{Model: "deepseek-v3.2", Vendor: "", InputUSD: 0.266, OutputUSD: 0.444, CacheReadUSD: 0.04, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://console.flatkey.ai (supplier list $0.2261/$0.3774, / 0.85 for the 15% margin the other DeepSeek rows carry)", QuoteDate: "2026-09-25"},
 	{Model: "deepseek-v3.2-thinking", Vendor: "", InputUSD: 0.29, OutputUSD: 0.43, CacheReadUSD: 0, CacheWriteUSD: 0, Unverified: true},
 	// DeepSeek raised prices at 16:00 UTC on 2026-08-16 (announced 2026-08-13)
 	// and moved to peak/off-peak billing, off-peak being half of peak. The PEAK
