@@ -26,6 +26,7 @@ func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dt
 }
 
 func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.ClaudeRequest) (any, error) {
+	NormalizeThinkingShape(request, "") // UNIFYAPI: thinking shape the model accepts
 	return request, nil
 }
 
@@ -99,6 +100,11 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	result, err := relayconvert.ConvertRequest(c, info, types.RelayFormatClaude, request)
 	if err != nil {
 		return nil, err
+	}
+	// UNIFYAPI: reasoning_effort / reasoning{} arrive here as thinking.enabled
+	if claudeRequest, ok := result.Value.(*dto.ClaudeRequest); ok {
+		ApplyRequestedReasoning(claudeRequest, request)
+		NormalizeThinkingShape(claudeRequest, openAIRequestedEffort(request))
 	}
 	return result.Value, nil
 }
