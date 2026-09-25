@@ -302,6 +302,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	}
 
 	cleanup()
+	// Tell Done() how this stream actually ended. A truncated stream must not be
+	// terminated with `data: [DONE]`, which means "the response is complete".
+	rememberStreamStatus(c, info.StreamStatus)
 	if info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors() {
 		logger.LogInfo(c, fmt.Sprintf("stream ended: %s", info.StreamStatus.Summary()))
 	} else {
