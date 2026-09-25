@@ -27,15 +27,19 @@ type openRouterRequestReasoning struct {
 	Exclude   bool   `json:"exclude,omitempty"`
 }
 
-// claudeOutputFormat maps OpenAI's response_format onto Anthropic's
-// output_format.
+// claudeOutputFormat maps OpenAI's response_format onto the value Anthropic
+// expects at output_config.format.
+//
+// Anthropic deprecated the top-level output_format field and now rejects it
+// with HTTP 400 ("Use 'output_config.format' instead"), so every structured
+// -output request failed. Observed in production 2026-09-25 on channel 188.
 //
 // Only json_schema carries over. "json_object" asks for valid JSON without
-// saying which shape, and Anthropic's output_format has no equivalent of that,
+// saying which shape, and Anthropic's format has no equivalent of that,
 // so sending one without a schema would be rejected -- that case is left as it
 // behaves today rather than converted into a 400 the caller did not have
 // before.
-func claudeOutputConfig(responseFormat *dto.ResponseFormat) json.RawMessage {
+func claudeOutputFormat(responseFormat *dto.ResponseFormat) json.RawMessage {
 	if responseFormat == nil || responseFormat.Type != "json_schema" || len(responseFormat.JsonSchema) == 0 {
 		return nil
 	}
@@ -44,10 +48,8 @@ func claudeOutputConfig(responseFormat *dto.ResponseFormat) json.RawMessage {
 		return nil
 	}
 	encoded, err := kitutil.Marshal(map[string]any{
-		"format": map[string]any{
-			"type":   "json_schema",
-			"schema": jsonSchema.Schema,
-		},
+		"type":   "json_schema",
+		"schema": jsonSchema.Schema,
 	})
 	if err != nil {
 		return nil
@@ -153,15 +155,16 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 
 	// UNIFYAPI: carry the caller's structured-output request across to Anthropic.
 	//
-	// Anthropic Messages has no response_format, but it does have output_format,
-	// and dto.ClaudeRequest already carries that as a passthrough -- nothing was
-	// ever assigning it. So the field was dropped here in silence: the caller
-	// asked for json_schema, got HTTP 200 with free-form markdown prose, and
-	// their JSON parser failed on a response that said nothing about why. The
-	// Gemini converter has mapped this since it was written; only this one did
-	// not.
-	if outputConfig := claudeOutputConfig(textRequest.ResponseFormat); len(outputConfig) > 0 {
-		claudeRequest.OutputConfig = outputConfig
+	// Anthropic Messages has no response_format. It used to take a top-level
+	// output_format; that is now deprecated and returns HTTP 400, so the schema
+	// goes to output_config.format instead.
+	//
+	// Merged, not assigned: the effort branches below also write output_config,
+	// and they run after this. Assigning the whole object here would have the
+	// schema silently overwritten a few lines later on exactly the Opus models
+	// that take an effort suffix.
+	if outputFormat := claudeOutputFormat(textRequest.ResponseFormat); len(outputFormat) > 0 {
+		claudeRequest.MergeOutputConfig("format", outputFormat)
 	}
 
 	if claudeRequest.MaxTokens == nil || *claudeRequest.MaxTokens == 0 {
@@ -179,7 +182,7 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 		claudeRequest.Thinking = &dto.Thinking{
 			Type: "adaptive",
 		}
-		claudeRequest.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
+		claudeRequest.MergeOutputConfig("effort", effortLevel)
 		if strings.HasPrefix(baseModel, "claude-opus-4-7") ||
 			strings.HasPrefix(baseModel, "claude-opus-4-8") {
 			claudeRequest.Thinking.Display = "summarized"
@@ -197,7 +200,7 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 		if strings.HasPrefix(trimmedModel, "claude-opus-4-7") ||
 			strings.HasPrefix(trimmedModel, "claude-opus-4-8") {
 			claudeRequest.Thinking = &dto.Thinking{Type: "adaptive", Display: "summarized"}
-			claudeRequest.OutputConfig = json.RawMessage(`{"effort":"high"}`)
+			claudeRequest.MergeOutputConfig("effort", "high")
 			claudeRequest.Temperature = nil
 			claudeRequest.TopP = nil
 			claudeRequest.TopK = nil

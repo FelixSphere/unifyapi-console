@@ -240,6 +240,33 @@ type OutputConfigForEffort struct {
 	Effort string `json:"effort,omitempty"`
 }
 
+// MergeOutputConfig sets one key inside output_config while preserving the keys
+// already there.
+//
+// output_config is a single object carrying several unrelated settings --
+// "effort" from the reasoning adapters and "format" from structured outputs --
+// and every caller used to assign the whole raw blob. Whichever ran last won,
+// silently: a json_schema request on an effort-suffixed Opus model lost its
+// schema and came back as prose, with nothing in the response saying so.
+//
+// A malformed existing value is replaced rather than propagated: it could not
+// have been valid output_config anyway, and returning it unchanged would hide
+// the key the caller just asked for.
+func (c *ClaudeRequest) MergeOutputConfig(key string, value any) {
+	cfg := map[string]any{}
+	if len(c.OutputConfig) > 0 {
+		if err := json.Unmarshal(c.OutputConfig, &cfg); err != nil {
+			cfg = map[string]any{}
+		}
+	}
+	cfg[key] = value
+	merged, err := json.Marshal(cfg)
+	if err != nil {
+		return
+	}
+	c.OutputConfig = merged
+}
+
 func (c *ClaudeRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	maxTokens := 0
 	if c.MaxTokens != nil {
