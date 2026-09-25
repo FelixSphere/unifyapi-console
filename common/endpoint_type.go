@@ -58,5 +58,25 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 		// add to first
 		endpointTypes = append([]constant.EndpointType{constant.EndpointTypeImageGeneration}, endpointTypes...)
 	}
+	// UNIFYAPI-FORK: a video-generation model has no chat endpoint, so replace
+	// the list rather than prepending to it the way the image branch above
+	// does. Same defect #204 fixed for TypeSafe, reached through the model
+	// instead of the channel type: GET /api/pricing told every customer that
+	// MiniMax-H3 and seedance-2.5 support `["openai"]`, so a benchmark and a
+	// customer both called chat/completions and got a 400 -- for MiniMax-H3
+	// from OpenRouter ("is a video generation model"), for seedance-2.5 from
+	// the supplier's own instance.
+	//
+	// Both models work, and were verified working on 2026-09-25 through
+	// POST /v1/videos in production: an unknown model name is rejected there
+	// with model_not_found BEFORE the seconds check, so reaching
+	// invalid_seconds proves the name resolved to a routable video channel.
+	// Channel type 20 has a task adaptor (taskopenrouter), so this claim is
+	// one we can actually serve.
+	//
+	// Metadata only, like #204: nothing on the relay path reads it.
+	if IsVideoGenerationModel(modelName) {
+		endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAIVideo}
+	}
 	return endpointTypes
 }
