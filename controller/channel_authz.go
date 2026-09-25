@@ -128,9 +128,13 @@ var channelNonSensitiveFields = map[string]struct{}{
 	"status_code_mapping": {},
 	"priority":            {},
 	"auto_ban":            {},
-	"other_info":          {},
-	"tag":                 {},
-	"remark":              {},
-	"channel_info":        {},
-	"multi_key_mode":      {},
+	// UNIFYAPI-BRAND: capacity configuration, same class as weight and
+	// priority -- it shapes routing, it is not a credential.
+	"rate_limit_rpm": {},
+	"rate_limit_tpm": {},
+	"other_info":     {},
+	"tag":            {},
+	"remark":         {},
+	"channel_info":   {},
+	"multi_key_mode": {},
 }
