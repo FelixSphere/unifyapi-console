@@ -472,6 +472,27 @@ curl -s "$CONSOLE/api/pricing/reconcile?start=...&end=...&group_by=model" | \
 
 ---
 
+## 五点五、新价上线后通知客户
+
+基线价改在代码里、随发版生效，客户那边是静默的：价目页换了数字，下一张账单跟着变，中间没人说一句。
+所以 console 挂了一个 system-task（`controller/pricing_change_notify_task.go` → `service.RunPricingChangeNotice`）：
+
+- **比什么**：当前目录（含后台补充定价）vs options 里 `PricingBaselineAnnounced` 存的「上次告知客户的基线」，逐字段比官方美元价。
+- **算什么是变化**：只看**在启用渠道上的模型**——改价、新上架、以及仍挂在渠道上但目录里已撤价（relay 会拒绝）。没渠道的模型动了价只静默推进基线，不通知，否则它日后上架会被当成"从一个没人付过的价改过来"。
+- **发给谁**：近 30 天有该模型消费日志的启用用户（只收自己用过的模型），加所有管理员（收全部）。走 `service.NotifyUser`，尊重用户选的邮件 / webhook / Bark / Gotify，受同一套每小时限流。
+- **发什么**：英文；旧价 → 新价（$/1M 输入/输出/缓存，或按秒/按次），生效日期，一句"你的折扣或合同价照常在此之上生效"，价目页链接。
+- **第一次跑**只记录当前基线、不发信——没有"之前"可比，给全员发 60 行没变的价格表只会教他们删下一封。
+- **发完才推进基线**：写入失败下次会重发，重发好过没人知道。
+- 每小时醒一次，目录没变时是一次 options 读 + 一次渠道模型查询、零写入；有变化则当小时内发出。多 master 由 task runner 的数据库租约去重。
+- 关掉：option `PricingChangeNotifyEnabled` 设 `false`（默认开）。
+
+```bash
+# 看最近几次跑了什么（system task 记录）
+curl -s "$CONSOLE/api/system-task/list?type=pricing_change_notify&limit=5" -H "Authorization: Bearer $ROOT_TOKEN" | jq '.data'
+```
+
+---
+
 ## 六、故障速查
 
 | 现象 | 原因 | 处置 |

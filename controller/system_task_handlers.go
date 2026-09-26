@@ -26,6 +26,8 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(reconcileHandler{})
 	// UNIFYAPI-FORK: billing-config snapshot, see pricing_snapshot_task.go
 	service.RegisterSystemTaskHandler(pricingSnapshotHandler{})
+	// UNIFYAPI-FORK: customer notice on a list-price change, see pricing_change_notify_task.go
+	service.RegisterSystemTaskHandler(pricingChangeNotifyHandler{})
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and
