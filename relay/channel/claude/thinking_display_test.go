@@ -168,3 +168,53 @@ func TestAdaptor_ChatExcludeIsNotOverridden(t *testing.T) {
 	require.NotNil(t, out.Thinking)
 	assert.Empty(t, out.Thinking.Display)
 }
+
+// --- claude-opus-5: the shape conversion and the display default are one fix ---
+
+// Measured n=3 on the production box (FlatKey channel 154, /v1/messages).
+// enabled: 0 thinking chars, output_tokens 112-144. enabled + summarized: 0,
+// 99-118. adaptive: 0. adaptive + summarized: 146/156/89. Three of the four
+// combinations bill for thinking and return none, so neither half of this fix
+// works without the other.
+func TestNormalizeThinking_Opus5EnabledBecomesAdaptive(t *testing.T) {
+	req := &dto.ClaudeRequest{Model: "claude-opus-5", MaxTokens: uintPtr(4096), Thinking: enabled(2048)}
+	NormalizeThinkingShape(req, "")
+	require.Equal(t, "adaptive", req.Thinking.Type)
+	assert.Nil(t, req.Thinking.BudgetTokens, "adaptive carries no budget")
+}
+
+func TestAdaptor_Opus5EndsUpWithBothHalvesOfTheFix(t *testing.T) {
+	// The whole point: shape AND display, on the request that actually leaves
+	// this process. Either one alone returns nothing.
+	out := convertClaude(t, &dto.ClaudeRequest{
+		Model: "claude-opus-5", MaxTokens: uintPtr(4096), Thinking: enabled(2048)})
+	require.NotNil(t, out.Thinking)
+	assert.Equal(t, "adaptive", out.Thinking.Type)
+	assert.Equal(t, "summarized", out.Thinking.Display)
+
+	chat := chatReq("claude-opus-5")
+	chat.ReasoningEffort = "medium"
+	viaChat := convertChat(t, chat)
+	require.NotNil(t, viaChat.Thinking)
+	assert.Equal(t, "adaptive", viaChat.Thinking.Type)
+	assert.Equal(t, "summarized", viaChat.Thinking.Display)
+	assert.JSONEq(t, `{"effort":"medium"}`, string(viaChat.OutputConfig))
+}
+
+// claude-opus-5-5 is a DIFFERENT model that the entry above captures through
+// the dated-snapshot rule ("claude-opus-5" + "-"), and it does not need the
+// conversion: measured n=3 on channel 206, the plain enabled shape returned
+// 116/136/288 thinking chars. It is not reached today only because that
+// channel's model_mapping renames it to anthropic/claude-opus-5.5 before the
+// adaptor sees it. A direct channel with no mapping would silently downgrade
+// it. Pinned here so the next person reads it as a known trap rather than
+// rediscovering it in production.
+func TestNormalizeThinking_Opus55IsCapturedByTheSnapshotRule(t *testing.T) {
+	req := &dto.ClaudeRequest{Model: "claude-opus-5-5", MaxTokens: uintPtr(4096), Thinking: enabled(2048)}
+	NormalizeThinkingShape(req, "")
+	assert.Equal(t, "adaptive", req.Thinking.Type,
+		"KNOWN TRAP, not a desired behaviour: claude-opus-5-5 works with the "+
+			"enabled shape and is converted anyway. Harmless only while its one "+
+			"channel maps the name away. If this assertion ever has to change, "+
+			"the fix is a tighter match rule, not a wider list.")
+}
