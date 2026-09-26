@@ -267,6 +267,9 @@ func applyAdaptiveThinkingCompatibility(request *dto.ClaudeRequest) {
 		effort = "low"
 	}
 
-	request.Thinking = &dto.Thinking{Type: "adaptive"}
+	// UNIFYAPI: display is the caller's instruction about what comes back, not
+	// part of the shape being translated; rebuilding Thinking without it would
+	// silently overrule an explicit display:"omitted".
+	request.Thinking = &dto.Thinking{Type: "adaptive", Display: request.Thinking.Display}
 	request.MergeOutputConfig("effort", effort)
 }

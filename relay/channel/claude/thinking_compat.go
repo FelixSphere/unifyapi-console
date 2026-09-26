@@ -69,7 +69,10 @@ func NormalizeThinkingShape(request *dto.ClaudeRequest, preferredEffort string) 
 				effort = "low"
 			}
 		}
-		request.Thinking = &dto.Thinking{Type: "adaptive"}
+		// display survives the rewrite: it is the caller's instruction about
+		// what comes back, not part of the shape being translated. Dropping it
+		// here would silently overrule an explicit display:"omitted".
+		request.Thinking = &dto.Thinking{Type: "adaptive", Display: request.Thinking.Display}
 		request.OutputConfig = withOutputConfigEffort(request.OutputConfig, effort)
 	case "adaptive":
 		if !settings.RejectsAdaptiveThinking(request.Model) {
@@ -84,7 +87,7 @@ func NormalizeThinkingShape(request *dto.ClaudeRequest, preferredEffort string) 
 			budget = effortBudgets["high"] // adaptive with no effort means "think as needed"
 		}
 		budget = fitBudget(request, budget)
-		request.Thinking = &dto.Thinking{Type: "enabled", BudgetTokens: &budget}
+		request.Thinking = &dto.Thinking{Type: "enabled", BudgetTokens: &budget, Display: request.Thinking.Display}
 		request.OutputConfig = withoutOutputConfigEffort(request.OutputConfig)
 	}
 }
@@ -154,6 +157,56 @@ func withoutOutputConfigEffort(raw json.RawMessage) json.RawMessage {
 		return nil
 	}
 	return out
+}
+
+// ApplyThinkingDisplayDefault asks for the thinking text to be returned
+// whenever the caller asked for thinking and did not say otherwise.
+//
+// Anthropic bills thinking tokens whether or not the text comes back, and on
+// the newer models the default is that it does not: claude-opus-5 answers a
+// plain thinking request with 200, zero thinking blocks, and output_tokens that
+// include the thinking it just charged for. Measured n=3 on the production box
+// (FlatKey channel 154, /v1/messages): enabled and adaptive both returned 0
+// thinking characters, adaptive + display:"summarized" returned 146/156/89.
+// OpenRouter returns reasoning for the same request, so a caller comparing the
+// two saw us charge for thinking and hand back nothing.
+//
+// Operator decision, 2026-09-26: if we bill for thinking, we return it. The
+// default is applied only where the caller left display unset -- an explicit
+// display, including "omitted", is theirs and is passed through untouched. A
+// request that did not ask for thinking is not given any.
+//
+// callerExcludedReasoning is the OpenAI-format equivalent of an explicit
+// display: OpenRouter's reasoning:{"exclude":true}. Nothing honours it on this
+// path today, so this does not start honouring it either -- it only declines to
+// force the opposite on a caller who said they do not want reasoning back.
+func ApplyThinkingDisplayDefault(request *dto.ClaudeRequest, callerExcludedReasoning bool) {
+	if request == nil || request.Thinking == nil || callerExcludedReasoning {
+		return
+	}
+	// "disabled" is a caller turning thinking off; display would be meaningless
+	// and the model may reject the pair.
+	if request.Thinking.Type != "enabled" && request.Thinking.Type != "adaptive" {
+		return
+	}
+	if request.Thinking.Display != "" {
+		return
+	}
+	request.Thinking.Display = "summarized"
+}
+
+// openAIExcludedReasoning reports OpenRouter's reasoning:{"exclude":true}.
+func openAIExcludedReasoning(request *dto.GeneralOpenAIRequest) bool {
+	if request == nil || len(request.Reasoning) == 0 {
+		return false
+	}
+	var r struct {
+		Exclude bool `json:"exclude"`
+	}
+	if json.Unmarshal(request.Reasoning, &r) != nil {
+		return false
+	}
+	return r.Exclude
 }
 
 // openAIRequestedEffort is the effort word an OpenAI-format caller asked for,
