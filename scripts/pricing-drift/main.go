@@ -16,6 +16,12 @@
 //	go run ./scripts/pricing-drift -json        # machine-readable, for CI annotations
 //	go run ./scripts/pricing-drift -fixture F   # diff against a saved api.json
 //	go run ./scripts/pricing-drift -save F      # write the fetched feed to F
+//	go run ./scripts/pricing-drift -served URL  # mark which drifted models are on sale (GET /api/pricing)
+//	go run ./scripts/pricing-drift -fix ...     # rewrite the catalog SOURCE to the feed, for a PR (see rewrite.go)
+//
+// -fix does not change what is billed. It edits unifyapi_catalog.go in the
+// working tree, and the daily workflow turns that into a pull request; the
+// price moves when a person merges it and the console is released.
 //
 // A vendor legitimately reprices, so drift is expected periodically and is not
 // an error in the code -- it is a prompt to update the catalog and the
@@ -67,12 +73,21 @@ type Finding struct {
 	Upstream float64 `json:"upstream"`
 	Kind     string  `json:"kind"`
 	Detail   string  `json:"detail"`
+	// Served is set by -served: the model is enabled on at least one channel,
+	// so this drift changes a price customers can actually be charged.
+	Served bool `json:"served,omitempty"`
 }
 
 func main() {
 	jsonOut := flag.Bool("json", false, "emit findings as JSON")
 	fixture := flag.String("fixture", "", "read the models.dev feed from this file instead of the network")
 	save := flag.String("save", "", "write the fetched feed to this file")
+	served := flag.String("served", "", "URL of the public pricing page (GET /api/pricing); marks which drifted models are on sale")
+	fix := flag.Bool("fix", false, "rewrite the catalog source to the feed's prices (for a pull request, never for production state)")
+	catalogPath := flag.String("catalog", "setting/ratio_setting/unifyapi_catalog.go", "catalog source to rewrite with -fix")
+	fixtureOut := flag.String("fixture-out", "", "with -fix: write the trimmed feed here as the new offline fixture")
+	snapshotDate := flag.String("snapshot-date", time.Now().UTC().Format("2006-01-02"), "with -fix: the new PricingSnapshotDate")
+	prBody := flag.String("pr-body", "", "with -fix: write a pull-request description (markdown) to this file")
 	flag.Parse()
 
 	feed, err := loadFeed(*fixture, *save)
@@ -82,6 +97,24 @@ func main() {
 	}
 
 	findings := Check(feed)
+
+	servedKnown := false
+	if *served != "" {
+		models, err := fetchServedModels(*served)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "pricing-drift:", err)
+			os.Exit(2)
+		}
+		findings = MarkServed(findings, models)
+		servedKnown = true
+	}
+
+	if *fix {
+		if err := applyFix(findings, feed, *catalogPath, *fixtureOut, *snapshotDate, *prBody, servedKnown); err != nil {
+			fmt.Fprintln(os.Stderr, "pricing-drift:", err)
+			os.Exit(2)
+		}
+	}
 
 	if *jsonOut {
 		encoder := json.NewEncoder(os.Stdout)
@@ -101,6 +134,41 @@ func main() {
 	if hasDrift(findings) {
 		os.Exit(1)
 	}
+}
+
+// applyFix writes the drifted prices back into the catalog source, refreshes
+// the offline fixture and renders the pull-request description. It reports
+// what it did on stderr so the workflow log reads the same as the diff.
+func applyFix(findings []Finding, feed map[string]modelsDevProvider, catalogPath, fixtureOut, snapshotDate, prBody string, servedKnown bool) error {
+	src, err := os.ReadFile(catalogPath)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", catalogPath, err)
+	}
+	out, fixed, err := RewriteCatalog(src, findings, snapshotDate)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(catalogPath, out, 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", catalogPath, err)
+	}
+	fmt.Fprintf(os.Stderr, "pricing-drift: rewrote %d row(s) in %s, PricingSnapshotDate -> %s\n", fixed, catalogPath, snapshotDate)
+
+	if fixtureOut != "" {
+		trimmed, err := json.MarshalIndent(TrimFeed(feed), "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(fixtureOut, append(trimmed, '\n'), 0o644); err != nil {
+			return fmt.Errorf("writing %s: %w", fixtureOut, err)
+		}
+		fmt.Fprintf(os.Stderr, "pricing-drift: wrote fixture %s\n", fixtureOut)
+	}
+	if prBody != "" {
+		if err := os.WriteFile(prBody, []byte(PullRequestBody(findings, fixed, snapshotDate, servedKnown)), 0o644); err != nil {
+			return fmt.Errorf("writing %s: %w", prBody, err)
+		}
+	}
+	return nil
 }
 
 // hasDrift distinguishes findings that require action from informational ones.
@@ -359,7 +427,11 @@ func report(findings []Finding) {
 			lastKind = finding.Kind
 		}
 		if finding.Model != "" {
-			fmt.Printf("  %-40s %s\n", finding.Model, finding.Detail)
+			if finding.Served {
+				fmt.Printf("  %-40s [on sale] %s\n", finding.Model, finding.Detail)
+			} else {
+				fmt.Printf("  %-40s %s\n", finding.Model, finding.Detail)
+			}
 		} else {
 			fmt.Printf("  %s\n", finding.Detail)
 		}

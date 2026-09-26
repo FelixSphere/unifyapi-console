@@ -7,11 +7,17 @@
 #            fixture (or vice versa) fails the PR that does it. No network, so
 #            a models.dev outage can never redden an unrelated change.
 #
-#   live     runs weekly and on demand. Fetches models.dev for real and opens
-#            an issue when a vendor has repriced. It does NOT push a fix: a
-#            repricing changes what customers are invoiced the moment it
-#            deploys, so it needs a human deciding whether the per-model
-#            discount absorbs the change or passes it through.
+#   live     runs daily and on demand. Fetches models.dev for real, marks which
+#            drifted models are actually on sale (the public pricing page), and
+#            when a vendor has repriced it rewrites the catalog SOURCE and opens
+#            a pull request carrying the diff, the report and the new fixture.
+#
+#            It does NOT merge and it does NOT touch production: a repricing
+#            changes what customers are invoiced the moment it deploys, so a
+#            person decides whether the per-model discount absorbs the change
+#            or passes it through, and merging is that decision. Once the new
+#            price is live the console emails the customers who use the model
+#            (controller/pricing_change_notify_task.go).
 name: Pricing drift
 
 on:
@@ -26,10 +32,17 @@ on:
       - 'setting/ratio_setting/**'
       - 'scripts/pricing-drift/**'
   schedule:
-    # Mondays 06:00 UTC -- before the week's pricing decisions, after any
-    # weekend vendor announcements.
-    - cron: '0 6 * * 1'
+    # Daily 06:00 UTC. Vendors announce at any hour; a weekly check left
+    # DeepSeek's 2026-08-16 rise unnoticed for days on models we sell.
+    - cron: '0 6 * * *'
   workflow_dispatch:
+
+env:
+  # The public pricing page lists exactly the models enabled on a channel, so
+  # the checker can tell "a price moved on a model customers call today" from
+  # "a catalogued row nobody is routed to" without credentials or a database.
+  PRICING_PAGE_URL: https://app.unifyapi.ai/api/pricing
+  DRIFT_BRANCH: pricing-drift/auto
 
 permissions:
   contents: read
@@ -59,10 +72,17 @@ jobs:
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      issues: write
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # A PR opened with the default GITHUB_TOKEN does not trigger the
+          # repository's pull_request workflows, so CI would not run on it.
+          # Set PRICING_DRIFT_PAT (a fine-grained token with contents +
+          # pull-requests write) to get a fully checked PR; without it the PR
+          # still opens and a reviewer re-runs CI by pushing to the branch.
+          token: ${{ secrets.PRICING_DRIFT_PAT || secrets.GITHUB_TOKEN }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -76,7 +96,7 @@ jobs:
           GOWORK: off
         run: |
           set +e
-          go run ./scripts/pricing-drift > drift.txt 2>&1
+          go run ./scripts/pricing-drift -served "$PRICING_PAGE_URL" -save /tmp/models-dev.json > drift.txt 2>&1
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
           set -e
           cat drift.txt
@@ -91,80 +111,107 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Issues are disabled repo-wide in this fork (see AGENT-WORKFLOW.md), so
-      # this step is best-effort: it must not be the thing that fails the run.
-      # It used to be -- github-script threw "Issues has been disabled in this
-      # repository" as an unhandled error, which killed the job before the
-      # explicit failure step below and left the report only in the log. The
-      # run went red for the wrong reason, which is worse than either outcome.
-      - name: Open an issue when a vendor has repriced
+      # Rewrite the catalog source to the vendors' current prices and refresh
+      # the offline fixture to the feed they were read from. The old fixture is
+      # removed because main_test.go derives the fixture name from
+      # PricingSnapshotDate: one file per verified date, never two.
+      - name: Rewrite the catalog to the current list prices
+        id: fix
         if: steps.drift.outputs.exit_code == '1'
+        env:
+          GOWORK: off
+        run: |
+          set -euo pipefail
+          today="$(date -u +%F)"
+          echo "date=$today" >> "$GITHUB_OUTPUT"
+          git rm -q --ignore-unmatch scripts/pricing-drift/testdata/models-dev-*.json
+          set +e
+          go run ./scripts/pricing-drift \
+            -fixture /tmp/models-dev.json \
+            -served "$PRICING_PAGE_URL" \
+            -fix \
+            -snapshot-date "$today" \
+            -fixture-out "scripts/pricing-drift/testdata/models-dev-$today.json" \
+            -pr-body /tmp/pr-body.md > /dev/null
+          code=$?
+          set -e
+          # 1 is "drift found", which is the reason we are here; 2 is a real
+          # failure of the rewriter and must stop the job.
+          if [ "$code" = "2" ]; then exit 2; fi
+          git add -A setting/ratio_setting/unifyapi_catalog.go scripts/pricing-drift/testdata
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Drift was reported but nothing was rewritable (retired model or withdrawn price). See the report."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git --no-pager diff --cached --stat
+          fi
+
+      # Run the baseline tests on the rewritten catalog so the PR body can say
+      # up front whether it is green. Red is expected -- and wanted -- when a
+      # model carrying real traffic moved: TestPinnedDollarsForTheModelsThat-
+      # CarryTheTraffic holds hand-typed vendor figures that a person must
+      # re-read from the vendor's own page.
+      - name: Test the rewritten baseline
+        id: verify
+        if: steps.fix.outputs.changed == 'true'
         continue-on-error: true
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs')
-            const report = fs.readFileSync('drift.txt', 'utf8')
-            const title = 'Pricing drift: a vendor has changed its list price'
+        env:
+          GOWORK: off
+        run: go test ./setting/ratio_setting/ ./service/ ./scripts/pricing-drift/ -count=1 2>&1 | tee /tmp/verify.txt | grep -E '^(ok|FAIL|---)' || true
 
-            // Reuse an open issue rather than opening one a week until someone
-            // acts -- a pile of duplicates trains people to close them unread.
-            const existing = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: 'pricing-drift',
-            })
+      - name: Open or update the pull request
+        if: steps.fix.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PRICING_DRIFT_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          today="${{ steps.fix.outputs.date }}"
+          {
+            cat /tmp/pr-body.md
+            echo
+            echo "### Baseline tests on this diff"
+            echo
+            echo '```'
+            grep -E '^(ok|FAIL|---|\s+--- FAIL)' /tmp/verify.txt || echo "(no test output captured)"
+            echo '```'
+            echo
+            echo "_Opened by the daily pricing-drift workflow. Re-running it while this PR is open updates this branch in place._"
+          } > /tmp/pr-full.md
 
-            const body = [
-              'The pricing baseline in `setting/ratio_setting/unifyapi_catalog.go`',
-              'no longer matches models.dev.',
-              '',
-              '```',
-              report.trim(),
-              '```',
-              '',
-              '**What to do**',
-              '',
-              '1. Update the affected rows in `unifyapi_catalog.go` to the new official prices.',
-              '2. Bump `PricingSnapshotDate`.',
-              '3. Refresh the fixture:',
-              '   `go run ./scripts/pricing-drift -save scripts/pricing-drift/testdata/models-dev-<date>.json`',
-              '   and update `fixturePath` in `main_test.go`.',
-              '4. **Decide the commercial question:** a higher official price raises what every',
-              '   customer pays unless the per-model discount is lowered to absorb it. Check',
-              '   `GET /api/pricing/reconcile?group_by=model` for the affected models first --',
-              '   a model already thin on margin cannot absorb a rise.',
-              '',
-              'Prices are never updated automatically, by design.',
-            ].join('\n')
+          git config user.name "pricing-drift[bot]"
+          git config user.email "pricing-drift@users.noreply.github.com"
+          git checkout -B "$DRIFT_BRANCH"
+          git commit -q -m "chore(pricing): move the catalogue to the vendors' list prices as of $today" \
+            -m "Generated by scripts/pricing-drift -fix from models.dev. See the pull request for the per-model report and the review checklist."
 
-            try {
-            if (existing.data.length > 0) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existing.data[0].number,
-                body: `Still drifting as of ${context.sha.slice(0, 7)}:\n\n${body}`,
-              })
-            } else {
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title,
-                labels: ['pricing-drift'],
-                body,
-              })
-            }
-            } catch (error) {
-              core.warning(
-                'Could not file the drift report as an issue (' + error.message + '). ' +
-                'The report is in the run summary and the run still fails below.'
-              )
-            }
+          # The fixture lives under testdata/, so every drift PR trips the
+          # test-guard workflow and needs the operator's approval on its exact
+          # head commit. Re-pushing an identical tree every morning would clear
+          # that approval for nothing, so the branch is only moved when the
+          # repriced tree actually differs from what is already up.
+          if git fetch -q origin "$DRIFT_BRANCH" 2>/dev/null &&
+             [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse 'FETCH_HEAD^{tree}')" ]; then
+            echo "The open drift branch already carries this exact repricing; leaving its head (and any approval on it) alone."
+          else
+            git push -f origin "$DRIFT_BRANCH"
+          fi
 
-      - name: Fail the run so the schedule shows red
-        if: steps.drift.outputs.exit_code == '1'
+          existing="$(gh pr list --head "$DRIFT_BRANCH" --state open --json number --jq '.[0].number')"
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --title "chore(pricing): vendor list prices changed ($today)" --body-file /tmp/pr-full.md
+            echo "Updated PR #$existing"
+          else
+            gh pr create --draft \
+              --base main --head "$DRIFT_BRANCH" \
+              --title "chore(pricing): vendor list prices changed ($today)" \
+              --body-file /tmp/pr-full.md
+          fi
+
+      # Drift with nothing rewritable (a retired model, a withdrawn price) still
+      # needs a person, and there is no PR to carry it, so the schedule shows red.
+      - name: Fail when drift needs a decision no PR can carry
+        if: steps.drift.outputs.exit_code == '1' && steps.fix.outputs.changed != 'true'
         run: exit 1
 
       - name: Fail on a checker error
