@@ -27,10 +27,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// productionFixture is a capture of what production served on 2026-08-28. It is
+// productionFixture is a capture of what production served on 2026-09-27. It is
 // kept as the record of which model names production actually exposes, which is
 // what TestServedButUnsellableModelsAreDeclaredAndRefused checks against.
-const productionFixture = "testdata/production-pricing-2026-08-31.json"
+const productionFixture = "testdata/production-pricing-2026-09-27.json"
 
 type productionPricing struct {
 	Captured   string             `json:"captured"`
