@@ -188,15 +188,26 @@ export function formatDefaultGroupPrice(
   showWithRecharge = false,
   priceRate = 1,
   usdExchangeRate = 1,
-  selectedGroup?: string
+  // Kept for signature compatibility with formatPrice, and deliberately
+  // unused: the new-user price is a multiple of LIST, so no group ratio may
+  // enter it. Taking it again is what double-counted the discount.
+  _selectedGroup?: string
 ): string | null {
   if (model.quota_type === QUOTA_TYPE_VALUES.REQUEST) return null
   const discount = getDefaultGroupDiscount(model)
   if (!discount) return null
 
-  const displayGroupRatio = getDisplayGroupRatio(model, selectedGroup)
-  let priceInUSD =
-    calculateTokenPrice(model, type, displayGroupRatio) * discount.ratio
+  // The override REPLACES the group ratio, it does not multiply with it --
+  // HandleGroupRatio assigns it (relay/helper/price.go), and the fork comment
+  // there spells out why: multiplying would turn a negotiated 0.8 into
+  // 0.8 x 0.9 x 0.7 and nobody could say what a customer owes.
+  //
+  // This used to be `calculateTokenPrice(model, type, displayGroupRatio) *
+  // discount.ratio`, which counted the group ratio twice. With the default
+  // group at 0.85 and a 0.85 per-model override, the card advertised
+  // 0.7225 x list while the relay billed 0.85 x list -- a public price 15%
+  // under what we charge, on every model carrying a badge.
+  let priceInUSD = calculateTokenPrice(model, type, discount.ratio)
   priceInUSD = applyRechargeRate(
     priceInUSD,
     showWithRecharge,
