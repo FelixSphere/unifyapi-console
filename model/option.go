@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -229,7 +230,33 @@ func InitOptionMap() {
 func loadOptionsFromDatabase() {
 	options, _ := AllOption()
 	for _, option := range options {
-		err := updateOptionMap(option.Key, option.Value)
+		value := option.Value
+		// UNIFYAPI-FORK: a customer price naming a model that has since been
+		// delisted is a stale reference, and validation is all-or-nothing --
+		// so one such row rejected the ENTIRE customer price table, here, on
+		// every sync and every boot. Measured on staging while delisting one
+		// model: default_group_model_ratio went from 52 of 52 models to 0 and
+		// stayed there, and because the relay reads the same map, every
+		// customer with a negotiated price would have fallen back to their
+		// group ratio.
+		//
+		// Saving such a row is still refused (UpdateGroupModelDiscountByJSONString
+		// validates); what changes is that READING the table no longer throws
+		// the good rows away with the stale one.
+		if option.Key == "GroupModelDiscount" {
+			cleaned, dropped, err := ratio_setting.SanitizeGroupModelDiscountJSON(value)
+			if err != nil {
+				common.SysLog("customer model prices: unreadable, leaving the loaded table alone: " + err.Error())
+				continue
+			}
+			if len(dropped) > 0 {
+				common.SysLog(fmt.Sprintf(
+					"customer model prices: ignoring %d entr(ies) naming delisted models: %s",
+					len(dropped), strings.Join(dropped, ", ")))
+			}
+			value = cleaned
+		}
+		err := updateOptionMap(option.Key, value)
 		if err != nil {
 			common.SysLog("failed to update option map: " + err.Error())
 		}
