@@ -86,7 +86,10 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       usdExchangeRate,
       props.selectedGroup
     )
-    if (newUser === null) {
+    // When the two coincide -- which they do for a visitor who can only see the
+    // `default` group, because then the best group price IS the default one --
+    // showing the same figure twice reads as a rendering fault, not as a deal.
+    if (newUser === null || newUser === list) {
       return (
         <span className='text-foreground font-mono font-semibold'>{list}</span>
       )
