@@ -163,7 +163,7 @@ func TestBaselineRatiosDeriveFromOfficialPrices(t *testing.T) {
 		// Seedance reports one token total for the completed video task, so input
 		// and output use the same published no-video rate.
 		{"dreamina-seedance-2-5-260628", 10.7, 10.7, 0, 0, 5.35, 1, 0, 0},
-		{"seedance-2.5", 10.7, 10.7, 0, 0, 5.35, 1, 0, 0},
+		{"seedance-2.5", 88.24, 88.24, 0, 0, 44.12, 1, 0, 0},
 	}
 
 	for _, tc := range cases {

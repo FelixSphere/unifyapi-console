@@ -130,7 +130,25 @@ var unifyapiCatalog = []CatalogEntry{
 	// finishes, so it remains token-billed. $10.70/M is the no-video baseline;
 	// the Doubao task adaptor applies 6.40/10.70 when the request contains video.
 	// The doubao-prefixed name is retained as a compatibility alias.
-	{Model: "seedance-2.5", Vendor: "", InputUSD: 10.7, OutputUSD: 10.7, Unverified: true, QuoteSource: "https://ai.byteplus.com/en", QuoteDate: "2026-09-10"},
+	// seedance-2.5 was sold at a SEVENTH of what it costs. Our supplier lists
+	// it at $75/1M -- same unit, token-billed, quota_type 0 on both sides -- and
+	// we were charging $10.70, so every completed video lost about 86% of its
+	// own price. It is the largest gap in the catalogue by an order of
+	// magnitude, and it survived this long because the channel serving it was
+	// returning 400 and nobody was billing through it.
+	//
+	// Repriced to the supplier's list divided by 0.85, the same 15% margin the
+	// DeepSeek rows carry. Note this one has to sit ABOVE the supplier's list
+	// rather than equal to it: FlatKey's Seedance groups are all at ratio 1, so
+	// unlike every other family there is no purchasing discount to take the
+	// margin out of. Matching their list exactly would be 0%.
+	//
+	// The byteplus quote of $10.70 is left in the source for the record. It is
+	// either a misread or a rate the supplier does not honour; either way the
+	// bill comes from the supplier, not from the vendor's page.
+	{Model: "seedance-2.5", Vendor: "", InputUSD: 88.24, OutputUSD: 88.24, Unverified: true,
+		QuoteSource: "https://console.flatkey.ai/api/pricing (supplier list $75.00/1M in and out, / 0.85 for a 15% margin; their Seedance groups carry no discount). Earlier byteplus quote was $10.70, seven times under cost",
+		QuoteDate:   "2026-09-28"},
 	{Model: "doubao-seedance-2-5-260628", Vendor: "", InputUSD: 10.7, OutputUSD: 10.7, Unverified: true, QuoteSource: "https://ai.byteplus.com/en", QuoteDate: "2026-09-10"},
 	{Model: "dreamina-seedance-2-5-260628", Vendor: "", InputUSD: 10.7, OutputUSD: 10.7, Unverified: true, QuoteSource: "https://ai.byteplus.com/en", QuoteDate: "2026-09-10"},
 
