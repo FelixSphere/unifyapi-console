@@ -37,6 +37,13 @@ export type PricingModel = {
   vendor_icon?: string
   vendor_description?: string
   quota_type: number
+  /**
+   * The model is on an enabled channel but the catalog does not price it, so
+   * the API withheld a price rather than publishing the 37.5 sentinel ($75/1M)
+   * that GetModelRatio returns for an unknown model. The relay refuses these,
+   * so every price formatter renders a dash.
+   */
+  unpriced?: boolean
   model_ratio: number
   completion_ratio: number
   model_price?: number
