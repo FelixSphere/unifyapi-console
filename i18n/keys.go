@@ -90,6 +90,8 @@ const (
 	MsgUserEmailVerificationRequired = "user.email_verification_required"
 	MsgUserVerificationCodeError     = "user.verification_code_error"
 	MsgUserEmailAlreadyTaken         = "user.email_already_taken"
+	MsgUserEmailDomainBlocked        = "user.email_domain_blocked"
+	MsgUserRegisterIPLimit           = "user.register_ip_limit"
 	MsgUserPasswordUnset             = "user.password_unset"
 	MsgUserPasswordResetLinkInvalid  = "user.password_reset_link_invalid"
 	MsgUserInputInvalid              = "user.input_invalid"
