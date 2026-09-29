@@ -36,6 +36,7 @@ import {
 } from '../lib/model-helpers'
 import {
   formatDefaultGroupPrice,
+  formatOfficialListPrice,
   formatPrice,
   formatRequestPrice,
 } from '../lib/price'
@@ -66,17 +67,8 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const defaultDiscount = getDefaultGroupDiscount(props.model)
 
   // One price slot: the list price, or -- when new users pay less -- the
-  // new-user price in front with the list price struck through behind it.
+  // new-user price in front with the official list price beside it.
   const renderTokenPrice = (type: 'input' | 'output' | 'cache') => {
-    const list = formatPrice(
-      props.model,
-      type,
-      tokenUnit,
-      showRechargePrice,
-      priceRate,
-      usdExchangeRate,
-      props.selectedGroup
-    )
     const newUser = formatDefaultGroupPrice(
       props.model,
       type,
@@ -86,9 +78,34 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       usdExchangeRate,
       props.selectedGroup
     )
-    // When the two coincide -- which they do for a visitor who can only see the
-    // `default` group, because then the best group price IS the default one --
-    // showing the same figure twice reads as a rendering fault, not as a deal.
+    // The reference beside a discounted price has to be OFFICIAL LIST, because
+    // that is what the badge is a percentage off. formatPrice prices at the
+    // cheapest group the viewer can see, so for a visitor who can only see
+    // `default` it returns the discounted figure itself -- the two matched, the
+    // card collapsed to a single number, and the "15% off by default" badge was
+    // left pointing at nothing. Seen in production on 49 models.
+    const list =
+      newUser === null
+        ? formatPrice(
+            props.model,
+            type,
+            tokenUnit,
+            showRechargePrice,
+            priceRate,
+            usdExchangeRate,
+            props.selectedGroup
+          )
+        : formatOfficialListPrice(
+            props.model,
+            type,
+            tokenUnit,
+            showRechargePrice,
+            priceRate,
+            usdExchangeRate
+          )
+    // Two identical figures read as a rendering fault, not as a deal. With the
+    // reference at list this needs a discount too small to survive formatting,
+    // but the guard costs nothing.
     if (newUser === null || newUser === list) {
       return (
         <span className='text-foreground font-mono font-semibold'>{list}</span>
