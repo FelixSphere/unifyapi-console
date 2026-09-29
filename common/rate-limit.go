@@ -68,3 +68,16 @@ func (l *InMemoryRateLimiter) Request(key string, maxRequestNum int, duration in
 	}
 	return true
 }
+
+// Release gives back the most recent slot taken for key. UNIFYAPI-FORK: for
+// callers that reserve a slot before an operation that can still fail, such
+// as account creation, so a failed attempt does not spend the budget.
+func (l *InMemoryRateLimiter) Release(key string) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	queue, ok := l.store[key]
+	if !ok || len(*queue) == 0 {
+		return
+	}
+	*queue = (*queue)[:len(*queue)-1]
+}

@@ -57,6 +57,9 @@ func InitOptionMap() {
 	common.OptionMap["EmailDomainRestrictionEnabled"] = strconv.FormatBool(common.EmailDomainRestrictionEnabled)
 	common.OptionMap["EmailAliasRestrictionEnabled"] = strconv.FormatBool(common.EmailAliasRestrictionEnabled)
 	common.OptionMap["EmailDomainWhitelist"] = strings.Join(common.EmailDomainWhitelist, ",")
+	common.OptionMap["EmailDomainBlocklistEnabled"] = strconv.FormatBool(common.EmailDomainBlocklistEnabled)
+	common.OptionMap["EmailDomainBlocklist"] = strings.Join(common.EmailDomainBlocklist, "\n")
+	common.OptionMap["RegisterIPDailyLimit"] = strconv.Itoa(common.RegisterIPDailyLimit)
 	common.OptionMap["SMTPServer"] = ""
 	common.OptionMap["SMTPFrom"] = ""
 	common.OptionMap["SMTPPort"] = strconv.Itoa(common.SMTPPort)
@@ -254,6 +257,11 @@ func validateOptionValueWithDB(db *gorm.DB, key string, value string) error {
 	}
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
+	}
+	if key == "RegisterIPDailyLimit" {
+		if limit, err := strconv.Atoi(strings.TrimSpace(value)); err != nil || limit < 0 {
+			return fmt.Errorf("RegisterIPDailyLimit must be a non-negative integer, got %q", value)
+		}
 	}
 	if key == "GroupRatio" {
 		var values map[string]float64
@@ -463,6 +471,8 @@ func updateOptionMapLocked(key string, value string) (err error) {
 			common.EmailDomainRestrictionEnabled = boolValue
 		case "EmailAliasRestrictionEnabled":
 			common.EmailAliasRestrictionEnabled = boolValue
+		case "EmailDomainBlocklistEnabled":
+			common.EmailDomainBlocklistEnabled = boolValue
 		case "AutomaticDisableChannelEnabled":
 			common.AutomaticDisableChannelEnabled = boolValue
 		case "AutomaticEnableChannelEnabled":
@@ -530,6 +540,14 @@ func updateOptionMapLocked(key string, value string) (err error) {
 	switch key {
 	case "EmailDomainWhitelist":
 		common.EmailDomainWhitelist = strings.Split(value, ",")
+	case "EmailDomainBlocklist":
+		common.EmailDomainBlocklist = common.ParseEmailDomainList(value)
+	case "RegisterIPDailyLimit":
+		// validateOptionValue rejects bad input on save; a bad value already in
+		// the database keeps the previous limit rather than switching it off.
+		if limit, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && limit >= 0 {
+			common.RegisterIPDailyLimit = limit
+		}
 	case "SMTPServer":
 		common.SMTPServer = value
 	case "SMTPPort":
