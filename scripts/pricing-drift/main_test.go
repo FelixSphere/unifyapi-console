@@ -23,7 +23,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const fixturePath = "testdata/models-dev-2026-09-11.json"
+// The fixture is named after the day the catalog was verified, so bumping
+// PricingSnapshotDate without committing the feed it was verified against
+// fails here rather than silently testing against the old one. The daily
+// drift job writes both in one change.
+var fixturePath = "testdata/models-dev-" + ratio_setting.PricingSnapshotDate + ".json"
 
 func loadFixture(t *testing.T) map[string]modelsDevProvider {
 	t.Helper()
