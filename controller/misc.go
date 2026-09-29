@@ -249,7 +249,6 @@ func SendEmailVerification(c *gin.Context) {
 		})
 		return
 	}
-	localPart := parts[0]
 	domainPart := parts[1]
 	if common.EmailDomainRestrictionEnabled {
 		allowed := false
@@ -268,8 +267,7 @@ func SendEmailVerification(c *gin.Context) {
 		}
 	}
 	if common.EmailAliasRestrictionEnabled {
-		containsSpecialSymbols := strings.Contains(localPart, "+") || strings.Contains(localPart, ".")
-		if containsSpecialSymbols {
+		if common.IsEmailAliasAddress(email) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
 				"message": "The administrator has enabled email alias restrictions; your address was rejected because it contains special symbols.", // UNIFYAPI-BRAND: English copy
