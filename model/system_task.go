@@ -26,6 +26,10 @@ const (
 
 	// UNIFYAPI-FORK: hourly billing-config snapshot, see pricing_snapshot_task.go
 	SystemTaskTypePricingSnapshot = "pricing_snapshot"
+
+	// UNIFYAPI-FORK: tells customers when a list price they pay changed, see
+	// pricing_change_notify_task.go
+	SystemTaskTypePricingChangeNotify = "pricing_change_notify"
 )
 
 var ErrSystemTaskLockLost = errors.New("system task lock lost")
