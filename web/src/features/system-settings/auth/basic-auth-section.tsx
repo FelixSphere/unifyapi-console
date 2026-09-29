@@ -31,6 +31,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 
@@ -52,6 +53,9 @@ const basicAuthSchema = z.object({
   EmailDomainRestrictionEnabled: z.boolean(),
   EmailAliasRestrictionEnabled: z.boolean(),
   EmailDomainWhitelist: z.string(),
+  EmailDomainBlocklistEnabled: z.boolean(),
+  EmailDomainBlocklist: z.string(),
+  RegisterIPDailyLimit: z.number().int().min(0),
 })
 
 type BasicAuthFormValues = z.infer<typeof basicAuthSchema>
@@ -83,10 +87,20 @@ export function BasicAuthSection({ defaultValues }: BasicAuthSectionProps) {
   useResetForm(form, formDefaults)
 
   const onSubmit = async (data: BasicAuthFormValues) => {
-    const updates: Array<{ key: string; value: string | boolean }> = []
+    const updates: Array<{ key: string; value: string | boolean | number }> = []
 
     Object.entries(data).forEach(([key, value]) => {
-      if (key === 'EmailDomainWhitelist') {
+      if (key === 'EmailDomainBlocklist') {
+        if (typeof value !== 'string') return
+        const domains = value
+          .split('\n')
+          .map((domain) => domain.trim())
+          .filter(Boolean)
+          .join('\n')
+        if (domains !== defaultValues.EmailDomainBlocklist) {
+          updates.push({ key, value: domains })
+        }
+      } else if (key === 'EmailDomainWhitelist') {
         if (typeof value !== 'string') return
         const domains = value
           .split('\n')
@@ -227,7 +241,9 @@ export function BasicAuthSection({ defaultValues }: BasicAuthSectionProps) {
                 <SettingsSwitchContent>
                   <FormLabel>{t('Email Alias Restriction')}</FormLabel>
                   <FormDescription>
-                    {t('Block email aliases (e.g., user+alias@domain.com)')}
+                    {t(
+                      'Block "+" aliases on any domain and dotted Gmail addresses (e.g., user+alias@domain.com, a.b@gmail.com)'
+                    )}
                   </FormDescription>
                 </SettingsSwitchContent>
                 <FormControl>
@@ -256,6 +272,75 @@ export function BasicAuthSection({ defaultValues }: BasicAuthSectionProps) {
                 <FormDescription>
                   {t(
                     'One domain per line (only used when domain restriction is enabled)'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='EmailDomainBlocklistEnabled'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t('Disposable Email Blocklist')}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      'Refuse sign-up and email binding from the blocked email domains below'
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='EmailDomainBlocklist'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Blocked Email Domains')}</FormLabel>
+                <FormControl>
+                  <Textarea placeholder='maildrop.cc' rows={6} {...field} />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'One domain per line. Subdomains are blocked too (only used when the blocklist is enabled)'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='RegisterIPDailyLimit'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Daily Sign-ups per IP')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='number'
+                    min={0}
+                    step={1}
+                    {...field}
+                    onChange={(e) =>
+                      field.onChange(parseInt(e.target.value) || 0)
+                    }
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Maximum accounts created from one IP address in 24 hours, across password and OAuth sign-up. 0 disables the limit.'
                   )}
                 </FormDescription>
                 <FormMessage />
