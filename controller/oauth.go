@@ -213,6 +213,10 @@ func HandleOAuth(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgUserRegisterDisabled)
 		case *OAuthEmailAlreadyTakenError:
 			common.ApiErrorI18n(c, i18n.MsgUserEmailAlreadyTaken)
+		case *OAuthEmailDomainBlockedError:
+			common.ApiErrorI18n(c, i18n.MsgUserEmailDomainBlocked)
+		case *OAuthRegisterIPLimitError:
+			common.ApiErrorI18n(c, i18n.MsgUserRegisterIPLimit)
 		default:
 			common.ApiError(c, err)
 		}
@@ -377,6 +381,13 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	}
 	if oauthUser.Email != "" {
 		user.Email = model.NormalizeEmail(oauthUser.Email)
+		// UNIFYAPI-FORK: a provider account registered with a throwaway
+		// mailbox is refused like a password signup would be. The alias and
+		// allowlist rules stay password-only: the provider vouches for the
+		// mailbox, and they have never applied to OAuth.
+		if common.EmailDomainBlocklistEnabled && common.IsEmailDomainBlocked(user.Email, common.EmailDomainBlocklist) {
+			return nil, &OAuthEmailDomainBlockedError{}
+		}
 		if err := model.EnsureEmailAvailable(user.Email, 0); err != nil {
 			if errors.Is(err, model.ErrEmailAlreadyTaken) {
 				return nil, &OAuthEmailAlreadyTakenError{}
@@ -409,6 +420,11 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		}
 		return user.InsertWithTx(tx, inviterId)
 	}
+	registrationSlot, ok := middleware.ReserveRegistrationSlot(c)
+	if !ok {
+		return nil, &OAuthRegisterIPLimitError{}
+	}
+	defer registrationSlot.Release()
 	if genericProvider, ok := provider.(*oauth.GenericOAuthProvider); ok {
 		// Custom provider: create user and binding in a transaction
 		err := model.DB.Transaction(func(tx *gorm.DB) error {
@@ -473,6 +489,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 			user.FinalizeOAuthUserCreation(inviterId)
 		}
 	}
+	registrationSlot.Commit()
 	if partnershipCode != "" {
 		c.Set("partnership_status", "provisioned_new")
 	}
@@ -497,6 +514,18 @@ type OAuthEmailAlreadyTakenError struct{}
 
 func (e *OAuthEmailAlreadyTakenError) Error() string {
 	return "email is already in use"
+}
+
+type OAuthEmailDomainBlockedError struct{}
+
+func (e *OAuthEmailDomainBlockedError) Error() string {
+	return "email domain is blocked"
+}
+
+type OAuthRegisterIPLimitError struct{}
+
+func (e *OAuthRegisterIPLimitError) Error() string {
+	return "registration limit reached for client IP"
 }
 
 // handleOAuthError handles OAuth errors and returns translated message
