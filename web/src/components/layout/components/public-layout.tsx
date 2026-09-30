@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { UpstreamAttribution } from '@/brand/upstream-attribution'
+import { MARKETING_SITE_URL } from '@/lib/marketing-site'
 
 import type { TopNavLink } from '../types'
 import { PublicHeader, type PublicHeaderProps } from './public-header'
@@ -47,6 +48,7 @@ export function PublicLayout(props: PublicLayoutProps) {
         showNotifications={props.showNotifications}
         logo={props.logo}
         siteName={props.siteName}
+        homeUrl={MARKETING_SITE_URL}
         {...props.headerProps}
       />
 

@@ -16,11 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
+import { HomeAnchor } from '@/components/layout/components/home-anchor'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSystemConfig } from '@/hooks/use-system-config'
+import { MARKETING_SITE_URL } from '@/lib/marketing-site'
 
 type AuthLayoutProps = {
   children: React.ReactNode
@@ -32,8 +33,10 @@ export function AuthLayout({ children }: AuthLayoutProps) {
 
   return (
     <div className='relative grid h-svh max-w-none'>
-      <Link
-        to='/'
+      {/* UNIFYAPI-BRAND: the logo leaves for the marketing site; `/` here is
+          upstream's landing page, which is never shown. */}
+      <HomeAnchor
+        to={MARKETING_SITE_URL}
         className='absolute top-4 left-4 z-10 flex items-center gap-2 transition-opacity hover:opacity-80 sm:top-8 sm:left-8'
       >
         <div className='relative h-8 w-8'>
@@ -52,7 +55,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         ) : (
           <h1 className='text-xl font-medium'>{systemName}</h1>
         )}
-      </Link>
+      </HomeAnchor>
       <div className='container flex items-center pt-16 sm:pt-0'>
         <div className='mx-auto flex w-full flex-col justify-center space-y-2 px-4 py-8 sm:w-[480px] sm:p-8'>
           {children}

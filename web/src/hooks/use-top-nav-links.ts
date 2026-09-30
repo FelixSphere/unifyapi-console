@@ -20,6 +20,7 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useStatus } from '@/hooks/use-status'
+import { MARKETING_SITE_URL } from '@/lib/marketing-site'
 import { parseHeaderNavModulesFromStatus } from '@/lib/nav-modules'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -29,6 +30,8 @@ export type TopNavLink = {
   disabled?: boolean
   requiresAuth?: boolean
   external?: boolean
+  /** External, but our own site: open in this tab rather than a new one. */
+  sameTab?: boolean
 }
 
 /**
@@ -64,7 +67,13 @@ export function useTopNavLinks(): TopNavLink[] {
 
   // Home
   if (modules?.home !== false) {
-    links.push({ title: t('Home'), href: '/' })
+    // UNIFYAPI-BRAND: home is the marketing site, not upstream's landing page.
+    links.push({
+      title: t('Home'),
+      href: MARKETING_SITE_URL,
+      external: true,
+      sameTab: true,
+    })
   }
 
   // Console -> /dashboard (new console path)
