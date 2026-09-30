@@ -133,7 +133,6 @@ export function ForgotPasswordForm({
             : t('Send reset email')}
           {isLoading ? <Loader2 className='animate-spin' /> : <ArrowRight />}
         </Button>
-
       </form>
     </Form>
   )
