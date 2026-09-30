@@ -111,6 +111,18 @@ export function ForgotPasswordForm({
           )}
         />
 
+        {/* UNIFYAPI: same defect as the sign-up form -- the submit button is
+            disabled until turnstileReady, so the challenge has to render above
+            it, not below. */}
+        {isTurnstileEnabled && (
+          <div className='mt-2'>
+            <Turnstile
+              siteKey={turnstileSiteKey}
+              onVerify={setTurnstileToken}
+            />
+          </div>
+        )}
+
         <Button
           type='submit'
           className='mt-2'
@@ -121,15 +133,6 @@ export function ForgotPasswordForm({
             : t('Send reset email')}
           {isLoading ? <Loader2 className='animate-spin' /> : <ArrowRight />}
         </Button>
-
-        {isTurnstileEnabled && (
-          <div className='mt-2'>
-            <Turnstile
-              siteKey={turnstileSiteKey}
-              onVerify={setTurnstileToken}
-            />
-          </div>
-        )}
       </form>
     </Form>
   )
