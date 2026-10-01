@@ -18,15 +18,13 @@ import {
 
 type FakeScript = { id: string; src: string; async: boolean; defer: boolean }
 
-function fakeWindow(options: { framed?: boolean; pathname?: string } = {}) {
+function fakeWindow(options: { framed?: boolean } = {}) {
   const appended: FakeScript[] = []
   const calls: string[] = []
-  let loaded = false
   const win = {
     self: {},
     top: {},
-    location: { pathname: options.pathname ?? '/dashboard' },
-    hsConversationsOnReady: undefined as Array<() => void> | undefined,
+    location: { reload: () => calls.push('reload') },
     HubSpotConversations: undefined as unknown,
     document: {
       querySelector: (selector: string) =>
@@ -37,29 +35,13 @@ function fakeWindow(options: { framed?: boolean; pathname?: string } = {}) {
   }
   if (!options.framed) win.top = win.self
   const widget = {
-    load: () => {
-      calls.push('load')
-      loaded = true
-    },
     refresh: () => calls.push('refresh'),
-    remove: () => {
-      calls.push('remove')
-      loaded = false
-    },
-    status: () => ({ loaded }),
+    status: () => ({ loaded: true }),
   }
   const scriptArrives = () => {
     win.HubSpotConversations = { widget }
-    loaded = true
-    for (const callback of win.hsConversationsOnReady ?? []) callback()
   }
-  return {
-    win: win as unknown as Window,
-    raw: win,
-    appended,
-    calls,
-    scriptArrives,
-  }
+  return { win: win as unknown as Window, appended, calls, scriptArrives }
 }
 
 describe('HubSpot live chat in the console', () => {
@@ -126,22 +108,22 @@ describe('HubSpot live chat in the console', () => {
     assert.equal(fake.appended.length, 0)
   })
 
-  test('removes the widget on a hidden route and brings it back afterwards', () => {
-    const fake = fakeWindow()
-    syncHubSpotChat(fake.win, '/dashboard')
-    fake.scriptArrives()
-    syncHubSpotChat(fake.win, '/chat/1')
-    syncHubSpotChat(fake.win, '/dashboard')
-    assert.deepEqual(fake.calls, ['remove', 'load'])
+  test('reloads on a client-side move to a hidden route once the loader is in the page', () => {
+    // HubSpot's analytics and collected-forms scripts outlive widget.remove(),
+    // so only a fresh document keeps them off the sign-in and setup forms.
+    for (const hidden of ['/sign-in', '/setup', '/chat/1']) {
+      const fake = fakeWindow()
+      syncHubSpotChat(fake.win, '/pricing')
+      syncHubSpotChat(fake.win, hidden)
+      assert.deepEqual(fake.calls, ['reload'], hidden)
+    }
   })
 
-  test('takes the widget down if the user reached a hidden route before it loaded', () => {
+  test('reloads even if the loader has not finished arriving', () => {
     const fake = fakeWindow()
     syncHubSpotChat(fake.win, '/dashboard')
-    fake.raw.location.pathname = '/chat/1'
-    syncHubSpotChat(fake.win, '/chat/1')
-    fake.scriptArrives()
-    assert.deepEqual(fake.calls, ['remove'])
+    syncHubSpotChat(fake.win, '/sign-in')
+    assert.deepEqual(fake.calls, ['reload'])
   })
 
   test('never loads when the console itself is framed by another page', () => {

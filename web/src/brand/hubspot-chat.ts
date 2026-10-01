@@ -44,16 +44,13 @@ const HIDDEN_ROUTE_PREFIXES = [
 ]
 
 interface HubSpotConversationsWidget {
-  load: () => void
   refresh: () => void
-  remove: () => void
   status: () => { loaded: boolean }
 }
 
 declare global {
   interface Window {
     HubSpotConversations?: { widget?: HubSpotConversationsWidget }
-    hsConversationsOnReady?: Array<() => void>
   }
 }
 
@@ -72,28 +69,26 @@ export function shouldShowHubSpotChat(win: Window, pathname: string): boolean {
 }
 
 /**
- * Bring the widget in line with the route the SPA has just resolved: inject
- * the loader once, refresh the widget on later route changes (as HubSpot asks
- * single-page apps to do), and remove it on routes where it is hidden.
+ * Bring the page in line with the route the SPA has just resolved: inject the
+ * loader once, and refresh the widget on later route changes (as HubSpot asks
+ * single-page apps to do).
+ *
+ * Removing the widget is not enough on a hidden route. The loader also starts
+ * HubSpot's analytics and collected-forms scripts, which stay live for the
+ * rest of the document and would record the sign-in or setup form. So a
+ * client-side move onto a hidden route, once the loader is in this document,
+ * reloads the page: the fresh document starts on a hidden route and never
+ * injects it.
  */
 export function syncHubSpotChat(win: Window, pathname: string): void {
-  const widget = win.HubSpotConversations?.widget
+  const injected = win.document.querySelector(`#${HUBSPOT_SCRIPT_ID}`) !== null
 
   if (!shouldShowHubSpotChat(win, pathname)) {
-    if (widget?.status().loaded) widget.remove()
+    if (injected) win.location.reload()
     return
   }
 
-  if (!win.document.querySelector(`#${HUBSPOT_SCRIPT_ID}`)) {
-    // The widget loads itself when the script arrives. If the user has moved
-    // to a hidden route by then, take it straight back down.
-    win.hsConversationsOnReady = [
-      ...(win.hsConversationsOnReady ?? []),
-      () => {
-        if (shouldShowHubSpotChat(win, win.location.pathname)) return
-        win.HubSpotConversations?.widget?.remove()
-      },
-    ]
+  if (!injected) {
     const script = win.document.createElement('script')
     script.id = HUBSPOT_SCRIPT_ID
     script.src = HUBSPOT_SCRIPT_SRC
@@ -103,12 +98,7 @@ export function syncHubSpotChat(win: Window, pathname: string): void {
     return
   }
 
-  // Script requested but not ready yet: it will load the widget on its own.
-  if (!widget) return
-
-  if (widget.status().loaded) {
-    widget.refresh()
-  } else {
-    widget.load()
-  }
+  // Script requested but not ready yet: it loads the widget on its own.
+  const widget = win.HubSpotConversations?.widget
+  if (widget?.status().loaded) widget.refresh()
 }
