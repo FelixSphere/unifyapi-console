@@ -85,6 +85,7 @@ finds the whole delta without consulting git history.
 | File | Change | Why there |
 |---|---|---|
 | `web/src/main.tsx` | import `./styles/unifyapi.css` instead of `./styles/index.css` | Our stylesheet re-imports `index.css` first, so upstream's stays **byte-untouched** and merges fast-forward forever. Appending an `@import` inside `index.css` would touch their highest-churn stylesheet, in the exact import block they last edited. |
+| `web/src/main.tsx` | call `syncHubSpotChat` once at boot and on each resolved path change | The router is created here, so this is the one place that sees every route, public and logged-in. The logic lives in our own `brand/hubspot-chat.ts`; this file only carries the two call sites. |
 | `web/src/main.tsx` | `<ThemeProvider defaultTheme='light'>` | Required, not cosmetic. CSS cannot reach the JS consumers of `resolvedTheme` — VChart (`lib/use-chart-theme.ts`, the three dashboard chart components) and Sonner. Without it, charts and toasts render dark on a paper-white page. |
 | `…/layout/components/authenticated-layout.tsx` | mount `<UpstreamAttribution />`; `<AppHeader showConfigDrawer={false} />` | The config drawer is simultaneously the dark-mode switch and the theme-preset/font/radius picker. Disabling it pins the brand and guarantees `data-theme-preset` is never written to `<body>` — which matters because the preset bridge selector in `theme-presets.css` has specificity (0,4,0) and would out-rank our `:root`. |
 | `…/layout/components/public-layout.tsx` | mount `<UpstreamAttribution />`; default `showThemeSwitch` to `false` | One line covers all nine early returns across `features/home` and `features/about`, plus `/pricing`, `/rankings`, and the legal pages. `public-header.tsx` defaults the switch on. |
@@ -97,6 +98,11 @@ finds the whole delta without consulting git history.
 - `web/src/styles/unifyapi.css` — the entire visual rebrand.
 - `web/src/assets/fonts/` — four vendored `latin` woff2 + three OFL-1.1 licences.
 - `web/src/brand/upstream-attribution.tsx` — the always-mounted attribution.
+- `web/src/brand/hubspot-chat.ts` — HubSpot live chat (portal `46127314`, shared with
+  the marketing site). Loaded from the bundle, not `index.html`, so it can stay off
+  `/oauth/*` (bind popup), `/chat/*` + `/chat2link` (full-viewport third-party chat
+  iframes), `/setup` and the sign-in/sign-up/password-reset pages, and never loads
+  when the console is itself framed.
 - `web/scripts/check-brand-invariants.mjs` — the licence/brand guard.
 - `.github/workflows/fork-ci.yml` — fork-owned CI.
 - `BRANDING.md` — this file.
