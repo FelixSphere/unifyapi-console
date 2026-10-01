@@ -122,9 +122,16 @@ func TestComputeBridgeIsDarkWithoutASecret(t *testing.T) {
 	engine := newComputeBridgeTestRouter()
 	for _, secret := range []string{"", "0123456789abcdef0123456789abcde"} {
 		t.Setenv("COMPUTE_BRIDGE_SECRET", secret)
-		code, envelope := callComputeBridge(t, engine, "/api/compute/v1/verify", `{"key":"sk-test"}`)
-		assert.Equal(t, http.StatusNotFound, code, "secret of length %d", len(secret))
-		assert.Nil(t, envelope, "a disabled bridge must not answer like one that exists")
+		ts := time.Now().Unix()
+		body := `{"key":"sk-test"}`
+		request := httptest.NewRequest(http.MethodPost, "/api/compute/v1/verify", strings.NewReader(body))
+		request.Header.Set("X-Compute-Timestamp", strconv.FormatInt(ts, 10))
+		request.Header.Set("X-Compute-Signature", signComputeBridgeTestRequest(http.MethodPost, "/api/compute/v1/verify", ts, body))
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, request)
+		assert.Equal(t, http.StatusNotFound, recorder.Code, "secret of length %d", len(secret))
+		// compute-api reads only an empty-bodied 404 as bridge_disabled.
+		assert.Zero(t, recorder.Body.Len(), "a disabled bridge writes no body at all, got %q", recorder.Body.String())
 	}
 
 	t.Setenv("COMPUTE_BRIDGE_SECRET", computeBridgeTestSecret)
@@ -141,7 +148,7 @@ func setupComputeBridgeTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.Tenant{}, &model.User{}, &model.Token{}, &model.TopUp{}, &model.Log{},
-		&model.ComputeHold{}, &model.ComputeSettlement{}))
+		&model.ComputeHold{}, &model.ComputeSettlement{}, &model.ComputeExtension{}))
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
@@ -197,10 +204,13 @@ func TestComputeBridgeVerifyResolvesTheBillingIdentity(t *testing.T) {
 	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/verify", `{"key":"sk-unknown"}`)
 	assert.Equal(t, http.StatusUnauthorized, code)
 	assert.Equal(t, false, envelope["success"])
+	assert.Equal(t, "invalid_key", envelope["message"])
+	assert.Equal(t, "invalid_key", envelope["code"])
 
 	require.NoError(t, model.SuspendTenant(tenant.Id, "unpaid"))
 	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/verify", `{"key":"sk-`+token.Key+`"}`)
 	assert.Equal(t, http.StatusForbidden, code)
+	assert.Equal(t, "suspended", envelope["message"])
 	assert.Equal(t, "suspended", envelope["data"].(map[string]any)["status"])
 }
 
@@ -222,6 +232,7 @@ func TestComputeBridgeHoldSettleExtendReleaseOverHTTP(t *testing.T) {
 	tooBig := strings.Replace(strings.Replace(holdBody, "hold_1", "hold_2", 1), "1270000", "730001", 1)
 	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds", tooBig)
 	assert.Equal(t, http.StatusPaymentRequired, code, envelope)
+	assert.Equal(t, "insufficient_balance", envelope["message"])
 
 	settle := `{"event_id":"ue_1","cumulative_quota":430000,"gpu_seconds":1290,"sku":"a10g-24gb-x1","final":false}`
 	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_1/settle", settle)
@@ -251,9 +262,20 @@ func TestComputeBridgeHoldSettleExtendReleaseOverHTTP(t *testing.T) {
 	assert.Equal(t, "hold_exceeded", envelope["message"])
 
 	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_1/extend", `{"additional_quota":300000}`)
-	require.Equal(t, http.StatusOK, code, envelope)
-	assert.EqualValues(t, 1_570_000, envelope["data"].(map[string]any)["quota"])
-	assert.EqualValues(t, 430_000, envelope["data"].(map[string]any)["remain_quota"])
+	assert.Equal(t, http.StatusBadRequest, code, "extend_id is required")
+	assert.Equal(t, "invalid_request", envelope["message"])
+
+	extend := `{"extend_id":"ext_01J8AAAAAAAAAAAAAAAAAAAAAA","additional_quota":300000}`
+	for range 2 {
+		code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_1/extend", extend)
+		require.Equal(t, http.StatusOK, code, envelope)
+		assert.EqualValues(t, 1_570_000, envelope["data"].(map[string]any)["quota"])
+		assert.EqualValues(t, 430_000, envelope["data"].(map[string]any)["remain_quota"], "a retried extend reserves once")
+	}
+	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_1/extend",
+		`{"extend_id":"ext_01J8AAAAAAAAAAAAAAAAAAAAAA","additional_quota":300001}`)
+	assert.Equal(t, http.StatusConflict, code)
+	assert.Equal(t, "idempotency_conflict", envelope["message"])
 
 	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_1/release", `{}`)
 	require.Equal(t, http.StatusOK, code, envelope)
@@ -266,4 +288,154 @@ func TestComputeBridgeHoldSettleExtendReleaseOverHTTP(t *testing.T) {
 	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/nope/release", `{}`)
 	assert.Equal(t, http.StatusNotFound, code)
 	assert.Equal(t, "hold_not_found", envelope["message"], "an unknown hold is told apart from a dark bridge by its envelope")
+}
+
+func TestComputeBridgeRateLimiterRefillsAtItsRateUpToItsBurst(t *testing.T) {
+	start := time.Unix(1757520000, 0)
+	limiter := newComputeBridgeRateLimiter(50, 100)
+	for i := range 100 {
+		require.Zero(t, limiter.take(start), "request %d is within the burst", i)
+	}
+	wait := limiter.take(start)
+	assert.Equal(t, 20*time.Millisecond, wait, "at 50/s the next token is 20ms away")
+	assert.Zero(t, limiter.take(start.Add(20*time.Millisecond)))
+	assert.Positive(t, limiter.take(start.Add(20*time.Millisecond)))
+
+	idle := start.Add(time.Hour)
+	for range 100 {
+		require.Zero(t, limiter.take(idle))
+	}
+	assert.Positive(t, limiter.take(idle), "an idle bucket refills to the burst, not beyond it")
+}
+
+func TestComputeBridgeRateLimitEnvironment(t *testing.T) {
+	for _, tt := range []struct {
+		value       string
+		rate, burst float64
+	}{
+		{"", 50, 100},
+		{"20", 20, 40},
+		{"20:5", 20, 5},
+		{"0.5:1", 0.5, 1},
+		{"fast", 50, 100},
+		{"0", 50, 100},
+		{"-3:10", 50, 100},
+		{"20:0", 50, 100},
+	} {
+		rate, burst := parseComputeBridgeRateLimit(tt.value)
+		assert.Equal(t, tt.rate, rate, "rate for %q", tt.value)
+		assert.Equal(t, tt.burst, burst, "burst for %q", tt.value)
+	}
+}
+
+func TestComputeBridgeAnswers429WithRetryAfterOverItsLimit(t *testing.T) {
+	setupComputeBridgeTestDB(t)
+	engine := newComputeBridgeTestRouter()
+	previous := computeBridgeRateLimit()
+	computeBridgeLimiter = newComputeBridgeRateLimiter(0.5, 1)
+	t.Cleanup(func() { computeBridgeLimiter = previous })
+
+	code, _ := callComputeBridge(t, engine, "/api/compute/v1/verify", `{"key":"sk-unknown"}`)
+	assert.Equal(t, http.StatusUnauthorized, code, "the first request is within the burst")
+
+	ts := time.Now().Unix()
+	body := `{"key":"sk-unknown"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/compute/v1/verify", strings.NewReader(body))
+	request.Header.Set("X-Compute-Timestamp", strconv.FormatInt(ts, 10))
+	request.Header.Set("X-Compute-Signature", signComputeBridgeTestRequest(http.MethodPost, "/api/compute/v1/verify", ts, body))
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, request)
+	assert.Equal(t, http.StatusTooManyRequests, recorder.Code)
+	assert.Equal(t, "2", recorder.Header().Get("Retry-After"))
+	assert.Contains(t, recorder.Body.String(), `"message":"rate_limited"`)
+}
+
+func TestComputeBridgeIdsReusedOnAnotherHoldAreIdempotencyConflicts(t *testing.T) {
+	db := setupComputeBridgeTestDB(t)
+	engine := newComputeBridgeTestRouter()
+	user, _, token := createComputeBridgeCustomer(t, db, "reuser", 5_000_000, 0)
+	require.NoError(t, db.Model(token).Update("unlimited_quota", true).Error)
+	expires := strconv.FormatInt(time.Now().Unix()+3600, 10)
+	for _, id := range []string{"hold_a", "hold_b"} {
+		body := `{"hold_id":"` + id + `","user_id":` + strconv.Itoa(user.Id) + `,"token_id":` + strconv.Itoa(token.Id) +
+			`,"quota":1000000,"job_id":"job_` + id + `","sku":"a10g-24gb-x1","expires_at":` + expires + `}`
+		code, envelope := callComputeBridge(t, engine, "/api/compute/v1/holds", body)
+		require.Equal(t, http.StatusOK, code, envelope)
+	}
+
+	extend := `{"extend_id":"ext_01J8BBBBBBBBBBBBBBBBBBBBBB","additional_quota":100000}`
+	code, envelope := callComputeBridge(t, engine, "/api/compute/v1/holds/hold_a/extend", extend)
+	require.Equal(t, http.StatusOK, code, envelope)
+	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_b/extend", extend)
+	assert.Equal(t, http.StatusConflict, code)
+	assert.Equal(t, "idempotency_conflict", envelope["message"])
+
+	settle := `{"event_id":"ue_shared","cumulative_quota":1000,"gpu_seconds":3,"final":false}`
+	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_a/settle", settle)
+	require.Equal(t, http.StatusOK, code, envelope)
+	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_b/settle", settle)
+	assert.Equal(t, http.StatusConflict, code)
+	assert.Equal(t, "idempotency_conflict", envelope["message"])
+
+	assert.EqualValues(t, 5_000_000-2_000_000-100_000, computeEntityQuota(user.Id), "refused reuses move nothing")
+}
+
+func TestComputeBridgeRefusedSettlementsRecordNothing(t *testing.T) {
+	db := setupComputeBridgeTestDB(t)
+	engine := newComputeBridgeTestRouter()
+	user, tenant, token := createComputeBridgeCustomer(t, db, "refused", 5_000_000, 0)
+	require.NoError(t, db.Model(token).Update("unlimited_quota", true).Error)
+	body := `{"hold_id":"hold_r","user_id":` + strconv.Itoa(user.Id) + `,"token_id":` + strconv.Itoa(token.Id) +
+		`,"quota":1000000,"job_id":"job_r","sku":"a10g-24gb-x1","expires_at":` + strconv.FormatInt(time.Now().Unix()+3600, 10) + `}`
+	code, envelope := callComputeBridge(t, engine, "/api/compute/v1/holds", body)
+	require.Equal(t, http.StatusOK, code, envelope)
+	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_r/settle", `{"event_id":"ue_r1","cumulative_quota":500,"gpu_seconds":1,"final":false}`)
+	require.Equal(t, http.StatusOK, code, envelope)
+
+	for _, tt := range []struct{ body, message string }{
+		{`{"event_id":"ue_r2","cumulative_quota":900,"gpu_seconds":2,"sku":"h100-80gb-x8","final":false}`, "sku_mismatch"},
+		{`{"event_id":"ue_r3","cumulative_quota":400,"gpu_seconds":2,"final":false}`, "cumulative_quota_regressed"},
+		{`{"event_id":"ue_r1","cumulative_quota":600,"gpu_seconds":1,"final":false}`, "idempotency_conflict"},
+	} {
+		code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_r/settle", tt.body)
+		assert.Equal(t, http.StatusConflict, code, tt.message)
+		assert.Equal(t, tt.message, envelope["message"])
+	}
+
+	var consumeRows int64
+	require.NoError(t, db.Model(&model.Log{}).Where("type = ?", model.LogTypeConsume).Count(&consumeRows).Error)
+	assert.Equal(t, int64(1), consumeRows, "only the accepted settle is logged")
+	var stored model.Tenant
+	require.NoError(t, db.First(&stored, tenant.Id).Error)
+	assert.Equal(t, 500, stored.UsedQuota)
+	hold, err := model.GetComputeHold("hold_r")
+	require.NoError(t, err)
+	assert.Equal(t, 500, hold.SettledQuota)
+
+	differentQuota := strings.Replace(body, `"quota":1000000`, `"quota":1000001`, 1)
+	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds", differentQuota)
+	assert.Equal(t, http.StatusConflict, code)
+	assert.Equal(t, "idempotency_conflict", envelope["message"])
+	assert.EqualValues(t, 4_000_000, computeEntityQuota(user.Id))
+}
+
+func TestComputeBridgeTellsAStaleTimestampFromABadSignature(t *testing.T) {
+	setupComputeBridgeTestDB(t)
+	engine := newComputeBridgeTestRouter()
+	body := `{"key":"sk-test"}`
+	for _, tt := range []struct {
+		ts, signature, message string
+	}{
+		{strconv.FormatInt(time.Now().Unix()-120, 10), "", "invalid_timestamp"},
+		{"", "", "invalid_timestamp"},
+		{strconv.FormatInt(time.Now().Unix(), 10), strings.Repeat("0", 64), "invalid_signature"},
+	} {
+		request := httptest.NewRequest(http.MethodPost, "/api/compute/v1/verify", strings.NewReader(body))
+		request.Header.Set("X-Compute-Timestamp", tt.ts)
+		request.Header.Set("X-Compute-Signature", tt.signature)
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, request)
+		assert.Equal(t, http.StatusUnauthorized, recorder.Code)
+		assert.Contains(t, recorder.Body.String(), `"message":"`+tt.message+`"`)
+	}
 }

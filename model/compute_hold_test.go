@@ -27,7 +27,7 @@ func setupComputeHoldTestDB(t *testing.T) {
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&Tenant{}, &User{}, &Token{}, &TopUp{}, &Log{}, &ComputeHold{}, &ComputeSettlement{}))
+	require.NoError(t, db.AutoMigrate(&Tenant{}, &User{}, &Token{}, &TopUp{}, &Log{}, &ComputeHold{}, &ComputeSettlement{}, &ComputeExtension{}))
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
@@ -155,11 +155,25 @@ func TestComputeHoldIdCannotBeReusedForAnotherReservation(t *testing.T) {
 	_, _, err := CreateComputeHold(newComputeTestHold("same", user, token, 100), token, computeTestNow)
 	require.NoError(t, err)
 
-	other := newComputeTestHold("same", user, token, 100)
-	other.JobId = "a-different-job"
-	_, _, err = CreateComputeHold(other, token, computeTestNow)
-	assert.ErrorIs(t, err, ErrComputeHoldConflict)
+	for name, change := range map[string]func(*ComputeHold){
+		"job":     func(h *ComputeHold) { h.JobId = "a-different-job" },
+		"quota":   func(h *ComputeHold) { h.Quota = 101 },
+		"expires": func(h *ComputeHold) { h.ExpiresAt++ },
+	} {
+		other := newComputeTestHold("same", user, token, 100)
+		change(&other)
+		_, _, err = CreateComputeHold(other, token, computeTestNow)
+		assert.ErrorIs(t, err, ErrComputeHoldConflict, name)
+	}
 	assert.Equal(t, 4_900, computeTestUserColumn(t, user.Id))
+
+	// After an extend the original create is still recognised as a replay.
+	_, _, err = ExtendComputeHold("same", "ext_same_1", 50, token, computeTestNow)
+	require.NoError(t, err)
+	replay, replayed, err := CreateComputeHold(newComputeTestHold("same", user, token, 100), token, computeTestNow)
+	require.NoError(t, err)
+	assert.True(t, replayed)
+	assert.Equal(t, 150, replay.Quota)
 }
 
 func TestComputeSettleChargesOnlyTheIncreaseOnceAndMovesNoBalance(t *testing.T) {
@@ -208,6 +222,8 @@ func TestComputeSettlementEventIdBelongsToOneHold(t *testing.T) {
 	require.NoError(t, err)
 	_, err = SettleComputeHold("b", ComputeSettlement{EventId: "shared", CumulativeQuota: 10}, false, computeTestNow)
 	assert.ErrorIs(t, err, ErrComputeEventConflict)
+	_, err = SettleComputeHold("a", ComputeSettlement{EventId: "shared", CumulativeQuota: 20}, false, computeTestNow)
+	assert.ErrorIs(t, err, ErrComputeEventConflict, "the same event id carrying another amount is not a replay")
 }
 
 func TestComputeFinalSettleReturnsTheRemainderAndClosesTheHold(t *testing.T) {
@@ -264,17 +280,18 @@ func TestComputeExtendReservesMoreOnTheSameTerms(t *testing.T) {
 	require.NoError(t, err)
 
 	token.RemainQuota = computeTestTokenRemain(t, token.Id)
-	extended, err := ExtendComputeHold("x", 300, token, computeTestNow)
+	extended, _, err := ExtendComputeHold("x", "ext_1", 300, token, computeTestNow)
 	require.NoError(t, err)
-	assert.Equal(t, 1_300, extended.Quota)
+	assert.Equal(t, 1_300, extended.QuotaAfter)
+	assert.Equal(t, 700, extended.RemainQuota)
 	assert.Equal(t, 700, computeTestUserColumn(t, user.Id))
 	assert.Equal(t, 200, computeTestTokenRemain(t, token.Id))
 
 	token.RemainQuota = computeTestTokenRemain(t, token.Id)
-	_, err = ExtendComputeHold("x", 201, token, computeTestNow)
+	_, _, err = ExtendComputeHold("x", "ext_2", 201, token, computeTestNow)
 	assert.ErrorIs(t, err, ErrComputeTokenQuotaShort)
 	unlimited := createComputeTestToken(t, user.Id, 0, true)
-	_, err = ExtendComputeHold("x", 100, unlimited, computeTestNow)
+	_, _, err = ExtendComputeHold("x", "ext_3", 100, unlimited, computeTestNow)
 	assert.ErrorIs(t, err, ErrComputeHoldConflict, "an extend draws on the hold's own token")
 
 	_, err = SettleComputeHold("x", ComputeSettlement{EventId: "x1", CumulativeQuota: 1_300}, false, computeTestNow)
@@ -288,7 +305,7 @@ func TestComputeExtendCannotOverdrawTheWallet(t *testing.T) {
 	_, _, err := CreateComputeHold(newComputeTestHold("o", user, token, 900), token, computeTestNow)
 	require.NoError(t, err)
 
-	_, err = ExtendComputeHold("o", 101, token, computeTestNow)
+	_, _, err = ExtendComputeHold("o", "ext_o", 101, token, computeTestNow)
 	assert.ErrorIs(t, err, ErrInsufficientBillingQuota)
 	hold, err := GetComputeHold("o")
 	require.NoError(t, err)
@@ -343,4 +360,63 @@ func TestComputeLapsedHoldIsExpiredByTheCallThatFindsIt(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, ComputeHoldStatusExpired, stored.Status)
 	assert.Equal(t, 1_000, stored.ReleasedQuota)
+}
+
+// The lost-response case: an extend commits, its answer never reaches
+// compute-api, and compute-api retries with the same extend id. The retry must
+// get the original answer and the wallet must have been reserved from once.
+func TestComputeExtendRetriedAfterALostResponseReservesOnce(t *testing.T) {
+	setupComputeHoldTestDB(t)
+	_, member, tenant := createSharedBillingTenant(t, 10_000)
+	token := createComputeTestToken(t, member.Id, 5_000, false)
+	_, _, err := CreateComputeHold(newComputeTestHold("lost", member, token, 1_000), token, computeTestNow)
+	require.NoError(t, err)
+
+	token.RemainQuota = computeTestTokenRemain(t, token.Id)
+	first, replayed, err := ExtendComputeHold("lost", "ext_01J8RETRY", 300, token, computeTestNow)
+	require.NoError(t, err)
+	assert.False(t, replayed)
+	assert.Equal(t, 8_700, computeTestTenantQuota(t, tenant.Id))
+
+	retry, replayed, err := ExtendComputeHold("lost", "ext_01J8RETRY", 300, token, computeTestNow)
+	require.NoError(t, err)
+	assert.True(t, replayed)
+	assert.Equal(t, *first, *retry, "the retry is answered with the original result")
+	assert.Equal(t, 8_700, computeTestTenantQuota(t, tenant.Id), "the retry must not reserve again")
+	assert.Equal(t, 3_700, computeTestTokenRemain(t, token.Id))
+	hold, err := GetComputeHold("lost")
+	require.NoError(t, err)
+	assert.Equal(t, 1_300, hold.Quota)
+
+	// Still answered after the hold has closed: the reservation it describes
+	// happened, and refusing the retry would read as a failed extend.
+	_, err = ReleaseComputeHold("lost", computeTestNow)
+	require.NoError(t, err)
+	late, _, err := ExtendComputeHold("lost", "ext_01J8RETRY", 300, nil, computeTestNow)
+	require.NoError(t, err)
+	assert.Equal(t, *first, *late)
+}
+
+func TestComputeExtendIdReusedWithAnotherAmountIsAConflict(t *testing.T) {
+	setupComputeHoldTestDB(t)
+	user := createTestUser(t, "reuse-ext", 10_000)
+	token := createComputeTestToken(t, user.Id, 0, true)
+	for _, id := range []string{"p", "q"} {
+		_, _, err := CreateComputeHold(newComputeTestHold(id, user, token, 1_000), token, computeTestNow)
+		require.NoError(t, err)
+	}
+	_, _, err := ExtendComputeHold("p", "ext_same", 300, token, computeTestNow)
+	require.NoError(t, err)
+
+	_, _, err = ExtendComputeHold("p", "ext_same", 301, token, computeTestNow)
+	assert.ErrorIs(t, err, ErrComputeIdempotencyConflict)
+	assert.Equal(t, 10_000-2_000-300, computeTestUserColumn(t, user.Id))
+
+	// The id is globally unique: the same id on another hold is a reuse too.
+	_, _, err = ExtendComputeHold("q", "ext_same", 300, token, computeTestNow)
+	assert.ErrorIs(t, err, ErrComputeIdempotencyConflict)
+	hold, err := GetComputeHold("q")
+	require.NoError(t, err)
+	assert.Equal(t, 1_000, hold.Quota)
+	assert.Equal(t, 10_000-2_000-300, computeTestUserColumn(t, user.Id))
 }

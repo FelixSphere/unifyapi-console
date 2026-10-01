@@ -45,29 +45,34 @@ var (
 	ErrComputeHoldExpired          = errors.New("hold_expired")
 	ErrComputeHoldClosed           = errors.New("hold_closed")
 	ErrComputeHoldExceeded         = errors.New("hold_exceeded")
-	ErrComputeHoldConflict         = errors.New("hold_id_conflict")
-	ErrComputeEventConflict        = errors.New("event_id_conflict")
-	ErrComputeSettlementRegressed  = errors.New("cumulative_quota_regressed")
+	ErrComputeHoldConflict         = errors.New("idempotency_conflict")
+	ErrComputeEventConflict        = errors.New("idempotency_conflict")
+	ErrComputeSettlementRegressed  = errors.New("cumulative quota below what is already settled")
 	ErrComputeTokenQuotaShort      = errors.New("token_quota_insufficient")
 	ErrComputeQuotaOutOfRange      = errors.New("quota_out_of_range")
 	errComputeHoldLapsed           = errors.New("hold lapsed")
 	errComputeSettlementDuplicated = errors.New("settlement duplicated")
+	ErrComputeIdempotencyConflict  = errors.New("idempotency_conflict")
+	errComputeExtensionDuplicated  = errors.New("extension duplicated")
 )
 
 type ComputeHold struct {
-	HoldId        string `json:"hold_id" gorm:"type:varchar(64);primaryKey"`
-	UserId        int    `json:"user_id" gorm:"index"`
-	TenantId      int    `json:"tenant_id" gorm:"index"`
-	TokenId       int    `json:"token_id" gorm:"index"`
-	JobId         string `json:"job_id" gorm:"type:varchar(64);index"`
-	Sku           string `json:"sku" gorm:"type:varchar(64)"`
-	Quota         int    `json:"quota"`
-	SettledQuota  int    `json:"settled_quota" gorm:"default:0"`
-	ReleasedQuota int    `json:"released_quota" gorm:"default:0"`
-	Status        string `json:"status" gorm:"type:varchar(16);index"`
-	ExpiresAt     int64  `json:"expires_at" gorm:"bigint;index"`
-	CreatedAt     int64  `json:"created_at" gorm:"bigint"`
-	UpdatedAt     int64  `json:"updated_at" gorm:"bigint"`
+	HoldId   string `json:"hold_id" gorm:"type:varchar(64);primaryKey"`
+	UserId   int    `json:"user_id" gorm:"index"`
+	TenantId int    `json:"tenant_id" gorm:"index"`
+	TokenId  int    `json:"token_id" gorm:"index"`
+	JobId    string `json:"job_id" gorm:"type:varchar(64);index"`
+	Sku      string `json:"sku" gorm:"type:varchar(64)"`
+	Quota    int    `json:"quota"`
+	// RequestedQuota is the amount the creating request asked for. Quota grows
+	// with extends; a replayed create is compared against this instead.
+	RequestedQuota int    `json:"requested_quota"`
+	SettledQuota   int    `json:"settled_quota" gorm:"default:0"`
+	ReleasedQuota  int    `json:"released_quota" gorm:"default:0"`
+	Status         string `json:"status" gorm:"type:varchar(16);index"`
+	ExpiresAt      int64  `json:"expires_at" gorm:"bigint;index"`
+	CreatedAt      int64  `json:"created_at" gorm:"bigint"`
+	UpdatedAt      int64  `json:"updated_at" gorm:"bigint"`
 }
 
 // ComputeSettlement makes settle idempotent: the event id is the primary key,
@@ -151,6 +156,7 @@ func CreateComputeHold(hold ComputeHold, token *Token, now int64) (*ComputeHold,
 	}
 
 	hold.Status = ComputeHoldStatusActive
+	hold.RequestedQuota = hold.Quota
 	hold.SettledQuota = 0
 	hold.ReleasedQuota = 0
 	hold.CreatedAt = now
@@ -181,13 +187,13 @@ func CreateComputeHold(hold ComputeHold, token *Token, now int64) (*ComputeHold,
 	return &hold, false, nil
 }
 
-// replayComputeHold refuses a reused hold id that names a different
-// reservation: answering 200 with somebody else's row would tell the caller a
-// reservation exists that it never made. Quota is not compared because an
-// extend legitimately grows it after creation.
+// replayComputeHold answers a replay only when the request is the one that
+// created the hold: answering 200 to a different body would tell the caller a
+// reservation exists that it never made.
 func replayComputeHold(existing *ComputeHold, requested ComputeHold) (*ComputeHold, bool, error) {
 	if existing.UserId != requested.UserId || existing.TokenId != requested.TokenId ||
-		existing.JobId != requested.JobId || existing.Sku != requested.Sku {
+		existing.JobId != requested.JobId || existing.Sku != requested.Sku ||
+		existing.RequestedQuota != requested.Quota || existing.ExpiresAt != requested.ExpiresAt {
 		return nil, false, ErrComputeHoldConflict
 	}
 	return existing, true, nil
@@ -207,7 +213,7 @@ func SettleComputeHold(holdId string, event ComputeSettlement, final bool, now i
 	if event.CumulativeQuota < 0 || event.CumulativeQuota > MaxComputeQuota || event.GpuSeconds < 0 {
 		return nil, ErrComputeQuotaOutOfRange
 	}
-	if result, err := replayComputeSettlement(holdId, event.EventId); result != nil || err != nil {
+	if result, err := replayComputeSettlement(holdId, event, final); result != nil || err != nil {
 		return result, err
 	}
 
@@ -269,7 +275,7 @@ func SettleComputeHold(holdId string, event ComputeSettlement, final bool, now i
 		return nil, expireLapsedComputeHold(holdId, now)
 	}
 	if errors.Is(err, errComputeSettlementDuplicated) {
-		return replayComputeSettlement(holdId, event.EventId)
+		return replayComputeSettlement(holdId, event, final)
 	}
 	if err != nil {
 		return nil, err
@@ -282,17 +288,20 @@ func SettleComputeHold(holdId string, event ComputeSettlement, final bool, now i
 }
 
 // replayComputeSettlement answers an event that was already applied with the
-// hold as it stands now. It returns (nil, nil) for an event it has not seen.
-func replayComputeSettlement(holdId string, eventId string) (*ComputeSettleResult, error) {
+// hold as it stands now. Event ids are unique across all holds, so the same id
+// on another hold, or carrying a different settlement, is a conflict. It
+// returns (nil, nil) for an event it has not seen.
+func replayComputeSettlement(holdId string, event ComputeSettlement, final bool) (*ComputeSettleResult, error) {
 	var seen ComputeSettlement
-	err := DB.Where("event_id = ?", eventId).First(&seen).Error
+	err := DB.Where("event_id = ?", event.EventId).First(&seen).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if seen.HoldId != holdId {
+	if seen.HoldId != holdId || seen.CumulativeQuota != event.CumulativeQuota ||
+		seen.GpuSeconds != event.GpuSeconds || seen.Final != final {
 		return nil, ErrComputeEventConflict
 	}
 	hold, err := GetComputeHold(holdId)
@@ -302,16 +311,65 @@ func replayComputeSettlement(holdId string, eventId string) (*ComputeSettleResul
 	return &ComputeSettleResult{Hold: hold, Replayed: true}, nil
 }
 
+// ComputeExtension makes extend idempotent: extend_id is the primary key, so
+// globally unique, and the row is written in the same transaction as the
+// reservation, so a retried extend whose first response was lost cannot
+// reserve a second time. It keeps the original answer so the retry gets it.
+type ComputeExtension struct {
+	ExtendId        string `json:"extend_id" gorm:"type:varchar(64);primaryKey"`
+	HoldId          string `json:"hold_id" gorm:"type:varchar(64);index"`
+	AdditionalQuota int    `json:"additional_quota"`
+	QuotaAfter      int    `json:"quota_after"`
+	RemainQuota     int    `json:"remain_quota"`
+	CreatedAt       int64  `json:"created_at" gorm:"bigint"`
+}
+
+// GetComputeExtension returns the stored extension, or (nil, nil) if this
+// extend id has never been applied.
+func GetComputeExtension(extendId string) (*ComputeExtension, error) {
+	var extension ComputeExtension
+	err := DB.Where("extend_id = ?", extendId).First(&extension).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &extension, nil
+}
+
+// replayComputeExtension answers a seen extend id with its original result. The
+// same id on another hold, or with a different amount, is a different request
+// reusing the key.
+func replayComputeExtension(holdId string, extendId string, additional int) (*ComputeExtension, error) {
+	extension, err := GetComputeExtension(extendId)
+	if err != nil || extension == nil {
+		return nil, err
+	}
+	if extension.HoldId != holdId || extension.AdditionalQuota != additional {
+		return nil, ErrComputeIdempotencyConflict
+	}
+	return extension, nil
+}
+
 // ExtendComputeHold reserves more quota on an open hold, refused on the same
-// terms as creating one.
-func ExtendComputeHold(holdId string, additional int, token *Token, now int64) (*ComputeHold, error) {
+// terms as creating one. A replayed extend id is answered before anything is
+// re-checked, because its reservation already exists; it returns the stored
+// extension and reports that it was a replay.
+func ExtendComputeHold(holdId string, extendId string, additional int, token *Token, now int64) (*ComputeExtension, bool, error) {
 	if additional <= 0 || additional > MaxComputeQuota {
-		return nil, ErrComputeQuotaOutOfRange
+		return nil, false, ErrComputeQuotaOutOfRange
+	}
+	if seen, err := replayComputeExtension(holdId, extendId, additional); seen != nil || err != nil {
+		return seen, seen != nil, err
+	}
+	if token == nil {
+		return nil, false, errors.New("compute extend needs the validated token it draws on")
 	}
 	if !token.UnlimitedQuota && token.RemainQuota < additional {
-		return nil, ErrComputeTokenQuotaShort
+		return nil, false, ErrComputeTokenQuotaShort
 	}
-	var extended *ComputeHold
+	var extension ComputeExtension
 	var entity BillingEntity
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		hold, err := lockComputeHold(tx, holdId)
@@ -336,20 +394,39 @@ func ExtendComputeHold(holdId string, additional int, token *Token, now int64) (
 		if entity, err = tryDecreaseUserQuotaWithTx(tx, hold.UserId, additional); err != nil {
 			return err
 		}
-		hold.Quota += additional
-		hold.UpdatedAt = now
-		extended = hold
+		remain, err := getBillingQuotaFromDB(tx, entity)
+		if err != nil {
+			return err
+		}
+		extension = ComputeExtension{
+			HoldId:          holdId,
+			ExtendId:        extendId,
+			AdditionalQuota: additional,
+			QuotaAfter:      hold.Quota + additional,
+			RemainQuota:     remain,
+			CreatedAt:       now,
+		}
+		if err := tx.Create(&extension).Error; err != nil {
+			if isDuplicateKeyError(err) {
+				return errComputeExtensionDuplicated
+			}
+			return err
+		}
 		return nil
 	})
 	if errors.Is(err, errComputeHoldLapsed) {
-		return nil, expireLapsedComputeHold(holdId, now)
+		return nil, false, expireLapsedComputeHold(holdId, now)
+	}
+	if errors.Is(err, errComputeExtensionDuplicated) {
+		seen, err := replayComputeExtension(holdId, extendId, additional)
+		return seen, seen != nil, err
 	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	_ = invalidateBillingQuotaCache(entity)
-	adjustComputeTokenQuota(extended.TokenId, -additional)
-	return extended, nil
+	adjustComputeTokenQuota(token.Id, -additional)
+	return &extension, false, nil
 }
 
 // ReleaseComputeHold returns the unsettled remainder. Releasing a hold that is

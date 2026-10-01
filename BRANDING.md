@@ -339,7 +339,7 @@ See `docs/builder-integration.md` for scope and incomplete team-credit work.
 `model/compute_hold.go` and `controller/compute_bridge.go` add the console half
 of the unify-compute billing bridge: HMAC-signed `/api/compute/v1/*` routes that
 verify a key and hold, settle, extend and release wallet quota through the
-console's own billing-entity and token paths. `model/main.go` registers its two
+console's own billing-entity and token paths. `model/main.go` registers its three
 additive tables; `router/api-router.go` registers the routes and the expired-hold
 sweeper. The routes answer 404 until `COMPUTE_BRIDGE_SECRET` is set. See
 `docs/compute-bridge.md`.
