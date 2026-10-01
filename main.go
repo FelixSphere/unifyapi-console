@@ -238,6 +238,11 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		common.SysError(fmt.Sprintf("server forced to shutdown: %v", err))
 	}
+	// UNIFYAPI-FORK: batched wallet/token/used-quota deductions live in memory
+	// until the next tick; write them now that the drain is over, or every
+	// restart loses up to BATCH_UPDATE_INTERVAL of them while the consume log
+	// keeps them. No-op when BATCH_UPDATE_ENABLED is off.
+	model.FlushBatchUpdateOnShutdown()
 	// 内存中的看板数据保存入库，避免重启丢失未落库数据 (issue #5679)
 	if common.DataExportEnabled {
 		model.SaveQuotaDataCache()
