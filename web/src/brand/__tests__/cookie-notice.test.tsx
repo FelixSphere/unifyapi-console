@@ -10,7 +10,7 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 // The notice is rendered for real: what matters is what a visitor sees and
 // what Accept/Reject leave behind in cookies, localStorage and HubSpot's queue.
 
-import { afterEach, describe, test } from 'bun:test'
+import { afterEach, beforeEach, describe, test } from 'bun:test'
 import assert from 'node:assert/strict'
 
 import { Window as HappyDomWindow } from 'happy-dom'
@@ -106,13 +106,24 @@ function button(label: string) {
   return match as unknown as HTMLButtonElement
 }
 
+// Every test starts from a first visit, whatever ran before it. The cookie is
+// expired with a date in the past, not `max-age=0`: happy-dom keeps a
+// `max-age=0` cookie readable until the clock ticks over to the next
+// millisecond, so on a fast runner the next test saw `localConsent=` and the
+// notice stayed hidden.
+beforeEach(async () => {
+  win.document.body.innerHTML = ''
+  win.document.cookie =
+    'localConsent=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+  assert.equal(win.document.cookie, '')
+  win.localStorage.clear()
+  delete win._hsq
+  await i18n.changeLanguage('en')
+})
+
 afterEach(() => {
   unmount?.()
   unmount = null
-  win.document.body.innerHTML = ''
-  win.document.cookie = 'localConsent=; max-age=0; path=/'
-  win.localStorage.clear()
-  delete win._hsq
 })
 
 describe('cookie notice', () => {
