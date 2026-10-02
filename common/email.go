@@ -110,6 +110,13 @@ func SendEmailForPurpose(purpose string, subject string, receiver string, conten
 }
 
 func sendEmail(subject string, receiver string, content string) error {
+	return sendEmailWithContentType(subject, receiver, "text/html; charset=UTF-8", []byte(content))
+}
+
+// sendEmailWithContentType writes one message with the given body, which is
+// either a single HTML part (upstream's path) or a multipart/alternative body
+// built by BuildMultipartEmail (UNIFYAPI-BRAND: every branded email).
+func sendEmailWithContentType(subject string, receiver string, contentType string, body []byte) error {
 	if SMTPFrom == "" { // for compatibility
 		SMTPFrom = SMTPAccount
 	}
@@ -126,8 +133,9 @@ func sendEmail(subject string, receiver string, content string) error {
 		"Subject: %s\r\n"+
 		"Date: %s\r\n"+
 		"Message-ID: %s\r\n"+ // 添加 Message-ID 头
-		"Content-Type: text/html; charset=UTF-8\r\n\r\n%s\r\n",
-		receiver, SystemName, SMTPFrom, encodedSubject, time.Now().Format(time.RFC1123Z), id, content))
+		"MIME-Version: 1.0\r\n"+
+		"Content-Type: %s\r\n\r\n%s\r\n",
+		receiver, SystemName, SMTPFrom, encodedSubject, time.Now().Format(time.RFC1123Z), id, contentType, body))
 	auth := getSMTPAuth()
 	addr := fmt.Sprintf("%s:%d", SMTPServer, SMTPPort)
 	to := strings.Split(receiver, ";")
