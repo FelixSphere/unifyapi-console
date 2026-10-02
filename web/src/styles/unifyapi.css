@@ -231,7 +231,8 @@ body[data-theme-font] {
  * catches every instance -- upstream's own <Footer /> and our always-mounted
  * bar -- without editing footer.tsx. Zero upstream diff. */
 :is(span, div):has(> a[href='https://github.com/QuantumNous/new-api']) {
-  font-size: 10px;
+  /* 11px: the standard's mono-label size, the smallest it allows. */
+  font-size: 11px;
   letter-spacing: 0.01em;
 }
 
