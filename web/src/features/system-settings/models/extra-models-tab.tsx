@@ -282,16 +282,16 @@ export function ExtraModelsTab() {
                 <TableRow key={row.model}>
                   <TableCell className='font-mono text-xs'>
                     {row.model}
-                    <Badge variant='outline' className='ml-2 text-[10px]'>
+                    <Badge variant='outline' className='ml-2 text-[11px]'>
                       {t('unverified')}
                     </Badge>
                     {row.discount !== 1 ? (
-                      <Badge variant='outline' className='ml-2 text-[10px]'>
+                      <Badge variant='outline' className='ml-2 text-[11px]'>
                         {t('discount')} {row.discount}
                       </Badge>
                     ) : null}
                     {row.note ? (
-                      <span className='text-muted-foreground block text-[10px]'>
+                      <span className='text-muted-foreground block text-[11px]'>
                         {row.note}
                       </span>
                     ) : null}
@@ -351,7 +351,7 @@ export function ExtraModelsTab() {
       ) : null}
 
       <div className='rounded-md border p-3'>
-        <div className='text-muted-foreground mb-2 text-[10px] font-semibold tracking-wider uppercase'>
+        <div className='text-muted-foreground mb-2 text-[11px] font-semibold tracking-wider uppercase'>
           {t('Add a model')}
         </div>
         <div className='flex flex-wrap items-end gap-2'>
@@ -446,7 +446,7 @@ export function ExtraModelsTab() {
                 >
                   <span className='font-mono'>{candidate.provider}</span>
                   {candidate.first_party ? (
-                    <Badge variant='outline' className='text-[10px]'>
+                    <Badge variant='outline' className='text-[11px]'>
                       {t('vendor')}
                     </Badge>
                   ) : null}
@@ -457,7 +457,7 @@ export function ExtraModelsTab() {
                 </button>
               ))}
             </div>
-            <p className='text-muted-foreground border-t px-3 py-2 text-[10px]'>
+            <p className='text-muted-foreground border-t px-3 py-2 text-[11px]'>
               {t(
                 'models.dev aggregates these and can lag the vendor — it carried DeepSeek pre-increase prices for 17 days. Syncing saves typing, not checking.'
               )}

@@ -289,7 +289,7 @@ function BaselineRow({ row, groups, draft, onChange }: BaselineRowProps) {
       <TableCell className='font-mono text-xs'>
         {row.model}
         {row.unverified ? (
-          <Badge variant='outline' className='ml-2 gap-1 text-[10px]'>
+          <Badge variant='outline' className='ml-2 gap-1 text-[11px]'>
             <AlertTriangle className='size-3' />
             {t('unverified')}
           </Badge>
@@ -298,7 +298,7 @@ function BaselineRow({ row, groups, draft, onChange }: BaselineRowProps) {
       <TableCell className='text-muted-foreground text-xs'>
         {row.vendor || '—'}
         {row.upstream_model ? (
-          <span className='block font-mono text-[10px]'>
+          <span className='block font-mono text-[11px]'>
             {row.upstream_model}
           </span>
         ) : null}
@@ -318,7 +318,7 @@ function BaselineRow({ row, groups, draft, onChange }: BaselineRowProps) {
         {/* block, not inline: as a span it flowed past the cell and overlapped
             the first group column. */}
         <span
-          className={`block text-[10px] ${discount > 1 ? 'text-amber-600' : 'text-muted-foreground'}`}
+          className={`block text-[11px] ${discount > 1 ? 'text-amber-600' : 'text-muted-foreground'}`}
         >
           {invalid ? t('must be > 0') : renderDiscountLabel(t, discount)}
         </span>

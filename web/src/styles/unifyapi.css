@@ -97,6 +97,8 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
   --font-manrope: var(--font-sans);
   /* UI-STANDARD.md: one radius for everything; chips and avatars use
    * rounded-full, which is untouched. */
+  /* Muted text on an ink or slate surface (tokens v1.1). */
+  --color-muted-on-dark: var(--u-muted-on-dark);
   --radius-sm: var(--u-radius);
   --radius-md: var(--u-radius);
   --radius-lg: var(--u-radius);

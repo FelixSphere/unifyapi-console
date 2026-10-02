@@ -48,12 +48,12 @@ export function CookieNotice(props: { router: CookieNoticeRouteSource }) {
     <div
       role='dialog'
       aria-label='Cookie notice'
-      className='fixed right-4 bottom-24 left-4 z-50 max-w-[480px] rounded-xl border border-[#34446a] bg-[#101a30] p-5 text-[#f3f4f2] shadow-[0_24px_48px_-16px_rgba(0,0,0,0.5)] sm:right-auto sm:bottom-6 sm:left-6'
+      className='border-secondary bg-foreground text-background fixed right-4 bottom-24 left-4 z-50 max-w-[480px] rounded-xl border p-5 sm:right-auto sm:bottom-6 sm:left-6'
     >
-      <p className='font-mono text-[11px] tracking-[0.14em] text-[#a2a7a5] uppercase'>
+      <p className='text-muted-on-dark font-mono text-[11px] tracking-[0.14em] uppercase'>
         {t('Cookie notice')}
       </p>
-      <p className='mt-3 text-[14px] leading-[1.55] text-[#d4d7d5]'>
+      <p className='text-muted-on-dark mt-3 text-[14px] leading-[1.55]'>
         {t(
           'We use required, functional, and advertising cookies. Reject to keep only essential cookies. See our'
         )}{' '}
@@ -61,7 +61,7 @@ export function CookieNotice(props: { router: CookieNoticeRouteSource }) {
           href={PRIVACY_POLICY_URL}
           target='_blank'
           rel='noopener noreferrer'
-          className='underline underline-offset-2 hover:text-white'
+          className='hover:text-background underline underline-offset-2'
         >
           {t('Privacy Policy')}
         </a>
@@ -74,7 +74,7 @@ export function CookieNotice(props: { router: CookieNoticeRouteSource }) {
             setVisible(false)
             rejectCookies(window, Date.now())
           }}
-          className='h-9 flex-1 rounded-lg border border-[#34446a] text-[14px] font-medium hover:bg-[#1b2846]'
+          className='border-secondary hover:bg-secondary h-9 flex-1 rounded-lg border text-[14px] font-medium'
         >
           {t('Reject cookies')}
         </button>
@@ -84,7 +84,7 @@ export function CookieNotice(props: { router: CookieNoticeRouteSource }) {
             setVisible(false)
             acceptCookies(window)
           }}
-          className='h-9 flex-1 rounded-lg bg-[#2563eb] text-[14px] font-medium text-white hover:opacity-90'
+          className='bg-primary text-primary-foreground h-9 flex-1 rounded-lg text-[14px] font-medium hover:opacity-90'
         >
           {t('Accept all')}
         </button>

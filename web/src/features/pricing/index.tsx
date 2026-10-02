@@ -168,21 +168,6 @@ export function Pricing() {
   return (
     <PublicLayout showMainContainer={false}>
       <div className='relative'>
-        <div
-          aria-hidden
-          className='pointer-events-none absolute inset-x-0 top-0 h-[600px] opacity-20 dark:opacity-[0.10]'
-          style={{
-            background: [
-              'radial-gradient(ellipse 60% 50% at 20% 20%, oklch(0.72 0.18 250 / 80%) 0%, transparent 70%)',
-              'radial-gradient(ellipse 50% 40% at 80% 15%, oklch(0.65 0.15 200 / 60%) 0%, transparent 70%)',
-              'radial-gradient(ellipse 40% 35% at 50% 70%, oklch(0.70 0.12 280 / 40%) 0%, transparent 70%)',
-            ].join(', '),
-            maskImage:
-              'linear-gradient(to bottom, black 40%, transparent 100%)',
-            WebkitMaskImage:
-              'linear-gradient(to bottom, black 40%, transparent 100%)',
-          }}
-        />
         <PageTransition className='relative mx-auto w-full max-w-[1800px] px-3 pt-16 pb-8 sm:px-6 sm:pt-20 sm:pb-10 xl:px-8'>
           <header className='mx-auto mb-5 max-w-3xl pt-5 text-center sm:mb-10 sm:pt-10'>
             <h1 className='text-[clamp(2rem,5.5vw,3.5rem)] leading-[1.15] font-bold tracking-tight'>
@@ -195,17 +180,17 @@ export function Pricing() {
             </p>
             {maxDefaultPercentOff > 0 && (
               <div
-                className='mx-auto mt-5 max-w-2xl rounded-2xl bg-gradient-to-r from-emerald-500 via-green-500 to-lime-400 p-[3px] shadow-xl shadow-emerald-500/30'
+                className='bg-card mx-auto mt-5 max-w-2xl rounded-2xl border p-[3px]'
                 data-default-discount-headline
               >
-                <div className='flex flex-col items-center gap-3 rounded-[13px] bg-gradient-to-r from-emerald-600 to-green-500 px-5 py-4 text-white sm:flex-row sm:justify-between sm:px-7 sm:py-5'>
+                <div className='bg-accent text-accent-foreground flex flex-col items-center gap-3 rounded-[13px] px-5 py-4 sm:flex-row sm:justify-between sm:px-7 sm:py-5'>
                   <div className='text-center sm:text-left'>
                     <div className='text-2xl leading-none font-black tracking-tight sm:text-3xl'>
                       {t('New users get up to {{percent}}% off by default', {
                         percent: maxDefaultPercentOff,
                       })}
                     </div>
-                    <div className='mt-1.5 text-sm font-medium text-emerald-50/90 sm:text-base'>
+                    <div className='text-accent-foreground/80 mt-1.5 text-sm font-medium sm:text-base'>
                       {t(
                         'Every model marked below is already discounted for new accounts. No code needed.'
                       )}
@@ -213,7 +198,7 @@ export function Pricing() {
                   </div>
                   <Button
                     size='lg'
-                    className='shrink-0 rounded-xl bg-white font-bold text-emerald-700 shadow-md hover:bg-emerald-50'
+                    className='shrink-0 rounded-md font-semibold'
                     render={<Link to='/sign-up' />}
                   >
                     {t('Sign up and save')}

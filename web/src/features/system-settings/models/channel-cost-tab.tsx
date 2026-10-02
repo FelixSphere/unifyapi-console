@@ -260,7 +260,7 @@ function ChannelCostRowView({ row, draft, onChange }: ChannelCostRowViewProps) {
       <TableCell className='text-xs'>
         <span className='font-mono'>#{row.id}</span> {row.name}
         {row.status !== 1 ? (
-          <Badge variant='outline' className='ml-2 text-[10px]'>
+          <Badge variant='outline' className='ml-2 text-[11px]'>
             {t('disabled')}
           </Badge>
         ) : null}
@@ -277,7 +277,7 @@ function ChannelCostRowView({ row, draft, onChange }: ChannelCostRowViewProps) {
               render={
                 <Badge
                   variant='outline'
-                  className='text-destructive ml-2 gap-1 text-[10px]'
+                  className='text-destructive ml-2 gap-1 text-[11px]'
                 />
               }
             >

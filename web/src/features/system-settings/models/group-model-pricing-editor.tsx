@@ -362,7 +362,7 @@ export function CustomerPriceTable({
                     aria-invalid={invalid}
                     className='h-8 font-mono text-xs'
                   />
-                  <span className='text-muted-foreground text-[10px]'>
+                  <span className='text-muted-foreground text-[11px]'>
                     {overridden ? t('Override') : t('default')}
                   </span>
                 </TableCell>
