@@ -25,7 +25,7 @@ For commercial licensing, please contact support@quantumnous.com
 // that the SystemName DB option would always cover it -- which meant every fresh
 // deployment rendered as New API until someone ran a SQL seed. The correct default
 // belongs here, not in a manual step. See BRANDING.md.
-export const DEFAULT_SYSTEM_NAME = 'UnifyAI API'
+export const DEFAULT_SYSTEM_NAME = 'Unify API'
 export const DEFAULT_LOGO = '/logo.png'
 
 // LocalStorage Keys

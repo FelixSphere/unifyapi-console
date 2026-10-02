@@ -269,7 +269,7 @@ export function PayoutAccountDialog({
             <AlertDescription className='text-sm'>
               {t(
                 rail?.hint ??
-                  'Your share is added to the balance of this UnifyAI API account each time we settle. No details needed.'
+                  'Your share is added to the balance of this Unify API account each time we settle. No details needed.'
               )}
             </AlertDescription>
           </Alert>

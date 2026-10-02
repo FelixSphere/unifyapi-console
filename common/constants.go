@@ -14,7 +14,7 @@ var StartTime = time.Now().Unix() // unit: second
 var Version = "v0.0.0"            // this hard coding will be replaced automatically when building, no need to manually change
 // UNIFYAPI-BRAND: default when the SystemName option is unset. Was "New API",
 // which made a fresh database render as upstream until seeded. See BRANDING.md.
-var SystemName = "UnifyAI API"
+var SystemName = "Unify API"
 var Footer = ""
 var Logo = ""
 var TopUpLink = ""
