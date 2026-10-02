@@ -344,3 +344,13 @@ Requires `bun` (pinned to 1.3.14, matching upstream CI) and Go 1.26.
 opt-in server-authenticated Builder account bridge. `model/main.go` registers
 its additive identity table; `router/api-router.go` registers its endpoint.
 See `docs/builder-integration.md` for scope and incomplete team-credit work.
+
+### Compute billing bridge (unreleased, dark)
+
+`model/compute_hold.go` and `controller/compute_bridge.go` add the console half
+of the unify-compute billing bridge: HMAC-signed `/api/compute/v1/*` routes that
+verify a key and hold, settle, extend and release wallet quota through the
+console's own billing-entity and token paths. `model/main.go` registers its three
+additive tables; `router/api-router.go` registers the routes and the expired-hold
+sweeper. The routes answer 404 until `COMPUTE_BRIDGE_SECRET` is set. See
+`docs/compute-bridge.md`.

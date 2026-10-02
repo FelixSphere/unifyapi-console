@@ -35,7 +35,10 @@ func InitBatchUpdater() {
 	gopool.Go(func() {
 		for {
 			time.Sleep(time.Duration(common.BatchUpdateInterval) * time.Second)
-			batchUpdate()
+			// UNIFYAPI-FORK: stop once shutdown has flushed; see batch_update_shutdown.go.
+			if !runScheduledBatchUpdate() {
+				return
+			}
 		}
 	})
 }
