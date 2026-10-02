@@ -28,6 +28,8 @@ import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { toast } from 'sonner'
 
+import { CookieNotice } from '@/brand/cookie-notice'
+import { syncHubSpotChat } from '@/brand/hubspot-chat'
 import { api, getStatus } from '@/lib/api'
 import { installBuildMetadata } from '@/lib/build-metadata'
 import { applyFaviconToDom } from '@/lib/dom-utils'
@@ -111,6 +113,12 @@ const router = createRouter({
   context: { queryClient },
   defaultPreload: 'intent',
   defaultPreloadStaleTime: 0,
+})
+
+// UNIFYAPI-BRAND: HubSpot live chat on every route. See brand/hubspot-chat.ts.
+syncHubSpotChat(window, window.location.pathname)
+router.subscribe('onResolved', (event) => {
+  if (event.pathChanged) syncHubSpotChat(window, event.toLocation.pathname)
 })
 
 // Stale-bundle handling: prompt once, never reload on the user's behalf (a
@@ -215,6 +223,9 @@ if (!rootElement.innerHTML) {
           <FontProvider>
             <DirectionProvider>
               <RouterProvider router={router} />
+              {/* UNIFYAPI-BRAND: cookie notice, on the HubSpot chat routes.
+                  See brand/cookie-notice.tsx. */}
+              <CookieNotice router={router} />
             </DirectionProvider>
           </FontProvider>
         </ThemeProvider>
