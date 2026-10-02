@@ -60,7 +60,15 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	// 1) 调整资金来源（仅在尚未提交时执行，防止重复调用）
 	if !s.fundingSettled {
 		if err := s.funding.Settle(delta); err != nil {
-			return err
+			// UNIFYAPI-FORK: the response is already served. A refused
+			// connection parks the charge instead of dropping it; see
+			// service/settlement_outbox.go.
+			if !parkRefusedWalletSettlement(s.relayInfo, s.funding, delta, err) {
+				return err
+			}
+			s.fundingSettled = true
+			s.settled = true
+			return nil
 		}
 		s.fundingSettled = true
 	}
@@ -71,6 +79,10 @@ func (s *BillingSession) Settle(actualQuota int) error {
 			tokenErr = model.DecreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, delta)
 		} else {
 			tokenErr = model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, -delta)
+		}
+		// UNIFYAPI-FORK: park a refused token adjustment; see settlement_outbox.go.
+		if tokenErr != nil && parkRefusedTokenSettlement(s.relayInfo, delta, tokenErr) {
+			tokenErr = nil
 		}
 		if tokenErr != nil {
 			// 资金来源已提交，令牌调整失败只能记录日志；标记 settled 防止 Refund 误退资金

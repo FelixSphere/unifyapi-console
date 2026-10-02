@@ -512,7 +512,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	}
 	// Resolved once here so the row records the wallet it was actually drawn
 	// from; the resolver is cached, and an unresolvable login stamps 0.
-	wallet, _ := ResolveBillingEntity(userId)
+	wallet, walletErr := ResolveBillingEntity(userId)
 	log := &Log{
 		UserId:           userId,
 		TenantId:         wallet.TenantId,
@@ -544,7 +544,10 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
 	}
-	err := createLog(log)
+	// UNIFYAPI-FORK: this row is what invoices and reconciliation read; a
+	// refused connection retries and then parks it rather than dropping it.
+	// See settlement_outbox.go.
+	err := createConsumeLogDurably(log, walletErr)
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
 	}

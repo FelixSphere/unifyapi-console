@@ -208,6 +208,10 @@ func InitDB() (err error) {
 		sqlDB.SetMaxIdleConns(common.GetEnvOrDefault("SQL_MAX_IDLE_CONNS", 100))
 		sqlDB.SetMaxOpenConns(common.GetEnvOrDefault("SQL_MAX_OPEN_CONNS", 1000))
 		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(common.GetEnvOrDefault("SQL_MAX_LIFETIME", 60)))
+		// UNIFYAPI-FORK: keep the pool under Postgres max_connections; see db_pool_ceiling.go.
+		if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+			applyPostgresPoolCeiling(DB, sqlDB, "SQL_DSN")
+		}
 
 		if !common.IsMasterNode {
 			return nil
@@ -252,6 +256,10 @@ func InitLogDB() (err error) {
 		sqlDB.SetMaxIdleConns(common.GetEnvOrDefault("SQL_MAX_IDLE_CONNS", 100))
 		sqlDB.SetMaxOpenConns(common.GetEnvOrDefault("SQL_MAX_OPEN_CONNS", 1000))
 		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(common.GetEnvOrDefault("SQL_MAX_LIFETIME", 60)))
+		// UNIFYAPI-FORK: see db_pool_ceiling.go.
+		if common.UsingLogDatabase(common.DatabaseTypePostgreSQL) {
+			applyPostgresPoolCeiling(LOG_DB, sqlDB, "LOG_SQL_DSN")
+		}
 
 		if !common.IsMasterNode {
 			return nil
@@ -318,6 +326,8 @@ func migrateDB() error {
 		&Settlement{},
 		// UNIFYAPI-FORK: previous values of billing config, see pricing_config_history.go
 		&PricingConfigHistory{},
+		// UNIFYAPI-FORK: replayed settlements, see settlement_outbox.go
+		&SettlementLedger{},
 		&Task{},
 		&Model{},
 		&Vendor{},
@@ -411,6 +421,7 @@ func migrateDBFast() error {
 		{&ComputeSettlement{}, "ComputeSettlement"},
 		{&ComputeExtension{}, "ComputeExtension"},
 		{&QuotaData{}, "QuotaData"},
+		{&SettlementLedger{}, "SettlementLedger"}, // UNIFYAPI-FORK: see settlement_outbox.go
 		{&Task{}, "Task"},
 		{&Model{}, "Model"},
 		{&Vendor{}, "Vendor"},

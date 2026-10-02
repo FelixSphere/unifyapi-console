@@ -58,7 +58,30 @@ func ResolveBillingEntity(userId int) (BillingEntity, error) {
 			return BillingEntity{UserId: userId, TenantId: cached.TenantId}, nil
 		}
 	}
-	return resolveBillingEntity(DB, userId)
+	// UNIFYAPI-FORK: settlement resolves the wallet after the response has
+	// been served; a refused connection must not cost the charge. See
+	// settlement_outbox.go.
+	var entity BillingEntity
+	err := retryConnectionClass(func() error {
+		var err error
+		entity, err = resolveBillingEntity(DB, userId)
+		return err
+	})
+	return entity, err
+}
+
+// adjustBillingQuota is adjustBillingQuotaWithTx outside a transaction,
+// retried when the database refused the connection. Only safe because it is
+// not inside a transaction: each attempt is a fresh statement on a fresh
+// connection, and a refused attempt never reached the server.
+func adjustBillingQuota(userId int, delta int) (BillingEntity, error) {
+	var entity BillingEntity
+	err := retryConnectionClass(func() error {
+		var err error
+		entity, err = adjustBillingQuotaWithTx(DB, userId, delta)
+		return err
+	})
+	return entity, err
 }
 
 func getBillingQuotaFromDB(tx *gorm.DB, entity BillingEntity) (int, error) {
