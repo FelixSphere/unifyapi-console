@@ -1,4 +1,4 @@
--- UnifyAPI console branding seed.
+-- UnifyAI API console branding seed.
 --
 -- These five options cannot be set by environment variable -- new-api reads them
 -- from the `options` table only. Without them the console renders as "New API":
@@ -22,7 +22,7 @@
 -- before editing them. Do not remove the upstream link or the attribution notice.
 
 INSERT INTO options (key, value) VALUES
-  ('SystemName', 'UnifyAPI')
+  ('SystemName', 'UnifyAI API')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
 INSERT INTO options (key, value) VALUES
@@ -43,7 +43,7 @@ INSERT INTO options (key, value) VALUES
     || '</div>')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
--- About: about UnifyAPI, the product.
+-- About: about UnifyAI API, the product.
 --
 -- MARKDOWN, NOT HTML, and that matters. features/about/index.tsx branches on
 -- isLikelyHtml() (lib/content-format.ts): any HTML tag routes the content to
@@ -63,13 +63,13 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 -- link. If you remove the [Source] link from this line, you must add one back to
 -- the Footer, or the s.13 obligation is unmet. See BRANDING.md.
 INSERT INTO options (key, value) VALUES
-  ('About', '## UnifyAPI
+  ('About', '## UnifyAI API
 
 One API key for 300+ AI models across every major provider. One endpoint, one bill, and no per-provider contracts.
 
 ### What you get
 
-- **One endpoint.** UnifyAPI speaks the OpenAI API, so existing code works by changing the base URL and the key.
+- **One endpoint.** UnifyAI API speaks the OpenAI API, so existing code works by changing the base URL and the key.
 - **One bill.** Pooled capacity across providers instead of separate contracts and idle commitments.
 - **Automatic failover.** A single model name keeps working through an upstream provider incident.
 - **Smart routing.** Requests go to the cheapest model that still clears your quality bar.
@@ -81,7 +81,7 @@ Read the [documentation](https://www.unifyapi.ai/docs), or create a key and make
 
 ---
 
-Built on [New API](https://github.com/QuantumNous/new-api) ([AGPL-3.0](https://github.com/QuantumNous/new-api/blob/main/LICENSE)), modified by FelixSphere: branding, typography, light-only theme, and a multi-tenant account model. [Source](https://github.com/FelixSphere/unifyapi-console).
+Built on [New API](https://github.com/QuantumNous/new-api) ([AGPL-3.0](https://github.com/QuantumNous/new-api/blob/main/LICENSE)), modified by UnifyAI: branding, typography, light-only theme, and a multi-tenant account model. [Source](https://github.com/FelixSphere/unifyapi-console).
 ')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 

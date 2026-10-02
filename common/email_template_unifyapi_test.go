@@ -31,7 +31,7 @@ import (
 )
 
 var testBrand = EmailBrand{
-	ProductName: "UnifyAPI", ProductURL: "https://app.unifyapi.ai", ProductDomain: "app.unifyapi.ai",
+	ProductName: "UnifyAI API", ProductShort: "API", ProductURL: "https://app.unifyapi.ai", ProductDomain: "app.unifyapi.ai",
 	AssetBase: "https://app.unifyapi.ai/email", CompanyAddress: "UnifyAI · Lebuh Bandar Utama PJU 6, 47800 Petaling Jaya, Selangor, Malaysia",
 }
 
@@ -64,8 +64,9 @@ func TestACodeEmailShowsTheCodeInInkAndInTheTextPart(t *testing.T) {
 	assert.Contains(t, textBody, "482913")
 	assert.Contains(t, textBody, "VERIFY")
 	assert.Contains(t, textBody, "Confirm your email address")
+	assert.True(t, strings.HasPrefix(textBody, "UnifyAI API\n"), "the text part opens with the full product name")
 	assert.Contains(t, textBody, "Expires in 10 minutes.")
-	assert.Contains(t, textBody, "UnifyAPI · app.unifyapi.ai\n")
+	assert.Contains(t, textBody, "UnifyAI API · app.unifyapi.ai\n")
 	assert.NotContains(t, textBody, "FelixSphere", "UI-STANDARD.md: the company is UnifyAI; no FelixSphere tagline anywhere")
 	assert.Contains(t, textBody, "UnifyAI · Lebuh Bandar Utama PJU 6, 47800 Petaling Jaya, Selangor, Malaysia")
 	assert.NotContains(t, textBody, "<", "the text part carries no markup")
@@ -79,7 +80,8 @@ func TestTheEmailReadsWithImagesBlockedAndCarriesNoSVG(t *testing.T) {
 	assert.NotContains(t, strings.ToLower(htmlBody), "<svg")
 	assert.NotContains(t, strings.ToLower(htmlBody), ".svg")
 	assert.Contains(t, htmlBody, `<meta name="color-scheme" content="light">`)
-	assert.Contains(t, htmlBody, "UnifyAPI</td>", "the product name sits beside the lockup, unchanged")
+	assert.Contains(t, htmlBody, "API</td>", "the header descriptor sits beside the lockup; the full name is in the footer")
+	assert.Contains(t, htmlBody, "UnifyAI API · <a")
 }
 
 func TestValuesAreEscapedButOperatorHTMLIsKept(t *testing.T) {

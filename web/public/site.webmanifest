@@ -1,6 +1,6 @@
 {
-  "name": "UnifyAPI",
-  "short_name": "UnifyAPI",
+  "name": "UnifyAI API",
+  "short_name": "UnifyAI API",
   "start_url": "/console",
   "display": "standalone",
   "background_color": "#FAFAF7",
