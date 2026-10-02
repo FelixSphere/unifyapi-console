@@ -9,7 +9,7 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 /*
 UNIFYAPI-FORK: the "upstream purchasing cost" tab.
 
-The second of the three prices UnifyAPI keeps apart -- what our upstream charges
+The second of the three prices UnifyAI API keeps apart -- what our upstream charges
 us. It exists purely so reconciliation has a cost basis, and it is the one
 pricing number that must never reach a customer's invoice: routing is load
 balanced, so the same request goes to a different channel on different days. If
@@ -260,7 +260,7 @@ function ChannelCostRowView({ row, draft, onChange }: ChannelCostRowViewProps) {
       <TableCell className='text-xs'>
         <span className='font-mono'>#{row.id}</span> {row.name}
         {row.status !== 1 ? (
-          <Badge variant='outline' className='ml-2 text-[10px]'>
+          <Badge variant='outline' className='ml-2 text-[11px]'>
             {t('disabled')}
           </Badge>
         ) : null}
@@ -277,7 +277,7 @@ function ChannelCostRowView({ row, draft, onChange }: ChannelCostRowViewProps) {
               render={
                 <Badge
                   variant='outline'
-                  className='text-destructive ml-2 gap-1 text-[10px]'
+                  className='text-destructive ml-2 gap-1 text-[11px]'
                 />
               }
             >

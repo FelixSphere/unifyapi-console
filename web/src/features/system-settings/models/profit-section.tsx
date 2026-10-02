@@ -398,7 +398,7 @@ function ProfitRow({
           {health === 'loss' ? (
             <Badge
               variant='outline'
-              className='text-destructive ml-2 text-[10px]'
+              className='text-destructive ml-2 text-[11px]'
             >
               {t('losing money')}
             </Badge>
@@ -406,7 +406,7 @@ function ProfitRow({
           {line.unpriced_requests > 0 ? (
             <Badge
               variant='outline'
-              className='text-destructive ml-2 gap-1 text-[10px]'
+              className='text-destructive ml-2 gap-1 text-[11px]'
             >
               <AlertTriangle className='size-3' />
               {t('not costable')}
@@ -420,7 +420,7 @@ function ProfitRow({
           {formatTokens(line.prompt_tokens)} /{' '}
           {formatTokens(line.completion_tokens)}
           {hit !== null && hit > 0 ? (
-            <span className='text-muted-foreground block text-[10px]'>
+            <span className='text-muted-foreground block text-[11px]'>
               {t('cache')} {(hit * 100).toFixed(0)}%
             </span>
           ) : null}
@@ -448,7 +448,7 @@ function ProfitRow({
           <TableCell />
           <TableCell colSpan={7} className='py-3'>
             <div className='flex flex-col gap-1'>
-              <div className='text-muted-foreground mb-1 text-[10px] font-semibold tracking-wider uppercase'>
+              <div className='text-muted-foreground mb-1 text-[11px] font-semibold tracking-wider uppercase'>
                 {t('How this margin is derived')}
               </div>
               {deriveMargin(line).map((step) => (
@@ -461,7 +461,7 @@ function ProfitRow({
                   <div className='flex flex-col'>
                     <span>{t(step.labelKey)}</span>
                     {step.noteKey ? (
-                      <span className='text-muted-foreground text-[10px]'>
+                      <span className='text-muted-foreground text-[11px]'>
                         {t(step.noteKey, step.noteParams)}
                       </span>
                     ) : null}

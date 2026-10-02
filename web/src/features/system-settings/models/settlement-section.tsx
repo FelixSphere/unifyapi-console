@@ -632,14 +632,14 @@ function SettlementTableRow({
         <TableCell className='font-mono text-xs'>
           {displayedStatement.label}
           {displayedStatement.group ? (
-            <Badge variant='outline' className='ml-2 text-[10px]'>
+            <Badge variant='outline' className='ml-2 text-[11px]'>
               {displayedStatement.group}
             </Badge>
           ) : null}
           {displayedStatement.unpriced_requests > 0 ? (
             <Badge
               variant='outline'
-              className='text-destructive ml-2 gap-1 text-[10px]'
+              className='text-destructive ml-2 gap-1 text-[11px]'
             >
               <AlertTriangle className='size-3' />
               {t('not costable')}
@@ -670,7 +670,7 @@ function SettlementTableRow({
             {t(SETTLEMENT_STATE_LABELS[state])}
           </span>
           {kind === 'vendor' ? (
-            <span className={`block text-[10px] ${varianceClass(verdict)}`}>
+            <span className={`block text-[11px] ${varianceClass(verdict)}`}>
               {verdict === 'pending'
                 ? t(VARIANCE_VERDICT_LABELS[verdict])
                 : `${formatSigned(row.variance_usd ?? 0)} · ${t(VARIANCE_VERDICT_LABELS[verdict])}`}
@@ -929,7 +929,7 @@ function SettlementTableRow({
               </div>
 
               {row.settlement ? (
-                <p className='text-muted-foreground text-[10px]'>
+                <p className='text-muted-foreground text-[11px]'>
                   {t(
                     'Frozen at {{amount}} against the {{snapshot}} price catalog. Typing an invoice does not re-model the period — that would replace the figure the invoice is being compared against.',
                     {
@@ -965,7 +965,7 @@ function StatementDetail({ row }: { row: SettlementRow }) {
         </Alert>
       ) : null}
       <div>
-        <div className='text-muted-foreground mb-1 text-[10px] font-semibold tracking-wider uppercase'>
+        <div className='text-muted-foreground mb-1 text-[11px] font-semibold tracking-wider uppercase'>
           {t('Line items')}
         </div>
         <div className='overflow-x-auto rounded border'>
@@ -1009,7 +1009,7 @@ function StatementDetail({ row }: { row: SettlementRow }) {
                     {line.unpriced ? (
                       <Badge
                         variant='outline'
-                        className='text-destructive ml-2 text-[10px]'
+                        className='text-destructive ml-2 text-[11px]'
                       >
                         {t('no catalog price')}
                       </Badge>
@@ -1022,7 +1022,7 @@ function StatementDetail({ row }: { row: SettlementRow }) {
                   ) : null}
                   {vendor ? (
                     <TableCell
-                      className='max-w-56 truncate font-mono text-[10px]'
+                      className='max-w-56 truncate font-mono text-[11px]'
                       title={line.channel_base_url}
                     >
                       {line.channel_base_url || '—'}
@@ -1057,7 +1057,7 @@ function StatementDetail({ row }: { row: SettlementRow }) {
 
       {!vendor && statement.users?.length ? (
         <div>
-          <div className='text-muted-foreground mb-1 text-[10px] font-semibold tracking-wider uppercase'>
+          <div className='text-muted-foreground mb-1 text-[11px] font-semibold tracking-wider uppercase'>
             {t('By user')}
           </div>
           {!userLinesAreBalanced(statement) ? (
@@ -1071,7 +1071,7 @@ function StatementDetail({ row }: { row: SettlementRow }) {
 
           {!vendor ? (
             <div>
-              <div className='text-muted-foreground mb-1 text-[10px] font-semibold tracking-wider uppercase'>
+              <div className='text-muted-foreground mb-1 text-[11px] font-semibold tracking-wider uppercase'>
                 {t('Funded by user')} · {t('this period')} ·{' '}
                 {formatUSD(statement.funded_usd ?? 0)}
                 {statement.funding_to_date?.length ? (
@@ -1196,7 +1196,7 @@ function StatementDetail({ row }: { row: SettlementRow }) {
       ) : null}
 
       <div className='flex flex-col gap-1'>
-        <div className='text-muted-foreground mb-1 text-[10px] font-semibold tracking-wider uppercase'>
+        <div className='text-muted-foreground mb-1 text-[11px] font-semibold tracking-wider uppercase'>
           {t('How this amount is derived')}
         </div>
         {deriveStatement(statement).map((step) => (
@@ -1209,7 +1209,7 @@ function StatementDetail({ row }: { row: SettlementRow }) {
             <div className='flex flex-col'>
               <span>{t(step.labelKey)}</span>
               {step.noteKey ? (
-                <span className='text-muted-foreground text-[10px]'>
+                <span className='text-muted-foreground text-[11px]'>
                   {t(step.noteKey, step.noteParams)}
                 </span>
               ) : null}
