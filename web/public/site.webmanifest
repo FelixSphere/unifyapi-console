@@ -1,0 +1,22 @@
+{
+  "name": "UnifyAPI",
+  "short_name": "UnifyAPI",
+  "start_url": "/console",
+  "display": "standalone",
+  "background_color": "#FAFAF7",
+  "theme_color": "#FAFAF7",
+  "icons": [
+    {
+      "src": "/icons/maskable-light-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
