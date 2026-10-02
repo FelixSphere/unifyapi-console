@@ -37,6 +37,18 @@ func SetApiRouter(router *gin.Engine) {
 		// read a response it could already fetch with curl.
 		apiRouter.GET("/pricing", middleware.CORS(), middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
 		apiRouter.POST("/builder/v1/:action", controller.BuilderIntegration)
+		// UNIFYAPI-BRAND: compute billing bridge. Server-signed only, no session
+		// auth; 404 until COMPUTE_BRIDGE_SECRET is set. Registered on the engine,
+		// not apiRouter, so the per-IP global API limiter does not apply -- every
+		// call comes from compute-api's one address -- and the bridge's own
+		// limiter does instead. See controller/compute_bridge.go.
+		computeRoute := router.Group("/api/compute/v1", middleware.RouteTag("api"), controller.ComputeBridgeAuth())
+		computeRoute.POST("/verify", controller.ComputeVerify)
+		computeRoute.POST("/holds", controller.ComputeCreateHold)
+		computeRoute.POST("/holds/:hold_id/settle", controller.ComputeSettleHold)
+		computeRoute.POST("/holds/:hold_id/extend", controller.ComputeExtendHold)
+		computeRoute.POST("/holds/:hold_id/release", controller.ComputeReleaseHold)
+		controller.StartComputeHoldSweeper()
 		apiRouter.GET("/partnership/:code", middleware.DisableCache(), controller.GetPublicPartnershipProgram)
 		apiRouter.POST("/partnership/:code/connect", middleware.UserAuth(), middleware.DisableCache(), controller.ConnectExistingUserToPartnership)
 		perfMetricsRoute := apiRouter.Group("/perf-metrics")

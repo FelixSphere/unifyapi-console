@@ -307,6 +307,10 @@ func migrateDB() error {
 		&Midjourney{},
 		&TopUp{},
 		&BinancePayTransaction{}, // UNIFYAPI-FORK
+		// UNIFYAPI-BRAND: compute billing bridge, see model/compute_hold.go
+		&ComputeHold{},
+		&ComputeSettlement{},
+		&ComputeExtension{},
 		&QuotaData{},
 		// UNIFYAPI-FORK: persisted reconciliation runs, see reconcile_snapshot.go
 		&ReconcileSnapshot{},
@@ -402,6 +406,10 @@ func migrateDBFast() error {
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
 		{&BinancePayTransaction{}, "BinancePayTransaction"}, // UNIFYAPI-FORK
+		// UNIFYAPI-BRAND: compute billing bridge, see model/compute_hold.go
+		{&ComputeHold{}, "ComputeHold"},
+		{&ComputeSettlement{}, "ComputeSettlement"},
+		{&ComputeExtension{}, "ComputeExtension"},
 		{&QuotaData{}, "QuotaData"},
 		{&Task{}, "Task"},
 		{&Model{}, "Model"},
