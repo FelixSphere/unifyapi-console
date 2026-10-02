@@ -28,6 +28,7 @@ import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { toast } from 'sonner'
 
+import { CookieNotice } from '@/brand/cookie-notice'
 import { syncHubSpotChat } from '@/brand/hubspot-chat'
 import { api, getStatus } from '@/lib/api'
 import { installBuildMetadata } from '@/lib/build-metadata'
@@ -222,6 +223,9 @@ if (!rootElement.innerHTML) {
           <FontProvider>
             <DirectionProvider>
               <RouterProvider router={router} />
+              {/* UNIFYAPI-BRAND: cookie notice, on the HubSpot chat routes.
+                  See brand/cookie-notice.tsx. */}
+              <CookieNotice router={router} />
             </DirectionProvider>
           </FontProvider>
         </ThemeProvider>
