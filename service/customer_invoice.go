@@ -153,7 +153,7 @@ var customerInvoiceTemplate = template.Must(template.New("customer-invoice").Fun
 <body>
   <main class="sheet">
     <header class="top">
-      <div><div class="brand">UnifyAI</div><div class="product">UnifyAI API services</div></div>
+      <div><div class="brand">UnifyAI</div><div class="product">Unify API services</div></div>
       <div><h1>INVOICE</h1><div class="status {{if or (eq .Status "VOID") (eq .Status "SUPERSEDED")}}void{{end}}">{{.Status}}</div></div>
     </header>
     <section class="meta">
@@ -176,7 +176,7 @@ var customerInvoiceTemplate = template.Must(template.New("customer-invoice").Fun
     <table aria-label="Invoice line items">
       <thead><tr><th>Service / model</th><th>Requests</th><th>Input tokens</th><th>Cached tokens</th><th>Output tokens</th><th>Amount (USD)</th></tr></thead>
       <tbody>
-        {{range .Lines}}<tr><td class="model">UnifyAI API usage - {{.Model}}</td><td>{{integer .Requests}}</td><td>{{integer .PromptTokens}}</td><td>{{integer .CachedTokens}}</td><td>{{integer .CompletionTokens}}</td><td>{{money .AmountUSD}}</td></tr>{{end}}
+        {{range .Lines}}<tr><td class="model">Unify API usage - {{.Model}}</td><td>{{integer .Requests}}</td><td>{{integer .PromptTokens}}</td><td>{{integer .CachedTokens}}</td><td>{{integer .CompletionTokens}}</td><td>{{money .AmountUSD}}</td></tr>{{end}}
       </tbody>
     </table>
     <section class="totals">
@@ -184,7 +184,7 @@ var customerInvoiceTemplate = template.Must(template.New("customer-invoice").Fun
       <div class="total-row grand"><span>Total due</span><span>USD {{money .TotalUSD}}</span></div>
     </section>
     <div class="notice">Please settle this invoice according to your commercial agreement with UnifyAI and quote invoice number <strong>{{.Number}}</strong> with the payment.</div>
-    <footer>Issued by UnifyAI for UnifyAI API usage. This document is generated from the immutable monthly usage statement stored at issuance.</footer>
+    <footer>Issued by UnifyAI for Unify API usage. This document is generated from the immutable monthly usage statement stored at issuance.</footer>
   </main>
 </body>
 </html>`))

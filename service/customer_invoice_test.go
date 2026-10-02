@@ -33,7 +33,7 @@ func TestRenderCustomerInvoiceHTMLUsesFrozenStatementAndEscapesParties(t *testin
 	document := string(html)
 	require.Contains(t, document, "UAI-202608-000042")
 	require.Contains(t, document, "USD 12.3456")
-	require.Contains(t, document, "UnifyAI API usage - gpt-5")
+	require.Contains(t, document, "Unify API usage - gpt-5")
 	require.Contains(t, document, "ACME &lt;script&gt;")
 	require.NotContains(t, document, "<script>alert")
 }

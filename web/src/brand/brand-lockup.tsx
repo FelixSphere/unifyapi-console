@@ -52,7 +52,7 @@ export function BrandLockup({ className }: BrandLockupProps) {
       >
         API
       </span>
-      <span className='sr-only'>UnifyAI API</span>
+      <span className='sr-only'>Unify API</span>
     </span>
   )
 }

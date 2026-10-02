@@ -437,7 +437,7 @@ func TestCustomerInvoiceUsesFrozenIssuedStatement(t *testing.T) {
 	require.Contains(t, recorder.Header().Get("Content-Disposition"), "uai-202608-")
 	require.Contains(t, recorder.Body.String(), "ACME &amp; Partners")
 	require.Contains(t, recorder.Body.String(), "USD 7.6543")
-	require.Contains(t, recorder.Body.String(), "UnifyAI API usage - gpt-5")
+	require.Contains(t, recorder.Body.String(), "Unify API usage - gpt-5")
 	require.NotContains(t, recorder.Body.String(), "channel_base_url")
 }
 

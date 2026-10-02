@@ -271,7 +271,7 @@ export function SubmitLotDialog({
             />
             <span>
               {t(
-                'I own or control this vendor account and have the right to let UnifyAI API consume these credits. I understand that nothing is paid up front, that what I am paid is a share of what the credits actually sell for, and that the credits are used by UnifyAI API customers.'
+                'I own or control this vendor account and have the right to let Unify API consume these credits. I understand that nothing is paid up front, that what I am paid is a share of what the credits actually sell for, and that the credits are used by Unify API customers.'
               )}
             </span>
           </AlertDescription>
