@@ -147,7 +147,7 @@ func renderEmailText(brand EmailBrand, msg EmailMessage) string {
 	if msg.SafetyNote != "" {
 		b.WriteString(msg.SafetyNote + "\n\n")
 	}
-	b.WriteString("-- \n" + brand.ProductName + " · " + brand.ProductDomain + " · A FelixSphere venture\n")
+	b.WriteString("-- \n" + brand.ProductName + " · " + brand.ProductDomain + "\n")
 	if msg.FooterReason != "" {
 		b.WriteString(msg.FooterReason + "\n")
 	}
@@ -304,7 +304,7 @@ var unifyaiEmailTemplate = template.Must(template.New("unifyai-email").Parse(`<!
   <table role="presentation" class="u-card" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px; max-width:600px;">
     <tr><td class="u-pad" style="padding:24px 40px; font-family:'Instrument Sans',Helvetica,Arial,sans-serif; font-size:12px; line-height:19px; color:#6B6B66;">
       <img src="{{.Brand.AssetBase}}/unifyai-mark-black@2x.png" width="24" height="24" alt="" style="display:block; border:0; width:24px; height:24px; margin-bottom:10px;">
-      {{.Brand.ProductName}} · <a href="{{.Brand.ProductURL}}" style="color:#6B6B66;">{{.Brand.ProductDomain}}</a> · A FelixSphere venture<br>
+      {{.Brand.ProductName}} · <a href="{{.Brand.ProductURL}}" style="color:#6B6B66;">{{.Brand.ProductDomain}}</a><br>
       {{.Msg.FooterReason}}{{if .Brand.CompanyAddress}}<br>
       {{.Brand.CompanyAddress}}{{end}}
     </td></tr>

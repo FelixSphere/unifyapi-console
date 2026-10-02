@@ -65,7 +65,8 @@ func TestACodeEmailShowsTheCodeInInkAndInTheTextPart(t *testing.T) {
 	assert.Contains(t, textBody, "VERIFY")
 	assert.Contains(t, textBody, "Confirm your email address")
 	assert.Contains(t, textBody, "Expires in 10 minutes.")
-	assert.Contains(t, textBody, "UnifyAPI · app.unifyapi.ai · A FelixSphere venture")
+	assert.Contains(t, textBody, "UnifyAPI · app.unifyapi.ai\n")
+	assert.NotContains(t, textBody, "FelixSphere", "UI-STANDARD.md: the company is UnifyAI; no FelixSphere tagline anywhere")
 	assert.Contains(t, textBody, "FelixSphere, Kuala Lumpur")
 	assert.NotContains(t, textBody, "<", "the text part carries no markup")
 }
