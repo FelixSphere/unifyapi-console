@@ -29,13 +29,15 @@ INSERT INTO options (key, value) VALUES
   ('Logo', '/logo.png')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
--- Footer. The "Source code" link is what discharges AGPL s.13 for users of the
+-- Footer. The copyright line is NOT here: the always-mounted bar renders
+-- "(c) <year> UnifyAI . <address>" from web/src/brand/company.ts with the year
+-- computed (UI-STANDARD.md). This option carries only the legal links.
+-- The "Source code" link is what discharges AGPL s.13 for users of the
 -- hosted service. Setting Footer takes the footerHtml branch of footer.tsx,
 -- which still renders <ProjectAttribution inline /> -- so this does not weaken
 -- the upstream attribution.
 INSERT INTO options (key, value) VALUES
   ('Footer', '<div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">'
-    || '<span>&copy; 2026 UnifyAI</span>'
     || '<a href="https://www.unifyapi.ai/privacy" target="_blank" rel="noopener noreferrer">Privacy</a>'
     || '<a href="https://www.unifyapi.ai/terms" target="_blank" rel="noopener noreferrer">Terms</a>'
     || '</div>')

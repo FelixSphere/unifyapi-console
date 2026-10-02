@@ -8,6 +8,8 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
 import { ProjectAttribution } from '@/components/layout/components/footer'
 
+import { companyLine } from './company'
+
 /**
  * AGPLv3 s.7(b) attribution required by the upstream NOTICE file.
  *
@@ -26,7 +28,10 @@ import { ProjectAttribution } from '@/components/layout/components/footer'
  */
 export function UpstreamAttribution() {
   return (
-    <div className='border-border/40 bg-background text-muted-foreground/60 flex h-7 shrink-0 items-center justify-end border-t px-3 text-[11px] leading-none'>
+    <div className='border-border/40 bg-background text-muted-foreground/60 flex min-h-7 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t px-3 py-1 text-[11px] leading-none'>
+      {/* UI-STANDARD.md company line: same in every UnifyAI product. It sits
+          beside the upstream attribution, which is unchanged. */}
+      <span className='font-mono'>{companyLine()}</span>
       <ProjectAttribution currentYear={new Date().getFullYear()} inline />
     </div>
   )
