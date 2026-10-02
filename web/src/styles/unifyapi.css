@@ -14,8 +14,10 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
  * local edit and merges fast-forward forever. */
 @import './index.css';
 /* UNIFYAPI-BRAND: the one token file for all five UnifyAI products, copied
- * verbatim from ~/unifyai-brand-kit/tokens.css. Values change there, not here. */
-@import './tokens.css';
+ * verbatim from ~/unifyai-brand-kit/tokens.css. Values change there, not here.
+ * The `.gen.` suffix tells the copyright checker and the formatter that the
+ * file is produced elsewhere and must not be touched in this repo. */
+@import './tokens.gen.css';
 
 /* ── Brand faces, self-hosted from web/public/fonts (served at /fonts/*) ─────
  * Vendored rather than added via bun: package.json and the 322 KB bun.lock are

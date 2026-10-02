@@ -23,6 +23,6 @@
     ".eslintrc.cjs",
     "**/routeTree.gen.ts",
     "src/routeTree.gen.ts",
-    "src/styles/tokens.css"
+    "src/styles/tokens.gen.css"
   ]
 }

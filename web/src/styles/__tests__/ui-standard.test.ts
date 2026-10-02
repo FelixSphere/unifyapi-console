@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const here = import.meta.dir
-const tokens = readFileSync(join(here, '..', 'tokens.css'), 'utf8')
+const tokens = readFileSync(join(here, '..', 'tokens.gen.css'), 'utf8')
 const brand = readFileSync(join(here, '..', 'unifyapi.css'), 'utf8')
 const kit = '/Users/y.wang/unifyai-brand-kit/tokens.css'
 
