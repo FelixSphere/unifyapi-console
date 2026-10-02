@@ -17,25 +17,33 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
-func unifyapiVerificationEmail(code string) (subject, content string) {
-	subject = fmt.Sprintf("%s email verification", common.SystemName)
-	content = fmt.Sprintf("<p>Hello,</p>"+
-		"<p>You are verifying your email address for %s.</p>"+
-		"<p>Your verification code is: <strong>%s</strong></p>"+
-		"<p>The code is valid for %d minutes. If you did not request this, "+
-		"you can safely ignore this email.</p>",
-		common.SystemName, code, common.VerificationValidMinutes)
-	return subject, content
+// unifyapiVerificationEmail is the sign-up code. One focal element: the code.
+func unifyapiVerificationEmail(code string) common.EmailMessage {
+	return common.EmailMessage{
+		Subject:   fmt.Sprintf("Your %s verification code", common.SystemName),
+		Preheader: fmt.Sprintf("Enter it within %d minutes to finish creating your account.", common.VerificationValidMinutes),
+		Eyebrow:   "Verify",
+		Headline:  "Confirm your email address",
+		Intro:     fmt.Sprintf("Enter this code in %s to finish creating your account.", common.SystemName),
+		Code:      code,
+		SafetyNote: fmt.Sprintf("This code expires in %d minutes. If you didn't request it, you can ignore this email: nothing changes without the code.",
+			common.VerificationValidMinutes),
+		FooterReason: "You're receiving this because this address was entered at sign-up.",
+	}
 }
 
-func unifyapiPasswordResetEmail(link string) (subject, content string) {
-	subject = fmt.Sprintf("%s password reset", common.SystemName)
-	content = fmt.Sprintf("<p>Hello,</p>"+
-		"<p>You are resetting the password for your %s account.</p>"+
-		"<p>Click <a href='%s'>here</a> to choose a new password.</p>"+
-		"<p>If the link does not work, copy this address into your browser:<br>%s</p>"+
-		"<p>The link is valid for %d minutes. If you did not request this, "+
-		"you can safely ignore this email.</p>",
-		common.SystemName, link, link, common.VerificationValidMinutes)
-	return subject, content
+// unifyapiPasswordResetEmail carries the reset link. One focal element: the button.
+func unifyapiPasswordResetEmail(link string) common.EmailMessage {
+	return common.EmailMessage{
+		Subject:   fmt.Sprintf("Reset your %s password", common.SystemName),
+		Preheader: fmt.Sprintf("The link works for %d minutes.", common.VerificationValidMinutes),
+		Eyebrow:   "Reset",
+		Headline:  "Choose a new password",
+		Intro:     fmt.Sprintf("Someone asked to reset the password for the %s account at this address. If that was you, pick a new password below.", common.SystemName),
+		CTALabel:  "Reset password",
+		CTAURL:    link,
+		SafetyNote: fmt.Sprintf("The link expires in %d minutes and can be used once. If you didn't ask for this, ignore this email: your password stays as it is.",
+			common.VerificationValidMinutes),
+		FooterReason: "You're receiving this because a password reset was requested for this address.",
+	}
 }
