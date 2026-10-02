@@ -32,9 +32,9 @@ import (
 // is SystemName (also the sender display name, which common/email.go builds
 // as "SystemName <SMTPFrom>"); images are served by this console from
 // web/public/email, so they live on our own domain as the kit requires. The
-// company address is an option so it can be set without a release; the
-// footer omits it while empty.
-const EmailFooterAddressOption = "EmailFooterAddress"
+// company line is a company fact (UI-STANDARD.md "Company facts"), the same
+// in all five products, so it is a constant rather than a setting.
+const UnifyAICompanyLine = "UnifyAI · Lebuh Bandar Utama PJU 6, 47800 Petaling Jaya, Selangor, Malaysia"
 
 func UnifyAPIEmailBrand() common.EmailBrand {
 	base := strings.TrimRight(system_setting.ServerAddress, "/")
@@ -42,15 +42,12 @@ func UnifyAPIEmailBrand() common.EmailBrand {
 	if u, err := url.Parse(base); err == nil && u.Host != "" {
 		domain = u.Host
 	}
-	common.OptionMapRWMutex.RLock()
-	address := common.OptionMap[EmailFooterAddressOption]
-	common.OptionMapRWMutex.RUnlock()
 	return common.EmailBrand{
 		ProductName:    common.SystemName,
 		ProductURL:     base,
 		ProductDomain:  domain,
 		AssetBase:      base + "/email",
-		CompanyAddress: strings.TrimSpace(address),
+		CompanyAddress: UnifyAICompanyLine,
 	}
 }
 

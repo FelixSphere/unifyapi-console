@@ -28,34 +28,19 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestTheBrandComesFromTheDeploymentNotTheCode(t *testing.T) {
+func TestTheBrandComesFromTheDeploymentAndTheCompanyLineFromTheStandard(t *testing.T) {
 	prevName, prevAddr := common.SystemName, system_setting.ServerAddress
 	common.SystemName = "UnifyAPI"
 	system_setting.ServerAddress = "https://app.unifyapi.ai/"
 	t.Cleanup(func() { common.SystemName = prevName; system_setting.ServerAddress = prevAddr })
-	common.OptionMapRWMutex.Lock()
-	if common.OptionMap == nil {
-		common.OptionMap = map[string]string{}
-	}
-	prevAddress, had := common.OptionMap[EmailFooterAddressOption]
-	common.OptionMap[EmailFooterAddressOption] = "  Level 3, Menara X, Kuala Lumpur  "
-	common.OptionMapRWMutex.Unlock()
-	t.Cleanup(func() {
-		common.OptionMapRWMutex.Lock()
-		if had {
-			common.OptionMap[EmailFooterAddressOption] = prevAddress
-		} else {
-			delete(common.OptionMap, EmailFooterAddressOption)
-		}
-		common.OptionMapRWMutex.Unlock()
-	})
 
 	brand := UnifyAPIEmailBrand()
 	assert.Equal(t, "UnifyAPI", brand.ProductName, "the product name is SystemName, which is also the sender display name")
 	assert.Equal(t, "https://app.unifyapi.ai", brand.ProductURL)
 	assert.Equal(t, "app.unifyapi.ai", brand.ProductDomain)
 	assert.Equal(t, "https://app.unifyapi.ai/email", brand.AssetBase, "images are served by this console, on our own domain")
-	assert.Equal(t, "Level 3, Menara X, Kuala Lumpur", brand.CompanyAddress)
+	assert.Equal(t, "UnifyAI · Lebuh Bandar Utama PJU 6, 47800 Petaling Jaya, Selangor, Malaysia", brand.CompanyAddress,
+		"the company line is the same in every UnifyAI product")
 }
 
 func TestEachNoticeKindGetsItsOwnEyebrow(t *testing.T) {
