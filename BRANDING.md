@@ -354,3 +354,15 @@ console's own billing-entity and token paths. `model/main.go` registers its thre
 additive tables; `router/api-router.go` registers the routes and the expired-hold
 sweeper. The routes answer 404 until `COMPUTE_BRIDGE_SECRET` is set. See
 `docs/compute-bridge.md`.
+
+### Durable settlement (unreleased)
+
+`model/settlement_outbox.go` makes the post-response wallet/token settlement
+and the consume log survive a database that refuses connections: a bounded
+retry on connection-class errors only (refused before the statement ran), then
+a Redis-or-memory outbox replayed by a worker, exactly once via the additive
+`settlement_ledgers` table. `model/db_pool_ceiling.go` caps an unset
+`SQL_MAX_OPEN_CONNS` below Postgres `max_connections`. Upstream touch points,
+all marked `UNIFYAPI-FORK`: `main.go` (start worker, shutdown flush),
+`model/main.go` (migration, pool ceiling), `model/user.go` and `model/log.go`
+(retried calls), `service/billing_session.go` (park on refusal).
