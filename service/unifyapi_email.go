@@ -44,6 +44,7 @@ func UnifyAPIEmailBrand() common.EmailBrand {
 	}
 	return common.EmailBrand{
 		ProductName:    common.SystemName,
+		ProductShort:   productShortName(common.SystemName),
 		ProductURL:     base,
 		ProductDomain:  domain,
 		AssetBase:      base + "/email",
@@ -68,4 +69,15 @@ func notificationEyebrow(notifyType string) string {
 	default:
 		return "Notice"
 	}
+}
+
+// productShortName is the header descriptor UI-STANDARD.md puts after the
+// lockup and the divider: the product name without the company prefix, so
+// "UnifyAI API" reads as "API". A name without the prefix is used whole.
+func productShortName(name string) string {
+	short := strings.TrimSpace(strings.TrimPrefix(name, "UnifyAI "))
+	if short == "" {
+		return name
+	}
+	return short
 }

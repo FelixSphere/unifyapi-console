@@ -6,7 +6,7 @@ Release scope: the opt-in v1 account/grant bridge using either an exact Program 
 
 Status: exact Program name selection is implemented; per-team customer mapping remains future work.
 
-UnifyAPI must already contain the named partnership program. For local testing,
+UnifyAI API must already contain the named partnership program. For local testing,
 the program name is `Builder Local Test`. Builder's server will supply that
 configured program name together with verified user information and authoritative
 team information (stable IDs, display names, owner ID and membership role).
@@ -53,13 +53,13 @@ Program in the signed request, and therefore this credential can select any
 valid Program in the database. It is not a credential scoped to one Program.
 
 For name mode, set only `BUILDER_INTEGRATION_SECRET` (minimum 32 characters) on
-UnifyAPI. Send, for example:
+UnifyAI API. Send, for example:
 
 ```json
 {"subject":"<builder-user-id>","program_name":"Builder_hub_2026_Sep_Batch","range":"30d"}
 ```
 
-`BUILDER_INTEGRATION_PROGRAM_NAME` is no longer read or required on UnifyAPI;
+`BUILDER_INTEGRATION_PROGRAM_NAME` is no longer read or required on UnifyAI API;
 any old value has no effect. Program selection is business data resolved against
 the database, not a deployment-level name match. Builder may retain its own
 `BUILDER_UNIFY_PROGRAM_NAME` setting to construct the signed request.
@@ -105,7 +105,7 @@ matching verified email; their group and balance remain unchanged. A management
 token is never persisted in the bridge. Staff and disabled accounts cannot link.
 
 `BuilderIdentity` is an additive GORM table linking one Builder subject to one
-UnifyAPI user and dedicated inference key. No existing signup flow changes.
+UnifyAI API user and dedicated inference key. No existing signup flow changes.
 Keys are generated with the existing cryptographic key generator. Workspace
 responses are explicit projections, excluding raw logs and secrets. Revoked
 keys cannot be revealed or used through Builder. No user-facing unlink flow is
@@ -114,7 +114,7 @@ implemented yet; operators can revoke the dedicated key or disable the account.
 ## Scope and release
 
 HTTP-only integration; source and storage remain separate products. No dependency
-was added. Complete live integration validation before enabling this bridge. Deploy UnifyAPI first through its own release owner, then configure
+was added. Complete live integration validation before enabling this bridge. Deploy UnifyAI API first through its own release owner, then configure
 the Builder API backend. Do not convert demonstration balances into real credit.
 
 ## Local validation
@@ -165,8 +165,8 @@ MySQL/PostgreSQL runtime validation and live Stripe/provider checks were not run
 
 ## Request-selected Program correction (2026-09-15)
 
-UnifyAPI now resolves the signed `program_name` from the database without an
-UnifyAPI Program environment variable. The existing HMAC secret remains the
+UnifyAI API now resolves the signed `program_name` from the database without an
+UnifyAI API Program environment variable. The existing HMAC secret remains the
 server trust boundary. No tables, grants, existing account groups or deployment
 configuration are changed. Reverting to the previous application restores its
 selector-environment requirement, so name-mode calls can return 401 again on a

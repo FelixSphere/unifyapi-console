@@ -46,7 +46,8 @@ import (
 // EmailBrand is the per-deployment half of an email: who sends it and where
 // its images live. See service.UnifyAPIEmailBrand for how it is filled.
 type EmailBrand struct {
-	ProductName    string // "UnifyAPI": the product, unchanged by the brand roll-out
+	ProductName    string // "UnifyAI API": the full product name (titles, footer, sender)
+	ProductShort   string // "API": the header descriptor after the lockup and divider
 	ProductURL     string // https://app.unifyapi.ai
 	ProductDomain  string // app.unifyapi.ai
 	AssetBase      string // https://app.unifyapi.ai/email -- our own domain, PNG only
@@ -262,7 +263,7 @@ var unifyaiEmailTemplate = template.Must(template.New("unifyai-email").Parse(`<!
       <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
         <td style="vertical-align:middle;"><img src="{{.Brand.AssetBase}}/unifyai-lockup-black@2x.png" width="132" height="40" alt="UnifyAI" style="display:block; border:0; width:132px; height:40px;"></td>
         <td style="vertical-align:middle; padding:0 14px;"><div style="width:1px; height:22px; background:#CFCFC9;"></div></td>
-        <td style="vertical-align:middle; font-family:'Space Grotesk',Helvetica,Arial,sans-serif; font-weight:700; font-size:16px; color:#0E0E0E; white-space:nowrap;">{{.Brand.ProductName}}</td>
+        <td style="vertical-align:middle; font-family:'Space Grotesk',Helvetica,Arial,sans-serif; font-weight:700; font-size:16px; color:#0E0E0E; white-space:nowrap;">{{.Brand.ProductShort}}</td>
       </tr></table>
     </td></tr>
 
