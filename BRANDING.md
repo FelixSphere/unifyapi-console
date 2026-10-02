@@ -85,8 +85,8 @@ finds the whole delta without consulting git history.
 | File | Change | Why there |
 |---|---|---|
 | `web/src/main.tsx` | import `./styles/unifyapi.css` instead of `./styles/index.css` | Our stylesheet re-imports `index.css` first, so upstream's stays **byte-untouched** and merges fast-forward forever. Appending an `@import` inside `index.css` would touch their highest-churn stylesheet, in the exact import block they last edited. |
-| `web/src/main.tsx` | call `syncHubSpotChat` once at boot and on each resolved path change | The router is created here, so this is the one place that sees every route, public and logged-in. The logic lives in our own `brand/hubspot-chat.ts`; this file only carries the two call sites. |
-| `web/src/main.tsx` | render `<CookieNotice router={router} />` beside `<RouterProvider>` | Mounted once, next to the router it reads the path from, so it covers every route; it shows only where `shouldShowHubSpotChat()` is true. The logic lives in our own `brand/cookie-notice.tsx` and `brand/cookie-consent.ts`; this file only carries the import and the one element. |
+| `web/src/main.tsx` | import `useAuthStore`; call `watchHubSpotChat(window, router, useAuthStore)` | The router is created here, so this is the one place that sees every route, public and logged-in, next to the auth store that says who is looking. The logic (no inject before the first resolve, sync on each resolved path change, reload on sign-in) lives in our own `brand/hubspot-chat.ts`; this file only carries the import and the one call. |
+| `web/src/main.tsx` | render `<CookieNotice router={router} auth={useAuthStore} />` beside `<RouterProvider>` | Mounted once, next to the router it reads the path from, so it covers every route; it shows only where `shouldShowHubSpotChat()` is true for the auth store's visitor (signed out only). The logic lives in our own `brand/cookie-notice.tsx` and `brand/cookie-consent.ts`; this file only carries the import and the one element. |
 | `web/src/main.tsx` | `<ThemeProvider defaultTheme='light'>` | Required, not cosmetic. CSS cannot reach the JS consumers of `resolvedTheme` — VChart (`lib/use-chart-theme.ts`, the three dashboard chart components) and Sonner. Without it, charts and toasts render dark on a paper-white page. |
 | `…/layout/components/authenticated-layout.tsx` | mount `<UpstreamAttribution />`; `<AppHeader showConfigDrawer={false} />` | The config drawer is simultaneously the dark-mode switch and the theme-preset/font/radius picker. Disabling it pins the brand and guarantees `data-theme-preset` is never written to `<body>` — which matters because the preset bridge selector in `theme-presets.css` has specificity (0,4,0) and would out-rank our `:root`. |
 | `…/layout/components/public-layout.tsx` | mount `<UpstreamAttribution />`; default `showThemeSwitch` to `false` | One line covers all nine early returns across `features/home` and `features/about`, plus `/pricing`, `/rankings`, and the legal pages. `public-header.tsx` defaults the switch on. |
@@ -103,10 +103,18 @@ finds the whole delta without consulting git history.
   the marketing site). Loaded from the bundle, not `index.html`, so it can stay off
   `/oauth/*` (bind popup), `/chat/*` + `/chat2link` (full-viewport third-party chat
   iframes), `/setup` and the sign-in/sign-up/password-reset pages, and never loads
-  when the console is itself framed.
+  when the console is itself framed. **Signed-out visitors only** (operator decision,
+  2026-10-02): signed in is the app's own test, a user in `useAuthStore` (as the
+  `/_authenticated` guard and `features/home` use). Nothing is injected until the root
+  route has awaited the auth bootstrap (the first resolve), so a signed-in user never sees
+  it flash in. Signing in on a page that already has the loader (this tab or another)
+  reloads it, as a move to a hidden route does, because `widget.remove()` leaves
+  HubSpot's analytics and collected-forms scripts live. Signing out injects nothing until
+  the next eligible route resolves.
 - `web/src/brand/cookie-notice.tsx` + `cookie-consent.ts` — the cookie notice, copied from FelixSphere (same
   copy, look and `localConsent` / `rejectTimestamp` storage). Shown only where HubSpot chat
-  loads. Unlike FelixSphere, Reject queues HubSpot's `doNotTrack` (Accept opts back in).
+  loads, so never to a signed-in user and not before auth has answered. Unlike FelixSphere,
+  Reject queues HubSpot's `doNotTrack` (Accept opts back in).
   Links to https://www.unifyapi.ai/privacy. Its four strings are in all seven locales.
 - `web/scripts/check-brand-invariants.mjs` — the licence/brand guard.
 - `.github/workflows/fork-ci.yml` — fork-owned CI.

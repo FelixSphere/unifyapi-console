@@ -29,7 +29,7 @@ import ReactDOM from 'react-dom/client'
 import { toast } from 'sonner'
 
 import { CookieNotice } from '@/brand/cookie-notice'
-import { syncHubSpotChat } from '@/brand/hubspot-chat'
+import { watchHubSpotChat } from '@/brand/hubspot-chat'
 import { api, getStatus } from '@/lib/api'
 import { installBuildMetadata } from '@/lib/build-metadata'
 import { applyFaviconToDom } from '@/lib/dom-utils'
@@ -41,6 +41,7 @@ import {
   isServerFailure,
   subscribeStaleBundle,
 } from '@/lib/stale-bundle'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
@@ -115,11 +116,9 @@ const router = createRouter({
   defaultPreloadStaleTime: 0,
 })
 
-// UNIFYAPI-BRAND: HubSpot live chat on every route. See brand/hubspot-chat.ts.
-syncHubSpotChat(window, window.location.pathname)
-router.subscribe('onResolved', (event) => {
-  if (event.pathChanged) syncHubSpotChat(window, event.toLocation.pathname)
-})
+// UNIFYAPI-BRAND: HubSpot live chat for signed-out visitors. See
+// brand/hubspot-chat.ts.
+watchHubSpotChat(window, router, useAuthStore)
 
 // Stale-bundle handling: prompt once, never reload on the user's behalf (a
 // form half filled in must survive). See lib/stale-bundle.ts.
@@ -223,9 +222,9 @@ if (!rootElement.innerHTML) {
           <FontProvider>
             <DirectionProvider>
               <RouterProvider router={router} />
-              {/* UNIFYAPI-BRAND: cookie notice, on the HubSpot chat routes.
-                  See brand/cookie-notice.tsx. */}
-              <CookieNotice router={router} />
+              {/* UNIFYAPI-BRAND: cookie notice, on the HubSpot chat routes,
+                  signed-out only. See brand/cookie-notice.tsx. */}
+              <CookieNotice router={router} auth={useAuthStore} />
             </DirectionProvider>
           </FontProvider>
         </ThemeProvider>
