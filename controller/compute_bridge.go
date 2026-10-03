@@ -439,9 +439,16 @@ func ComputeSettleHold(c *gin.Context) {
 		writeComputeBridgeError(c, err)
 		return
 	}
-	// The consume log is labelled with the hold's SKU; a settlement claiming a
-	// different one is a caller bug that would otherwise be logged silently.
-	if request.Sku != "" && request.Sku != hold.Sku {
+	// The consume log is labelled with the hold's SKU. A settlement without one
+	// is refused rather than filled in from the hold, so a caller that lost
+	// track of its SKU finds out; one claiming a different SKU is a caller bug
+	// that would otherwise be logged silently. Checked after the lookup so an
+	// unknown hold still answers hold_not_found.
+	if request.Sku == "" {
+		computeBridgeFail(c, http.StatusBadRequest, "invalid_request", nil)
+		return
+	}
+	if request.Sku != hold.Sku {
 		computeBridgeFail(c, http.StatusConflict, "sku_mismatch", nil)
 		return
 	}

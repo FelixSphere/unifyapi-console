@@ -99,6 +99,10 @@ grants are not consulted.
   another hold, or with a different amount, is `409 idempotency_conflict`. A
   refused settle records nothing (no settlement row, no consume row, no
   used-quota change), so it can be retried once corrected.
+- `settle` requires `sku`. Missing or empty is `400 invalid_request`; the
+  hold's SKU is not filled in. A `sku` different from the hold's is
+  `409 sku_mismatch`. Both are checked after the hold lookup, so an unknown
+  hold answers `404 hold_not_found` first.
 - `extend` requires `extend_id` (non-empty, at most 64 characters; compute-api
   sends `ext_` + ULID). It is unique across all holds and written in the same
   transaction as the reservation. A replay with the same amount answers `200`
@@ -111,7 +115,7 @@ clients read `message`.
 
 | Status | `message` |
 |---|---|
-| `400` | `invalid_request` (bad JSON, missing id, amount out of range) |
+| `400` | `invalid_request` (bad JSON, missing id, amount out of range, `settle` without `sku`) |
 | `401` | `invalid_timestamp`, `invalid_signature`, `invalid_key` |
 | `402` | `insufficient_balance` (wallet or a limited token) |
 | `403` | `suspended` or `disabled`, also in `data.status` |
@@ -120,14 +124,6 @@ clients read `message`.
 | `413` | `payload_too_large`: the body is over 32 KiB (32768 bytes). Checked before the timestamp and signature, so it says nothing about either. |
 | `429` | `rate_limited`, with `Retry-After` |
 | `500` | `internal_error`: any unexpected failure, including a database error or a panic in a bridge handler. The detail is in the console log only. |
-
-**Not yet conforming: settle without `sku`.** Contract revision 2026-10-02
-makes `sku` required on `settle` (missing → `400 invalid_request`). The console
-still accepts a settle with no `sku` and labels the consume row with the hold's
-SKU; only a *different* `sku` is refused (`409 sku_mismatch`). Making it
-required changes the outcome of existing tests in
-`controller/compute_bridge_test.go` that settle without one, so it waits for
-the operator's approval to change them.
 
 ## Expiry
 
