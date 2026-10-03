@@ -34,7 +34,7 @@ describe('tab icon comes from the kit only', () => {
     const v = String.raw`\?v=\d{4}-\d{2}-\d{2}[a-z]?`
     const tag = (body: string) =>
       new RegExp(
-        String.raw`<link\s+${body.replace(/ /g, String.raw`\s+`)}\s*/>`
+        String.raw`<link\s+${body.replaceAll(' ', String.raw`\s+`)}\s*/>`
       )
     expect(indexHtml).toMatch(
       tag(String.raw`rel="icon" type="image/svg\+xml" href="/icon\.svg${v}"`)
