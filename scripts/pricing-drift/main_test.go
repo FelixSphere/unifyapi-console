@@ -151,11 +151,18 @@ func TestUnverifiableCountIsStable(t *testing.T) {
 		require.NotEmpty(t, entry.QuoteSource)
 		require.NotEmpty(t, entry.QuoteDate)
 	}
-	for _, name := range []string{"seedance-2.5", "doubao-seedance-2-5-260628", "dreamina-seedance-2-5-260628"} {
+	// seedance-2.5 is priced off the SUPPLIER's list ($75/1M / 0.85), not off
+	// the byteplus quote the other two still carry -- it was the one of the
+	// three actually being served, and at $10.70 it sold for a seventh of cost.
+	for name, wantInputUSD := range map[string]float64{
+		"seedance-2.5":                 88.24,
+		"doubao-seedance-2-5-260628":   10.7,
+		"dreamina-seedance-2-5-260628": 10.7,
+	} {
 		entry, ok := ratio_setting.CatalogEntryFor(name)
 		require.True(t, ok)
 		require.Zero(t, entry.PerCallUSD)
-		require.Equal(t, 10.7, entry.InputUSD)
+		require.Equal(t, wantInputUSD, entry.InputUSD)
 		require.NotEmpty(t, entry.QuoteSource)
 		require.NotEmpty(t, entry.QuoteDate)
 	}
