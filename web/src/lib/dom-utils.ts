@@ -16,19 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export function applyFaviconToDom(url: string) {
-  if (typeof document === 'undefined' || !url) return
-  try {
-    const next = new URL(url, window.location.href).href
-    const existing =
-      document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]')
-    if (existing.length === 1 && existing[0].href === next) return
-    const link = document.createElement('link')
-    link.rel = 'icon'
-    link.href = url
-    existing.forEach((l) => l.remove())
-    document.head.appendChild(link)
-  } catch {
-    // Ignore malformed URLs
-  }
-}
+// UNIFYAPI-BRAND: upstream's applyFaviconToDom lived here. It replaced the
+// static <link rel=icon> set with the `Logo` option on every load. The tab
+// icon is the UnifyAI mark from the kit (index.html) and is never derived from
+// an option, so the function and its callers are removed. See BRANDING.md.

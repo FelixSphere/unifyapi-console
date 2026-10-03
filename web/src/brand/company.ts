@@ -9,7 +9,7 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 
 /**
  * UNIFYAPI-BRAND: company facts from UI-STANDARD.md, identical in every
- * UnifyAI product. The product is UnifyAPI; the company is UnifyAI.
+ * UnifyAI product. The product is Unify API; the company is UnifyAI.
  */
 export const UNIFYAI_COMPANY_NAME = 'UnifyAI'
 export const UNIFYAI_COMPANY_ADDRESS =

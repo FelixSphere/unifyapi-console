@@ -46,7 +46,7 @@ import (
 // EmailBrand is the per-deployment half of an email: who sends it and where
 // its images live. See service.UnifyAPIEmailBrand for how it is filled.
 type EmailBrand struct {
-	ProductName    string // "UnifyAI API": the full product name (titles, footer, sender)
+	ProductName    string // "Unify API": the full product name (titles, footer, sender)
 	ProductShort   string // "API": the header descriptor after the lockup and divider
 	ProductURL     string // https://app.unifyapi.ai
 	ProductDomain  string // app.unifyapi.ai

@@ -99,7 +99,7 @@ reactTestGlobals.IS_REACT_ACT_ENVIRONMENT = true
 const RAILS = [
   {
     id: 'platform_credit',
-    label: 'Platform credit (added to your UnifyAI API balance)',
+    label: 'Platform credit (added to your Unify API balance)',
     needs_account: false,
     available: true,
   },
