@@ -34,7 +34,7 @@ import (
 // web/public/email, so they live on our own domain as the kit requires. The
 // company line is a company fact (UI-STANDARD.md "Company facts"), the same
 // in all five products, so it is a constant rather than a setting.
-const UnifyAICompanyLine = "UnifyAI · Lebuh Bandar Utama PJU 6, 47800 Petaling Jaya, Selangor, Malaysia"
+const UnifyAICompanyLine = "UnifyAI · Operated by FelixSphere LLC · 6 Karen Ct, CA 94010, United States"
 
 func UnifyAPIEmailBrand() common.EmailBrand {
 	base := strings.TrimRight(system_setting.ServerAddress, "/")

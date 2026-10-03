@@ -12,14 +12,14 @@ import assert from 'node:assert/strict'
 import { UNIFYAI_COMPANY_ADDRESS, companyLine } from '../company'
 
 describe('company line', () => {
-  test('is © <computed year> UnifyAI · the standard address', () => {
+  test('is © <computed year> UnifyAI · the legal-entity line', () => {
     assert.equal(
       companyLine(new Date('2031-06-01T00:00:00Z')),
-      '© 2031 UnifyAI · Lebuh Bandar Utama PJU 6, 47800 Petaling Jaya, Selangor, Malaysia'
+      '© 2031 UnifyAI · Operated by FelixSphere LLC · 6 Karen Ct, CA 94010, United States'
     )
     assert.equal(
       UNIFYAI_COMPANY_ADDRESS,
-      'Lebuh Bandar Utama PJU 6, 47800 Petaling Jaya, Selangor, Malaysia'
+      'Operated by FelixSphere LLC · 6 Karen Ct, CA 94010, United States'
     )
   })
 

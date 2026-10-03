@@ -39,7 +39,7 @@ func TestTheBrandComesFromTheDeploymentAndTheCompanyLineFromTheStandard(t *testi
 	assert.Equal(t, "https://app.unifyapi.ai", brand.ProductURL)
 	assert.Equal(t, "app.unifyapi.ai", brand.ProductDomain)
 	assert.Equal(t, "https://app.unifyapi.ai/email", brand.AssetBase, "images are served by this console, on our own domain")
-	assert.Equal(t, "UnifyAI · Lebuh Bandar Utama PJU 6, 47800 Petaling Jaya, Selangor, Malaysia", brand.CompanyAddress,
+	assert.Equal(t, "UnifyAI · Operated by FelixSphere LLC · 6 Karen Ct, CA 94010, United States", brand.CompanyAddress,
 		"the company line is the same in every UnifyAI product")
 }
 

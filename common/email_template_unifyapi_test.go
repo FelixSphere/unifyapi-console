@@ -32,7 +32,7 @@ import (
 
 var testBrand = EmailBrand{
 	ProductName: "Unify API", ProductShort: "API", ProductURL: "https://app.unifyapi.ai", ProductDomain: "app.unifyapi.ai",
-	AssetBase: "https://app.unifyapi.ai/email", CompanyAddress: "UnifyAI · Lebuh Bandar Utama PJU 6, 47800 Petaling Jaya, Selangor, Malaysia",
+	AssetBase: "https://app.unifyapi.ai/email", CompanyAddress: "UnifyAI · Operated by FelixSphere LLC · 6 Karen Ct, CA 94010, United States",
 }
 
 func TestAnEmailHasExactlyOneFocalElementAndAmberAppearsOnce(t *testing.T) {
@@ -68,7 +68,7 @@ func TestACodeEmailShowsTheCodeInInkAndInTheTextPart(t *testing.T) {
 	assert.Contains(t, textBody, "Expires in 10 minutes.")
 	assert.Contains(t, textBody, "Unify API · app.unifyapi.ai\n")
 	assert.NotContains(t, textBody, "FelixSphere", "UI-STANDARD.md: the company is UnifyAI; no FelixSphere tagline anywhere")
-	assert.Contains(t, textBody, "UnifyAI · Lebuh Bandar Utama PJU 6, 47800 Petaling Jaya, Selangor, Malaysia")
+	assert.Contains(t, textBody, "UnifyAI · Operated by FelixSphere LLC · 6 Karen Ct, CA 94010, United States")
 	assert.NotContains(t, textBody, "<", "the text part carries no markup")
 }
 
