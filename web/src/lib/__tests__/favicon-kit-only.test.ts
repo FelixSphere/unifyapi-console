@@ -28,15 +28,29 @@ function sourceFiles(dir: string): string[] {
 
 describe('tab icon comes from the kit only', () => {
   it('index.html links the kit icons with a cache-busting version', () => {
+    // UI-STANDARD.md "Tab icon and cache busting": ?v=YYYY-MM-DD[letter],
+    // on the SVG, the 32px PNG, the ICO (sizes="any"), apple-touch and the
+    // manifest. Whitespace inside a tag is free because the formatter wraps.
+    const v = String.raw`\?v=\d{4}-\d{2}-\d{2}[a-z]?`
+    const tag = (body: string) =>
+      new RegExp(
+        String.raw`<link\s+${body.replace(/ /g, String.raw`\s+`)}\s*/>`
+      )
     expect(indexHtml).toMatch(
-      /<link rel="icon" type="image\/svg\+xml" href="\/icon\.svg\?v=\d{4}-\d{2}-\d{2}" \/>/
+      tag(String.raw`rel="icon" type="image/svg\+xml" href="/icon\.svg${v}"`)
     )
     expect(indexHtml).toMatch(
-      /<link rel="icon" href="\/favicon\.ico\?v=\d{4}-\d{2}-\d{2}" sizes="32x32" \/>/
+      tag(
+        String.raw`rel="icon" type="image/png" sizes="32x32" href="/favicon-32\.png${v}"`
+      )
     )
     expect(indexHtml).toMatch(
-      /\/apple-touch-icon-180\.png\?v=\d{4}-\d{2}-\d{2}/
+      tag(String.raw`rel="icon" sizes="any" href="/favicon\.ico${v}"`)
     )
+    expect(indexHtml).toMatch(
+      new RegExp(String.raw`/apple-touch-icon-180\.png${v}`)
+    )
+    expect(indexHtml).toMatch(new RegExp(String.raw`/site\.webmanifest${v}`))
   })
 
   it('index.html does not point an icon at the Logo option file', () => {
