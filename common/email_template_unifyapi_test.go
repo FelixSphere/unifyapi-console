@@ -67,7 +67,12 @@ func TestACodeEmailShowsTheCodeInInkAndInTheTextPart(t *testing.T) {
 	assert.True(t, strings.HasPrefix(textBody, "Unify API\n"), "the text part opens with the full product name")
 	assert.Contains(t, textBody, "Expires in 10 minutes.")
 	assert.Contains(t, textBody, "Unify API · app.unifyapi.ai\n")
-	assert.NotContains(t, textBody, "FelixSphere", "UI-STANDARD.md: the company is UnifyAI; no FelixSphere tagline anywhere")
+	// UI-STANDARD.md "Company and legal facts" (2026-10-03): the brand is
+	// UnifyAI; "FelixSphere LLC" is allowed ONLY in the legal-entity line, so
+	// no tagline and exactly one mention, inside that line.
+	assert.NotContains(t, textBody, "A FelixSphere venture")
+	assert.NotContains(t, textBody, "A FelixSphere product")
+	assert.Equal(t, 1, strings.Count(textBody, "FelixSphere"), "FelixSphere appears once, in the legal-entity line")
 	assert.Contains(t, textBody, "UnifyAI · Operated by FelixSphere LLC · 6 Karen Ct, CA 94010, United States")
 	assert.NotContains(t, textBody, "<", "the text part carries no markup")
 }
