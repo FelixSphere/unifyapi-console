@@ -9,7 +9,8 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 
 /**
  * The cookie notice, the same one FelixSphere shows (same copy, same look,
- * same storage), on exactly the routes where HubSpot chat loads.
+ * same storage), on exactly the routes where HubSpot chat loads, and only to
+ * signed-out visitors: a signed-in user never sees it.
  *
  * One deliberate difference from FelixSphere: Reject is effective. It queues
  * HubSpot's `doNotTrack`, so HubSpot sets `__hs_do_not_track` and stops its
@@ -24,7 +25,11 @@ import {
   rejectCookies,
   shouldShowCookieNotice,
 } from './cookie-consent'
-import { shouldShowHubSpotChat } from './hubspot-chat'
+import {
+  chatVisitor,
+  shouldShowHubSpotChat,
+  type ChatAuthStore,
+} from './hubspot-chat'
 
 /** The slice of the TanStack router this component reads. */
 export interface CookieNoticeRouteSource {
@@ -32,17 +37,30 @@ export interface CookieNoticeRouteSource {
   state: { location: { pathname: string } }
 }
 
-export function CookieNotice(props: { router: CookieNoticeRouteSource }) {
+const noAuthChanges = () => () => {}
+
+/**
+ * Without `auth` the notice treats the visitor as signed out, as it did before
+ * sign-in mattered; `main.tsx` always passes the auth store.
+ */
+export function CookieNotice(props: {
+  router: CookieNoticeRouteSource
+  auth?: ChatAuthStore
+}) {
   const { t } = useTranslation()
   const pathname = useSyncExternalStore(
     (onChange) => props.router.subscribe('onResolved', onChange),
     () => props.router.state.location.pathname
   )
+  const visitor = useSyncExternalStore(
+    props.auth?.subscribe ?? noAuthChanges,
+    () => (props.auth ? chatVisitor(props.auth.getState().auth) : 'signed-out')
+  )
   const [visible, setVisible] = useState(() =>
     shouldShowCookieNotice(window, Date.now())
   )
 
-  if (!visible || !shouldShowHubSpotChat(window, pathname)) return null
+  if (!visible || !shouldShowHubSpotChat(window, pathname, visitor)) return null
 
   return (
     <div
