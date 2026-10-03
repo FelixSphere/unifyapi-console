@@ -129,36 +129,48 @@ func (a *Adaptor) GetChannelName() string { return ChannelName }
 // System One request needs a state and typed questions, which a chat request
 // does not carry and cannot be guessed from. Refusing is the honest answer --
 // inventing a mapping would bill a customer for a translation nobody asked for.
-var errNotChat = errors.New("typesafe serves System One requests at /v1/systemone; it has no chat, embedding, rerank, audio or image API")
+//
+// It is the caller's request that is wrong, not the channel, so the refusal is
+// a 400: a 500 reads as our outage on dashboards and in the probe journeys. A
+// fresh error per call, because the handlers apply options such as skip-retry
+// to it in place.
+func errNotChat() error {
+	return types.NewErrorWithStatusCode(
+		errors.New("typesafe serves System One requests at /v1/systemone; it has no chat, embedding, rerank, audio or image API"),
+		types.ErrorCodeInvalidRequest,
+		http.StatusBadRequest,
+		types.ErrOptionWithSkipRetry(),
+	)
+}
 
 func (a *Adaptor) ConvertOpenAIRequest(*gin.Context, *relaycommon.RelayInfo, *dto.GeneralOpenAIRequest) (any, error) {
-	return nil, errNotChat
+	return nil, errNotChat()
 }
 
 func (a *Adaptor) ConvertClaudeRequest(*gin.Context, *relaycommon.RelayInfo, *dto.ClaudeRequest) (any, error) {
-	return nil, errNotChat
+	return nil, errNotChat()
 }
 
 func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dto.GeminiChatRequest) (any, error) {
-	return nil, errNotChat
+	return nil, errNotChat()
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(*gin.Context, *relaycommon.RelayInfo, dto.OpenAIResponsesRequest) (any, error) {
-	return nil, errNotChat
+	return nil, errNotChat()
 }
 
 func (a *Adaptor) ConvertRerankRequest(*gin.Context, int, dto.RerankRequest) (any, error) {
-	return nil, errNotChat
+	return nil, errNotChat()
 }
 
 func (a *Adaptor) ConvertEmbeddingRequest(*gin.Context, *relaycommon.RelayInfo, dto.EmbeddingRequest) (any, error) {
-	return nil, errNotChat
+	return nil, errNotChat()
 }
 
 func (a *Adaptor) ConvertAudioRequest(*gin.Context, *relaycommon.RelayInfo, dto.AudioRequest) (io.Reader, error) {
-	return nil, errNotChat
+	return nil, errNotChat()
 }
 
 func (a *Adaptor) ConvertImageRequest(*gin.Context, *relaycommon.RelayInfo, dto.ImageRequest) (any, error) {
-	return nil, errNotChat
+	return nil, errNotChat()
 }
