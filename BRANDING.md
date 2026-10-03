@@ -1,7 +1,7 @@
-# UnifyAI API fork — branding, licence obligations, and upstream merge runbook
+# Unify API fork — branding, licence obligations, and upstream merge runbook
 
 This fork of [QuantumNous/new-api](https://github.com/QuantumNous/new-api) is the
-logged-in console for **UnifyAI API** (`app.unifyapi.ai`) and its OpenAI-compatible
+logged-in console for **Unify API** (`app.unifyapi.ai`) and its OpenAI-compatible
 relay (`api.unifyapi.ai`).
 
 - **Upstream base:** `v1.0.0-rc.23` (commit `0ab02020`)
@@ -181,16 +181,16 @@ then refreshed from `GET /api/status`. There is **no environment variable** for
 any of them — DB only, via the admin UI or `PUT /api/option/`.
 
 **Set these on first boot or the console renders as "New API".** Verified: with
-`SystemName` unset, the title flips from our static `<title>UnifyAI API</title>` back
+`SystemName` unset, the title flips from our static `<title>Unify API</title>` back
 to "New API" as soon as `/api/status` resolves.
 
 | Option | Value |
 |---|---|
-| `SystemName` | `UnifyAI API` |
+| `SystemName` | `Unify API` |
 | `Logo` | `/logo.png` |
-| `Footer` | UnifyAI API HTML, and a visible **Source code** link to this fork (discharges §13). Safe: the `footerHtml` branch still renders `<ProjectAttribution inline />`. |
-| `About` | Must contain: "UnifyAI API Console is a modified version of **New API**" + link to `https://github.com/QuantumNous/new-api`; the §7(b) notice; the AGPL licence link; the §7(c) statement at the top of this file; and the chain from upstream's own about page — "Based on One API © 2023 JustSong". |
-| `HomePageContent` | UnifyAI API console landing (safe: `PublicLayout` now carries attribution unconditionally). |
+| `Footer` | Unify API HTML, and a visible **Source code** link to this fork (discharges §13). Safe: the `footerHtml` branch still renders `<ProjectAttribution inline />`. |
+| `About` | Must contain: "Unify API Console is a modified version of **New API**" + link to `https://github.com/QuantumNous/new-api`; the §7(b) notice; the AGPL licence link; the §7(c) statement at the top of this file; and the chain from upstream's own about page — "Based on One API © 2023 JustSong". |
+| `HomePageContent` | Unify API console landing (safe: `PublicLayout` now carries attribution unconditionally). |
 
 The split we hold to: **anything visible before `/api/status` resolves, or needed
 at build time (fonts, colours, bundled assets, the static `<title>`) goes in

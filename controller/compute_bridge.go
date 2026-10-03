@@ -9,10 +9,12 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 package controller
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -160,11 +162,42 @@ func ComputeBridgeAuth() gin.HandlerFunc {
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
+		// The server-wide recovery answers a panic with its own body, which
+		// carries the panic text and no machine code. compute-api reads only
+		// message, so a bridge panic is internal_error and the detail is logged.
+		defer func() {
+			recovered := recover()
+			if recovered == nil {
+				return
+			}
+			if recovered == http.ErrAbortHandler {
+				panic(recovered)
+			}
+			common.SysError(fmt.Sprintf("compute bridge: panic: %v", recovered))
+			if c.Writer.Written() {
+				c.Abort()
+				return
+			}
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"success": false, "message": "internal_error", "code": "internal_error"})
+		}()
 		if wait := computeBridgeRateLimit().take(time.Now()); wait > 0 {
 			c.Header("Retry-After", strconv.FormatInt(int64(math.Ceil(wait.Seconds())), 10))
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"success": false, "message": "rate_limited", "code": "rate_limited"})
 			return
 		}
+		// Size is settled before the timestamp or signature is looked at: an
+		// oversized body used to surface as 401 invalid_signature, which sends
+		// the caller hunting for a secret mismatch that is not there.
+		raw, err := io.ReadAll(io.LimitReader(c.Request.Body, computeBridgeMaxBody+1))
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid_request", "code": "invalid_request"})
+			return
+		}
+		if len(raw) > computeBridgeMaxBody {
+			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{"success": false, "message": "payload_too_large", "code": "payload_too_large"})
+			return
+		}
+		c.Request.Body = io.NopCloser(bytes.NewReader(raw))
 		body, err := verifyComputeBridgeRequest(c, secret, time.Now().Unix())
 		if err != nil {
 			reason := "invalid_signature"
@@ -406,9 +439,16 @@ func ComputeSettleHold(c *gin.Context) {
 		writeComputeBridgeError(c, err)
 		return
 	}
-	// The consume log is labelled with the hold's SKU; a settlement claiming a
-	// different one is a caller bug that would otherwise be logged silently.
-	if request.Sku != "" && request.Sku != hold.Sku {
+	// The consume log is labelled with the hold's SKU. A settlement without one
+	// is refused rather than filled in from the hold, so a caller that lost
+	// track of its SKU finds out; one claiming a different SKU is a caller bug
+	// that would otherwise be logged silently. Checked after the lookup so an
+	// unknown hold still answers hold_not_found.
+	if request.Sku == "" {
+		computeBridgeFail(c, http.StatusBadRequest, "invalid_request", nil)
+		return
+	}
+	if request.Sku != hold.Sku {
 		computeBridgeFail(c, http.StatusConflict, "sku_mismatch", nil)
 		return
 	}

@@ -32,7 +32,6 @@ import { CookieNotice } from '@/brand/cookie-notice'
 import { watchHubSpotChat } from '@/brand/hubspot-chat'
 import { api, getStatus } from '@/lib/api'
 import { installBuildMetadata } from '@/lib/build-metadata'
-import { applyFaviconToDom } from '@/lib/dom-utils'
 import '@/lib/dayjs'
 import { initializeFrontendCache } from '@/lib/frontend-cache'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -186,7 +185,6 @@ if (!rootElement) {
       if (saved) {
         const s = JSON.parse(saved)
         if (s?.system_name) apply(s.system_name)
-        if (s?.logo) applyFaviconToDom(s.logo)
       }
     } catch {
       /* empty */
@@ -202,7 +200,6 @@ if (!rootElement) {
             /* empty */
           }
         }
-        if (s?.logo) applyFaviconToDom(s.logo as string)
       })
       .catch(() => {
         /* empty */

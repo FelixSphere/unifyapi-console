@@ -73,7 +73,7 @@ func notificationEyebrow(notifyType string) string {
 
 // productShortName is the header descriptor UI-STANDARD.md puts after the
 // lockup and the divider: the product name without the company prefix, so
-// "UnifyAI API" reads as "API". A name without the prefix is used whole.
+// "Unify API" reads as "API". A name without the prefix is used whole.
 func productShortName(name string) string {
 	short := strings.TrimSpace(strings.TrimPrefix(name, "UnifyAI "))
 	if short == "" {

@@ -165,7 +165,7 @@ func PayoutRails() []PayoutRail {
 	return []PayoutRail{
 		{
 			Id:        PayoutRailPlatformCredit,
-			Label:     "Platform credit (added to your UnifyAI API balance)",
+			Label:     "Platform credit (added to your Unify API balance)",
 			Hint:      "Paid straight into the balance of this account. Nothing to file, and it lands the moment we settle.",
 			Available: true,
 		},

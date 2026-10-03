@@ -77,6 +77,14 @@ export default defineConfig(({ envMode }) => {
     },
     html: {
       template: './index.html',
+      // UNIFYAPI-BRAND: with no favicon set, Rsbuild finds public/favicon.ico
+      // and appends an unversioned <link rel="icon" href="/favicon.ico">
+      // AFTER the template's links -- and Chrome takes the last icon link, so
+      // a browser that cached the old "U" favicon.ico kept showing it for up
+      // to a week. Pointing Rsbuild at the kit SVG instead makes the appended
+      // tag harmless: /icon.svg has only ever been the UnifyAI mark, so no
+      // stale copy exists. The versioned links live in index.html.
+      favicon: './public/icon.svg',
       // `false` omits the tag (dev builds have no id).
       meta: { 'unifyapi-build': buildId || false },
     },

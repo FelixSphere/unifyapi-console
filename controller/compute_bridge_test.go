@@ -257,7 +257,7 @@ func TestComputeBridgeHoldSettleExtendReleaseOverHTTP(t *testing.T) {
 	assert.Equal(t, 430_000, stored.UsedQuota, "tenant usage counts settled spend, not the hold")
 
 	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_1/settle",
-		`{"event_id":"ue_2","cumulative_quota":1270001,"gpu_seconds":4000,"final":false}`)
+		`{"event_id":"ue_2","cumulative_quota":1270001,"gpu_seconds":4000,"sku":"a10g-24gb-x1","final":false}`)
 	assert.Equal(t, http.StatusConflict, code)
 	assert.Equal(t, "hold_exceeded", envelope["message"])
 
@@ -370,7 +370,7 @@ func TestComputeBridgeIdsReusedOnAnotherHoldAreIdempotencyConflicts(t *testing.T
 	assert.Equal(t, http.StatusConflict, code)
 	assert.Equal(t, "idempotency_conflict", envelope["message"])
 
-	settle := `{"event_id":"ue_shared","cumulative_quota":1000,"gpu_seconds":3,"final":false}`
+	settle := `{"event_id":"ue_shared","cumulative_quota":1000,"gpu_seconds":3,"sku":"a10g-24gb-x1","final":false}`
 	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_a/settle", settle)
 	require.Equal(t, http.StatusOK, code, envelope)
 	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_b/settle", settle)
@@ -389,13 +389,13 @@ func TestComputeBridgeRefusedSettlementsRecordNothing(t *testing.T) {
 		`,"quota":1000000,"job_id":"job_r","sku":"a10g-24gb-x1","expires_at":` + strconv.FormatInt(time.Now().Unix()+3600, 10) + `}`
 	code, envelope := callComputeBridge(t, engine, "/api/compute/v1/holds", body)
 	require.Equal(t, http.StatusOK, code, envelope)
-	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_r/settle", `{"event_id":"ue_r1","cumulative_quota":500,"gpu_seconds":1,"final":false}`)
+	code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_r/settle", `{"event_id":"ue_r1","cumulative_quota":500,"gpu_seconds":1,"sku":"a10g-24gb-x1","final":false}`)
 	require.Equal(t, http.StatusOK, code, envelope)
 
 	for _, tt := range []struct{ body, message string }{
 		{`{"event_id":"ue_r2","cumulative_quota":900,"gpu_seconds":2,"sku":"h100-80gb-x8","final":false}`, "sku_mismatch"},
-		{`{"event_id":"ue_r3","cumulative_quota":400,"gpu_seconds":2,"final":false}`, "cumulative_quota_regressed"},
-		{`{"event_id":"ue_r1","cumulative_quota":600,"gpu_seconds":1,"final":false}`, "idempotency_conflict"},
+		{`{"event_id":"ue_r3","cumulative_quota":400,"gpu_seconds":2,"sku":"a10g-24gb-x1","final":false}`, "cumulative_quota_regressed"},
+		{`{"event_id":"ue_r1","cumulative_quota":600,"gpu_seconds":1,"sku":"a10g-24gb-x1","final":false}`, "idempotency_conflict"},
 	} {
 		code, envelope = callComputeBridge(t, engine, "/api/compute/v1/holds/hold_r/settle", tt.body)
 		assert.Equal(t, http.StatusConflict, code, tt.message)
