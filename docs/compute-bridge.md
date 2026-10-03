@@ -36,15 +36,26 @@ the per-IP global API limiter does not apply: every bridge call comes from
 compute-api's one address, and that limiter (360 per 180 s) would cap all
 compute billing at about 2 requests a second. The bridge has its own token
 bucket instead, checked **before** the HMAC so unsigned traffic is bounded too.
+The order of checks on every bridge request is: secret set (else bodiless
+`404`), rate limit (`429`), body size (`413`), timestamp and signature (`401`),
+then the handler.
 
 | Env | Default | Format |
 |---|---|---|
 | `COMPUTE_BRIDGE_RATE_LIMIT` | `50:100` | `RATE` or `RATE:BURST`, requests per second. `RATE` alone gives a burst of `2 × RATE`. A malformed value is logged and the default is kept. |
 
-The bucket is per console process, so with several nodes the total is the
-per-node limit times the node count. Over the limit: `429`, `Retry-After` in
-whole seconds, `message: "rate_limited"`. The value is read once, on the first
-bridge request.
+The bucket is **per console process**, held in memory, not shared through
+Redis. With N console nodes behind the load balancer the effective limit is
+N × the configured rate (and N × the burst), and how much of it one caller gets
+depends on how the balancer spreads its connections. Over the limit: `429`,
+`Retry-After` in whole seconds, `message: "rate_limited"`. The value is read
+once, on the first bridge request.
+
+What compute-api may assume (contract revision 2026-10-02): at least the
+configured per-node rate, and nothing about the total. It must not size its own
+sending rate on N × the rate, and it must honour every `429` and its
+`Retry-After` regardless of how many nodes are running, because a node can
+refuse while others still have room.
 
 ## How each verb moves quota
 
@@ -106,8 +117,17 @@ clients read `message`.
 | `403` | `suspended` or `disabled`, also in `data.status` |
 | `404` | `hold_not_found` (enveloped); empty body = bridge disabled |
 | `409` | `hold_expired`, `hold_closed`, `hold_exceeded`, `idempotency_conflict`, `sku_mismatch`, `cumulative_quota_regressed` |
+| `413` | `payload_too_large`: the body is over 32 KiB (32768 bytes). Checked before the timestamp and signature, so it says nothing about either. |
 | `429` | `rate_limited`, with `Retry-After` |
-| `500` | `internal_error`; the detail is in the console log |
+| `500` | `internal_error`: any unexpected failure, including a database error or a panic in a bridge handler. The detail is in the console log only. |
+
+**Not yet conforming: settle without `sku`.** Contract revision 2026-10-02
+makes `sku` required on `settle` (missing → `400 invalid_request`). The console
+still accepts a settle with no `sku` and labels the consume row with the hold's
+SKU; only a *different* `sku` is refused (`409 sku_mismatch`). Making it
+required changes the outcome of existing tests in
+`controller/compute_bridge_test.go` that settle without one, so it waits for
+the operator's approval to change them.
 
 ## Expiry
 
