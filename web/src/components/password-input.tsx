@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Eye, EyeOff } from 'lucide-react'
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
 
@@ -29,14 +30,18 @@ type PasswordInputProps = Omit<
   'type'
 > & {
   ref?: React.Ref<HTMLInputElement>
+  /** UNIFYAPI-BRAND: classes for the <input> itself (the outer className is the wrapper). */
+  inputClassName?: string
 }
 
 export function PasswordInput({
   className,
+  inputClassName,
   disabled,
   ref,
   ...props
 }: PasswordInputProps) {
+  const { t } = useTranslation()
   const [showPassword, setShowPassword] = React.useState(false)
 
   return (
@@ -45,6 +50,7 @@ export function PasswordInput({
         type={showPassword ? 'text' : 'password'}
         ref={ref}
         disabled={disabled}
+        className={cn('pe-10', inputClassName)}
         {...props}
       />
       <Button
@@ -54,7 +60,10 @@ export function PasswordInput({
         disabled={disabled}
         className='text-muted-foreground absolute end-1 top-1/2 h-6 w-6 -translate-y-1/2 rounded-md'
         onClick={() => setShowPassword((prev) => !prev)}
-        aria-label='Toggle password visibility'
+        // UNIFYAPI-BRAND: UI-STANDARD.md show/hide toggle -- a stateful label
+        // and aria-pressed, so a screen reader hears what the press will do.
+        aria-label={showPassword ? t('Hide password') : t('Show password')}
+        aria-pressed={showPassword}
       >
         {showPassword ? (
           <Eye size={18} aria-hidden='true' />

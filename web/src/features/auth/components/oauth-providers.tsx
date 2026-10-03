@@ -158,9 +158,11 @@ export function OAuthProviders({
           <div className='absolute inset-0 flex items-center'>
             <span className='w-full border-t' />
           </div>
-          <div className='relative flex justify-center text-xs uppercase'>
-            <span className='bg-background text-muted-foreground px-2'>
-              {t('Or continue with')}
+          {/* UNIFYAPI-BRAND: UI-STANDARD.md -- an "or" divider, then ghost
+              buttons with the provider's mono icon; no brand colours. */}
+          <div className='relative flex justify-center text-xs'>
+            <span className='bg-card text-muted-foreground px-2'>
+              {t('or')}
             </span>
           </div>
         </div>
@@ -174,7 +176,7 @@ export function OAuthProviders({
                 type='button'
                 disabled={disabled || isLoading || extraDisabled}
                 onClick={onClick}
-                className='h-11 w-full justify-center gap-2 rounded-lg'
+                className='h-11 w-full justify-center gap-2 rounded-md'
               >
                 {icon}
                 {label}
