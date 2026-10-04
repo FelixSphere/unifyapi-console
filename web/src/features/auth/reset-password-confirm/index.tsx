@@ -31,6 +31,7 @@ import { api } from '@/lib/api'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
 
 import { AuthLayout } from '../auth-layout'
+import { AuthHeading } from '../components/auth-heading'
 
 export type ResetPasswordSearchParams = {
   email?: string
@@ -107,17 +108,15 @@ export function ResetPasswordConfirm({
 
   return (
     <AuthLayout>
-      <div className='w-full space-y-8'>
-        <div className='space-y-2'>
-          <h2 className='text-center text-2xl font-semibold tracking-tight sm:text-left'>
-            {t('Reset password')}
-          </h2>
-          <p className='text-muted-foreground text-left text-sm sm:text-base'>
+      <div className='w-full space-y-6'>
+        {/* UNIFYAPI-BRAND: UI-STANDARD.md reset screen, same card as log in. */}
+        <AuthHeading title={t('Reset your password')}>
+          <p className='text-muted-foreground text-sm'>
             {newPassword
               ? t('auth.resetPasswordConfirm.success')
               : t('auth.resetPasswordConfirm.description')}
           </p>
-        </div>
+        </AuthHeading>
 
         <div className='space-y-4'>
           {!isValidResetLink && (
@@ -133,6 +132,7 @@ export function ResetPasswordConfirm({
             <Input
               id='email'
               type='email'
+              className='h-11'
               value={email || ''}
               disabled
               placeholder={t('Waiting for email...')}
@@ -169,7 +169,7 @@ export function ResetPasswordConfirm({
           )}
 
           <Button
-            className='w-full'
+            className='h-11 w-full'
             onClick={
               newPassword
                 ? () => navigate({ to: '/sign-in', replace: true })

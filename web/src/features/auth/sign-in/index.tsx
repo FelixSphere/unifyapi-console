@@ -16,50 +16,44 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Link, useSearch } from '@tanstack/react-router'
+import { useSearch } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
 import { useStatus } from '@/hooks/use-status'
+import { DEFAULT_SYSTEM_NAME } from '@/lib/constants'
 
 import { AuthLayout } from '../auth-layout'
-import { TermsFooter } from '../components/terms-footer'
+import { AuthHeading } from '../components/auth-heading'
+import { SwitchLink } from '../components/switch-link'
 import { UserAuthForm } from './components/user-auth-form'
 
+// UNIFYAPI-BRAND: UI-STANDARD.md "Log in / Sign up pages". The H1 reads
+// "Log in to Unify API", the switch link
+// closes the card. The legal line belongs to sign-up only.
 export function SignIn() {
   const { t } = useTranslation()
   const { redirect } = useSearch({ from: '/(auth)/sign-in' })
   const { status } = useStatus()
+  const canSignUp =
+    !status?.self_use_mode_enabled && status?.register_enabled !== false
 
   return (
     <AuthLayout>
-      <div className='w-full space-y-8'>
-        <div className='space-y-2'>
-          <h2 className='text-center text-2xl font-semibold tracking-tight sm:text-left'>
-            {t('Sign in')}
-          </h2>
-          {!status?.self_use_mode_enabled &&
-            status?.register_enabled !== false && (
-              <p className='text-muted-foreground text-left text-sm sm:text-base'>
-                {t("Don't have an account?")}{' '}
-                <Link
-                  to='/sign-up'
-                  className='hover:text-primary font-medium underline underline-offset-4'
-                >
-                  {t('Sign up')}
-                </Link>
-                .
-              </p>
-            )}
-        </div>
+      <AuthHeading
+        title={t('Log in to {{product}}', { product: DEFAULT_SYSTEM_NAME })}
+      />
 
+      <div className='mt-6'>
         <UserAuthForm redirectTo={redirect} />
-
-        <TermsFooter
-          variant='sign-in'
-          status={status}
-          className='text-center'
-        />
       </div>
+
+      {canSignUp && (
+        <SwitchLink
+          prompt={t('No account?')}
+          to='/sign-up'
+          label={t('Sign up')}
+        />
+      )}
     </AuthLayout>
   )
 }
