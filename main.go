@@ -118,6 +118,8 @@ func main() {
 	// UNIFYAPI-FORK: replay settlements the database refused after the
 	// response was served; see model/settlement_outbox.go.
 	model.StartSettlementOutboxWorker()
+	// UNIFYAPI-FORK: weekly customer email; off unless UNIFYAPI_RETENTION_EMAIL=on.
+	service.StartRetentionEmailWorker()
 
 	if os.Getenv("CHANNEL_UPDATE_FREQUENCY") != "" {
 		frequency, err := strconv.Atoi(os.Getenv("CHANNEL_UPDATE_FREQUENCY"))

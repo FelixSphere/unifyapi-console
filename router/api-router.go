@@ -37,6 +37,9 @@ func SetApiRouter(router *gin.Engine) {
 		// read a response it could already fetch with curl.
 		apiRouter.GET("/pricing", middleware.CORS(), middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
 		apiRouter.POST("/builder/v1/:action", controller.BuilderIntegration)
+		// UNIFYAPI-FORK: weekly-update unsubscribe, signed link, no sign-in.
+		apiRouter.GET("/email/unsubscribe", controller.RetentionUnsubscribePage)
+		apiRouter.POST("/email/unsubscribe", controller.RetentionUnsubscribe)
 		// UNIFYAPI-BRAND: compute billing bridge. Server-signed only, no session
 		// auth; 404 until COMPUTE_BRIDGE_SECRET is set. Registered on the engine,
 		// not apiRouter, so the per-IP global API limiter does not apply -- every
