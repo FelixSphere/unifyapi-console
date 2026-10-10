@@ -117,6 +117,12 @@ func sendEmail(subject string, receiver string, content string) error {
 // either a single HTML part (upstream's path) or a multipart/alternative body
 // built by BuildMultipartEmail (UNIFYAPI-BRAND: every branded email).
 func sendEmailWithContentType(subject string, receiver string, contentType string, body []byte) error {
+	return sendEmailWithHeaders(subject, receiver, contentType, body, "")
+}
+
+// sendEmailWithHeaders is sendEmailWithContentType plus extra header lines,
+// each ending in CRLF (UNIFYAPI-FORK: List-Unsubscribe on the weekly update).
+func sendEmailWithHeaders(subject string, receiver string, contentType string, body []byte, extraHeaders string) error {
 	if SMTPFrom == "" { // for compatibility
 		SMTPFrom = SMTPAccount
 	}
@@ -133,9 +139,10 @@ func sendEmailWithContentType(subject string, receiver string, contentType strin
 		"Subject: %s\r\n"+
 		"Date: %s\r\n"+
 		"Message-ID: %s\r\n"+ // 添加 Message-ID 头
+		"%s"+
 		"MIME-Version: 1.0\r\n"+
 		"Content-Type: %s\r\n\r\n%s\r\n",
-		receiver, SystemName, SMTPFrom, encodedSubject, time.Now().Format(time.RFC1123Z), id, contentType, body))
+		receiver, SystemName, SMTPFrom, encodedSubject, time.Now().Format(time.RFC1123Z), id, extraHeaders, contentType, body))
 	auth := getSMTPAuth()
 	addr := fmt.Sprintf("%s:%d", SMTPServer, SMTPPort)
 	to := strings.Split(receiver, ";")
