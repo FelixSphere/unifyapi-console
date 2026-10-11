@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
@@ -102,6 +104,12 @@ func WeChatAuth(c *gin.Context) {
 			user.Role = common.RoleCommonUser
 			user.Status = common.UserStatusEnabled
 
+			registrationSlot, ok := middleware.ReserveRegistrationSlot(c)
+			if !ok {
+				common.ApiErrorI18n(c, i18n.MsgUserRegisterIPLimit)
+				return
+			}
+			defer registrationSlot.Release()
 			var insertErr error
 			if partnershipCode := c.Query("partnership"); partnershipCode != "" {
 				_, insertErr = user.InsertForPartnership(partnershipCode)
@@ -115,6 +123,7 @@ func WeChatAuth(c *gin.Context) {
 				})
 				return
 			}
+			registrationSlot.Commit()
 			if c.Query("partnership") != "" {
 				c.Set("partnership_status", "provisioned_new")
 			}

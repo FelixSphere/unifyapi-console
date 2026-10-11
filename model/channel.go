@@ -55,6 +55,13 @@ type Channel struct {
 
 	OtherSettings string `json:"settings" gorm:"column:settings"` // 其他设置，存储azure版本等不需要检索的信息，详见dto.ChannelOtherSettings
 
+	// UNIFYAPI-BRAND: per-channel upstream quota. nil/0 means unlimited.
+	// Pointers because Update() uses GORM Updates() with a struct, which skips
+	// zero-value fields: a nil is preserved when the client omits it, and an
+	// explicit 0 can still clear the limit. See model/channel_rate_limit.go.
+	RateLimitRPM *int `json:"rate_limit_rpm"`
+	RateLimitTPM *int `json:"rate_limit_tpm"`
+
 	// cache info
 	Keys []string `json:"-" gorm:"-"`
 }

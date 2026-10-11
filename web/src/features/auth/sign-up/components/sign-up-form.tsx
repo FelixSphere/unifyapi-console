@@ -364,6 +364,24 @@ export function SignUpForm({
           )}
         />
 
+        {/* UNIFYAPI: the challenge must come BEFORE the controls it gates.
+            Send-code and Submit are both disabled until turnstileReady, and
+            with the widget rendered below them a user filled in their email,
+            found "Send code" dead, and had nothing on screen telling them why
+            -- the one control that unlocks it was further down the page.
+            Reported from production 2026-09-30. Reading order now matches
+            dependency order. */}
+        {/* Turnstile */}
+        {isTurnstileEnabled && (
+          <div className='mt-2'>
+            <Turnstile
+              key={turnstileWidgetKey}
+              siteKey={turnstileSiteKey}
+              onVerify={setTurnstileToken}
+            />
+          </div>
+        )}
+
         {/* Email Verification Section */}
         {emailVerificationRequired && (
           <>
@@ -413,17 +431,6 @@ export function SignUpForm({
               </Button>
             </div>
           </>
-        )}
-
-        {/* Turnstile */}
-        {isTurnstileEnabled && (
-          <div className='mt-2'>
-            <Turnstile
-              key={turnstileWidgetKey}
-              siteKey={turnstileSiteKey}
-              onVerify={setTurnstileToken}
-            />
-          </div>
         )}
 
         <LegalConsent

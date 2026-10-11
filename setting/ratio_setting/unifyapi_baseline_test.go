@@ -64,7 +64,6 @@ var publishedModels = []string{
 	"gemini-3.7-flash",
 	"gemini-3.8-flash",
 	"gemini-flash-latest",
-	"gemini-flash-lite-latest",
 	"gemini-pro-latest",
 	"glm-4.7",
 	"glm-5",

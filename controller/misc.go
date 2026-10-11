@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -241,41 +242,19 @@ func SendEmailVerification(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	parts := strings.Split(email, "@")
-	if len(parts) != 2 {
+	if strings.Count(email, "@") != 1 {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": "Invalid email address", // UNIFYAPI-BRAND: English copy
 		})
 		return
 	}
-	localPart := parts[0]
-	domainPart := parts[1]
-	if common.EmailDomainRestrictionEnabled {
-		allowed := false
-		for _, domain := range common.EmailDomainWhitelist {
-			if domainPart == domain {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			c.JSON(http.StatusOK, gin.H{
-				"success": false,
-				"message": "The administrator has enabled the email domain name whitelist, and your email address is not allowed due to special symbols or it's not in the whitelist.",
-			})
-			return
-		}
-	}
-	if common.EmailAliasRestrictionEnabled {
-		containsSpecialSymbols := strings.Contains(localPart, "+") || strings.Contains(localPart, ".")
-		if containsSpecialSymbols {
-			c.JSON(http.StatusOK, gin.H{
-				"success": false,
-				"message": "The administrator has enabled email alias restrictions; your address was rejected because it contains special symbols.", // UNIFYAPI-BRAND: English copy
-			})
-			return
-		}
+	if rejection := accountEmailRejection(c, email); rejection != "" {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": rejection,
+		})
+		return
 	}
 
 	if model.IsEmailAlreadyTaken(email) {
@@ -284,9 +263,8 @@ func SendEmailVerification(c *gin.Context) {
 	}
 	code := common.GenerateVerificationCode(6)
 	common.RegisterVerificationCodeWithKey(email, code, common.EmailVerificationPurpose)
-	// UNIFYAPI-BRAND: English copy, see email_templates_unifyapi.go
-	subject, content := unifyapiVerificationEmail(code)
-	err := common.SendEmailForPurpose("verification", subject, email, content)
+	// UNIFYAPI-BRAND: shared design, see email_templates_unifyapi.go
+	err := service.SendBrandedEmail("verification", email, unifyapiVerificationEmail(code))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -307,10 +285,12 @@ func SendPasswordResetEmail(c *gin.Context) {
 	if _, err := model.GetUniqueUserByEmail(email); err == nil {
 		code := common.GenerateVerificationCode(0)
 		common.RegisterVerificationCodeWithKey(email, code, common.PasswordResetPurpose)
+		// passwordResetLink escapes the query values. main still interpolated
+		// them raw, so a plus-addressed mailbox received a link whose email
+		// arrived as a space and whose token then matched nothing.
 		link := passwordResetLink(email, code)
-		// UNIFYAPI-BRAND: English copy, see email_templates_unifyapi.go
-		subject, content := unifyapiPasswordResetEmail(link)
-		err := common.SendEmailForPurpose("password-reset", subject, email, content)
+		// UNIFYAPI-BRAND: shared design, see email_templates_unifyapi.go
+		err := service.SendBrandedEmail("password-reset", email, unifyapiPasswordResetEmail(link))
 		if err != nil {
 			logger.LogError(c.Request.Context(), fmt.Sprintf("failed to send password reset email to %s: %s", email, err.Error()))
 		}

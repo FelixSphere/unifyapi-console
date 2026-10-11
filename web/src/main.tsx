@@ -28,9 +28,10 @@ import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { toast } from 'sonner'
 
+import { CookieNotice } from '@/brand/cookie-notice'
+import { watchHubSpotChat } from '@/brand/hubspot-chat'
 import { api, getStatus } from '@/lib/api'
 import { installBuildMetadata } from '@/lib/build-metadata'
-import { applyFaviconToDom } from '@/lib/dom-utils'
 import '@/lib/dayjs'
 import { initializeFrontendCache } from '@/lib/frontend-cache'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -39,6 +40,7 @@ import {
   isServerFailure,
   subscribeStaleBundle,
 } from '@/lib/stale-bundle'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
@@ -113,6 +115,10 @@ const router = createRouter({
   defaultPreloadStaleTime: 0,
 })
 
+// UNIFYAPI-BRAND: HubSpot live chat for signed-out visitors. See
+// brand/hubspot-chat.ts.
+watchHubSpotChat(window, router, useAuthStore)
+
 // Stale-bundle handling: prompt once, never reload on the user's behalf (a
 // form half filled in must survive). See lib/stale-bundle.ts.
 subscribeStaleBundle(() => {
@@ -179,7 +185,6 @@ if (!rootElement) {
       if (saved) {
         const s = JSON.parse(saved)
         if (s?.system_name) apply(s.system_name)
-        if (s?.logo) applyFaviconToDom(s.logo)
       }
     } catch {
       /* empty */
@@ -195,7 +200,6 @@ if (!rootElement) {
             /* empty */
           }
         }
-        if (s?.logo) applyFaviconToDom(s.logo as string)
       })
       .catch(() => {
         /* empty */
@@ -215,6 +219,9 @@ if (!rootElement.innerHTML) {
           <FontProvider>
             <DirectionProvider>
               <RouterProvider router={router} />
+              {/* UNIFYAPI-BRAND: cookie notice, on the HubSpot chat routes,
+                  signed-out only. See brand/cookie-notice.tsx. */}
+              <CookieNotice router={router} auth={useAuthStore} />
             </DirectionProvider>
           </FontProvider>
         </ThemeProvider>

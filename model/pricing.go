@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"sync"
@@ -19,18 +20,36 @@ import (
 // sets none, so the users.group column default applies.
 const DefaultUserGroup = "default"
 
+// hasTieredBillingExpr mirrors the tiered branch of
+// relay/helper.HasModelBillingConfig. A tiered model carries no model ratio,
+// so "no ratio" alone is not "no price" -- reading only the ratio would drop
+// every tiered model off the pricing page.
+func hasTieredBillingExpr(model string) bool {
+	if billing_setting.GetBillingMode(model) != billing_setting.BillingModeTieredExpr {
+		return false
+	}
+	expr, ok := billing_setting.GetBillingExpr(model)
+	return ok && strings.TrimSpace(expr) != ""
+}
+
 type Pricing struct {
-	PriceUnit              string                  `json:"price_unit,omitempty"`
-	ModelName              string                  `json:"model_name"`
-	Description            string                  `json:"description,omitempty"`
-	Icon                   string                  `json:"icon,omitempty"`
-	Tags                   string                  `json:"tags,omitempty"`
-	VendorID               int                     `json:"vendor_id,omitempty"`
-	QuotaType              int                     `json:"quota_type"`
-	ModelRatio             float64                 `json:"model_ratio"`
-	ModelPrice             float64                 `json:"model_price"`
-	OwnerBy                string                  `json:"owner_by"`
-	CompletionRatio        float64                 `json:"completion_ratio"`
+	PriceUnit       string  `json:"price_unit,omitempty"`
+	ModelName       string  `json:"model_name"`
+	Description     string  `json:"description,omitempty"`
+	Icon            string  `json:"icon,omitempty"`
+	Tags            string  `json:"tags,omitempty"`
+	VendorID        int     `json:"vendor_id,omitempty"`
+	QuotaType       int     `json:"quota_type"`
+	ModelRatio      float64 `json:"model_ratio"`
+	ModelPrice      float64 `json:"model_price"`
+	OwnerBy         string  `json:"owner_by"`
+	CompletionRatio float64 `json:"completion_ratio"`
+	// UNIFYAPI-FORK: this model is on an enabled channel but the catalog does
+	// not price it. GetModelRatio answers those with the 37.5 sentinel -- $75
+	// per 1M -- and upstream published it as though it were real. The relay
+	// refuses the model, so there is no price to quote; say so instead of
+	// inventing one, and let the UI render a dash.
+	Unpriced               bool                    `json:"unpriced,omitempty"`
 	CacheRatio             *float64                `json:"cache_ratio,omitempty"`
 	CreateCacheRatio       *float64                `json:"create_cache_ratio,omitempty"`
 	ImageRatio             *float64                `json:"image_ratio,omitempty"`
@@ -376,6 +395,7 @@ func updatePricing() {
 	}
 
 	pricingMap = make([]Pricing, 0)
+	var unpriced []string
 	for model, groups := range modelGroupsMap {
 		pricing := Pricing{
 			ModelName:              model,
@@ -402,10 +422,32 @@ func updatePricing() {
 			}
 			pricing.QuotaType = 1
 		} else {
-			modelRatio, _, _ := ratio_setting.GetModelRatio(model)
-			pricing.ModelRatio = modelRatio
-			pricing.CompletionRatio = ratio_setting.GetCompletionRatio(model)
-			pricing.QuotaType = 0
+			// UNIFYAPI-FORK: the third return is "this model has a price".
+			// GetModelRatio answers an unknown model with the 37.5 sentinel --
+			// $75 per 1M, ~250x a typical model -- and upstream discards the
+			// flag here, so a model that is on a channel but not in the catalog
+			// was published as though 37.5 were its real price. That is what
+			// /api/pricing did for glm-5.3, and what a delisted model does the
+			// moment a channel still lists it.
+			//
+			// The relay refuses these models (modelPriceNotConfiguredError in
+			// relay/helper/price.go), so the row advertises something nobody
+			// can buy. Leave it out rather than quote a number we invented,
+			// and name it in the log so the gap is visible to an operator
+			// instead of only to a customer.
+			modelRatio, hasRatio, _ := ratio_setting.GetModelRatio(model)
+			if !hasRatio && !hasTieredBillingExpr(model) {
+				// The row still goes out: it carries the model's groups and
+				// endpoint types, which callers rely on independently of price.
+				// Only the invented number is withheld.
+				pricing.Unpriced = true
+				pricing.QuotaType = 0
+				unpriced = append(unpriced, model)
+			} else {
+				pricing.ModelRatio = modelRatio
+				pricing.CompletionRatio = ratio_setting.GetCompletionRatio(model)
+				pricing.QuotaType = 0
+			}
 		}
 		if cacheRatio, ok := ratio_setting.GetCacheRatio(model); ok {
 			pricing.CacheRatio = &cacheRatio
@@ -431,6 +473,13 @@ func updatePricing() {
 			}
 		}
 		pricingMap = append(pricingMap, pricing)
+	}
+
+	if len(unpriced) > 0 {
+		sort.Strings(unpriced)
+		common.SysLog(fmt.Sprintf(
+			"pricing: %d model(s) are on an enabled channel but have no baseline price, so they are published without one and the relay will refuse them: %s",
+			len(unpriced), strings.Join(unpriced, ", ")))
 	}
 
 	// 防止大更新后数据不通用

@@ -71,6 +71,29 @@ func geminiRelayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewA
 	return err
 }
 
+// requestValidationError maps a failure from GetAndValidateRequest onto the
+// error the caller will see.
+//
+// The status matters as much as the message. A request the caller got wrong is
+// not a server fault, and reporting it as one costs twice: OpenAI and Anthropic
+// SDKs treat 5xx as retryable, so a typo is retried with backoff even though it
+// can never succeed, and the same requests land in our own 5xx alarms, where a
+// customer's broken integration pages the on-call instead of showing up as 4xx.
+func requestValidationError(err error) *types.NewAPIError {
+	var wrapped *types.NewAPIError
+	switch {
+	case common.IsRequestBodyTooLargeError(err) || errors.Is(err, common.ErrRequestBodyTooLarge):
+		// Map "request body too large" to 413 so clients can handle it correctly
+		return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusRequestEntityTooLarge, types.ErrOptionWithSkipRetry())
+	case errors.As(err, &wrapped):
+		// Already carries a status chosen deeper in validation (a malformed body
+		// is a 400 already). NewError preserves it rather than flattening it.
+		return types.NewError(err, types.ErrorCodeInvalidRequest)
+	default:
+		return types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+	}
+}
+
 func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	requestId := c.GetString(common.RequestIdKey)
@@ -114,12 +137,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	request, err := helper.GetAndValidateRequest(c, relayFormat)
 	if err != nil {
-		// Map "request body too large" to 413 so clients can handle it correctly
-		if common.IsRequestBodyTooLargeError(err) || errors.Is(err, common.ErrRequestBodyTooLarge) {
-			newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusRequestEntityTooLarge, types.ErrOptionWithSkipRetry())
-		} else {
-			newAPIError = types.NewError(err, types.ErrorCodeInvalidRequest)
-		}
+		newAPIError = requestValidationError(err)
 		return
 	}
 
