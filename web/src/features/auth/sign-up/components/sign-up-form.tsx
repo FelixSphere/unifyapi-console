@@ -40,6 +40,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { register, wechatLoginByCode } from '@/features/auth/api'
+import { FormError } from '@/features/auth/components/form-error'
 import { LegalConsent } from '@/features/auth/components/legal-consent'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
 import { registerFormSchema } from '@/features/auth/constants'
@@ -75,6 +76,7 @@ export function SignUpForm({
   const [isWeChatDialogOpen, setIsWeChatDialogOpen] = useState(false)
   const [isWeChatSubmitting, setIsWeChatSubmitting] = useState(false)
   const [turnstileWidgetKey, setTurnstileWidgetKey] = useState(0)
+  const [formError, setFormError] = useState<string | null>(null)
   const partnershipCode = useMemo(
     () =>
       new URLSearchParams(window.location.search).get('partnership')?.trim() ??
@@ -192,6 +194,7 @@ export function SignUpForm({
 
     if (!validateTurnstile()) return
 
+    setFormError(null)
     setIsLoading(true)
     try {
       const res = await register({
@@ -208,10 +211,18 @@ export function SignUpForm({
         toast.success(t('Account created! Please sign in'))
         redirectToLogin()
       } else {
-        toast.error(res?.message || t('Failed to create account'))
+        // UNIFYAPI-BRAND: form-level errors stay in the card (UI-STANDARD.md).
+        const message = res?.message || t('Failed to create account')
+        setFormError(message)
+        toast.error(message)
       }
-    } catch {
-      // Errors are handled by global interceptor
+    } catch (error: unknown) {
+      // The interceptor toasts; keep the sentence on screen as well.
+      const serverMessage = (
+        (error as { response?: { data?: { message?: string } } })?.response
+          ?.data as { message?: string } | undefined
+      )?.message
+      setFormError(serverMessage || t('Failed to create account'))
     } finally {
       setIsLoading(false)
     }
@@ -315,6 +326,10 @@ export function SignUpForm({
         className={cn('grid gap-4', className)}
         {...props}
       >
+        {/* UNIFYAPI-BRAND: UI-STANDARD.md "Log in / Sign up pages" -- error
+            box first, labels above 44px inputs, a hint under Password, the
+            challenge directly above the one primary button. */}
+        <FormError message={formError} />
         {partnershipBanner}
         {/* Username Field */}
         <FormField
@@ -324,7 +339,12 @@ export function SignUpForm({
             <FormItem>
               <FormLabel>{t('Username')}</FormLabel>
               <FormControl>
-                <Input placeholder={t('Enter your username')} {...field} />
+                <Input
+                  className='h-11'
+                  autoComplete='username'
+                  placeholder={t('Enter your username')}
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -340,10 +360,15 @@ export function SignUpForm({
               <FormLabel>{t('Password')}</FormLabel>
               <FormControl>
                 <PasswordInput
+                  inputClassName='h-11'
+                  autoComplete='new-password'
                   placeholder={t('Enter password (8-20 characters)')}
                   {...field}
                 />
               </FormControl>
+              <p className='text-muted-foreground text-[13px]'>
+                {t('At least 8 characters.')}
+              </p>
               <FormMessage />
             </FormItem>
           )}
@@ -357,7 +382,12 @@ export function SignUpForm({
             <FormItem>
               <FormLabel>{t('Confirm password')}</FormLabel>
               <FormControl>
-                <PasswordInput placeholder={t('Confirm password')} {...field} />
+                <PasswordInput
+                  inputClassName='h-11'
+                  autoComplete='new-password'
+                  placeholder={t('Confirm password')}
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -396,6 +426,8 @@ export function SignUpForm({
                   </FormLabel>
                   <FormControl>
                     <Input
+                      className='h-11'
+                      autoComplete='email'
                       placeholder={t('name@example.com')}
                       type='email'
                       {...field}
@@ -410,6 +442,9 @@ export function SignUpForm({
             <div className='flex items-end gap-2'>
               <div className='flex-1'>
                 <Input
+                  className='h-11 font-mono tracking-widest'
+                  inputMode='numeric'
+                  autoComplete='one-time-code'
                   placeholder={t('Verification code')}
                   value={verificationCode}
                   onChange={(e) => setVerificationCode(e.target.value)}
@@ -418,6 +453,7 @@ export function SignUpForm({
               <Button
                 variant='outline'
                 type='button'
+                className='h-11'
                 disabled={
                   isLoading ||
                   isSendingCode ||
@@ -443,7 +479,7 @@ export function SignUpForm({
         {/* Submit Button */}
         <Button
           type='submit'
-          className='mt-2 w-full justify-center gap-2'
+          className='mt-2 h-11 w-full justify-center gap-2'
           disabled={
             isLoading ||
             partnershipInvalid ||
@@ -452,7 +488,7 @@ export function SignUpForm({
           }
         >
           {isLoading ? <Loader2 className='h-4 w-4 animate-spin' /> : null}
-          {t('Create account')}
+          {t('Sign up')}
         </Button>
 
         {oauthRegisterEnabled && (
