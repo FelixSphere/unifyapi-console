@@ -102,9 +102,15 @@ export function ForgotPasswordForm({
           name='email'
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Email</FormLabel>
+              <FormLabel>{t('Email')}</FormLabel>
               <FormControl>
-                <Input placeholder='name@example.com' {...field} />
+                <Input
+                  className='h-11'
+                  type='email'
+                  autoComplete='email'
+                  placeholder='name@example.com'
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -125,7 +131,7 @@ export function ForgotPasswordForm({
 
         <Button
           type='submit'
-          className='mt-2'
+          className='mt-2 h-11 w-full'
           disabled={isLoading || isActive || !turnstileReady}
         >
           {isActive
