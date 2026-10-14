@@ -200,6 +200,13 @@ func StripeWebhook(c *gin.Context) {
 
 	callerIp := c.ClientIP()
 	logger.LogInfo(ctx, fmt.Sprintf("Stripe webhook 验签成功 event_type=%s client_ip=%s path=%q", string(event.Type), callerIp, c.Request.RequestURI))
+	// UNIFYAPI-FORK: the Stripe account is shared with other FelixSphere
+	// products; their events are acknowledged, not processed or logged as errors.
+	if reason := foreignStripeEventReason(ctx, event); reason != "" {
+		logger.LogInfo(ctx, fmt.Sprintf("Stripe webhook 忽略其他产品事件 event_id=%s event_type=%s reason=%s", event.ID, string(event.Type), reason))
+		c.Status(http.StatusOK)
+		return
+	}
 	switch event.Type {
 	case stripe.EventTypeCheckoutSessionCompleted:
 		sessionCompleted(ctx, event, callerIp)
@@ -392,6 +399,9 @@ func genStripeLink(referenceId string, customerId string, email string, amount i
 		LineItems:           []*stripe.CheckoutSessionLineItemParams{lineItem},
 		Mode:                stripe.String(string(stripe.CheckoutSessionModePayment)),
 		AllowPromotionCodes: stripe.Bool(setting.StripePromotionCodesEnabled),
+		// UNIFYAPI-FORK: tag the session and its PaymentIntent for the shared Stripe account.
+		Metadata:          stripeProductMetadata(),
+		PaymentIntentData: &stripe.CheckoutSessionPaymentIntentDataParams{Metadata: stripeProductMetadata()},
 	}
 
 	if "" == customerId {
