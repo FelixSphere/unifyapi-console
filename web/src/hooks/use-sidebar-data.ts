@@ -25,6 +25,7 @@ import {
   FlaskConical,
   Key,
   LayoutDashboard,
+  LifeBuoy,
   ListTodo,
   MessageSquare,
   Radio,
@@ -115,6 +116,13 @@ export function useSidebarData(): SidebarData {
             title: t('Credit Supply'),
             url: '/credit-supply',
             icon: Coins,
+          },
+          {
+            // UNIFYAPI-FORK: customer questions (customers) / support inbox
+            // (staff). Same entry, role-routed.
+            title: t('Support'),
+            url: '/support',
+            icon: LifeBuoy,
           },
           {
             title: t('Profile'),
