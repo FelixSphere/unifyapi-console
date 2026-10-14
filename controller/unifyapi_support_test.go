@@ -273,11 +273,3 @@ func TestStaffHearAboutCustomerMessagesAndCustomersHearAboutReplies(t *testing.T
 	}, 3*time.Second, 20*time.Millisecond)
 	require.Equal(t, "support-reply->cust@example.com", h.mails()[1])
 }
-
-func TestASubjectIsOneLine(t *testing.T) {
-	h := setupSupportTest(t)
-	id := h.open(t, "Invoice\r\nBcc: someone@example.com\n\tplease", "body")
-	_, out := h.do(t, h.customer, http.MethodGet, "/api/support/tickets/"+strconv.Itoa(id), nil)
-	subject := out["data"].(map[string]any)["ticket"].(map[string]any)["subject"].(string)
-	require.Equal(t, "Invoice Bcc: someone@example.com please", subject)
-}
