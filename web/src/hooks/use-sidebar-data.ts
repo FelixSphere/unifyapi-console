@@ -39,6 +39,8 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import type { SidebarData } from '@/components/layout/types'
+// UNIFYAPI-FORK: registers the Support translations before the nav renders.
+import '@/features/support/i18n'
 import { ROLE } from '@/lib/roles'
 
 /**

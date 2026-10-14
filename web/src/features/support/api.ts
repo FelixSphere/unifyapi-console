@@ -6,6 +6,7 @@ GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
 Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
+import i18n from '@/i18n/config'
 import { api } from '@/lib/api'
 
 // Customer questions and messages. Server side: controller/unifyapi_support.go.
@@ -47,12 +48,14 @@ type Envelope<T> = { success: boolean; message: string; data: T }
 async function call<T>(p: Promise<{ data: Envelope<T> }>): Promise<T> {
   try {
     const res = await p
-    if (!res.data.success) throw new Error(res.data.message)
+    if (!res.data.success) throw new Error(i18n.t(res.data.message))
     return res.data.data
   } catch (err) {
     const msg = (err as { response?: { data?: { message?: string } } })
       ?.response?.data?.message
-    throw new Error(msg || (err as Error).message)
+    // Server messages are fixed English sentences; the Support tables in
+    // ./i18n translate the ones a customer can actually hit.
+    throw new Error(i18n.t(msg || (err as Error).message))
   }
 }
 
