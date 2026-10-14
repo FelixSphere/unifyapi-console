@@ -406,6 +406,25 @@ func SetApiRouter(router *gin.Engine) {
 			tenantRoute.POST("/:id/extend", middleware.RootAuth(), controller.ExtendTenantTerm)
 		}
 
+		// UNIFYAPI-FORK: customer questions and messages. Customers see only
+		// their own conversations; the inbox is AdminAuth. See
+		// controller/unifyapi_support.go.
+		supportRoute := apiRouter.Group("/support")
+		{
+			mine := supportRoute.Group("/tickets", middleware.UserAuth())
+			mine.GET("", controller.ListMySupportTickets)
+			mine.POST("", controller.CreateSupportTicket)
+			mine.GET("/:id", controller.GetMySupportTicket)
+			mine.POST("/:id/messages", controller.AddMySupportMessage)
+			mine.POST("/:id/close", controller.CloseMySupportTicket)
+
+			inbox := supportRoute.Group("/admin/tickets", middleware.AdminAuth())
+			inbox.GET("", controller.ListSupportTickets)
+			inbox.GET("/:id", controller.GetSupportTicket)
+			inbox.POST("/:id/messages", controller.ReplySupportTicket)
+			inbox.POST("/:id/status", controller.SetSupportTicketStatus)
+		}
+
 		redemptionRoute := apiRouter.Group("/redemption")
 		redemptionRoute.Use(middleware.AdminAuth())
 		{

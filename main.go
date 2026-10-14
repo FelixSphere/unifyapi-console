@@ -118,6 +118,14 @@ func main() {
 	// UNIFYAPI-FORK: replay settlements the database refused after the
 	// response was served; see model/settlement_outbox.go.
 	model.StartSettlementOutboxWorker()
+	// UNIFYAPI-FORK: our feature tables, created on every boot whether or not
+	// the feature is switched on, so no environment is missing one.
+	if err := model.MigrateSupport(); err != nil {
+		common.SysError("support: migrate failed: " + err.Error())
+	}
+	if err := model.MigrateRetentionEmail(); err != nil {
+		common.SysError("weekly update: migrate failed: " + err.Error())
+	}
 	// UNIFYAPI-FORK: weekly customer email; off unless UNIFYAPI_RETENTION_EMAIL=on.
 	service.StartRetentionEmailWorker()
 
