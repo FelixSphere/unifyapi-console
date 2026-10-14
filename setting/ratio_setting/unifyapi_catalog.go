@@ -142,6 +142,17 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "claude-fable-5.1", Vendor: "anthropic", UpstreamModel: "claude-fable-5-1", InputUSD: 10, OutputUSD: 50, CacheReadUSD: 0.25, CacheWriteUSD: 12.5,
 		QuoteSource: "https://www.anthropic.com/claude/fable", QuoteDate: "2026-09-01"},
 	{Model: "claude-haiku-4-5-20251001", Vendor: "anthropic", InputUSD: 1, OutputUSD: 5, CacheReadUSD: 0.1, CacheWriteUSD: 1.25},
+	// The undated alias Anthropic (and FlatKey) also serve; same price, same models.dev row.
+	{Model: "claude-haiku-4-5", Vendor: "anthropic", UpstreamModel: "claude-haiku-4-5-20251001", InputUSD: 1, OutputUSD: 5, CacheReadUSD: 0.1, CacheWriteUSD: 1.25},
+	// Haiku 5.5 is tiered by prompt length: prompts over 100K tokens cost 5x
+	// ($0.50 / $2.50, cache hit $0.05). The catalogue carries the base tier, as
+	// it does for every other tiered vendor; the long-prompt tier is not billed.
+	{Model: "claude-haiku-5-5", Vendor: "", InputUSD: 0.1, OutputUSD: 0.5, CacheReadUSD: 0.01, CacheWriteUSD: 0.125, Unverified: true,
+		QuoteSource: "https://platform.claude.com/docs/en/about-claude/pricing (prompts up to 100K tokens: $0.10 in / $0.50 out per 1M; 5m cache write $0.125; cache hit $0.01)", QuoteDate: "2026-10-13"},
+	// Sonnet 5.5 keeps Sonnet 5's $2 / $10 but, like Opus 5.5, prices cache
+	// hits at 0.05x input ($0.10), not the 0.1x of Sonnet 5 ($0.20).
+	{Model: "claude-sonnet-5-5", Vendor: "", InputUSD: 2, OutputUSD: 10, CacheReadUSD: 0.1, CacheWriteUSD: 2.5, Unverified: true,
+		QuoteSource: "https://platform.claude.com/docs/en/about-claude/pricing ($2 in / $10 out per 1M; 5m cache write $2.50; cache hit $0.10 = 0.05x input)", QuoteDate: "2026-10-13"},
 	{Model: "claude-opus-4-5", Vendor: "anthropic", InputUSD: 5, OutputUSD: 25, CacheReadUSD: 0.5, CacheWriteUSD: 6.25},
 	{Model: "claude-opus-4-6", Vendor: "anthropic", InputUSD: 5, OutputUSD: 25, CacheReadUSD: 0.5, CacheWriteUSD: 6.25},
 	{Model: "claude-opus-4-7", Vendor: "anthropic", InputUSD: 5, OutputUSD: 25, CacheReadUSD: 0.5, CacheWriteUSD: 6.25},
@@ -186,6 +197,36 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "gpt-6-astra", Vendor: "openai", InputUSD: 10, OutputUSD: 50, CacheReadUSD: 1, CacheWriteUSD: 12.5,
 		QuoteSource: "https://models.dev/api.json (openai/gpt-6-astra)", QuoteDate: "2026-09-11"},
 	{Model: "gpt-image-2", Vendor: "openai", InputUSD: 5, OutputUSD: 30, CacheReadUSD: 1.25, CacheWriteUSD: 0},
+	// Added 2026-10-13 from OpenAI's pricing page (standard tier). All are
+	// newer than the pinned models.dev fixture, so they are manual quotes.
+	// Cache reads are 0.1x input throughout except gpt-6.1-sol (0.05x).
+	{Model: "gpt-5.1", Vendor: "", InputUSD: 1.25, OutputUSD: 10, CacheReadUSD: 0.125, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($1.25 in / $0.125 cached / $10 out per 1M)", QuoteDate: "2026-10-13"},
+	{Model: "gpt-5.4-mini", Vendor: "", InputUSD: 0.75, OutputUSD: 4.5, CacheReadUSD: 0.075, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($0.75 in / $0.075 cached / $4.50 out per 1M)", QuoteDate: "2026-10-13"},
+	{Model: "gpt-5.4-nano", Vendor: "", InputUSD: 0.2, OutputUSD: 1.25, CacheReadUSD: 0.02, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($0.20 in / $0.02 cached / $1.25 out per 1M)", QuoteDate: "2026-10-13"},
+	{Model: "gpt-5.5", Vendor: "", InputUSD: 5, OutputUSD: 30, CacheReadUSD: 0.5, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($5 in / $0.50 cached / $30 out per 1M)", QuoteDate: "2026-10-13"},
+	{Model: "gpt-5.6-luna", Vendor: "", InputUSD: 0.2, OutputUSD: 1.2, CacheReadUSD: 0.02, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($0.20 in / $0.02 cached / $1.20 out per 1M)", QuoteDate: "2026-10-13"},
+	{Model: "gpt-5.6-terra", Vendor: "", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($2 in / $0.20 cached / $12 out per 1M)", QuoteDate: "2026-10-13"},
+	{Model: "gpt-6-luna", Vendor: "", InputUSD: 0.1, OutputUSD: 0.5, CacheReadUSD: 0.01, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($0.10 in / $0.01 cached / $0.50 out per 1M)", QuoteDate: "2026-10-13"},
+	{Model: "gpt-6-sol", Vendor: "", InputUSD: 2, OutputUSD: 10, CacheReadUSD: 0.2, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($2 in / $0.20 cached / $10 out per 1M)", QuoteDate: "2026-10-13"},
+	{Model: "gpt-6.1-sol", Vendor: "", InputUSD: 2, OutputUSD: 10, CacheReadUSD: 0.1, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($2 in / $0.10 cached / $10 out per 1M; cache 0.05x, unlike gpt-6-sol)", QuoteDate: "2026-10-13"},
+
+	// ---- xAI ----
+	// Grok is tiered by context: the prices below are the under-200K-token
+	// tier; at 200K and above xAI doubles every column. Base tier only, as
+	// for every other tiered vendor here.
+	{Model: "grok-4.6", Vendor: "", InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.5, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://docs.x.ai/docs/models (<200K tokens: $2 in / $0.50 cached / $6 out per 1M)", QuoteDate: "2026-10-13"},
+	{Model: "grok-4.7", Vendor: "", InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.5, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://docs.x.ai/docs/models (<200K tokens: $2 in / $0.50 cached / $6 out per 1M)", QuoteDate: "2026-10-13"},
 
 	// ---- Moonshot ----
 	// Moonshot retired kimi-k2.5 from its published list -- it is gone from
@@ -304,6 +345,8 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "qwen3.7-plus", Vendor: "alibaba", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0.625,
 		ContextTier: &ContextTier{ThresholdTokens: 256000, InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.2, CacheWriteUSD: 2.5}},
 	{Model: "qwen3.8-max", Vendor: "alibaba", InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.25, CacheWriteUSD: 2.5},
+	{Model: "qwen3.8-flash", Vendor: "", InputUSD: 0.15, OutputUSD: 0.47, CacheReadUSD: 0.016, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing (Singapore: $0.15 in / $0.016 cache hit / $0.47 out per 1M)", QuoteDate: "2026-10-13"},
 
 	// ---- DeepSeek ----
 	// RETIRED BY THE VENDOR -- these three have no price because they no longer
