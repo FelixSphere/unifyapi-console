@@ -54,6 +54,29 @@ func GetEnabledModels() []string {
 	return models
 }
 
+// ModelIsServed reports whether any channel is configured for the model, in any
+// group, whether or not that channel is currently enabled.
+//
+// UNIFYAPI-FORK: it exists to separate "this model is not one we serve" from
+// "this model is ours and nothing is answering for it right now". The
+// distributor could not tell those apart and answered 503 to both, so a
+// customer's typo came back as a retryable server error: SDKs retried it with
+// backoff, it read to them as an outage, and it counted against our own 5xx
+// alarm.
+//
+// Deliberately NOT filtered on enabled. A model whose channels are all disabled
+// is still ours and still deserves a 503, because that is recoverable and a
+// retry may work. Only the complete absence of a row means the name is not
+// something this gateway serves.
+func ModelIsServed(modelName string) bool {
+	// No guard for the empty string: the query answers it correctly on its own,
+	// and the distributor rejects an empty model before it ever gets here. A
+	// guard that cannot be made to fail is a branch no test can defend.
+	var count int64
+	DB.Model(&Ability{}).Where("model = ?", modelName).Limit(1).Count(&count)
+	return count > 0
+}
+
 func GetAllEnableAbilities() []Ability {
 	var abilities []Ability
 	DB.Find(&abilities, "enabled = ?", true)

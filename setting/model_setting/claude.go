@@ -56,9 +56,20 @@ var defaultClaudeSettings = ClaudeSettings{
 		"default": 8192,
 	},
 	ThinkingAdapterBudgetTokensPercentage: 0.8,
-	AdaptiveThinkingModels:                []string{"claude-fable-5"},
-	AdaptiveThinkingUnsupportedModels:     []string{"claude-opus-4-5", "claude-sonnet-4-5"},
-	StructuredOutputsBeta:                 "structured-outputs-2025-11-13",
+	// claude-opus-5 added 2026-09-26, with the operator's approval to change the
+	// test that pinned the old contract. It does not REJECT the enabled shape --
+	// it answers 200 and returns no thinking text at all, which is worse,
+	// because the thinking is still generated and billed. Measured n=3 on the
+	// production box (FlatKey channel 154, /v1/messages):
+	//   enabled                        -> 0 thinking chars, output_tokens 112-144
+	//   enabled + display:"summarized" -> 0 thinking chars, output_tokens 99-118
+	//   adaptive                       -> 0 thinking chars
+	//   adaptive + display:"summarized"-> 146 / 156 / 89 chars
+	// Only the two together return anything, so this list and the display
+	// default are one change, not two.
+	AdaptiveThinkingModels:            []string{"claude-fable-5", "claude-opus-5"},
+	AdaptiveThinkingUnsupportedModels: []string{"claude-opus-4-5", "claude-sonnet-4-5"},
+	StructuredOutputsBeta:             "structured-outputs-2025-11-13",
 }
 
 // 全局实例

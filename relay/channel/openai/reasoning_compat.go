@@ -2,12 +2,27 @@ package openai
 
 import (
 	"encoding/json"
+	"errors"
+	"net/http"
 	"net/url"
 	"strings"
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 )
+
+// errEffortAndBudget refuses a reasoning effort and a token budget sent
+// together. A fresh error per call, because the handlers apply options such as
+// skip-retry to it in place.
+func errEffortAndBudget() error {
+	return types.NewErrorWithStatusCode(
+		errors.New("only one of reasoning.effort (or its alias reasoning_effort) and reasoning.max_tokens can be specified"),
+		types.ErrorCodeInvalidRequest,
+		http.StatusBadRequest,
+		types.ErrOptionWithSkipRetry(),
+	)
+}
 
 // nonReasoningOpenAIPrefixes are OpenAI chat models with no reasoning mode.
 // OpenAI answers reasoning_effort on them with "Unrecognized request argument
@@ -32,9 +47,9 @@ var nonReasoningOpenAIPrefixes = []string{"gpt-4o", "chatgpt-4o", "gpt-4.1", "gp
 //     16 and 174). The effort is carried in reasoning_effort only, so the
 //     override -- applied later, on the JSON -- replaces it instead of
 //     contradicting it. The operator's override therefore wins, as intended.
-func normalizeReasoningParams(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) {
+func normalizeReasoningParams(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) error {
 	if request == nil || info == nil {
-		return
+		return nil
 	}
 	model := info.UpstreamModelName
 	openRouterBackend := isOpenRouterBaseURL(info.ChannelBaseUrl)
@@ -42,14 +57,14 @@ func normalizeReasoningParams(info *relaycommon.RelayInfo, request *dto.GeneralO
 	if !openRouterBackend && isNonReasoningOpenAIModel(model) {
 		request.ReasoningEffort = ""
 		request.Reasoning = nil
-		return
+		return nil
 	}
 	if len(request.Reasoning) == 0 {
-		return
+		return nil
 	}
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(request.Reasoning, &obj); err != nil {
-		return // not ours to interpret; let the upstream judge it
+		return nil // not ours to interpret; let the upstream judge it
 	}
 	var effort string
 	if raw, ok := obj["effort"]; ok {
@@ -63,14 +78,35 @@ func normalizeReasoningParams(info *relaycommon.RelayInfo, request *dto.GeneralO
 			request.ReasoningEffort = effort
 		}
 		request.Reasoning = nil
-		return
+		return nil
 	}
 	// OpenRouter backend: it accepts reasoning_effort as an alias for
-	// reasoning.effort. Move the effort out unless the object also names a
-	// token budget (effort and max_tokens together are the caller's own choice
-	// and are left exactly as sent).
+	// reasoning.effort, and it rejects an effort and a token budget together in
+	// whichever dialect each arrived -- measured 2026-09-25 on channel 16,
+	// gemini-3.5-flash and glm-5.3, both shapes answering 400 "Only one of
+	// reasoning.effort and reasoning.max_tokens can be specified".
+	//
+	// Scope: only the TOP-LEVEL alias next to a budget is refused here. An
+	// effort and a budget together INSIDE the object are deliberately left as
+	// sent -- TestReasoning_OpenRouterBackendLeavesAnExplicitBudgetAlone pins
+	// that, and changing a pinned contract needs the operator, not this fix.
+	// (That shape also answers 400 upstream, so the two now behave
+	// differently for the same reason; raised rather than decided here.)
+	//
+	// The alias is the regression: the older comment read "effort and
+	// max_tokens together are the caller's own choice", but it only looked for
+	// an effort INSIDE the object, so reasoning_effort survived next to a
+	// budget. OpenRouter expands the alias into reasoning.effort, sees both,
+	// and answers 400 -- from a request shape that looks perfectly legal.
+	// Refusing here costs no upstream round trip, and skip-retry stops the
+	// relay trying the model's other channels for a call none can accept.
+	if hasBudget && effort == "" && request.ReasoningEffort != "" {
+		return errEffortAndBudget()
+	}
+	// Unchanged from before: nothing to move, or the object carries its own
+	// budget and is passed through exactly as sent.
 	if effort == "" || hasBudget {
-		return
+		return nil
 	}
 	if request.ReasoningEffort == "" {
 		request.ReasoningEffort = effort
@@ -81,11 +117,12 @@ func normalizeReasoningParams(info *relaycommon.RelayInfo, request *dto.GeneralO
 	}
 	if len(obj) == 0 {
 		request.Reasoning = nil
-		return
+		return nil
 	}
 	if out, err := json.Marshal(obj); err == nil {
 		request.Reasoning = out
 	}
+	return nil
 }
 
 func isNonReasoningOpenAIModel(model string) bool {
