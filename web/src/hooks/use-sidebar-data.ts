@@ -25,6 +25,7 @@ import {
   FlaskConical,
   Key,
   LayoutDashboard,
+  LifeBuoy,
   ListTodo,
   MessageSquare,
   Radio,
@@ -38,6 +39,8 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import type { SidebarData } from '@/components/layout/types'
+// UNIFYAPI-FORK: registers the Support translations before the nav renders.
+import '@/features/support/i18n'
 import { ROLE } from '@/lib/roles'
 
 /**
@@ -115,6 +118,13 @@ export function useSidebarData(): SidebarData {
             title: t('Credit Supply'),
             url: '/credit-supply',
             icon: Coins,
+          },
+          {
+            // UNIFYAPI-FORK: customer questions (customers) / support inbox
+            // (staff). Same entry, role-routed.
+            title: t('Support'),
+            url: '/support',
+            icon: LifeBuoy,
           },
           {
             title: t('Profile'),

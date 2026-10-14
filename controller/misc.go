@@ -285,7 +285,10 @@ func SendPasswordResetEmail(c *gin.Context) {
 	if _, err := model.GetUniqueUserByEmail(email); err == nil {
 		code := common.GenerateVerificationCode(0)
 		common.RegisterVerificationCodeWithKey(email, code, common.PasswordResetPurpose)
-		link := fmt.Sprintf("%s/user/reset?email=%s&token=%s", system_setting.ServerAddress, email, code)
+		// passwordResetLink escapes the query values. main still interpolated
+		// them raw, so a plus-addressed mailbox received a link whose email
+		// arrived as a space and whose token then matched nothing.
+		link := passwordResetLink(email, code)
 		// UNIFYAPI-BRAND: shared design, see email_templates_unifyapi.go
 		err := service.SendBrandedEmail("password-reset", email, unifyapiPasswordResetEmail(link))
 		if err != nil {

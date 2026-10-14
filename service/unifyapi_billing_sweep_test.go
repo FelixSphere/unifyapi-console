@@ -213,6 +213,11 @@ func TestPinnedDollarsForTheModelsThatCarryTheTraffic(t *testing.T) {
 		"claude-opus-4-8":   5 + 25,      // Anthropic $5 / $25
 		"claude-opus-5-5":   4 + 20,      // Anthropic $4 / $20, page read 2026-09-22
 		"claude-sonnet-5":   2 + 10,      // Anthropic $2 / $10
+		"claude-sonnet-5-5": 2 + 10,      // Anthropic $2 / $10, page read 2026-10-13
+		"claude-haiku-5-5":  0.1 + 0.5,   // Anthropic $0.10 / $0.50 (prompts up to 100K), page read 2026-10-13
+		"gpt-5.5":           5 + 30,      // OpenAI $5 / $30, page read 2026-10-13
+		"gpt-6-sol":         2 + 10,      // OpenAI $2 / $10, page read 2026-10-13
+		"grok-4.7":          2 + 6,       // xAI $2 / $6 (<200K tokens), page read 2026-10-13
 		"gpt-4o":            2.5 + 10,    // OpenAI $2.50 / $10
 		"gpt-5-mini":        0.25 + 2,    // OpenAI $0.25 / $2
 		"deepseek-v4-flash": 0.44 + 1.32, // DeepSeek peak tier, 2026-08-16 increase

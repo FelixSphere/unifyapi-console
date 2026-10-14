@@ -76,6 +76,9 @@ type EmailMessage struct {
 	Details      []EmailDetail
 	SafetyNote   string
 	FooterReason string
+	// UnsubscribeURL is set only on mail a customer can opt out of (the weekly
+	// update). It renders as a footer link and goes out as List-Unsubscribe.
+	UnsubscribeURL string
 }
 
 // html/template drops HTML comments, and Outlook's conditional comments are
@@ -155,6 +158,9 @@ func renderEmailText(brand EmailBrand, msg EmailMessage) string {
 	if brand.CompanyAddress != "" {
 		b.WriteString(brand.CompanyAddress + "\n")
 	}
+	if msg.UnsubscribeURL != "" {
+		b.WriteString("Unsubscribe: " + msg.UnsubscribeURL + "\n")
+	}
 	return b.String()
 }
 
@@ -222,11 +228,21 @@ func SendBrandedEmail(purpose string, receiver string, brand EmailBrand, msg Ema
 	if err != nil {
 		return err
 	}
-	err = sendEmailWithContentType(msg.Subject, receiver, contentType, body)
+	err = sendEmailWithHeaders(msg.Subject, receiver, contentType, body, unsubscribeHeaders(msg.UnsubscribeURL))
 	if recorder := emailDeliveryRecorder.Load(); recorder != nil {
 		(*recorder)(receiver, purpose, err)
 	}
 	return err
+}
+
+// unsubscribeHeaders are RFC 2369 List-Unsubscribe plus RFC 8058 one-click,
+// which Gmail and Yahoo require of bulk senders and which put an
+// "Unsubscribe" button next to the sender name. Empty for transactional mail.
+func unsubscribeHeaders(url string) string {
+	if url == "" || strings.ContainsAny(url, "\r\n<>") {
+		return ""
+	}
+	return "List-Unsubscribe: <" + url + ">\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n"
 }
 
 var unifyaiEmailTemplate = template.Must(template.New("unifyai-email").Parse(`<!doctype html>
@@ -307,7 +323,8 @@ var unifyaiEmailTemplate = template.Must(template.New("unifyai-email").Parse(`<!
       <img src="{{.Brand.AssetBase}}/unifyai-mark-black@2x.png" width="24" height="24" alt="" style="display:block; border:0; width:24px; height:24px; margin-bottom:10px;">
       {{.Brand.ProductName}} · <a href="{{.Brand.ProductURL}}" style="color:#6B6B66;">{{.Brand.ProductDomain}}</a><br>
       {{.Msg.FooterReason}}{{if .Brand.CompanyAddress}}<br>
-      {{.Brand.CompanyAddress}}{{end}}
+      {{.Brand.CompanyAddress}}{{end}}{{if .Msg.UnsubscribeURL}}<br>
+      <a href="{{.Msg.UnsubscribeURL}}" style="color:#6B6B66;">Unsubscribe</a>{{end}}
     </td></tr>
   </table>
 

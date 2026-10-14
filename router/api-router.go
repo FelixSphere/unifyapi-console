@@ -37,6 +37,9 @@ func SetApiRouter(router *gin.Engine) {
 		// read a response it could already fetch with curl.
 		apiRouter.GET("/pricing", middleware.CORS(), middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
 		apiRouter.POST("/builder/v1/:action", controller.BuilderIntegration)
+		// UNIFYAPI-FORK: weekly-update unsubscribe, signed link, no sign-in.
+		apiRouter.GET("/email/unsubscribe", controller.RetentionUnsubscribePage)
+		apiRouter.POST("/email/unsubscribe", controller.RetentionUnsubscribe)
 		// UNIFYAPI-BRAND: compute billing bridge. Server-signed only, no session
 		// auth; 404 until COMPUTE_BRIDGE_SECRET is set. Registered on the engine,
 		// not apiRouter, so the per-IP global API limiter does not apply -- every
@@ -401,6 +404,25 @@ func SetApiRouter(router *gin.Engine) {
 			tenantRoute.POST("/:id/suspend", middleware.RootAuth(), controller.SuspendTenant)
 			tenantRoute.POST("/:id/resume", middleware.RootAuth(), controller.ResumeTenant)
 			tenantRoute.POST("/:id/extend", middleware.RootAuth(), controller.ExtendTenantTerm)
+		}
+
+		// UNIFYAPI-FORK: customer questions and messages. Customers see only
+		// their own conversations; the inbox is AdminAuth. See
+		// controller/unifyapi_support.go.
+		supportRoute := apiRouter.Group("/support")
+		{
+			mine := supportRoute.Group("/tickets", middleware.UserAuth())
+			mine.GET("", controller.ListMySupportTickets)
+			mine.POST("", controller.CreateSupportTicket)
+			mine.GET("/:id", controller.GetMySupportTicket)
+			mine.POST("/:id/messages", controller.AddMySupportMessage)
+			mine.POST("/:id/close", controller.CloseMySupportTicket)
+
+			inbox := supportRoute.Group("/admin/tickets", middleware.AdminAuth())
+			inbox.GET("", controller.ListSupportTickets)
+			inbox.GET("/:id", controller.GetSupportTicket)
+			inbox.POST("/:id/messages", controller.ReplySupportTicket)
+			inbox.POST("/:id/status", controller.SetSupportTicketStatus)
 		}
 
 		redemptionRoute := apiRouter.Group("/redemption")
