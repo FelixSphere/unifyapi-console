@@ -100,7 +100,8 @@ func supportCustomerAllowed(c *gin.Context, userId int, newTicket bool) bool {
 			return false
 		}
 		if open >= supportMaxUnclosed {
-			supportFail(c, http.StatusTooManyRequests, "you have "+strconv.FormatInt(open, 10)+" open conversations; add to one of them instead")
+			// A fixed sentence, so the console can translate it.
+			supportFail(c, http.StatusTooManyRequests, "you have too many open conversations; add to one of them instead")
 			return false
 		}
 	}
@@ -165,7 +166,8 @@ func CreateSupportTicket(c *gin.Context) {
 		supportFail(c, http.StatusBadRequest, "invalid request")
 		return
 	}
-	subject, problem := cleanSupportText(req.Subject, supportSubjectMax, "Subject")
+	// A subject is one line: it becomes an email Subject header and a list row.
+	subject, problem := cleanSupportText(strings.Join(strings.Fields(req.Subject), " "), supportSubjectMax, "Subject")
 	if problem != "" {
 		supportFail(c, http.StatusBadRequest, problem)
 		return

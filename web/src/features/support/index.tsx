@@ -9,6 +9,7 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,6 +31,7 @@ import {
   type SupportStatus,
   type SupportTicket,
 } from './api'
+import './i18n'
 
 // Customer questions and messages. One sidebar entry, role-routed like Credit
 // Supply: a customer sees their own conversations; staff see the inbox. The
@@ -62,7 +64,10 @@ function StatusPill(props: { status: SupportStatus; staff?: boolean }) {
       : props.status === 'answered'
         ? 'bg-primary/10 text-primary'
         : 'bg-muted text-muted-foreground'
-  const label = (props.staff ? STAFF_STATUS_LABEL : STATUS_LABEL)[props.status]
+  const { t } = useTranslation()
+  const label = t(
+    (props.staff ? STAFF_STATUS_LABEL : STATUS_LABEL)[props.status]
+  )
   return (
     <span
       className={`${tone} rounded px-1.5 py-0.5 text-[11px] whitespace-nowrap`}
@@ -84,15 +89,16 @@ function Thread(props: {
   conversation: SupportConversation
   staffView: boolean
 }) {
+  const { t } = useTranslation()
   return (
     <ol className='flex flex-col gap-3'>
       {props.conversation.messages.map((m) => {
         const mine = props.staffView ? m.from_staff : !m.from_staff
         const who = m.from_staff
-          ? 'Unify API support'
+          ? t('Unify API support')
           : props.staffView
-            ? (props.conversation.customer?.username ?? 'Customer')
-            : 'You'
+            ? (props.conversation.customer?.username ?? t('Customer'))
+            : t('You')
         return (
           <li
             key={m.id}
@@ -121,6 +127,7 @@ function Composer(props: {
   pending: boolean
   onSubmit: (body: string) => Promise<unknown>
 }) {
+  const { t } = useTranslation()
   const [body, setBody] = useState('')
   const [error, setError] = useState<string | null>(null)
   const submit = async () => {
@@ -147,7 +154,7 @@ function Composer(props: {
           disabled={props.pending || body.trim() === ''}
           onClick={() => void submit()}
         >
-          {props.pending ? 'Sending…' : props.submitLabel}
+          {props.pending ? t('Sending…') : props.submitLabel}
         </Button>
       </div>
     </div>
@@ -155,34 +162,37 @@ function Composer(props: {
 }
 
 function NewQuestion(props: { onCreated: (t: SupportTicket) => void }) {
+  const { t } = useTranslation()
   const qc = useQueryClient()
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [error, setError] = useState<string | null>(null)
   const create = useMutation({
     mutationFn: () => createTicket(subject, body),
-    onSuccess: (t) => {
+    onSuccess: (ticket) => {
       setSubject('')
       setBody('')
       void qc.invalidateQueries({ queryKey: ['support', 'mine'] })
-      props.onCreated(t)
+      props.onCreated(ticket)
     },
     onError: (e) => setError((e as Error).message),
   })
   return (
     <div className='border-border bg-card flex flex-col gap-3 rounded-lg border p-4'>
-      <h2 className='text-foreground text-base'>Ask a question</h2>
+      <h2 className='text-foreground text-base'>{t('Ask a question')}</h2>
       <Input
         value={subject}
         maxLength={SUBJECT_MAX}
-        placeholder='Subject, e.g. "How do I raise my rate limit?"'
+        placeholder={t('Subject, e.g. "How do I raise my rate limit?"')}
         onChange={(e) => setSubject(e.target.value)}
       />
       <Textarea
         value={body}
         maxLength={BODY_MAX}
         rows={5}
-        placeholder='Tell us what you need. Include the model, the request id or the error text if there is one.'
+        placeholder={t(
+          'Tell us what you need. Include the model, the request id or the error text if there is one.'
+        )}
         onChange={(e) => setBody(e.target.value)}
       />
       <div className='flex items-center justify-between gap-2'>
@@ -196,17 +206,18 @@ function NewQuestion(props: { onCreated: (t: SupportTicket) => void }) {
             create.mutate()
           }}
         >
-          {create.isPending ? 'Sending…' : 'Send'}
+          {create.isPending ? t('Sending…') : t('Send')}
         </Button>
       </div>
       <p className='text-muted-foreground text-xs'>
-        We reply here and email you when we do.
+        {t('We reply here and email you when we do.')}
       </p>
     </div>
   )
 }
 
 function CustomerConversation(props: { id: number; onBack: () => void }) {
+  const { t } = useTranslation()
   const qc = useQueryClient()
   const key = ['support', 'mine', props.id]
   const q = useQuery({ queryKey: key, queryFn: () => getMyTicket(props.id) })
@@ -223,45 +234,46 @@ function CustomerConversation(props: { id: number; onBack: () => void }) {
     onSuccess: settle,
   })
 
-  if (q.isLoading) return <p className='text-muted-foreground'>Loading…</p>
+  if (q.isLoading)
+    return <p className='text-muted-foreground'>{t('Loading…')}</p>
   if (q.error || !q.data)
     return (
       <p className='text-destructive'>
-        {(q.error as Error)?.message ?? 'Not found'}
+        {(q.error as Error)?.message ?? t('Not found')}
       </p>
     )
-  const t = q.data.ticket
+  const ticket = q.data.ticket
   return (
     <div className='flex flex-col gap-4'>
       <button
         className='text-muted-foreground self-start text-sm hover:underline'
         onClick={props.onBack}
       >
-        ← All conversations
+        {t('← All conversations')}
       </button>
       <div className='flex flex-wrap items-center gap-2'>
-        <h2 className='text-foreground text-lg'>{t.subject}</h2>
-        <StatusPill status={t.status} />
+        <h2 className='text-foreground text-lg'>{ticket.subject}</h2>
+        <StatusPill status={ticket.status} />
       </div>
       <Thread conversation={q.data} staffView={false} />
       <Composer
         placeholder={
-          t.status === 'closed'
-            ? 'Write to reopen this conversation'
-            : 'Add a message'
+          ticket.status === 'closed'
+            ? t('Write to reopen this conversation')
+            : t('Add a message')
         }
-        submitLabel='Send'
+        submitLabel={t('Send')}
         pending={send.isPending}
         onSubmit={(body) => send.mutateAsync(body)}
       />
-      {t.status !== 'closed' ? (
+      {ticket.status !== 'closed' ? (
         <Button
           variant='outline'
           className='self-start'
           disabled={close.isPending}
           onClick={() => close.mutate()}
         >
-          Mark as resolved
+          {t('Mark as resolved')}
         </Button>
       ) : null}
     </div>
@@ -269,6 +281,7 @@ function CustomerConversation(props: { id: number; onBack: () => void }) {
 }
 
 function CustomerSupport() {
+  const { t } = useTranslation()
   const [selected, select] = useSelectedTicket()
   const q = useQuery({ queryKey: ['support', 'mine'], queryFn: listMyTickets })
 
@@ -279,31 +292,31 @@ function CustomerSupport() {
   }
   return (
     <div className='grid gap-6 lg:grid-cols-[1fr_1fr]'>
-      <NewQuestion onCreated={(t) => select(t.id)} />
+      <NewQuestion onCreated={(ticket) => select(ticket.id)} />
       <div className='flex flex-col gap-2'>
-        <h2 className='text-foreground text-base'>Your conversations</h2>
+        <h2 className='text-foreground text-base'>{t('Your conversations')}</h2>
         {q.isLoading ? (
-          <p className='text-muted-foreground text-sm'>Loading…</p>
+          <p className='text-muted-foreground text-sm'>{t('Loading…')}</p>
         ) : (q.data ?? []).length === 0 ? (
           <p className='text-muted-foreground text-sm'>
-            No questions yet. Ask one and we will get back to you.
+            {t('No questions yet. Ask one and we will get back to you.')}
           </p>
         ) : (
           <ul className='border-border divide-border divide-y rounded-lg border'>
-            {(q.data ?? []).map((t) => (
-              <li key={t.id}>
+            {(q.data ?? []).map((row) => (
+              <li key={row.id}>
                 <button
                   className='hover:bg-muted/50 flex w-full items-center justify-between gap-3 px-4 py-3 text-left'
-                  onClick={() => select(t.id)}
+                  onClick={() => select(row.id)}
                 >
                   <span className='text-foreground truncate text-sm'>
-                    {t.subject}
+                    {row.subject}
                   </span>
                   <span className='flex shrink-0 items-center gap-2'>
                     <span className='text-muted-foreground text-xs'>
-                      {when(t.updated_at)}
+                      {when(row.updated_at)}
                     </span>
-                    <StatusPill status={t.status} />
+                    <StatusPill status={row.status} />
                   </span>
                 </button>
               </li>
@@ -323,6 +336,7 @@ const INBOX_FILTERS: { label: string; value: SupportStatus | '' }[] = [
 ]
 
 function InboxConversation(props: { id: number; onBack: () => void }) {
+  const { t } = useTranslation()
   const qc = useQueryClient()
   const key = ['support', 'inbox', 'ticket', props.id]
   const q = useQuery({ queryKey: key, queryFn: () => getInboxTicket(props.id) })
@@ -339,34 +353,35 @@ function InboxConversation(props: { id: number; onBack: () => void }) {
     onSuccess: settle,
   })
 
-  if (q.isLoading) return <p className='text-muted-foreground'>Loading…</p>
+  if (q.isLoading)
+    return <p className='text-muted-foreground'>{t('Loading…')}</p>
   if (q.error || !q.data)
     return (
       <p className='text-destructive'>
-        {(q.error as Error)?.message ?? 'Not found'}
+        {(q.error as Error)?.message ?? t('Not found')}
       </p>
     )
-  const t = q.data.ticket
+  const ticket = q.data.ticket
   return (
     <div className='flex flex-col gap-4'>
       <button
         className='text-muted-foreground self-start text-sm hover:underline'
         onClick={props.onBack}
       >
-        ← Inbox
+        {t('← Inbox')}
       </button>
       <div className='flex flex-wrap items-center gap-2'>
         <h2 className='text-foreground text-lg'>
-          #{t.id} {t.subject}
+          #{ticket.id} {ticket.subject}
         </h2>
-        <StatusPill status={t.status} staff />
+        <StatusPill status={ticket.status} staff />
       </div>
       {q.data.customer ? (
         <p className='text-muted-foreground text-sm'>
           {[
             q.data.customer.username,
             q.data.customer.email,
-            `user #${q.data.customer.id}`,
+            t('user #{{id}}', { id: q.data.customer.id }),
           ]
             .filter(Boolean)
             .join(' · ')}
@@ -374,19 +389,19 @@ function InboxConversation(props: { id: number; onBack: () => void }) {
       ) : null}
       <Thread conversation={q.data} staffView />
       <Composer
-        placeholder='Reply to the customer — they get it by email too'
-        submitLabel='Send reply'
+        placeholder={t('Reply to the customer — they get it by email too')}
+        submitLabel={t('Send reply')}
         pending={reply.isPending}
         onSubmit={(body) => reply.mutateAsync(body)}
       />
       <div className='flex gap-2'>
-        {t.status !== 'closed' ? (
+        {ticket.status !== 'closed' ? (
           <Button
             variant='outline'
             disabled={status.isPending}
             onClick={() => status.mutate('closed')}
           >
-            Close
+            {t('Close')}
           </Button>
         ) : (
           <Button
@@ -394,7 +409,7 @@ function InboxConversation(props: { id: number; onBack: () => void }) {
             disabled={status.isPending}
             onClick={() => status.mutate('open')}
           >
-            Reopen
+            {t('Reopen')}
           </Button>
         )}
       </div>
@@ -403,6 +418,7 @@ function InboxConversation(props: { id: number; onBack: () => void }) {
 }
 
 function StaffInbox() {
+  const { t } = useTranslation()
   const [selected, select] = useSelectedTicket()
   const [filter, setFilter] = useState<SupportStatus | ''>('open')
   const q = useQuery({
@@ -427,45 +443,47 @@ function StaffInbox() {
             }`}
             onClick={() => setFilter(f.value)}
           >
-            {f.label}
+            {t(f.label)}
           </button>
         ))}
       </div>
       {q.isLoading ? (
-        <p className='text-muted-foreground text-sm'>Loading…</p>
+        <p className='text-muted-foreground text-sm'>{t('Loading…')}</p>
       ) : q.error ? (
         <p className='text-destructive text-sm'>{(q.error as Error).message}</p>
       ) : (q.data ?? []).length === 0 ? (
-        <p className='text-muted-foreground text-sm'>Nothing here.</p>
+        <p className='text-muted-foreground text-sm'>{t('Nothing here.')}</p>
       ) : (
         <table className='border-border w-full overflow-hidden rounded-lg border text-sm'>
           <thead className='bg-muted/40 text-muted-foreground text-left text-xs'>
             <tr>
               <th className='px-4 py-2'>#</th>
-              <th className='px-4 py-2'>Subject</th>
-              <th className='px-4 py-2'>Customer</th>
-              <th className='px-4 py-2'>Last activity</th>
-              <th className='px-4 py-2'>Status</th>
+              <th className='px-4 py-2'>{t('Subject')}</th>
+              <th className='px-4 py-2'>{t('Customer')}</th>
+              <th className='px-4 py-2'>{t('Last activity')}</th>
+              <th className='px-4 py-2'>{t('Status')}</th>
             </tr>
           </thead>
           <tbody>
-            {(q.data ?? []).map((t) => (
+            {(q.data ?? []).map((row) => (
               <tr
-                key={t.id}
+                key={row.id}
                 className='border-border/60 hover:bg-muted/40 cursor-pointer border-t'
-                onClick={() => select(t.id)}
+                onClick={() => select(row.id)}
               >
-                <td className='text-muted-foreground px-4 py-2'>{t.id}</td>
-                <td className='text-foreground px-4 py-2'>{t.subject}</td>
+                <td className='text-muted-foreground px-4 py-2'>{row.id}</td>
+                <td className='text-foreground px-4 py-2'>{row.subject}</td>
                 <td className='px-4 py-2'>
-                  <div className='text-foreground'>{t.username}</div>
-                  <div className='text-muted-foreground text-xs'>{t.email}</div>
+                  <div className='text-foreground'>{row.username}</div>
+                  <div className='text-muted-foreground text-xs'>
+                    {row.email}
+                  </div>
                 </td>
                 <td className='text-muted-foreground px-4 py-2'>
-                  {when(t.updated_at)}
+                  {when(row.updated_at)}
                 </td>
                 <td className='px-4 py-2'>
-                  <StatusPill status={t.status} staff />
+                  <StatusPill status={row.status} staff />
                 </td>
               </tr>
             ))}
@@ -477,18 +495,21 @@ function StaffInbox() {
 }
 
 export function SupportPage() {
+  const { t } = useTranslation()
   const role = useAuthStore((s) => s.auth.user?.role ?? 0)
   const staff = role >= ROLE.ADMIN
   return (
     <div className='mx-auto w-full max-w-6xl overflow-y-auto p-6'>
       <div className='mb-6'>
         <h1 className='text-foreground text-2xl'>
-          {staff ? 'Support inbox' : 'Support'}
+          {staff ? t('Support inbox') : t('Support')}
         </h1>
         <p className='text-muted-foreground mt-1 text-sm'>
           {staff
-            ? 'Customer questions. Every new customer message is also emailed to staff.'
-            : 'Questions, problems or feedback — write to us here.'}
+            ? t(
+                'Customer questions. Every new customer message is also emailed to staff.'
+              )
+            : t('Questions, problems or feedback — write to us here.')}
         </p>
       </div>
       {staff ? <StaffInbox /> : <CustomerSupport />}
