@@ -246,7 +246,10 @@ func TestTheEmailCarriesOneClickUnsubscribeAndTheCompanyAddress(t *testing.T) {
 	require.Contains(t, raw, "List-Unsubscribe: <"+link+">\r\n")
 	require.Contains(t, raw, "List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n")
 	require.Contains(t, raw, "Unsubscribe: "+link, "the text part carries the link")
-	require.Contains(t, raw, "Petaling Jaya", "CAN-SPAM: a physical postal address")
+	// The legal entity moved to FelixSphere LLC, United States (2026-10-03);
+	// the footer must still carry a physical postal address for CAN-SPAM.
+	require.Contains(t, raw, "6 Karen Ct, CA 94010, United States", "CAN-SPAM: a physical postal address")
+	require.NotContains(t, raw, "Petaling Jaya", "the retired Malaysia address must not be mailed")
 }
 
 func TestNeverCalledCustomersGetTheQuickStart(t *testing.T) {
