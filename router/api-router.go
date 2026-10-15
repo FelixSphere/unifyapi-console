@@ -411,6 +411,7 @@ func SetApiRouter(router *gin.Engine) {
 		// controller/unifyapi_support.go.
 		supportRoute := apiRouter.Group("/support")
 		{
+			supportRoute.GET("/unread", middleware.UserAuth(), controller.SupportUnread)
 			mine := supportRoute.Group("/tickets", middleware.UserAuth())
 			mine.GET("", controller.ListMySupportTickets)
 			mine.POST("", controller.CreateSupportTicket)

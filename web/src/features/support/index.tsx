@@ -32,6 +32,7 @@ import {
   type SupportTicket,
 } from './api'
 import './i18n'
+import { SUPPORT_UNREAD_KEY, useSupportUnread } from './use-unread'
 
 // Customer questions and messages. One sidebar entry, role-routed like Credit
 // Supply: a customer sees their own conversations; staff see the inbox. The
@@ -74,6 +75,16 @@ function StatusPill(props: { status: SupportStatus; staff?: boolean }) {
     >
       {label}
     </span>
+  )
+}
+
+function UnreadDot(props: { show: boolean }) {
+  if (!props.show) return null
+  return (
+    <span
+      aria-hidden
+      className='bg-primary inline-block size-2 shrink-0 rounded-full'
+    />
   )
 }
 
@@ -220,7 +231,15 @@ function CustomerConversation(props: { id: number; onBack: () => void }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const key = ['support', 'mine', props.id]
-  const q = useQuery({ queryKey: key, queryFn: () => getMyTicket(props.id) })
+  const q = useQuery({
+    queryKey: key,
+    queryFn: () =>
+      getMyTicket(props.id).then((d) => {
+        // The server marked it read on this GET; let the badge catch up.
+        void qc.invalidateQueries({ queryKey: SUPPORT_UNREAD_KEY })
+        return d
+      }),
+  })
   const settle = (data: SupportConversation) => {
     qc.setQueryData(key, data)
     void qc.invalidateQueries({ queryKey: ['support', 'mine'], exact: true })
@@ -284,6 +303,7 @@ function CustomerSupport() {
   const { t } = useTranslation()
   const [selected, select] = useSelectedTicket()
   const q = useQuery({ queryKey: ['support', 'mine'], queryFn: listMyTickets })
+  const unread = new Set(useSupportUnread().data?.ticket_ids ?? [])
 
   if (selected) {
     return (
@@ -309,8 +329,13 @@ function CustomerSupport() {
                   className='hover:bg-muted/50 flex w-full items-center justify-between gap-3 px-4 py-3 text-left'
                   onClick={() => select(row.id)}
                 >
-                  <span className='text-foreground truncate text-sm'>
-                    {row.subject}
+                  <span
+                    className={`text-foreground flex min-w-0 items-center gap-2 text-sm ${
+                      unread.has(row.id) ? 'font-semibold' : ''
+                    }`}
+                  >
+                    <UnreadDot show={unread.has(row.id)} />
+                    <span className='truncate'>{row.subject}</span>
                   </span>
                   <span className='flex shrink-0 items-center gap-2'>
                     <span className='text-muted-foreground text-xs'>
@@ -339,7 +364,15 @@ function InboxConversation(props: { id: number; onBack: () => void }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const key = ['support', 'inbox', 'ticket', props.id]
-  const q = useQuery({ queryKey: key, queryFn: () => getInboxTicket(props.id) })
+  const q = useQuery({
+    queryKey: key,
+    queryFn: () =>
+      getInboxTicket(props.id).then((d) => {
+        // The server marked it read on this GET; let the badge catch up.
+        void qc.invalidateQueries({ queryKey: SUPPORT_UNREAD_KEY })
+        return d
+      }),
+  })
   const settle = (data: SupportConversation) => {
     qc.setQueryData(key, data)
     void qc.invalidateQueries({ queryKey: ['support', 'inbox', 'list'] })
@@ -426,6 +459,7 @@ function StaffInbox() {
     queryFn: () => listInbox(filter),
     refetchInterval: 60_000,
   })
+  const unread = new Set(useSupportUnread().data?.ticket_ids ?? [])
 
   if (selected) {
     return <InboxConversation id={selected} onBack={() => select(undefined)} />
@@ -472,7 +506,16 @@ function StaffInbox() {
                 onClick={() => select(row.id)}
               >
                 <td className='text-muted-foreground px-4 py-2'>{row.id}</td>
-                <td className='text-foreground px-4 py-2'>{row.subject}</td>
+                <td
+                  className={`text-foreground px-4 py-2 ${
+                    unread.has(row.id) ? 'font-semibold' : ''
+                  }`}
+                >
+                  <span className='flex items-center gap-2'>
+                    <UnreadDot show={unread.has(row.id)} />
+                    {row.subject}
+                  </span>
+                </td>
                 <td className='px-4 py-2'>
                   <div className='text-foreground'>{row.username}</div>
                   <div className='text-muted-foreground text-xs'>

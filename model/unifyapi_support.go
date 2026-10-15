@@ -75,8 +75,17 @@ type SupportTicketRow struct {
 	Email    string `json:"email"`
 }
 
+// SupportTicketRead is how far one person has read one conversation. Unread
+// is per person, not per ticket: two operators share the inbox, and one of
+// them opening a conversation must not clear it for the other.
+type SupportTicketRead struct {
+	UserId            int `json:"user_id" gorm:"primaryKey;autoIncrement:false"`
+	TicketId          int `json:"ticket_id" gorm:"primaryKey;autoIncrement:false"`
+	LastReadMessageId int `json:"last_read_message_id"`
+}
+
 func MigrateSupport() error {
-	return DB.AutoMigrate(&SupportTicket{}, &SupportMessage{})
+	return DB.AutoMigrate(&SupportTicket{}, &SupportMessage{}, &SupportTicketRead{})
 }
 
 func CreateSupportTicket(userId int, subject, body string) (*SupportTicket, error) {
@@ -171,4 +180,42 @@ func SupportStaffEmails() ([]string, error) {
 		Where("role >= ? AND status = ? AND email <> ''", common.RoleAdminUser, common.UserStatusEnabled).
 		Pluck("email", &emails).Error
 	return emails, err
+}
+
+// MarkSupportTicketRead records that userId has seen every message in the
+// ticket up to now. It only ever moves forward.
+func MarkSupportTicketRead(userId, ticketId int) error {
+	var last int
+	if err := DB.Model(&SupportMessage{}).Where("ticket_id = ?", ticketId).
+		Select("COALESCE(MAX(id), 0)").Scan(&last).Error; err != nil {
+		return err
+	}
+	if last == 0 {
+		return nil
+	}
+	read := SupportTicketRead{UserId: userId, TicketId: ticketId}
+	if err := DB.Where(read).Attrs(SupportTicketRead{LastReadMessageId: 0}).FirstOrCreate(&read).Error; err != nil {
+		return err
+	}
+	return DB.Model(&SupportTicketRead{}).
+		Where("user_id = ? AND ticket_id = ? AND last_read_message_id < ?", userId, ticketId, last).
+		Update("last_read_message_id", last).Error
+}
+
+// UnreadSupportTicketIds lists the conversations with a message from the
+// other side that userId has not opened since it arrived. Staff count
+// customer messages in every conversation; a customer counts staff replies in
+// their own.
+func UnreadSupportTicketIds(userId int, staff bool) ([]int, error) {
+	q := DB.Table("support_messages AS m").
+		Select("DISTINCT m.ticket_id").
+		Joins("JOIN support_tickets AS t ON t.id = m.ticket_id").
+		Joins("LEFT JOIN support_ticket_reads AS r ON r.ticket_id = m.ticket_id AND r.user_id = ?", userId).
+		Where("m.from_staff = ? AND m.id > COALESCE(r.last_read_message_id, 0)", !staff)
+	if !staff {
+		q = q.Where("t.user_id = ?", userId)
+	}
+	var ids []int
+	err := q.Pluck("m.ticket_id", &ids).Error
+	return ids, err
 }
