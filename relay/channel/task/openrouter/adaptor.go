@@ -141,6 +141,12 @@ func payload(c *gin.Context, info *relaycommon.RelayInfo) (map[string]any, error
 			r = strings.ToUpper(r)
 		}
 		body["resolution"] = r
+		// An unpriced label could be a dearer tier than any we bill, so it never reaches upstream.
+		if prices, priced := resolutionPricesUSD[info.UpstreamModelName]; priced {
+			if _, ok := prices[r]; !ok {
+				return nil, fmt.Errorf("unsupported resolution %q for %s", r, info.UpstreamModelName)
+			}
+		}
 	}
 	// Parse effective metadata duration once so wire parameters and billing agree.
 	if value, ok := body["duration"]; ok {
@@ -165,10 +171,26 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	if err != nil {
 		return nil
 	}
-	if n, ok := p["duration"].(int); ok {
-		return map[string]float64{"seconds": float64(n)}
+	n, ok := p["duration"].(int)
+	if !ok {
+		return nil
 	}
-	return nil
+	ratios := map[string]float64{"seconds": float64(n)}
+	prices, priced := resolutionPricesUSD[info.UpstreamModelName]
+	if !priced {
+		return ratios
+	}
+	resolution, _ := p["resolution"].(string)
+	price, ok := prices[resolution]
+	if !ok {
+		// No resolution label (absent, or a pixel size) leaves the choice to
+		// upstream, so bill the dearest tier: hailuo-3 renders 2K only.
+		for _, tier := range prices {
+			price = max(price, tier)
+		}
+	}
+	ratios["resolution"] = price / prices[resolutionPriceBase]
+	return ratios
 }
 func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, body io.Reader) (*http.Response, error) {
 	return channel.DoTaskApiRequest(a, c, info, body)
