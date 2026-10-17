@@ -28,6 +28,7 @@ import (
 var publishedModels = []string{
 	"wan3.0-video", "wan3.0-video-prime", "happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max",
 	"seedance-2.5", "doubao-seedance-2-5-260628", "dreamina-seedance-2-5-260628",
+	"seedance-2.0", "seedance2.0-pro", "seedance-2.0-fast", "seedance-2.0-mini",
 
 	"MiniMax-M2.5",
 	"MiniMax-M2.7",
@@ -390,6 +391,7 @@ func TestUnverifiedEntriesAreDeclared(t *testing.T) {
 	want := []string{
 		"wan3.0-video", "wan3.0-video-prime", "happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max",
 		"seedance-2.5", "doubao-seedance-2-5-260628", "dreamina-seedance-2-5-260628",
+		"seedance-2.0", "seedance2.0-pro", "seedance-2.0-fast", "seedance-2.0-mini",
 
 		"deepseek-v3",                 // retired; DeepSeek publishes v4 only
 		"deepseek-v3.2",               //

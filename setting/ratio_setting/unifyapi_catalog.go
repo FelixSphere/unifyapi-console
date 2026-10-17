@@ -130,6 +130,34 @@ var unifyapiCatalog = []CatalogEntry{
 	// cost. $0.10 restores the floor: 20% at list, 5.9% at 0.85.
 	{Model: "MiniMax-H3", Vendor: "", PerCallUSD: 0.10, PriceUnit: "second", Unverified: true, QuoteSource: "https://console.flatkey.ai/available-models", QuoteDate: "2026-10-16"},
 	{Model: "MiniMax-H3-Max", Vendor: "", PerCallUSD: 0.08, PriceUnit: "second", Unverified: true, QuoteSource: "https://platform.minimax.io/docs/guides/pricing-paygo", QuoteDate: "2026-09-10"},
+	// Seedance 2.0 shipped unpriced, and unpriced means the relay refuses it:
+	// four models advertised in Model Square that no customer could buy.
+	//
+	// FlatKey, our supplier, quotes seedance-2.0 and seedance-2.0-pro at ratio
+	// 3.5 = $7.00/M (read 2026-10-17). That is exactly BytePlus's own list for
+	// the 480p/720p no-video tier, so FlatKey resells Seedance at 1x list -- the
+	// same 1x relationship already recorded for MiniMax-H3 above.
+	//
+	// FlatKey has NOT priced -fast or -mini: both carry its 37.5 NOT-PRICED
+	// sentinel, which is not a quote (see supply/README.md). Their cost is taken
+	// as BytePlus list on that proven 1x relationship, using BytePlus's no-video
+	// rate, the higher of its two tiers -- so the cost basis errs high and the
+	// margins below are a floor rather than a midpoint.
+	//
+	// List is cost / 0.8 throughout: 20% at list, 11.1% at the 0.9 every customer
+	// group gets today, 5.9% at 0.85. Unlike 2.5 these stay token-billed, because
+	// FlatKey bills us per token at one flat ratio with no resolution or
+	// video-input schedule -- flat cost, flat price, nothing to reconcile. Do not
+	// add them to doubao's videoPriceTable; that multiplier describes the direct
+	// Volcengine channel's cost schedule, which is not the one we pay.
+	//
+	// We publish "seedance2.0-pro" without the hyphen that FlatKey's
+	// "seedance-2.0-pro" carries. The catalog has to key on the name we publish.
+	{Model: "seedance-2.0", Vendor: "", InputUSD: 8.75, OutputUSD: 8.75, Unverified: true, QuoteSource: "https://console.flatkey.ai/api/pricing", QuoteDate: "2026-10-17"},
+	{Model: "seedance2.0-pro", Vendor: "", InputUSD: 8.75, OutputUSD: 8.75, Unverified: true, QuoteSource: "https://console.flatkey.ai/api/pricing", QuoteDate: "2026-10-17"},
+	{Model: "seedance-2.0-fast", Vendor: "", InputUSD: 7.00, OutputUSD: 7.00, Unverified: true, QuoteSource: "https://docs.byteplus.com/en/docs/ModelArk/model-pricing", QuoteDate: "2026-10-17"},
+	{Model: "seedance-2.0-mini", Vendor: "", InputUSD: 4.375, OutputUSD: 4.375, Unverified: true, QuoteSource: "https://docs.byteplus.com/en/docs/ModelArk/model-pricing", QuoteDate: "2026-10-17"},
+
 	// Seedance 2.5 reports completion_tokens/total_tokens when the async task
 	// finishes, so it remains token-billed. $10.70/M is the no-video baseline;
 	// the Doubao task adaptor applies 6.40/10.70 when the request contains video.
