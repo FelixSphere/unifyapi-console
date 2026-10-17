@@ -175,10 +175,10 @@ func TestBaselineRatiosDeriveFromOfficialPrices(t *testing.T) {
 		// Google publishes no cache-write price, so there must be no entry.
 		{"gemini-2.5-pro", 1.25, 10, 0.125, 0, 0.625, 8, 0.1, 0},
 		{"gemini-3-pro-image", 2, 120, 0, 0, 1, 60, 0, 0},
-		// Seedance reports one token total for the completed video task, so input
-		// and output use the same published no-video rate.
-		{"dreamina-seedance-2-5-260628", 10.7, 10.7, 0, 0, 5.35, 1, 0, 0},
-		{"seedance-2.5", 10.7, 10.7, 0, 0, 5.35, 1, 0, 0},
+		// The seedance 2.5 family used to be here on a token price. It is billed
+		// PER SECOND by the supplier and is now priced that way, so it has no
+		// token price to assert; its per-second price is pinned by
+		// TestBaselineMapsAreEmptyUntilAModelNeedsThem and by pricing-drift.
 	}
 
 	for _, tc := range cases {

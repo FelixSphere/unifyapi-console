@@ -166,7 +166,7 @@ func TestChannelVideoGenerationPersistsBillsPollsAndRefunds(t *testing.T) {
 			require.True(t, exists)
 			require.Equal(t, ch.Id, task.ChannelId)
 			require.Equal(t, 0, task.PrivateData.TokenId)
-			require.Equal(t, 200000, task.Quota) // 5 seconds * $0.08 * 500000
+			require.Equal(t, 250000, task.Quota) // 5 seconds * $0.10 * 500000
 			require.Equal(t, "queued", videoTestStatus(task)["status"])
 			service.RunTaskPollingOnce(context.Background(), nil)
 			task, _, err = model.GetByTaskId(user.Id, taskID)
@@ -186,7 +186,7 @@ func TestChannelVideoGenerationPersistsBillsPollsAndRefunds(t *testing.T) {
 			}
 
 			require.NoError(t, db.First(&user, user.Id).Error)
-			require.Equal(t, 9800000, user.Quota)
+			require.Equal(t, 9750000, user.Quota)
 			// Same path preserves failure refunds and does not enable a disabled channel.
 			state = "failed"
 			taskID = submit()
@@ -196,7 +196,7 @@ func TestChannelVideoGenerationPersistsBillsPollsAndRefunds(t *testing.T) {
 			require.Equal(t, model.TaskStatus(model.TaskStatusFailure), task.Status)
 			require.Equal(t, "fixture rejection", videoTestStatus(task)["message"])
 			require.NoError(t, db.First(&user, user.Id).Error)
-			require.Equal(t, 9800000, user.Quota)
+			require.Equal(t, 9750000, user.Quota)
 			require.NoError(t, db.First(&ch, ch.Id).Error)
 			require.Equal(t, common.ChannelStatusManuallyDisabled, ch.Status)
 			require.Equal(t, 2, posts)
