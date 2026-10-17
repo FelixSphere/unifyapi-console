@@ -10,13 +10,14 @@ package openrouter
 
 // MiniMax-H3 on the OpenRouter channel is mapped to minimax/hailuo-3, which
 // OpenRouter renders at 2K only, at $0.13 per second. The catalog prices H3 at
-// its 768p rate of $0.08, and before this test the adaptor billed only
-// duration, so every OpenRouter H3 second was sold at $0.08 x group ratio
-// ($0.068 at 0.85) against a $0.13 upstream charge.
+// $0.10 per 768p second (MiniMax's $0.08 plus margin), and before this test the
+// adaptor billed only duration, so every OpenRouter H3 second was sold at
+// $0.10 x group ratio ($0.085 at 0.85) against a $0.13 upstream charge.
 //
-// The dollar figures below are typed from MiniMax's pay-as-you-go page
-// (https://platform.minimax.io/docs/guides/pricing-paygo, checked 2026-10-17),
-// not derived from resolutionPricesUSD, so a mutated table fails them.
+// The resolution multipliers below are typed from MiniMax's pay-as-you-go page
+// (https://platform.minimax.io/docs/guides/pricing-paygo, checked 2026-10-17)
+// as vendor dollars, not derived from resolutionPricesUSD, so a mutated table
+// fails them.
 
 import (
 	"net/http"
@@ -68,7 +69,7 @@ func submitH3(t *testing.T, origin, upstream, group, body string) (quota int, bu
 
 	priceData, err := helper.ModelPriceHelperPerCall(c, info)
 	require.NoError(t, err)
-	require.InDelta(t, 0.08, priceData.ModelPrice, 1e-9, "both H3 catalog rows are MiniMax's 768p price")
+	require.InDelta(t, listPerSecond[origin], priceData.ModelPrice, 1e-9, "catalog 768p price of %s", origin)
 	info.PriceData = priceData
 	for k, v := range a.EstimateBilling(c, info) {
 		info.PriceData.AddOtherRatio(k, v)
@@ -77,6 +78,9 @@ func submitH3(t *testing.T, origin, upstream, group, body string) (quota int, bu
 	_, buildErr = a.BuildRequestBody(c, info)
 	return quota, buildErr
 }
+
+// listPerSecond is our catalog price per 768p second (setting/ratio_setting/unifyapi_catalog.go).
+var listPerSecond = map[string]float64{"MiniMax-H3": 0.10, "MiniMax-H3-Max": 0.08}
 
 func quotaForUSD(usd float64) int {
 	quota, _ := common.QuotaFromFloatStrict(usd * common.QuotaPerUnit)
@@ -89,11 +93,11 @@ func TestOpenRouterH3BillsEachResolutionAtMiniMaxsPricePerSecond(t *testing.T) {
 		name, origin, upstream, group, body string
 		usd                                 float64
 	}{
-		{"H3 768p at 0.85", "MiniMax-H3", "minimax/hailuo-3", "default", `{"prompt":"a train","duration":5,"resolution":"768p"}`, 5 * 0.08 * 0.85},
-		{"H3 2K at 0.85", "MiniMax-H3", "minimax/hailuo-3", "default", `{"prompt":"a train","duration":5,"resolution":"2K"}`, 5 * 0.13 * 0.85},
-		{"H3 2K as size shorthand", "MiniMax-H3", "minimax/hailuo-3", "default", `{"prompt":"a train","seconds":"10","size":"2k"}`, 10 * 0.13 * 0.85},
-		{"H3 2K at list", "MiniMax-H3", "minimax/hailuo-3", "list", `{"prompt":"a train","duration":5,"resolution":"2K"}`, 5 * 0.13},
-		{"H3 Max 480p at 0.85", "MiniMax-H3-Max", "minimax/hailuo-3-max", "default", `{"prompt":"a train","duration":5,"resolution":"480p"}`, 5 * 0.05 * 0.85},
+		{"H3 768p at 0.85", "MiniMax-H3", "minimax/hailuo-3", "default", `{"prompt":"a train","duration":5,"resolution":"768p"}`, 5 * 0.10 * 0.85},
+		{"H3 2K at 0.85", "MiniMax-H3", "minimax/hailuo-3", "default", `{"prompt":"a train","duration":5,"resolution":"2K"}`, 5 * 0.10 * (0.13 / 0.08) * 0.85},
+		{"H3 2K as size shorthand", "MiniMax-H3", "minimax/hailuo-3", "default", `{"prompt":"a train","seconds":"10","size":"2k"}`, 10 * 0.10 * (0.13 / 0.08) * 0.85},
+		{"H3 2K at list", "MiniMax-H3", "minimax/hailuo-3", "list", `{"prompt":"a train","duration":5,"resolution":"2K"}`, 5 * 0.10 * (0.13 / 0.08)},
+		{"H3 Max 480p at 0.85", "MiniMax-H3-Max", "minimax/hailuo-3-max", "default", `{"prompt":"a train","duration":5,"resolution":"480p"}`, 5 * 0.08 * (0.05 / 0.08) * 0.85},
 		{"H3 Max 768p at 0.85", "MiniMax-H3-Max", "minimax/hailuo-3-max", "default", `{"prompt":"a train","duration":5,"resolution":"768P"}`, 5 * 0.08 * 0.85},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -105,17 +109,19 @@ func TestOpenRouterH3BillsEachResolutionAtMiniMaxsPricePerSecond(t *testing.T) {
 }
 
 // Whatever the request leaves upstream to decide, H3 over OpenRouter renders
-// 2K, so at list price it must bill at least MiniMax's $0.13 per 2K second.
-// A resolution label we hold no price for is refused before anything is sent.
+// 2K, so even at the 0.85 group ratio every customer gets it must bill at least
+// MiniMax's $0.13 per 2K second. A resolution label we hold no price for is
+// refused before anything is sent.
 func TestOpenRouterH3NeverBillsAnUnpricedResolutionBelowThe2KPrice(t *testing.T) {
 	resetH3Pricing(t)
 	for _, body := range []string{
+		`{"prompt":"a train","duration":5,"resolution":"2K"}`,
 		`{"prompt":"a train","duration":5}`,
 		`{"prompt":"a train","duration":5,"size":"1920x1080"}`,
 		`{"prompt":"a train","duration":5,"resolution":2}`,
 	} {
 		t.Run(body, func(t *testing.T) {
-			quota, err := submitH3(t, "MiniMax-H3", "minimax/hailuo-3", "list", body)
+			quota, err := submitH3(t, "MiniMax-H3", "minimax/hailuo-3", "default", body)
 			require.NoError(t, err)
 			assert.GreaterOrEqual(t, quota, quotaForUSD(5*0.13))
 		})
