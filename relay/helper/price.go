@@ -309,6 +309,18 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 		return hosttypes.PriceData{}, fmt.Errorf("model %s is configured as tiered_expr but has no billing expression", info.OriginModelName)
 	}
 
+	// UNIFYAPI-FORK: a customer contract is a final multiplier over the official
+	// price (see HandleGroupRatio). The installed expression already carries the
+	// global ModelDiscount in every coefficient, so under a contract it is
+	// regenerated at list price -- the same substitution the ratio path makes
+	// with entry.ModelRatio(). The snapshot freezes this string, so settlement
+	// inherits the same basis.
+	if _, contract := ratio_setting.GetGroupModelDiscount(info.UserGroup, info.OriginModelName); contract {
+		if entry, ok := ratio_setting.CatalogEntryFor(info.OriginModelName); ok && entry.NeedsBillingExpr() {
+			exprStr = entry.BillingExpr(1)
+		}
+	}
+
 	estimatedCompletionTokens := meta.MaxTokens
 	if estimatedCompletionTokens == 0 && groupRatioInfo.GroupRatio != 0 {
 		estimatedCompletionTokens = defaultTieredPreConsumeMaxTokens
