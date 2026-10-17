@@ -124,15 +124,28 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "happyhorse-1.1-t2v", Vendor: "", PerCallUSD: 0.14, PriceUnit: "second", Unverified: true, QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing", QuoteDate: "2026-09-10"},
 	{Model: "happyhorse-1.1-i2v", Vendor: "", PerCallUSD: 0.14, PriceUnit: "second", Unverified: true, QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing", QuoteDate: "2026-09-10"},
 	{Model: "happyhorse-1.1-r2v", Vendor: "", PerCallUSD: 0.14, PriceUnit: "second", Unverified: true, QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing", QuoteDate: "2026-09-10"},
-	{Model: "MiniMax-H3", Vendor: "", PerCallUSD: 0.08, PriceUnit: "second", Unverified: true, QuoteSource: "https://platform.minimax.io/docs/guides/pricing-paygo", QuoteDate: "2026-09-10"},
+	// $0.08 was MiniMax's own list, and it is also exactly what our supplier
+	// charges us (FlatKey, Seedance2.0 Official group, ratio 1x, read signed-in
+	// 2026-10-16). Selling at list earned nothing and every discount sold below
+	// cost. $0.10 restores the floor: 20% at list, 5.9% at 0.85.
+	{Model: "MiniMax-H3", Vendor: "", PerCallUSD: 0.10, PriceUnit: "second", Unverified: true, QuoteSource: "https://console.flatkey.ai/available-models", QuoteDate: "2026-10-16"},
 	{Model: "MiniMax-H3-Max", Vendor: "", PerCallUSD: 0.08, PriceUnit: "second", Unverified: true, QuoteSource: "https://platform.minimax.io/docs/guides/pricing-paygo", QuoteDate: "2026-09-10"},
 	// Seedance 2.5 reports completion_tokens/total_tokens when the async task
 	// finishes, so it remains token-billed. $10.70/M is the no-video baseline;
 	// the Doubao task adaptor applies 6.40/10.70 when the request contains video.
 	// The doubao-prefixed name is retained as a compatibility alias.
-	{Model: "seedance-2.5", Vendor: "", InputUSD: 10.7, OutputUSD: 10.7, Unverified: true, QuoteSource: "https://ai.byteplus.com/en", QuoteDate: "2026-09-10"},
-	{Model: "doubao-seedance-2-5-260628", Vendor: "", InputUSD: 10.7, OutputUSD: 10.7, Unverified: true, QuoteSource: "https://ai.byteplus.com/en", QuoteDate: "2026-09-10"},
-	{Model: "dreamina-seedance-2-5-260628", Vendor: "", InputUSD: 10.7, OutputUSD: 10.7, Unverified: true, QuoteSource: "https://ai.byteplus.com/en", QuoteDate: "2026-09-10"},
+	// seedance 2.5 is billed PER SECOND of generated video, not per token. We
+	// sold it per token, which is not a wrong number so much as the wrong unit:
+	// there is nothing on the supplier side to compare $/1M tokens against.
+	// FlatKey's own console, read 2026-10-16 while signed in, prices it at
+	// $0.084 per second (its token "price" there is 37.5, which is FlatKey's
+	// NOT-PRICED sentinel and not a quote -- see supply/README.md).
+	//
+	// $0.105 leaves 20% at list and 5.9% at the 0.85 every customer group gets,
+	// which is the floor this catalog is held to.
+	{Model: "seedance-2.5", Vendor: "", PerCallUSD: 0.105, PriceUnit: "second", Unverified: true, QuoteSource: "https://console.flatkey.ai/available-models", QuoteDate: "2026-10-16"},
+	{Model: "doubao-seedance-2-5-260628", Vendor: "", PerCallUSD: 0.105, PriceUnit: "second", Unverified: true, QuoteSource: "https://console.flatkey.ai/available-models", QuoteDate: "2026-10-16"},
+	{Model: "dreamina-seedance-2-5-260628", Vendor: "", PerCallUSD: 0.105, PriceUnit: "second", Unverified: true, QuoteSource: "https://console.flatkey.ai/available-models", QuoteDate: "2026-10-16"},
 
 	// ---- unlisted vendor ----
 	{Model: "nano-banana-pro-preview", Vendor: "google", UpstreamModel: "gemini-3-pro-image", InputUSD: 2, OutputUSD: 120, CacheReadUSD: 0, CacheWriteUSD: 0},
@@ -258,11 +271,17 @@ var unifyapiCatalog = []CatalogEntry{
 	//	input < 32K   in CNY 5   out CNY 22   cache CNY 1.2
 	//	input >= 32K  in CNY 7   out CNY 26   cache CNY 1.8
 	//
-	// The figures below are the CHEAP tier at roughly 6.9 CNY/USD. Two open
-	// questions, both business decisions rather than lookups: whether that rate
-	// is still the one to use, and that a single USD number cannot express a
-	// tier -- every request over 32K input costs 40% more than we charge for it.
-	{Model: "glm-5-turbo", Vendor: "", InputUSD: 0.72, OutputUSD: 3.2, CacheReadUSD: 0.144, CacheWriteUSD: 0, Unverified: true},
+	// The figures below are the EXPENSIVE tier at roughly 6.9 CNY/USD. They used
+	// to be the cheap one, and the note here already said why that was a
+	// problem: a single USD number cannot express a tier, so every request over
+	// 32K input cost 40% more than we charged for it. Measured against the live
+	// supplier ratio the whole model was under water -- our list was 62% of what
+	// the supplier bills, so it lost money even at list price, on both tiers.
+	//
+	// Pricing the higher tier is the only single number that is never below
+	// cost: CNY 7 / 26 / 1.8 at 6.9 CNY/USD. A request under 32K is now sold
+	// slightly above its own cost, which is the safe direction of the gap.
+	{Model: "glm-5-turbo", Vendor: "", InputUSD: 1.015, OutputUSD: 3.77, CacheReadUSD: 0.261, CacheWriteUSD: 0, Unverified: true},
 	{Model: "glm-5.1", Vendor: "zhipuai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
 	{Model: "glm-5.2", Vendor: "zhipuai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
 	// Same price as 5.1 and 5.2, confirmed on Zhipu's own international list
