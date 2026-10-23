@@ -196,10 +196,15 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "gpt-5.4", Vendor: "openai", InputUSD: 2.5, OutputUSD: 15, CacheReadUSD: 0.25, CacheWriteUSD: 0,
 		QuoteSource: "https://models.dev/api.json (openai/gpt-5.4)", QuoteDate: "2026-08-30"},
 	// Served by channel 186 and previously uncatalogued, so its upstream cost
-	// modelled as zero. Standard tier only, as for the rest of the range;
-	// OpenAI also publishes a band above a 272k context ($8/$30).
+	// modelled as zero.
+	//
+	// Carries its 272k context tier so the catalog owns this model's billing
+	// expression. Without one, a hand-written expression copied from gpt-5.5
+	// ($5/$30) survived every rebuild and billed 25% over list on input and 50%
+	// over on output, while the console displayed $4/$20.
 	{Model: "gpt-5.6-sol", Vendor: "openai", InputUSD: 4, OutputUSD: 20, CacheReadUSD: 0.4, CacheWriteUSD: 5,
-		QuoteSource: "https://models.dev/api.json (openai/gpt-5.6-sol)", QuoteDate: "2026-09-11"},
+		QuoteSource: "https://developers.openai.com/api/docs/pricing (gpt-5.6-sol)", QuoteDate: "2026-10-17",
+		ContextTier: &ContextTier{ThresholdTokens: 272000, InputUSD: 8, OutputUSD: 30, CacheReadUSD: 0.8, CacheWriteUSD: 10}},
 	// Standard tier. OpenAI also publishes a higher band above a 272k context
 	// ($20/$75); the catalog carries one price per model, and the standard tier
 	// is what the relay bills, so that is what is recorded here.
