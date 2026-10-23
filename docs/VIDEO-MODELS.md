@@ -188,4 +188,8 @@ The adapter handles `/api/v1/videos` submission (HTTP 202), pending/completed/fa
 
 Manual test defaults use a capability snapshot from the video models endpoint, including 2K for OpenRouter H3 (its currently supported resolution). Some editing/upscaling models require reference assets and need explicit test metadata. Configure customer video pricing separately: this change does not seed or replace prices. Duration multiplies the configured base rate; OpenRouter `usage.cost` is never substituted for customer quota. A task accepted by the provider is persisted once, and failed jobs use the existing refund path.
 
+`minimax/hailuo-3` and `minimax/hailuo-3-max` also bill a resolution multiplier over the 768p catalog price, using the same MiniMax schedule as the native channel (H3: 768p 1, 2K 1.625; H3 Max: 480p 0.625, 768p 1). OpenRouter renders hailuo-3 at 2K only, so a request without a resolution label (or with a pixel `size`) bills that SKU's dearest tier, and a label with no price is refused before submission. The pre-charged amount is final: this adapter does not settle on measured usage.
+
+**Not yet billed on OpenRouter (operator decision pending):** OpenRouter charges `reference_images` at $0.04 each for hailuo-3 (`GET /api/v1/videos/models`, 2026-10-17). The native H3 channel bills images after the first five at $0.04 and input-video seconds at the output rate; the OpenRouter adapter bills neither, so reference-image requests on this route are under-billed by $0.04 per image.
+
 Sources checked 2026-09-10: https://openrouter.ai/docs/api/api-reference/video-generation/create-videos and https://openrouter.ai/docs/api/api-reference/video-generation/get-videos.
