@@ -35,6 +35,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
@@ -194,8 +195,35 @@ func CreateSupportTicket(c *gin.Context) {
 
 func GetMySupportTicket(c *gin.Context) {
 	if ticket, ok := supportOwnTicket(c); ok {
+		supportMarkRead(c, ticket.Id)
 		supportConversation(c, ticket)
 	}
+}
+
+// supportMarkRead clears a conversation from the caller's unread count.
+// Failing to record it must not hide the conversation, so it only logs.
+func supportMarkRead(c *gin.Context, ticketId int) {
+	if err := model.MarkSupportTicketRead(c.GetInt("id"), ticketId); err != nil {
+		common.SysError("support: mark read: " + err.Error())
+	}
+}
+
+func supportIsStaff(c *gin.Context) bool {
+	return c.GetInt("role") >= common.RoleAdminUser
+}
+
+// SupportUnread is the number behind the sidebar badge: conversations with a
+// message from the other side that the caller has not opened yet.
+func SupportUnread(c *gin.Context) {
+	ids, err := model.UnreadSupportTicketIds(c.GetInt("id"), supportIsStaff(c))
+	if err != nil {
+		supportFail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if ids == nil {
+		ids = []int{}
+	}
+	supportOK(c, gin.H{"count": len(ids), "ticket_ids": ids})
 }
 
 func AddMySupportMessage(c *gin.Context) {
@@ -261,6 +289,7 @@ func GetSupportTicket(c *gin.Context) {
 	if !ok {
 		return
 	}
+	supportMarkRead(c, ticket.Id)
 	msgs, err := model.GetSupportMessages(ticket.Id)
 	if err != nil {
 		supportFail(c, http.StatusInternalServerError, err.Error())

@@ -115,3 +115,9 @@ export const setInboxStatus = (id: number, status: SupportStatus) =>
       { status }
     )
   )
+
+export type SupportUnread = { count: number; ticket_ids: number[] }
+
+// Conversations with a message from the other side the caller has not opened.
+export const getUnread = () =>
+  call(api.get<Envelope<SupportUnread>>('/api/support/unread'))

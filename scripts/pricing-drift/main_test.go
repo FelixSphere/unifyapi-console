@@ -23,7 +23,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const fixturePath = "testdata/models-dev-2026-09-11.json"
+// The fixture is named after the day the catalog was verified, so bumping
+// PricingSnapshotDate without committing the feed it was verified against
+// fails here rather than silently testing against the old one. The daily
+// drift job writes both in one change.
+var fixturePath = "testdata/models-dev-" + ratio_setting.PricingSnapshotDate + ".json"
 
 func loadFixture(t *testing.T) map[string]modelsDevProvider {
 	t.Helper()
@@ -148,18 +152,15 @@ func TestUnverifiableCountIsStable(t *testing.T) {
 	// grok-4.6, grok-4.7 and qwen3.8-flash. Each carries a QuoteSource and date.
 	require.Equal(t, 37, count,
 		"unverifiable entries require a documented reason and a maintained quote")
-	for _, name := range []string{"happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max", "wan3.0-video", "wan3.0-video-prime"} {
+	// The seedance 2.5 family joined this list on 2026-10-17: the supplier bills
+	// it per second, so a token price was the wrong unit rather than a wrong
+	// number. A per-second row must still carry a dated quote.
+	for _, name := range []string{"happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max", "wan3.0-video", "wan3.0-video-prime", "seedance-2.5", "doubao-seedance-2-5-260628", "dreamina-seedance-2-5-260628"} {
 		entry, ok := ratio_setting.CatalogEntryFor(name)
 		require.True(t, ok)
 		require.Equal(t, "second", entry.PriceUnit)
-		require.NotEmpty(t, entry.QuoteSource)
-		require.NotEmpty(t, entry.QuoteDate)
-	}
-	for _, name := range []string{"seedance-2.5", "doubao-seedance-2-5-260628", "dreamina-seedance-2-5-260628"} {
-		entry, ok := ratio_setting.CatalogEntryFor(name)
-		require.True(t, ok)
-		require.Zero(t, entry.PerCallUSD)
-		require.Equal(t, 10.7, entry.InputUSD)
+		require.NotZero(t, entry.PerCallUSD, "a per-second row must carry a price")
+		require.Zero(t, entry.InputUSD, "a per-second row must not also carry a token price")
 		require.NotEmpty(t, entry.QuoteSource)
 		require.NotEmpty(t, entry.QuoteDate)
 	}
