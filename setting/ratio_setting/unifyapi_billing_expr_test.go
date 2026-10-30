@@ -69,11 +69,15 @@ func TestALongRequestIsBilledAtTheTierPrice(t *testing.T) {
 	below := exprDollars(t, expr, billingexpr.TokenParams{P: 100_000, C: 0, Len: 100_000})
 	above := exprDollars(t, expr, billingexpr.TokenParams{P: 100_000, C: 0, Len: 300_000})
 
-	// $0.50 and $2.00 per 1M -> 100k costs $0.05 and $0.20.
-	require.InDelta(t, 0.05, below, 1e-9)
-	require.InDelta(t, 0.20, above, 1e-9)
-	require.InDelta(t, 4.0, above/below, 1e-9,
-		"the vendor charges 4x above 256K; billing the base rate there is the gap this closes")
+	// $0.40 and $1.20 per 1M -> 100k costs $0.04 and $0.12. Alibaba repriced
+	// both tiers; read from the models.dev alibaba feed on 2026-10-30, where
+	// the base is 0.4/1.6 and the >256K tier is 1.2/4.8. The catalog carried
+	// the old 2.0/6.0 tier, so long requests were billed 1.67x the vendor's
+	// own price -- the mirror image of the gap this test was written for.
+	require.InDelta(t, 0.04, below, 1e-9)
+	require.InDelta(t, 0.12, above, 1e-9)
+	require.InDelta(t, 3.0, above/below, 1e-9,
+		"the vendor charges 3x above 256K; billing the base rate there is the gap this closes")
 }
 
 // TestAudioTokensAreBilledAtTheAudioPrice -- the other half of the audit.
