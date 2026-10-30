@@ -1,7 +1,7 @@
-# UnifyAPI fork — branding, licence obligations, and upstream merge runbook
+# Unify API fork — branding, licence obligations, and upstream merge runbook
 
 This fork of [QuantumNous/new-api](https://github.com/QuantumNous/new-api) is the
-logged-in console for **UnifyAPI** (`app.unifyapi.ai`) and its OpenAI-compatible
+logged-in console for **Unify API** (`app.unifyapi.ai`) and its OpenAI-compatible
 relay (`api.unifyapi.ai`).
 
 - **Upstream base:** `v1.0.0-rc.23` (commit `0ab02020`)
@@ -85,6 +85,8 @@ finds the whole delta without consulting git history.
 | File | Change | Why there |
 |---|---|---|
 | `web/src/main.tsx` | import `./styles/unifyapi.css` instead of `./styles/index.css` | Our stylesheet re-imports `index.css` first, so upstream's stays **byte-untouched** and merges fast-forward forever. Appending an `@import` inside `index.css` would touch their highest-churn stylesheet, in the exact import block they last edited. |
+| `web/src/main.tsx` | import `useAuthStore`; call `watchHubSpotChat(window, router, useAuthStore)` | The router is created here, so this is the one place that sees every route, public and logged-in, next to the auth store that says who is looking. The logic (no inject before the first resolve, sync on each resolved path change, reload on sign-in) lives in our own `brand/hubspot-chat.ts`; this file only carries the import and the one call. |
+| `web/src/main.tsx` | render `<CookieNotice router={router} auth={useAuthStore} />` beside `<RouterProvider>` | Mounted once, next to the router it reads the path from, so it covers every route; it shows only where `shouldShowHubSpotChat()` is true for the auth store's visitor (signed out only). The logic lives in our own `brand/cookie-notice.tsx` and `brand/cookie-consent.ts`; this file only carries the import and the one element. |
 | `web/src/main.tsx` | `<ThemeProvider defaultTheme='light'>` | Required, not cosmetic. CSS cannot reach the JS consumers of `resolvedTheme` — VChart (`lib/use-chart-theme.ts`, the three dashboard chart components) and Sonner. Without it, charts and toasts render dark on a paper-white page. |
 | `…/layout/components/authenticated-layout.tsx` | mount `<UpstreamAttribution />`; `<AppHeader showConfigDrawer={false} />` | The config drawer is simultaneously the dark-mode switch and the theme-preset/font/radius picker. Disabling it pins the brand and guarantees `data-theme-preset` is never written to `<body>` — which matters because the preset bridge selector in `theme-presets.css` has specificity (0,4,0) and would out-rank our `:root`. |
 | `…/layout/components/public-layout.tsx` | mount `<UpstreamAttribution />`; default `showThemeSwitch` to `false` | One line covers all nine early returns across `features/home` and `features/about`, plus `/pricing`, `/rankings`, and the legal pages. `public-header.tsx` defaults the switch on. |
@@ -97,6 +99,23 @@ finds the whole delta without consulting git history.
 - `web/src/styles/unifyapi.css` — the entire visual rebrand.
 - `web/src/assets/fonts/` — four vendored `latin` woff2 + three OFL-1.1 licences.
 - `web/src/brand/upstream-attribution.tsx` — the always-mounted attribution.
+- `web/src/brand/hubspot-chat.ts` — HubSpot live chat (portal `46127314`, shared with
+  the marketing site). Loaded from the bundle, not `index.html`, so it can stay off
+  `/oauth/*` (bind popup), `/chat/*` + `/chat2link` (full-viewport third-party chat
+  iframes), `/setup` and the sign-in/sign-up/password-reset pages, and never loads
+  when the console is itself framed. **Signed-out visitors only** (operator decision,
+  2026-10-02): signed in is the app's own test, a user in `useAuthStore` (as the
+  `/_authenticated` guard and `features/home` use). Nothing is injected until the root
+  route has awaited the auth bootstrap (the first resolve), so a signed-in user never sees
+  it flash in. Signing in on a page that already has the loader (this tab or another)
+  reloads it, as a move to a hidden route does, because `widget.remove()` leaves
+  HubSpot's analytics and collected-forms scripts live. Signing out injects nothing until
+  the next eligible route resolves.
+- `web/src/brand/cookie-notice.tsx` + `cookie-consent.ts` — the cookie notice, copied from FelixSphere (same
+  copy, look and `localConsent` / `rejectTimestamp` storage). Shown only where HubSpot chat
+  loads, so never to a signed-in user and not before auth has answered. Unlike FelixSphere,
+  Reject queues HubSpot's `doNotTrack` (Accept opts back in).
+  Links to https://www.unifyapi.ai/privacy. Its four strings are in all seven locales.
 - `web/scripts/check-brand-invariants.mjs` — the licence/brand guard.
 - `.github/workflows/fork-ci.yml` — fork-owned CI.
 - `BRANDING.md` — this file.
@@ -162,16 +181,16 @@ then refreshed from `GET /api/status`. There is **no environment variable** for
 any of them — DB only, via the admin UI or `PUT /api/option/`.
 
 **Set these on first boot or the console renders as "New API".** Verified: with
-`SystemName` unset, the title flips from our static `<title>UnifyAPI</title>` back
+`SystemName` unset, the title flips from our static `<title>Unify API</title>` back
 to "New API" as soon as `/api/status` resolves.
 
 | Option | Value |
 |---|---|
-| `SystemName` | `UnifyAPI` |
+| `SystemName` | `Unify API` |
 | `Logo` | `/logo.png` |
-| `Footer` | UnifyAPI HTML, and a visible **Source code** link to this fork (discharges §13). Safe: the `footerHtml` branch still renders `<ProjectAttribution inline />`. |
-| `About` | Must contain: "UnifyAPI Console is a modified version of **New API**" + link to `https://github.com/QuantumNous/new-api`; the §7(b) notice; the AGPL licence link; the §7(c) statement at the top of this file; and the chain from upstream's own about page — "Based on One API © 2023 JustSong". |
-| `HomePageContent` | UnifyAPI console landing (safe: `PublicLayout` now carries attribution unconditionally). |
+| `Footer` | Unify API HTML, and a visible **Source code** link to this fork (discharges §13). Safe: the `footerHtml` branch still renders `<ProjectAttribution inline />`. |
+| `About` | Must contain: "Unify API Console is a modified version of **New API**" + link to `https://github.com/QuantumNous/new-api`; the §7(b) notice; the AGPL licence link; the §7(c) statement at the top of this file; and the chain from upstream's own about page — "Based on One API © 2023 JustSong". |
+| `HomePageContent` | Unify API console landing (safe: `PublicLayout` now carries attribution unconditionally). |
 
 The split we hold to: **anything visible before `/api/status` resolves, or needed
 at build time (fonts, colours, bundled assets, the static `<title>`) goes in
@@ -333,3 +352,25 @@ Requires `bun` (pinned to 1.3.14, matching upstream CI) and Go 1.26.
 opt-in server-authenticated Builder account bridge. `model/main.go` registers
 its additive identity table; `router/api-router.go` registers its endpoint.
 See `docs/builder-integration.md` for scope and incomplete team-credit work.
+
+### Compute billing bridge (unreleased, dark)
+
+`model/compute_hold.go` and `controller/compute_bridge.go` add the console half
+of the unify-compute billing bridge: HMAC-signed `/api/compute/v1/*` routes that
+verify a key and hold, settle, extend and release wallet quota through the
+console's own billing-entity and token paths. `model/main.go` registers its three
+additive tables; `router/api-router.go` registers the routes and the expired-hold
+sweeper. The routes answer 404 until `COMPUTE_BRIDGE_SECRET` is set. See
+`docs/compute-bridge.md`.
+
+### Durable settlement (unreleased)
+
+`model/settlement_outbox.go` makes the post-response wallet/token settlement
+and the consume log survive a database that refuses connections: a bounded
+retry on connection-class errors only (refused before the statement ran), then
+a Redis-or-memory outbox replayed by a worker, exactly once via the additive
+`settlement_ledgers` table. `model/db_pool_ceiling.go` caps an unset
+`SQL_MAX_OPEN_CONNS` below Postgres `max_connections`. Upstream touch points,
+all marked `UNIFYAPI-FORK`: `main.go` (start worker, shutdown flush),
+`model/main.go` (migration, pool ceiling), `model/user.go` and `model/log.go`
+(retried calls), `service/billing_session.go` (park on refusal).

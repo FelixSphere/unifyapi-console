@@ -1,7 +1,6 @@
 package relay
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -66,7 +65,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		request.Thinking = &dto.Thinking{
 			Type: "adaptive",
 		}
-		request.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
+		request.MergeOutputConfig("effort", effortLevel)
 		if strings.HasPrefix(request.Model, "claude-opus-4-7") ||
 			strings.HasPrefix(request.Model, "claude-opus-4-8") {
 			// Opus 4.7/4.8 reject non-default temperature/top_p/top_k with 400
@@ -87,7 +86,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 				strings.HasPrefix(baseModel, "claude-opus-4-8") {
 				// Opus 4.7/4.8 reject thinking.type="enabled"; use adaptive at high effort.
 				request.Thinking = &dto.Thinking{Type: "adaptive", Display: "summarized"}
-				request.OutputConfig = json.RawMessage(`{"effort":"high"}`)
+				request.MergeOutputConfig("effort", "high")
 				request.Temperature = nil
 				request.TopP = nil
 				request.TopK = nil
@@ -268,6 +267,9 @@ func applyAdaptiveThinkingCompatibility(request *dto.ClaudeRequest) {
 		effort = "low"
 	}
 
-	request.Thinking = &dto.Thinking{Type: "adaptive"}
-	request.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":%q}`, effort))
+	// UNIFYAPI: display is the caller's instruction about what comes back, not
+	// part of the shape being translated; rebuilding Thinking without it would
+	// silently overrule an explicit display:"omitted".
+	request.Thinking = &dto.Thinking{Type: "adaptive", Display: request.Thinking.Display}
+	request.MergeOutputConfig("effort", effort)
 }

@@ -47,7 +47,7 @@ func TestCatalogEntryDerivations(t *testing.T) {
 // this test fails loudly the day a row starts populating one, which is a
 // billing change that must not land unnoticed.
 func TestBaselineMapsAreEmptyUntilAModelNeedsThem(t *testing.T) {
-	assert.Equal(t, map[string]float64{"wan3.0-video": 0.10, "wan3.0-video-prime": 0.14, "happyhorse-1.1-t2v": 0.14, "happyhorse-1.1-i2v": 0.14, "happyhorse-1.1-r2v": 0.14, "MiniMax-H3": 0.08, "MiniMax-H3-Max": 0.08}, baselineModelPrice())
+	assert.Equal(t, map[string]float64{"wan3.0-video": 0.10, "wan3.0-video-prime": 0.14, "happyhorse-1.1-t2v": 0.14, "happyhorse-1.1-i2v": 0.14, "happyhorse-1.1-r2v": 0.14, "MiniMax-H3": 0.10, "MiniMax-H3-Max": 0.08, "seedance-2.5": 0.105, "doubao-seedance-2-5-260628": 0.105, "dreamina-seedance-2-5-260628": 0.105}, baselineModelPrice())
 	for name, m := range map[string]map[string]float64{
 
 		"ImageRatio":           baselineImageRatio(),

@@ -27,6 +27,8 @@ func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dt
 
 func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.ClaudeRequest) (any, error) {
 	NormalizeThinkingShape(request, "") // UNIFYAPI: thinking shape the model accepts
+	// UNIFYAPI: billed thinking has to come back; see ApplyThinkingDisplayDefault.
+	ApplyThinkingDisplayDefault(request, false)
 	// UNIFYAPI: a caller may send output_format straight at /v1/messages, and it
 	// needs the same beta as the converted OpenAI path.
 	markStructuredOutputs(info, request)
@@ -125,6 +127,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if claudeRequest, ok := result.Value.(*dto.ClaudeRequest); ok {
 		ApplyRequestedReasoning(claudeRequest, request)
 		NormalizeThinkingShape(claudeRequest, openAIRequestedEffort(request))
+		ApplyThinkingDisplayDefault(claudeRequest, openAIExcludedReasoning(request))
 		// UNIFYAPI: response_format became output_format during conversion.
 		markStructuredOutputs(info, claudeRequest)
 	}

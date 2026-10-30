@@ -96,7 +96,15 @@ func TestNormalizeThinking_BudgetStaysBelowMaxTokens(t *testing.T) {
 }
 
 func TestNormalizeThinking_LeavesModelsThatAcceptBothShapesAlone(t *testing.T) {
-	for _, model := range []string{"claude-opus-4-8", "claude-sonnet-5", "claude-opus-5"} {
+	// claude-opus-5 was removed from this list on 2026-09-26, with the
+	// operator's approval. It does accept both shapes, which is what this test
+	// checked, but accepting is not the same as answering: it returns no
+	// thinking text for either one while still billing for it. It is now
+	// converted, and TestNormalizeThinking_Opus5EnabledBecomesAdaptive pins
+	// that. The defect class this test guards -- a working model being
+	// converted and losing the caller's budget_tokens -- is still covered by
+	// the two models that remain.
+	for _, model := range []string{"claude-opus-4-8", "claude-sonnet-5"} {
 		a := &dto.ClaudeRequest{Model: model, MaxTokens: uintPtr(4096), Thinking: &dto.Thinking{Type: "adaptive", Display: "summarized"},
 			OutputConfig: json.RawMessage(`{"effort":"high"}`)}
 		NormalizeThinkingShape(a, "")

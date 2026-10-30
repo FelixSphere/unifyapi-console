@@ -41,6 +41,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { login, wechatLoginByCode } from '@/features/auth/api'
+import { FormError } from '@/features/auth/components/form-error'
 import { LegalConsent } from '@/features/auth/components/legal-consent'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
 import { loginFormSchema } from '@/features/auth/constants'
@@ -72,6 +73,7 @@ export function UserAuthForm({
   const [isPasskeyLoading, setIsPasskeyLoading] = useState(false)
   const [isWeChatDialogOpen, setIsWeChatDialogOpen] = useState(false)
   const [isWeChatSubmitting, setIsWeChatSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
   const legalConsentErrorMessage = t('Please agree to the legal terms first')
   const loginFailedMessage = t('Login failed')
 
@@ -158,6 +160,7 @@ export function UserAuthForm({
 
     if (!validateTurnstile()) return
 
+    setFormError(null)
     setIsLoading(true)
     try {
       const res = await login({
@@ -183,8 +186,20 @@ export function UserAuthForm({
         toast.success(t('Welcome back!'))
       }
     } catch (error: unknown) {
-      if (axios.isAxiosError(error)) return
-      toast.error(error instanceof Error ? error.message : loginFailedMessage)
+      // UNIFYAPI-BRAND: UI-STANDARD.md -- a form-level error is shown in the
+      // card, never as a toast alone. The interceptor still toasts axios
+      // errors; the message is repeated here so it stays on screen.
+      if (axios.isAxiosError(error)) {
+        const serverMessage = (
+          error.response?.data as { message?: string } | undefined
+        )?.message
+        setFormError(serverMessage || loginFailedMessage)
+        return
+      }
+      const message =
+        error instanceof Error ? error.message : loginFailedMessage
+      setFormError(message)
+      toast.error(message)
     } finally {
       setIsLoading(false)
     }
@@ -313,7 +328,7 @@ export function UserAuthForm({
             variant='outline'
             disabled={passkeyButtonDisabled}
             onClick={handlePasskeyLogin}
-            className='h-11 w-full justify-center gap-2 rounded-lg'
+            className='h-11 w-full justify-center gap-2 rounded-md'
           >
             {isPasskeyLoading ? (
               <Loader2 className='h-4 w-4 animate-spin' />
@@ -348,7 +363,13 @@ export function UserAuthForm({
         className={cn('grid gap-4', className)}
         {...props}
       >
-        {hasAlternativeLogin && alternativeLoginMethods}
+        {/* UNIFYAPI-BRAND: UI-STANDARD.md "Log in / Sign up pages" -- the
+            form-level error box at the top, the fields (labels above, 44px
+            inputs, "Forgot password?" on the Password label row), Turnstile
+            directly above the one primary button, then the third-party
+            methods under an "or" divider. Upstream rendered the alternatives
+            first and the challenge after the button. */}
+        <FormError message={formError} />
 
         {passwordLoginEnabled && (
           <>
@@ -361,6 +382,8 @@ export function UserAuthForm({
                   <FormLabel>{t('Username or Email')}</FormLabel>
                   <FormControl>
                     <Input
+                      className='h-11'
+                      autoComplete='username'
                       placeholder={t('Enter your username or email')}
                       {...field}
                     />
@@ -375,36 +398,30 @@ export function UserAuthForm({
               control={form.control}
               name='password'
               render={({ field }) => (
-                <FormItem className='relative'>
-                  <FormLabel>{t('Password')}</FormLabel>
+                <FormItem>
+                  <div className='flex items-center justify-between'>
+                    <FormLabel>{t('Password')}</FormLabel>
+                    <Link
+                      to='/forgot-password'
+                      className='text-muted-foreground hover:text-foreground text-sm font-medium'
+                    >
+                      {t('Forgot password?')}
+                    </Link>
+                  </div>
                   <FormControl>
                     <PasswordInput
+                      inputClassName='h-11'
+                      autoComplete='current-password'
                       placeholder={t('Enter password')}
                       {...field}
                     />
                   </FormControl>
                   <FormMessage />
-                  <Link
-                    to='/forgot-password'
-                    className='text-muted-foreground absolute end-0 -top-0.5 z-10 text-sm font-medium hover:opacity-75'
-                  >
-                    {t('Forgot password?')}
-                  </Link>
                 </FormItem>
               )}
             />
 
-            {/* Submit Button */}
-            <Button
-              type='submit'
-              className='mt-2 w-full justify-center gap-2'
-              disabled={isLoading || (requiresLegalConsent && !agreedToLegal)}
-            >
-              {isLoading ? <Loader2 className='animate-spin' /> : <LogIn />}
-              {t('Sign in')}
-            </Button>
-
-            {/* Turnstile */}
+            {/* Turnstile -- directly above the primary button. */}
             {isTurnstileEnabled && (
               <div className='mt-2'>
                 <Turnstile
@@ -413,6 +430,16 @@ export function UserAuthForm({
                 />
               </div>
             )}
+
+            {/* Submit Button */}
+            <Button
+              type='submit'
+              className='mt-2 h-11 w-full justify-center gap-2'
+              disabled={isLoading || (requiresLegalConsent && !agreedToLegal)}
+            >
+              {isLoading ? <Loader2 className='animate-spin' /> : <LogIn />}
+              {t('Log in')}
+            </Button>
           </>
         )}
 
@@ -423,7 +450,7 @@ export function UserAuthForm({
           className='mt-1'
         />
 
-        {!hasAlternativeLogin && alternativeLoginMethods}
+        {hasAlternativeLogin && alternativeLoginMethods}
       </form>
 
       {hasWeChatLogin && (

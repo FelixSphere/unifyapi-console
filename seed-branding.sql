@@ -1,4 +1,4 @@
--- UnifyAPI console branding seed.
+-- Unify API console branding seed.
 --
 -- These five options cannot be set by environment variable -- new-api reads them
 -- from the `options` table only. Without them the console renders as "New API":
@@ -22,26 +22,28 @@
 -- before editing them. Do not remove the upstream link or the attribution notice.
 
 INSERT INTO options (key, value) VALUES
-  ('SystemName', 'UnifyAPI')
+  ('SystemName', 'Unify API')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
 INSERT INTO options (key, value) VALUES
   ('Logo', '/logo.png')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
--- Footer. The "Source code" link is what discharges AGPL s.13 for users of the
+-- Footer. The copyright line is NOT here: the always-mounted bar renders
+-- "(c) <year> UnifyAI . <address>" from web/src/brand/company.ts with the year
+-- computed (UI-STANDARD.md). This option carries only the legal links.
+-- The "Source code" link is what discharges AGPL s.13 for users of the
 -- hosted service. Setting Footer takes the footerHtml branch of footer.tsx,
 -- which still renders <ProjectAttribution inline /> -- so this does not weaken
 -- the upstream attribution.
 INSERT INTO options (key, value) VALUES
   ('Footer', '<div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">'
-    || '<span>&copy; 2026 UnifyAI</span>'
     || '<a href="https://www.unifyapi.ai/privacy" target="_blank" rel="noopener noreferrer">Privacy</a>'
     || '<a href="https://www.unifyapi.ai/terms" target="_blank" rel="noopener noreferrer">Terms</a>'
     || '</div>')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
--- About: about UnifyAPI, the product.
+-- About: about Unify API, the product.
 --
 -- MARKDOWN, NOT HTML, and that matters. features/about/index.tsx branches on
 -- isLikelyHtml() (lib/content-format.ts): any HTML tag routes the content to
@@ -61,13 +63,13 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 -- link. If you remove the [Source] link from this line, you must add one back to
 -- the Footer, or the s.13 obligation is unmet. See BRANDING.md.
 INSERT INTO options (key, value) VALUES
-  ('About', '## UnifyAPI
+  ('About', '## Unify API
 
 One API key for 300+ AI models across every major provider. One endpoint, one bill, and no per-provider contracts.
 
 ### What you get
 
-- **One endpoint.** UnifyAPI speaks the OpenAI API, so existing code works by changing the base URL and the key.
+- **One endpoint.** Unify API speaks the OpenAI API, so existing code works by changing the base URL and the key.
 - **One bill.** Pooled capacity across providers instead of separate contracts and idle commitments.
 - **Automatic failover.** A single model name keeps working through an upstream provider incident.
 - **Smart routing.** Requests go to the cheapest model that still clears your quality bar.
@@ -79,7 +81,7 @@ Read the [documentation](https://www.unifyapi.ai/docs), or create a key and make
 
 ---
 
-Built on [New API](https://github.com/QuantumNous/new-api) ([AGPL-3.0](https://github.com/QuantumNous/new-api/blob/main/LICENSE)), modified by FelixSphere: branding, typography, light-only theme, and a multi-tenant account model. [Source](https://github.com/FelixSphere/unifyapi-console).
+Built on [New API](https://github.com/QuantumNous/new-api) ([AGPL-3.0](https://github.com/QuantumNous/new-api/blob/main/LICENSE)), modified by UnifyAI: branding, typography, light-only theme, and a multi-tenant account model. [Source](https://github.com/FelixSphere/unifyapi-console).
 ')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 

@@ -123,6 +123,9 @@ func genStripeSubscriptionLink(referenceId string, customerId string, email stri
 			},
 		},
 		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
+		// UNIFYAPI-FORK: tag the session and its Subscription for the shared Stripe account.
+		Metadata:         stripeProductMetadata(),
+		SubscriptionData: &stripe.CheckoutSessionSubscriptionDataParams{Metadata: stripeProductMetadata()},
 	}
 
 	if "" == customerId {
