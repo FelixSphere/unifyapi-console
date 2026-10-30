@@ -130,6 +130,34 @@ var unifyapiCatalog = []CatalogEntry{
 	// cost. $0.10 restores the floor: 20% at list, 5.9% at 0.85.
 	{Model: "MiniMax-H3", Vendor: "", PerCallUSD: 0.10, PriceUnit: "second", Unverified: true, QuoteSource: "https://console.flatkey.ai/available-models", QuoteDate: "2026-10-16"},
 	{Model: "MiniMax-H3-Max", Vendor: "", PerCallUSD: 0.08, PriceUnit: "second", Unverified: true, QuoteSource: "https://platform.minimax.io/docs/guides/pricing-paygo", QuoteDate: "2026-09-10"},
+	// Seedance 2.0 shipped unpriced, and unpriced means the relay refuses it:
+	// four models advertised in Model Square that no customer could buy.
+	//
+	// FlatKey, our supplier, quotes seedance-2.0 and seedance-2.0-pro at ratio
+	// 3.5 = $7.00/M (read 2026-10-17). That is exactly BytePlus's own list for
+	// the 480p/720p no-video tier, so FlatKey resells Seedance at 1x list -- the
+	// same 1x relationship already recorded for MiniMax-H3 above.
+	//
+	// FlatKey has NOT priced -fast or -mini: both carry its 37.5 NOT-PRICED
+	// sentinel, which is not a quote (see supply/README.md). Their cost is taken
+	// as BytePlus list on that proven 1x relationship, using BytePlus's no-video
+	// rate, the higher of its two tiers -- so the cost basis errs high and the
+	// margins below are a floor rather than a midpoint.
+	//
+	// List is cost / 0.8 throughout: 20% at list, 11.1% at the 0.9 every customer
+	// group gets today, 5.9% at 0.85. Unlike 2.5 these stay token-billed, because
+	// FlatKey bills us per token at one flat ratio with no resolution or
+	// video-input schedule -- flat cost, flat price, nothing to reconcile. Do not
+	// add them to doubao's videoPriceTable; that multiplier describes the direct
+	// Volcengine channel's cost schedule, which is not the one we pay.
+	//
+	// We publish "seedance2.0-pro" without the hyphen that FlatKey's
+	// "seedance-2.0-pro" carries. The catalog has to key on the name we publish.
+	{Model: "seedance-2.0", Vendor: "", InputUSD: 8.75, OutputUSD: 8.75, Unverified: true, QuoteSource: "https://console.flatkey.ai/api/pricing", QuoteDate: "2026-10-17"},
+	{Model: "seedance2.0-pro", Vendor: "", InputUSD: 8.75, OutputUSD: 8.75, Unverified: true, QuoteSource: "https://console.flatkey.ai/api/pricing", QuoteDate: "2026-10-17"},
+	{Model: "seedance-2.0-fast", Vendor: "", InputUSD: 7.00, OutputUSD: 7.00, Unverified: true, QuoteSource: "https://docs.byteplus.com/en/docs/ModelArk/model-pricing", QuoteDate: "2026-10-17"},
+	{Model: "seedance-2.0-mini", Vendor: "", InputUSD: 4.375, OutputUSD: 4.375, Unverified: true, QuoteSource: "https://docs.byteplus.com/en/docs/ModelArk/model-pricing", QuoteDate: "2026-10-17"},
+
 	// Seedance 2.5 reports completion_tokens/total_tokens when the async task
 	// finishes, so it remains token-billed. $10.70/M is the no-video baseline;
 	// the Doubao task adaptor applies 6.40/10.70 when the request contains video.
@@ -270,6 +298,8 @@ var unifyapiCatalog = []CatalogEntry{
 		QuoteSource: "https://platform.moonshot.ai/docs/pricing (retired from the published list; last known price)", QuoteDate: "2026-09-07"},
 	{Model: "kimi-k2.6", Vendor: "moonshotai", InputUSD: 0.95, OutputUSD: 4, CacheReadUSD: 0.16, CacheWriteUSD: 0},
 	{Model: "kimi-k3", Vendor: "moonshotai", InputUSD: 3, OutputUSD: 15, CacheReadUSD: 0.3, CacheWriteUSD: 3},
+	{Model: "kimi-k3.1-pro", Vendor: "", InputUSD: 2, OutputUSD: 10, CacheReadUSD: 0.2, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://platform.moonshot.ai/docs/pricing (live models.dev moonshotai/kimi-k3.1-pro, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
 
 	// ---- 智谱 ----
 	{Model: "glm-4.7", Vendor: "zhipuai", InputUSD: 0.44819, OutputUSD: 2.09153, CacheReadUSD: 0.08964, CacheWriteUSD: 0,
@@ -312,6 +342,8 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "gemini-3-flash-preview", Vendor: "google", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0, AudioInputUSD: 1.0},
 	{Model: "gemini-3-pro-image", Vendor: "google", InputUSD: 2, OutputUSD: 120, CacheReadUSD: 0, CacheWriteUSD: 0},
 	{Model: "gemini-3.1-flash-image", Vendor: "google", InputUSD: 0.5, OutputUSD: 60, CacheReadUSD: 0, CacheWriteUSD: 0},
+	{Model: "gemini-3.1-flash-lite", Vendor: "", InputUSD: 0.25, OutputUSD: 1.5, CacheReadUSD: 0.025, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://ai.google.dev/gemini-api/docs/pricing (live models.dev google/gemini-3.1-flash-lite, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
 	// Nano Banana 2 Lite. Google quotes TWO output rates for every image model
 	// -- text/thinking tokens and image tokens -- and this row carries the
 	// IMAGE rate ($30.00/1M, "equivalent to $0.0336 per 1K resolution image"),
@@ -352,6 +384,12 @@ var unifyapiCatalog = []CatalogEntry{
 	// Clear the flag and set Vendor: "google" once the fixture is refreshed.
 	{Model: "gemini-3.5-flash", Vendor: "", InputUSD: 1.5, OutputUSD: 9, CacheReadUSD: 0.15, CacheWriteUSD: 0, Unverified: true,
 		QuoteSource: "https://ai.google.dev/gemini-api/docs/pricing", QuoteDate: "2026-09-08"},
+	{Model: "gemini-3.5-flash-lite", Vendor: "", InputUSD: 0.3, OutputUSD: 2.5, CacheReadUSD: 0.03, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://ai.google.dev/gemini-api/docs/pricing (live models.dev google/gemini-3.5-flash-lite, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
+	{Model: "gemini-3.6-flash", Vendor: "", InputUSD: 0.75, OutputUSD: 3.75, CacheReadUSD: 0.075, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://ai.google.dev/gemini-api/docs/pricing (live models.dev google/gemini-3.6-flash, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
+	{Model: "gemini-4-argon", Vendor: "", InputUSD: 2, OutputUSD: 10, CacheReadUSD: 0.1, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://ai.google.dev/gemini-api/docs/pricing (live models.dev google/gemini-4-argon, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
 	{Model: "gemini-flash-latest", Vendor: "google", InputUSD: 0.75, OutputUSD: 3.75, CacheReadUSD: 0.075, CacheWriteUSD: 0},
 	{Model: "gemini-pro-latest", Vendor: "google", UpstreamModel: "gemini-3.1-pro-preview", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 0},
 
@@ -377,7 +415,11 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "qwen3.7-max", Vendor: "alibaba", InputUSD: 2.5, OutputUSD: 7.5, CacheReadUSD: 0.5, CacheWriteUSD: 3.125},
 	{Model: "qwen3.7-plus", Vendor: "alibaba", InputUSD: 0.4, OutputUSD: 1.6, CacheReadUSD: 0.08, CacheWriteUSD: 0.5,
 		ContextTier: &ContextTier{ThresholdTokens: 256000, InputUSD: 1.2, OutputUSD: 4.8, CacheReadUSD: 0.24, CacheWriteUSD: 1.5}},
+	{Model: "qwen3.7-flash", Vendor: "", InputUSD: 0.03, OutputUSD: 0.13, CacheReadUSD: 0.006, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing (live models.dev alibaba/qwen3.7-flash, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
 	{Model: "qwen3.8-max", Vendor: "alibaba", InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.25, CacheWriteUSD: 2.5},
+	{Model: "qwen3.8-omni-flash", Vendor: "", InputUSD: 0.15, OutputUSD: 0.47, CacheReadUSD: 0.016, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing (live models.dev alibaba/qwen3.8-omni-flash, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
 	{Model: "qwen3.8-flash", Vendor: "", InputUSD: 0.15, OutputUSD: 0.47, CacheReadUSD: 0.016, CacheWriteUSD: 0, Unverified: true,
 		QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing (Singapore: $0.15 in / $0.016 cache hit / $0.47 out per 1M)", QuoteDate: "2026-10-13"},
 
