@@ -146,7 +146,7 @@ func TestUnverifiableCountIsStable(t *testing.T) {
 	// claude-sonnet-5-5, nine OpenAI rows (gpt-5.1, gpt-5.4-mini, gpt-5.4-nano,
 	// gpt-5.5, gpt-5.6-luna, gpt-5.6-terra, gpt-6-luna, gpt-6-sol, gpt-6.1-sol),
 	// grok-4.6, grok-4.7 and qwen3.8-flash. Each carries a QuoteSource and date.
-	require.Equal(t, 37, count,
+	require.Equal(t, 44, count,
 		"unverifiable entries require a documented reason and a maintained quote")
 	// The seedance 2.5 family joined this list on 2026-10-17: the supplier bills
 	// it per second, so a token price was the wrong unit rather than a wrong
