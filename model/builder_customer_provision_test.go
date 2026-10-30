@@ -154,9 +154,20 @@ func TestAProvisionedGroupIsRegisteredEverywhereAGroupHasToBe(t *testing.T) {
 	assert.InDelta(t, 0.9, read("GroupRatio")["Nusa Labs"], 1e-9, "billed at 90% of the published price")
 	assert.Contains(t, read("TopupGroupRatio"), "Nusa Labs", "top-up ratio -- shows as 'Not set' without this")
 	assert.InDelta(t, 1, read("TopupGroupRatio")["Nusa Labs"], 1e-9, "the discount is on the bill, never on what a payment buys")
-	usable := read("UserUsableGroups")
-	assert.Contains(t, usable, "Nusa Labs", "user-selectable -- the group is invisible in the pricing editor without this")
-	assert.Equal(t, "Nusa Labs", usable["Nusa Labs"], "labelled with its own name")
+
+	// NOT in UserUsableGroups, which is the list of groups ANY user may pick.
+	// It used to be added here, "so the operator can see it in the pricing
+	// editor" -- but that editor lists GroupRatio union UserUsableGroups union
+	// TopupGroupRatio, so the two assertions above already put it on screen,
+	// while the entry published the customer's name and terms to every other
+	// user and let them bill under it.
+	var usable Option
+	if err := DB.Where("key = ?", "UserUsableGroups").First(&usable).Error; err == nil {
+		out := map[string]any{}
+		require.NoError(t, common.Unmarshal([]byte(usable.Value), &out))
+		assert.NotContains(t, out, "Nusa Labs",
+			"a customer group must never be user-selectable")
+	}
 }
 
 // The same merge hazard applies to all three maps: each replaces rather than
@@ -166,7 +177,7 @@ func TestProvisioningASecondTeamKeepsTheFirstInEverySetting(t *testing.T) {
 	require.NoError(t, EnsurePartnershipGroupRatio("Nusa Labs"))
 	require.NoError(t, EnsurePartnershipGroupRatio("Acme Robotics"))
 
-	for _, key := range []string{"GroupRatio", "TopupGroupRatio", "UserUsableGroups"} {
+	for _, key := range []string{"GroupRatio", "TopupGroupRatio"} {
 		var option Option
 		require.NoError(t, DB.Where("key = ?", key).First(&option).Error)
 		out := map[string]any{}

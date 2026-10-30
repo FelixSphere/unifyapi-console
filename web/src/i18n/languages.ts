@@ -64,6 +64,10 @@ export function convertDetectedLanguage(value: string): string {
   const lower = value.trim().replaceAll('_', '-').toLowerCase()
   if (!lower.startsWith('zh')) return value
   if (
+    // UNIFYAPI-FORK: 'zhtw' is our own stored code ('zhTW', cached in
+    // localStorage by the detector). Without it a saved Traditional Chinese
+    // choice came back as Simplified on every reload.
+    lower === 'zhtw' ||
     lower === 'zh-tw' ||
     lower === 'zh-hk' ||
     lower === 'zh-mo' ||

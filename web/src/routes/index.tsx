@@ -16,10 +16,23 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 import { Home } from '@/features/home'
+import { rootDestination } from '@/lib/marketing-site'
+import { useAuthStore } from '@/stores/auth-store'
 
 export const Route = createFileRoute('/')({
+  // UNIFYAPI-BRAND: `/` is never a page here. The edge already sends a hard
+  // navigation on to /console; a client-side one -- an error page's "back to
+  // home", a route guard, a stray link -- used to render upstream's landing
+  // page instead. Send it where the edge would. A preload must not redirect.
+  beforeLoad: ({ preload }) => {
+    if (preload) return
+    throw redirect({
+      to: rootDestination(!!useAuthStore.getState().auth.user),
+      replace: true,
+    })
+  },
   component: Home,
 })

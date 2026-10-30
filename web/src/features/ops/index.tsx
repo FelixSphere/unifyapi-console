@@ -57,7 +57,7 @@ function Badge(props: { tone: 'danger' | 'warn'; children: string }) {
       : 'bg-warning/10 text-warning'
   return (
     <span
-      className={`${tone} ml-2 rounded px-1.5 py-0.5 text-[10px] whitespace-nowrap`}
+      className={`${tone} ml-2 rounded px-1.5 py-0.5 text-[11px] whitespace-nowrap`}
     >
       {props.children}
     </span>
@@ -132,7 +132,7 @@ function TenantActions(props: { tenant: TenantOverview }) {
         )}
       </div>
       {error ? (
-        <span className='text-destructive max-w-[12rem] text-right text-[10px]'>
+        <span className='text-destructive max-w-[12rem] text-right text-[11px]'>
           {error}
         </span>
       ) : null}

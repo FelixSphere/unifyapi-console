@@ -28,7 +28,9 @@ func GetUserGroups(c *gin.Context) {
 	userGroup := ""
 	userId := c.GetInt("id")
 	userGroup, _ = model.GetUserGroup(userId, false)
-	userUsableGroups := service.GetUserUsableGroups(userGroup)
+	// The picker offers what the login may BILL UNDER, which is narrower than
+	// what the pricing page may SHOW. See service.GetUserBillableGroups.
+	userUsableGroups := service.GetUserBillableGroups(userGroup)
 	for groupName, _ := range ratio_setting.GetGroupRatioCopy() {
 		// UserUsableGroups contains the groups that the user can use
 		if desc, ok := userUsableGroups[groupName]; ok {

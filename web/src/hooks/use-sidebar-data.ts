@@ -25,6 +25,7 @@ import {
   FlaskConical,
   Key,
   LayoutDashboard,
+  LifeBuoy,
   ListTodo,
   MessageSquare,
   Radio,
@@ -38,6 +39,9 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import type { SidebarData } from '@/components/layout/types'
+// UNIFYAPI-FORK: registers the Support translations before the nav renders.
+import '@/features/support/i18n'
+import { unreadBadge, useSupportUnread } from '@/features/support/use-unread'
 import { ROLE } from '@/lib/roles'
 
 /**
@@ -48,6 +52,8 @@ import { ROLE } from '@/lib/roles'
  */
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
+  // UNIFYAPI-FORK: unread support conversations, shown on the Support entry.
+  const supportUnread = useSupportUnread().data?.count
 
   return {
     navGroups: [
@@ -115,6 +121,14 @@ export function useSidebarData(): SidebarData {
             title: t('Credit Supply'),
             url: '/credit-supply',
             icon: Coins,
+          },
+          {
+            // UNIFYAPI-FORK: customer questions (customers) / support inbox
+            // (staff). Same entry, role-routed.
+            title: t('Support'),
+            url: '/support',
+            icon: LifeBuoy,
+            badge: unreadBadge(supportUnread),
           },
           {
             title: t('Profile'),

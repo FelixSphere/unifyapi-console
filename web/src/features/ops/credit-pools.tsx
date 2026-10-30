@@ -205,7 +205,7 @@ function PoolActions({ pool }: { pool: CreditPoolSummary }) {
         </button>
       </div>
       {error ? (
-        <span className='text-destructive text-[10px]'>{error}</span>
+        <span className='text-destructive text-[11px]'>{error}</span>
       ) : null}
     </div>
   )

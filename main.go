@@ -115,6 +115,19 @@ func main() {
 	go model.UpdateQuotaData()
 	// UNIFYAPI-FORK: Binance Pay has no webhook; poll the receiving account.
 	go controller.RunBinancePayReconciler()
+	// UNIFYAPI-FORK: replay settlements the database refused after the
+	// response was served; see model/settlement_outbox.go.
+	model.StartSettlementOutboxWorker()
+	// UNIFYAPI-FORK: our feature tables, created on every boot whether or not
+	// the feature is switched on, so no environment is missing one.
+	if err := model.MigrateSupport(); err != nil {
+		common.SysError("support: migrate failed: " + err.Error())
+	}
+	if err := model.MigrateRetentionEmail(); err != nil {
+		common.SysError("weekly update: migrate failed: " + err.Error())
+	}
+	// UNIFYAPI-FORK: weekly customer email; off unless UNIFYAPI_RETENTION_EMAIL=on.
+	service.StartRetentionEmailWorker()
 
 	if os.Getenv("CHANNEL_UPDATE_FREQUENCY") != "" {
 		frequency, err := strconv.Atoi(os.Getenv("CHANNEL_UPDATE_FREQUENCY"))
@@ -238,6 +251,14 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		common.SysError(fmt.Sprintf("server forced to shutdown: %v", err))
 	}
+	// UNIFYAPI-FORK: batched wallet/token/used-quota deductions live in memory
+	// until the next tick; write them now that the drain is over, or every
+	// restart loses up to BATCH_UPDATE_INTERVAL of them while the consume log
+	// keeps them. No-op when BATCH_UPDATE_ENABLED is off.
+	model.FlushBatchUpdateOnShutdown()
+	// UNIFYAPI-FORK: last replay of parked settlements; what is still refused
+	// moves to Redis (or the process log) so the next boot can apply it.
+	model.FlushSettlementOutboxOnShutdown()
 	// 内存中的看板数据保存入库，避免重启丢失未落库数据 (issue #5679)
 	if common.DataExportEnabled {
 		model.SaveQuotaDataCache()
@@ -325,6 +346,17 @@ func InitResources() error {
 	if err = authz.Init(model.DB); err != nil {
 		common.FatalLog("failed to initialize authorization: " + err.Error())
 		return err
+	}
+
+	// A Partnership Program's discount is materialised per model, and the
+	// catalogue is compiled in -- so a release that adds a model leaves every
+	// customer in a discounted program without a row for it, and they would be
+	// billed LIST until somebody re-applied by hand. Filling the gaps here is
+	// idempotent: absent rows are written, prices set by hand are preserved.
+	// A failure is logged rather than fatal; the console is still serving, and
+	// the worst case is the state the previous release was already in.
+	if err := model.ReapplyProgramDiscounts(); err != nil {
+		common.SysError("failed to re-apply partnership program discounts: " + err.Error())
 	}
 
 	model.CheckSetup()

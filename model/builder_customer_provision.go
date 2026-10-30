@@ -142,7 +142,17 @@ func EnsurePartnershipGroupRatio(group string) error {
 	if err := ensureTopupGroupRatio(group); err != nil {
 		return err
 	}
-	return ensureUserUsableGroup(group)
+	// Deliberately NOT added to UserUsableGroups. That option is the list of
+	// groups ANY user may select, so putting a customer's group in it published
+	// the customer's name and commercial terms to every other user -- including
+	// anonymous callers of /api/pricing -- and let them bill under it. The
+	// operator's pricing screens do not need it: the Group Pricing editor
+	// builds its list from GroupRatio union UserUsableGroups union
+	// TopupGroupRatio, and the two ratios above already put the group there.
+	// The customer's own members reach their group through the fallback in
+	// service.GetUserUsableGroups.
+	InvalidateCustomerOwnedGroupsCache()
+	return nil
 }
 
 // ensureTopupGroupRatio gives the group the same top-up ratio a hand-created
@@ -153,18 +163,6 @@ func ensureTopupGroupRatio(group string) error {
 			return false
 		}
 		raw[group] = provisionedTopupRatio
-		return true
-	})
-}
-
-// ensureUserUsableGroup makes the group selectable and visible, labelled with
-// its own name, which is what an operator sees in the pricing screens.
-func ensureUserUsableGroup(group string) error {
-	return ensureGroupSettingEntry("UserUsableGroups", group, func(raw map[string]any) bool {
-		if _, exists := raw[group]; exists {
-			return false
-		}
-		raw[group] = group
 		return true
 	})
 }
@@ -338,9 +336,10 @@ const groupNameSeparator = "_"
 // name without sharing an invoice, and an outside name can never select a
 // group that was not created for it.
 //
-// The column is varchar(64) while a team name may be 120 characters, so this
-// takes the most legible form that fits: the group is printed as the bill-to
-// line, and an unlovely invoice beats a failed insert.
+// The group is printed as the bill-to line, so this takes the most legible
+// form that fits the column and degrades only if it must. The column was
+// varchar(64), which forced most real names down to an opaque code; it is 255
+// now, so "Program_Team" survives for a 120-character team name.
 func customerPricingGroupName(program *PartnershipProgram, name, code string) string {
 	if program == nil {
 		return code
@@ -358,8 +357,13 @@ func customerPricingGroupName(program *PartnershipProgram, name, code string) st
 	return code
 }
 
+// pricingGroupColumnLength is the width of every single-name group column
+// (users, tenants, abilities, tasks, partnership, customer wallets). Keep it
+// equal to the narrowest of them.
+const pricingGroupColumnLength = 255
+
 func fitsPricingGroupColumn(group string) bool {
-	return group != "" && len(group) <= 64 && len([]rune(group)) <= 64
+	return group != "" && len(group) <= pricingGroupColumnLength && len([]rune(group)) <= pricingGroupColumnLength
 }
 
 // ProvisionBuilderCustomer atomically registers a new team and its settings.

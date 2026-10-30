@@ -454,6 +454,16 @@ func maxInt(value, floor int) int {
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
+	// UNIFYAPI-BRAND: count this request's tokens against the channel's TPM
+	// window. Here rather than earlier because completion length is only known
+	// once the upstream has answered -- so a channel can overshoot by at most
+	// one request, which is inherent to token limiting, not a gap.
+	RecordChannelTokens(c, params.ChannelId, params.PromptTokens+params.CompletionTokens)
+
+	// UNIFYAPI-BRAND: and against the caller's own token window, for the TPM
+	// limiter in middleware/model_token_rate_limit.go.
+	RecordUserTokens(c, userId, params.PromptTokens+params.CompletionTokens)
+
 	// UNIFYAPI-FORK: draw the supplier credit lot down before anything can
 	// return early. Pool accounting protects the supplier's balance and must
 	// run even when consume logging itself is switched off.
@@ -502,7 +512,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	}
 	// Resolved once here so the row records the wallet it was actually drawn
 	// from; the resolver is cached, and an unresolvable login stamps 0.
-	wallet, _ := ResolveBillingEntity(userId)
+	wallet, walletErr := ResolveBillingEntity(userId)
 	log := &Log{
 		UserId:           userId,
 		TenantId:         wallet.TenantId,
@@ -534,7 +544,10 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
 	}
-	err := createLog(log)
+	// UNIFYAPI-FORK: this row is what invoices and reconciliation read; a
+	// refused connection retries and then parks it rather than dropping it.
+	// See settlement_outbox.go.
+	err := createConsumeLogDurably(log, walletErr)
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
 	}

@@ -261,9 +261,9 @@ func TestVideoDiscountUpdatesUnitPriceAndRemovalRestoresIt(t *testing.T) {
 	require.NoError(t, UpdateModelDiscountByJSONString(`{"MiniMax-H3":0.8}`))
 	price, ok := GetModelPrice("MiniMax-H3", true)
 	require.True(t, ok)
-	require.InDelta(t, 0.064, price, 1e-9)
+	require.InDelta(t, 0.08, price, 1e-9) // 0.8 x the 0.10 list
 	require.NoError(t, UpdateModelDiscountByJSONString(`{}`))
 	price, ok = GetModelPrice("MiniMax-H3", true)
 	require.True(t, ok)
-	require.InDelta(t, 0.08, price, 1e-9)
+	require.InDelta(t, 0.10, price, 1e-9)
 }
