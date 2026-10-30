@@ -1,5 +1,9 @@
 {
   "translation": {
+    "Cookie notice": "Cookie 聲明",
+    "We use required, functional, and advertising cookies. Reject to keep only essential cookies. See our": "我們使用必要、功能及廣告類 Cookie。選擇拒絕將僅保留必要 Cookie。詳見我們的",
+    "Reject cookies": "拒絕 Cookie",
+    "Accept all": "全部接受",
     "this period": "本期間",
     "all time": "累計",
     "Nothing was paid in during this period. {{total}} has been paid in altogether — widen the date range to see it.": "本期間沒有入帳。累計已入帳 {{total}}——放寬日期範圍即可看到。",

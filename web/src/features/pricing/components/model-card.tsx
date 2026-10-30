@@ -114,7 +114,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     return (
       <>
         <span
-          className='font-mono text-base font-black text-emerald-600 sm:text-lg dark:text-emerald-400'
+          className='text-foreground font-mono text-base font-bold sm:text-lg'
           data-new-user-price
         >
           {newUser}
@@ -254,7 +254,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             {defaultDiscount && (
               <div className='mt-1.5'>
                 <span
-                  className='inline-flex items-center rounded-full bg-gradient-to-r from-emerald-500 to-lime-400 px-2.5 py-1 text-[11px] leading-none font-black tracking-wide whitespace-nowrap text-white uppercase shadow-md shadow-emerald-500/40'
+                  className='bg-accent text-accent-foreground inline-flex items-center rounded-full px-2.5 py-1 font-mono text-[11px] leading-none font-medium tracking-wide whitespace-nowrap uppercase'
                   data-default-discount-badge
                 >
                   {t('{{percent}}% off by default', {

@@ -1,5 +1,9 @@
 {
   "translation": {
+    "Cookie notice": "Cookie に関するお知らせ",
+    "We use required, functional, and advertising cookies. Reject to keep only essential cookies. See our": "当サイトでは、必須・機能・広告の Cookie を使用しています。拒否すると必須の Cookie のみが保持されます。詳しくは",
+    "Reject cookies": "Cookie を拒否",
+    "Accept all": "すべて許可",
     "Every customer group can use every channel": "すべての顧客グループがすべてのチャネルを利用できます",
     "Every customer group can route through every channel. The groups picked here are this channel's own and are kept as configured.": "すべての顧客グループがすべてのチャネルを経由できます。ここで選択したグループはこのチャネル固有のもので、設定どおり保持されます。",
     "Also open to every other customer group: {{groups}}": "他のすべての顧客グループも利用可能：{{groups}}",

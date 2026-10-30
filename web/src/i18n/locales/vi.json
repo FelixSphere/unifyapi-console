@@ -1,5 +1,9 @@
 {
   "translation": {
+    "Cookie notice": "Thông báo cookie",
+    "We use required, functional, and advertising cookies. Reject to keep only essential cookies. See our": "Chúng tôi sử dụng cookie bắt buộc, chức năng và quảng cáo. Từ chối để chỉ giữ lại cookie thiết yếu. Xem",
+    "Reject cookies": "Từ chối cookie",
+    "Accept all": "Chấp nhận tất cả",
     "Every customer group can use every channel": "Mọi nhóm khách hàng đều có thể dùng mọi kênh",
     "Every customer group can route through every channel. The groups picked here are this channel's own and are kept as configured.": "Mọi nhóm khách hàng đều có thể định tuyến qua mọi kênh. Các nhóm chọn ở đây là nhóm riêng của kênh này và được giữ nguyên.",
     "Also open to every other customer group: {{groups}}": "Cũng mở cho mọi nhóm khách hàng khác: {{groups}}",

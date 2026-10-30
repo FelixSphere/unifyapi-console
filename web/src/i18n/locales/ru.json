@@ -1,5 +1,9 @@
 {
   "translation": {
+    "Cookie notice": "Уведомление о cookie",
+    "We use required, functional, and advertising cookies. Reject to keep only essential cookies. See our": "Мы используем обязательные, функциональные и рекламные файлы cookie. Отклоните, чтобы оставить только необходимые cookie. Подробнее —",
+    "Reject cookies": "Отклонить cookie",
+    "Accept all": "Принять все",
     "Every customer group can use every channel": "Каждая группа клиентов может использовать каждый канал",
     "Every customer group can route through every channel. The groups picked here are this channel's own and are kept as configured.": "Каждая группа клиентов может использовать каждый канал. Выбранные здесь группы — собственные группы этого канала, они сохраняются как есть.",
     "Also open to every other customer group: {{groups}}": "Также доступен всем остальным группам клиентов: {{groups}}",

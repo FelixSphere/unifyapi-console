@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -262,9 +263,8 @@ func SendEmailVerification(c *gin.Context) {
 	}
 	code := common.GenerateVerificationCode(6)
 	common.RegisterVerificationCodeWithKey(email, code, common.EmailVerificationPurpose)
-	// UNIFYAPI-BRAND: English copy, see email_templates_unifyapi.go
-	subject, content := unifyapiVerificationEmail(code)
-	err := common.SendEmailForPurpose("verification", subject, email, content)
+	// UNIFYAPI-BRAND: shared design, see email_templates_unifyapi.go
+	err := service.SendBrandedEmail("verification", email, unifyapiVerificationEmail(code))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -285,10 +285,12 @@ func SendPasswordResetEmail(c *gin.Context) {
 	if _, err := model.GetUniqueUserByEmail(email); err == nil {
 		code := common.GenerateVerificationCode(0)
 		common.RegisterVerificationCodeWithKey(email, code, common.PasswordResetPurpose)
-		link := fmt.Sprintf("%s/user/reset?email=%s&token=%s", system_setting.ServerAddress, email, code)
-		// UNIFYAPI-BRAND: English copy, see email_templates_unifyapi.go
-		subject, content := unifyapiPasswordResetEmail(link)
-		err := common.SendEmailForPurpose("password-reset", subject, email, content)
+		// passwordResetLink escapes the query values. main still interpolated
+		// them raw, so a plus-addressed mailbox received a link whose email
+		// arrived as a space and whose token then matched nothing.
+		link := passwordResetLink(email, code)
+		// UNIFYAPI-BRAND: shared design, see email_templates_unifyapi.go
+		err := service.SendBrandedEmail("password-reset", email, unifyapiPasswordResetEmail(link))
 		if err != nil {
 			logger.LogError(c.Request.Context(), fmt.Sprintf("failed to send password reset email to %s: %s", email, err.Error()))
 		}

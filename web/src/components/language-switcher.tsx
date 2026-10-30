@@ -16,10 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Languages, Check } from 'lucide-react'
+import { Check, Globe } from 'lucide-react'
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { LANGUAGE_TRIGGER_LABEL } from '@/brand/language-trigger'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -30,6 +31,7 @@ import {
 import {
   INTERFACE_LANGUAGE_OPTIONS,
   normalizeInterfaceLanguage,
+  type InterfaceLanguageCode,
 } from '@/i18n/languages'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -38,7 +40,12 @@ import { useAuthStore } from '@/stores/auth-store'
 export function LanguageSwitcher() {
   const { i18n, t } = useTranslation()
   const user = useAuthStore((s) => s.auth.user)
-  const currentLanguage = normalizeInterfaceLanguage(i18n.language)
+  const currentLanguage = normalizeInterfaceLanguage(
+    i18n.language
+  ) as InterfaceLanguageCode
+  const currentOption = INTERFACE_LANGUAGE_OPTIONS.find(
+    (lang) => lang.code === currentLanguage
+  )
   const handleChangeLanguage = useCallback(
     async (code: string) => {
       await i18n.changeLanguage(code)
@@ -55,11 +62,23 @@ export function LanguageSwitcher() {
 
   return (
     <DropdownMenu modal={false}>
+      {/* UNIFYAPI-BRAND: a globe plus the current language in its own script,
+          so the control is recognisable without reading the interface
+          language. See brand/language-trigger.ts. */}
       <DropdownMenuTrigger
-        render={<Button variant='ghost' size='icon' className='h-9 w-9' />}
+        render={
+          <Button
+            variant='ghost'
+            className='h-9 gap-1.5 px-2 text-sm font-medium'
+            aria-label={`${t('Change language')} (${currentOption?.label ?? 'English'})`}
+            title='Language'
+          />
+        }
       >
-        <Languages className='size-[1.2rem]' />
-        <span className='sr-only'>{t('Change language')}</span>
+        <Globe className='size-4' aria-hidden='true' />
+        <span aria-hidden='true'>
+          {LANGUAGE_TRIGGER_LABEL[currentLanguage] ?? 'EN'}
+        </span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align='end'>
         {INTERFACE_LANGUAGE_OPTIONS.map((lang) => (
