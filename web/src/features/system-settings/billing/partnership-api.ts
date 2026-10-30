@@ -15,6 +15,12 @@ export type PartnershipProgram = {
   group: string
   grant_quota: number
   grant_limit: number
+  /**
+   * Multiplier over the official price for every customer in this program.
+   * 0 means the program sets none. Setting it writes the value into each
+   * customer's Customer model prices, leaving hand-set prices alone.
+   */
+  discount: number
   claimed_count: number
   enabled: boolean
   starts_at: number

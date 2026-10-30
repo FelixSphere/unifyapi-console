@@ -248,6 +248,13 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if info.ChannelType != constant.ChannelTypeOpenAI && info.ChannelType != constant.ChannelTypeAzure {
 		request.StreamOptions = nil
 	}
+	if info.ChannelType == constant.ChannelTypeOpenAI || info.ChannelType == constant.ChannelTypeAzure {
+		// UNIFYAPI: reasoning dialects -> what the upstream accepts. Returns a
+		// 400 for a combination no upstream accepts, rather than forwarding it.
+		if err := normalizeReasoningParams(info, request); err != nil {
+			return nil, err
+		}
+	}
 	if info.ChannelType == constant.ChannelTypeOpenRouter {
 		if len(request.Usage) == 0 {
 			request.Usage = json.RawMessage(`{"include":true}`)

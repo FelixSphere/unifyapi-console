@@ -82,13 +82,20 @@ func TestTheGroupNameTakesTheMostLegibleFormThatFits(t *testing.T) {
 	assert.Equal(t, "Builder_hub_Nusa Labs",
 		customerPricingGroupName(short, "Nusa Labs", "nusa-labs"))
 
-	longProgram := &PartnershipProgram{Name: strings.Repeat("P", 60), Code: "bh"}
+	// The column is 255 now, so the realistic case no longer degrades: a
+	// 120-character team name still bills under its program name.
+	realistic := &PartnershipProgram{Name: "Builder_hub_2026_Sep_Batch", Code: "bh"}
+	assert.Equal(t, "Builder_hub_2026_Sep_Batch_"+strings.Repeat("N", 120),
+		customerPricingGroupName(realistic, strings.Repeat("N", 120), "nusa"),
+		"a name that fits must keep the program, not fall back")
+
+	longProgram := &PartnershipProgram{Name: strings.Repeat("P", 250), Code: "bh"}
 	assert.Equal(t, "bh_Nusa Labs",
 		customerPricingGroupName(longProgram, "Nusa Labs", "nusa-labs"),
 		"a program name that will not fit falls back to its code")
 
 	assert.Equal(t, "bh_nusa",
-		customerPricingGroupName(longProgram, strings.Repeat("N", 100), "nusa"),
+		customerPricingGroupName(longProgram, strings.Repeat("N", 300), "nusa"),
 		"a team name that will not fit falls back to its derived code")
 }
 

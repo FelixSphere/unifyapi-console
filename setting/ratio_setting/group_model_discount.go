@@ -104,3 +104,51 @@ func ValidateGroupModelDiscounts(discounts map[string]map[string]float64) []erro
 	}
 	return problems
 }
+
+// SanitizeGroupModelDiscountJSON drops every group/model entry whose model has
+// no catalogue row, returning the cleaned JSON and what it removed.
+//
+// It exists for the LOAD path only. Validation is all-or-nothing on purpose --
+// an operator saving a price for a model we cannot bill should be told so, and
+// UpdateGroupModelDiscountByJSONString still refuses it. But the same map is
+// re-read from the database every 60 seconds, and there a single stale row
+// rejected the WHOLE table: delisting one model on staging took
+// default_group_model_ratio from 52 of 52 models to 0, and it stayed there.
+//
+// That is not cosmetic. The relay reads this map through GetGroupModelDiscount,
+// so an empty one drops every customer holding a negotiated per-model price
+// back to their group ratio -- and a customer whose contract sits BELOW that
+// ratio is overcharged, silently, a minute after a deploy that had nothing to
+// do with them.
+//
+// Dropping stale rows on load is safe in the direction that matters: a model
+// with no catalogue row cannot be billed anyway, so the row was already inert.
+// Keeping the other forty is what protects the customers still buying.
+func SanitizeGroupModelDiscountJSON(jsonStr string) (string, []string, error) {
+	var incoming map[string]map[string]float64
+	if err := common.Unmarshal([]byte(jsonStr), &incoming); err != nil {
+		return "", nil, err
+	}
+	var dropped []string
+	for group, models := range incoming {
+		for model := range models {
+			if _, ok := CatalogEntryFor(model); ok {
+				continue
+			}
+			dropped = append(dropped, group+" / "+model)
+			delete(models, model)
+		}
+		if len(models) == 0 {
+			delete(incoming, group)
+		}
+	}
+	if len(dropped) == 0 {
+		return jsonStr, nil, nil
+	}
+	sort.Strings(dropped)
+	cleaned, err := common.Marshal(incoming)
+	if err != nil {
+		return "", nil, err
+	}
+	return string(cleaned), dropped, nil
+}

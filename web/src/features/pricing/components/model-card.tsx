@@ -36,6 +36,7 @@ import {
 } from '../lib/model-helpers'
 import {
   formatDefaultGroupPrice,
+  formatOfficialListPrice,
   formatPrice,
   formatRequestPrice,
 } from '../lib/price'
@@ -66,17 +67,8 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const defaultDiscount = getDefaultGroupDiscount(props.model)
 
   // One price slot: the list price, or -- when new users pay less -- the
-  // new-user price in front with the list price struck through behind it.
+  // new-user price in front with the official list price beside it.
   const renderTokenPrice = (type: 'input' | 'output' | 'cache') => {
-    const list = formatPrice(
-      props.model,
-      type,
-      tokenUnit,
-      showRechargePrice,
-      priceRate,
-      usdExchangeRate,
-      props.selectedGroup
-    )
     const newUser = formatDefaultGroupPrice(
       props.model,
       type,
@@ -86,7 +78,35 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       usdExchangeRate,
       props.selectedGroup
     )
-    if (newUser === null) {
+    // The reference beside a discounted price has to be OFFICIAL LIST, because
+    // that is what the badge is a percentage off. formatPrice prices at the
+    // cheapest group the viewer can see, so for a visitor who can only see
+    // `default` it returns the discounted figure itself -- the two matched, the
+    // card collapsed to a single number, and the "15% off by default" badge was
+    // left pointing at nothing. Seen in production on 49 models.
+    const list =
+      newUser === null
+        ? formatPrice(
+            props.model,
+            type,
+            tokenUnit,
+            showRechargePrice,
+            priceRate,
+            usdExchangeRate,
+            props.selectedGroup
+          )
+        : formatOfficialListPrice(
+            props.model,
+            type,
+            tokenUnit,
+            showRechargePrice,
+            priceRate,
+            usdExchangeRate
+          )
+    // Two identical figures read as a rendering fault, not as a deal. With the
+    // reference at list this needs a discount too small to survive formatting,
+    // but the guard costs nothing.
+    if (newUser === null || newUser === list) {
       return (
         <span className='text-foreground font-mono font-semibold'>{list}</span>
       )
@@ -94,7 +114,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     return (
       <>
         <span
-          className='font-mono text-base font-black text-emerald-600 sm:text-lg dark:text-emerald-400'
+          className='text-foreground font-mono text-base font-bold sm:text-lg'
           data-new-user-price
         >
           {newUser}
@@ -234,7 +254,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             {defaultDiscount && (
               <div className='mt-1.5'>
                 <span
-                  className='inline-flex items-center rounded-full bg-gradient-to-r from-emerald-500 to-lime-400 px-2.5 py-1 text-[11px] leading-none font-black tracking-wide whitespace-nowrap text-white uppercase shadow-md shadow-emerald-500/40'
+                  className='bg-accent text-accent-foreground inline-flex items-center rounded-full px-2.5 py-1 font-mono text-[11px] leading-none font-medium tracking-wide whitespace-nowrap uppercase'
                   data-default-discount-badge
                 >
                   {t('{{percent}}% off by default', {

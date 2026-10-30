@@ -34,6 +34,8 @@ var publishedModels = []string{
 	"claude-fable-5",
 	"claude-fable-5.1",
 	"claude-haiku-4-5-20251001",
+	"claude-haiku-4-5",
+	"claude-haiku-5-5",
 	"claude-opus-4-5",
 	"claude-opus-4-6",
 	"claude-opus-4-7",
@@ -43,6 +45,7 @@ var publishedModels = []string{
 	"claude-sonnet-4-5",
 	"claude-sonnet-4-6",
 	"claude-sonnet-5",
+	"claude-sonnet-5-5",
 	"deepseek-v3",
 	"deepseek-v3.2",
 	"deepseek-v3.2-thinking",
@@ -64,7 +67,6 @@ var publishedModels = []string{
 	"gemini-3.7-flash",
 	"gemini-3.8-flash",
 	"gemini-flash-latest",
-	"gemini-flash-lite-latest",
 	"gemini-pro-latest",
 	"glm-4.7",
 	"glm-5",
@@ -82,6 +84,17 @@ var publishedModels = []string{
 	"gpt-5.6-sol",
 	"gpt-6-astra",
 	"gpt-image-2",
+	"gpt-5.1",
+	"gpt-5.4-mini",
+	"gpt-5.4-nano",
+	"gpt-5.5",
+	"gpt-5.6-luna",
+	"gpt-5.6-terra",
+	"gpt-6-luna",
+	"gpt-6-sol",
+	"gpt-6.1-sol",
+	"grok-4.6",
+	"grok-4.7",
 	"kimi-k2.5",
 	"kimi-k2.6",
 	"kimi-k3",
@@ -96,6 +109,7 @@ var publishedModels = []string{
 	"qwen3.7-max",
 	"qwen3.7-plus",
 	"qwen3.8-max",
+	"qwen3.8-flash",
 }
 
 // resetRatioMapsToBaseline puts the package's global ratio maps back into the
@@ -161,10 +175,10 @@ func TestBaselineRatiosDeriveFromOfficialPrices(t *testing.T) {
 		// Google publishes no cache-write price, so there must be no entry.
 		{"gemini-2.5-pro", 1.25, 10, 0.125, 0, 0.625, 8, 0.1, 0},
 		{"gemini-3-pro-image", 2, 120, 0, 0, 1, 60, 0, 0},
-		// Seedance reports one token total for the completed video task, so input
-		// and output use the same published no-video rate.
-		{"dreamina-seedance-2-5-260628", 10.7, 10.7, 0, 0, 5.35, 1, 0, 0},
-		{"seedance-2.5", 10.7, 10.7, 0, 0, 5.35, 1, 0, 0},
+		// The seedance 2.5 family used to be here on a token price. It is billed
+		// PER SECOND by the supplier and is now priced that way, so it has no
+		// token price to assert; its per-second price is pinned by
+		// TestBaselineMapsAreEmptyUntilAModelNeedsThem and by pricing-drift.
 	}
 
 	for _, tc := range cases {
@@ -390,6 +404,20 @@ func TestUnverifiedEntriesAreDeclared(t *testing.T) {
 		"glm-5-turbo",                 // not listed; Zhipu lists glm-5v-turbo
 		"kimi-k2.5",                   // retired by Moonshot, but still sold and still called
 		"qwen3.5-flash",               // not listed
+		"qwen3.8-flash",               // newer than the pinned fixture; Alibaba Cloud Singapore list, read 2026-10-13
+		"claude-haiku-5-5",            // launched after the pinned fixture; platform.claude.com/pricing, base (<=100K prompt) tier
+		"claude-sonnet-5-5",           // same; cache hits 0.05x like Opus 5.5
+		"gpt-5.1",                     // the nine OpenAI rows below are all newer than the fixture; developers.openai.com/api/docs/pricing, read 2026-10-13
+		"gpt-5.4-mini",                //
+		"gpt-5.4-nano",                //
+		"gpt-5.5",                     //
+		"gpt-5.6-luna",                //
+		"gpt-5.6-terra",               //
+		"gpt-6-luna",                  //
+		"gpt-6-sol",                   //
+		"gpt-6.1-sol",                 //
+		"grok-4.6",                    // xAI is not in the fixture at all; docs.x.ai/docs/models, <200K tier
+		"grok-4.7",                    //
 	}
 
 	var got []string

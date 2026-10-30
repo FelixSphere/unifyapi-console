@@ -181,6 +181,20 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 		}
 	}
 
+	// UNIFYAPI-BRAND: drop channels that are over their own upstream quota, so a
+	// busy channel is skipped at selection instead of being sent traffic that
+	// comes back 429. Reads a snapshot, never Redis -- we are under RLock here.
+	// If every candidate is saturated we deliberately fall through with the full
+	// list rather than failing: shedding load is the upstream's job, and
+	// returning "no channel" would turn a slow minute into an outage.
+	if available := dropRateLimitedChannels(targetChannels); len(available) > 0 {
+		targetChannels = available
+		sumWeight = 0
+		for _, ch := range targetChannels {
+			sumWeight += ch.GetWeight()
+		}
+	}
+
 	if len(targetChannels) == 0 {
 		return nil, errors.New(fmt.Sprintf("no channel found, group: %s, model: %s, priority: %d", group, model, targetPriority))
 	}

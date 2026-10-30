@@ -52,6 +52,10 @@ import {
   type PartnershipProgramInput,
 } from './partnership-api'
 import { partnershipGroupLabel } from './partnership-group-label'
+import {
+  parseProgramDiscount,
+  programDiscountPercent,
+} from './program-discount'
 
 type FormState = {
   name: string
@@ -59,6 +63,8 @@ type FormState = {
   group: string
   grantUSD: string
   grantLimit: string
+  /** Multiplier over the official price. Empty means the program sets none. */
+  discount: string
   enabled: boolean
   startsAt: string
   endsAt: string
@@ -77,6 +83,7 @@ const emptyForm = (group: string): FormState => ({
   group,
   grantUSD: '0',
   grantLimit: '0',
+  discount: '',
   enabled: false,
   startsAt: '',
   endsAt: '',
@@ -195,6 +202,7 @@ export function PartnershipProgramsSection({
       group: program.group,
       grantUSD: String(program.grant_quota / quotaUnit),
       grantLimit: String(program.grant_limit),
+      discount: program.discount ? String(program.discount) : '',
       enabled: program.enabled,
       startsAt: dateInput(program.starts_at),
       endsAt: dateInput(program.ends_at),
@@ -205,6 +213,11 @@ export function PartnershipProgramsSection({
   const submit = () => {
     const grantUSD = Number(form.grantUSD)
     const grantLimit = Number(form.grantLimit)
+    // Empty is how an operator says "this program sets no discount", which the
+    // server stores as 0. A typed value is a multiplier over the official
+    // price, so it has to land in (0, 1]: 1.2 would be a surcharge and every
+    // screen that shows it would read it as a discount.
+    const parsedDiscount = parseProgramDiscount(form.discount)
     if (
       !form.name.trim() ||
       !/^[a-z0-9][a-z0-9_-]{2,63}$/.test(form.code.trim().toLowerCase()) ||
@@ -216,12 +229,17 @@ export function PartnershipProgramsSection({
       toast.error(t('Check the name, code, credit, and limit.'))
       return
     }
+    if (!parsedDiscount.ok) {
+      toast.error(t('Discount must be between 0 and 1, or empty for none.'))
+      return
+    }
     const program: PartnershipProgramInput = {
       name: form.name.trim(),
       code: form.code.trim().toLowerCase(),
       group: form.group,
       grant_quota: Math.round(grantUSD * quotaUnit),
       grant_limit: grantLimit,
+      discount: parsedDiscount.value,
       enabled: form.enabled,
       starts_at: timestamp(form.startsAt),
       ends_at: timestamp(form.endsAt),
@@ -309,6 +327,7 @@ export function PartnershipProgramsSection({
                 <TableHead>{t('Customer groups')}</TableHead>
                 <TableHead>{t('Registration credit')}</TableHead>
                 <TableHead>{t('Claims')}</TableHead>
+                <TableHead>{t('Discount')}</TableHead>
                 <TableHead>{t('Status')}</TableHead>
                 <TableHead className='text-right'>{t('Actions')}</TableHead>
               </TableRow>
@@ -399,6 +418,9 @@ export function PartnershipProgramsSection({
                   </TableCell>
                   <TableCell>
                     {program.claimed_count} / {program.grant_limit}
+                  </TableCell>
+                  <TableCell>
+                    {program.discount > 0 ? `${program.discount}×` : '—'}
                   </TableCell>
                   <TableCell>
                     <Badge variant={program.enabled ? 'default' : 'secondary'}>
@@ -536,6 +558,29 @@ export function PartnershipProgramsSection({
                 setForm({ ...form, grantLimit: event.target.value })
               }
             />
+          </Field>
+          <Field label={t('Program discount (multiplier)')}>
+            <Input
+              type='number'
+              min='0'
+              max='1'
+              step='0.01'
+              placeholder={t('empty = no program discount')}
+              value={form.discount}
+              onChange={(event) =>
+                setForm({ ...form, discount: event.target.value })
+              }
+            />
+            <span className='text-muted-foreground mt-1 block text-xs'>
+              {programDiscountPercent(form.discount) !== null
+                ? t(
+                    'Every customer in this program pays {{percent}}% of the official price. Saving writes this into their Customer model prices; a price you set by hand there is kept.',
+                    { percent: programDiscountPercent(form.discount) }
+                  )
+                : t(
+                    'A multiplier over the official price, e.g. 0.85 for 15% off. Leave empty for no program discount.'
+                  )}
+            </span>
           </Field>
           <div className='flex items-end gap-3 pb-2'>
             <Switch

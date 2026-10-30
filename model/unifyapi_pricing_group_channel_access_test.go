@@ -171,10 +171,12 @@ func TestABuilderProvisionedTeamCanReachEveryChannel(t *testing.T) {
 	assert.Equal(t, channel.Id, routed.Id)
 }
 
-// abilities.group is varchar(64). A pricing group longer than that must be
-// skipped, not turn every channel save into a database error.
+// abilities.group is varchar(255). A pricing group longer than that must be
+// skipped, not turn every channel save into a database error. The width moved
+// from 64 so that a Builder-provisioned name such as
+// "Builder_hub_2026_Sep_Batch_UnifyAPI-2" is routed rather than skipped.
 func TestAnOverlongPricingGroupNeverBreaksChannelSaves(t *testing.T) {
-	long := strings.Repeat("a", 65)
+	long := strings.Repeat("a", maxRoutingGroupLength+1)
 	setupChannelAccessTest(t, `{"default":1,"`+long+`":1}`)
 	channel := createChannel(t, "openai-main", "default", "gpt-4o")
 

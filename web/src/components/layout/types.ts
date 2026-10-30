@@ -97,6 +97,8 @@ export type TopNavLink = {
   disabled?: boolean
   requiresAuth?: boolean
   external?: boolean
+  /** External, but our own site: open in this tab rather than a new one. */
+  sameTab?: boolean
 }
 
 /**

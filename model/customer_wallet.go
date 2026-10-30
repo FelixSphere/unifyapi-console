@@ -41,7 +41,7 @@ import (
 // counts.
 type CustomerWallet struct {
 	Id       int    `json:"id"`
-	Group    string `json:"group" gorm:"column:pricing_group;type:varchar(64);uniqueIndex"`
+	Group    string `json:"group" gorm:"column:pricing_group;type:varchar(255);uniqueIndex"`
 	TenantId int    `json:"tenant_id" gorm:"not null;index"`
 }
 

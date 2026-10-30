@@ -170,6 +170,98 @@ bills `users.quota` through the per-user Redis cache; a per-user cache diverges
 across members of one tenant, so that cache must move to the billing entity
 before tenant balances are authoritative in the request path.
 
+## 4d. Existing tests are not yours to change
+
+**Operator rule (2026-09-22): do not modify or delete an existing test.**
+Adding tests is always welcome. Changing one that already exists needs the
+operator's personal approval — not a reviewer's, not another agent's.
+
+If you believe a test has to change, stop and ask, stating:
+
+1. **Why it must change** — what is actually wrong with it, as distinct from
+   what is inconvenient about it right now.
+2. **What the change accomplishes** — what the test will assert afterwards that
+   it does not assert today.
+3. **What regression it could let through** — name the defect class the current
+   assertion catches, and say plainly whether the new one still catches it.
+
+Then wait. A red build is not an emergency that authorises editing the
+assertion.
+
+**Why the rule exists.** A failing test is evidence. The cheapest way to turn a
+red build green is to weaken the thing doing the checking, and that silently
+converts a defect the suite caught into one it never will again. The damage does
+not appear in the diff — it appears months later, in production, in a code path
+everyone believed was covered.
+
+This is not hypothetical here. Two cases from this codebase:
+
+- A pricing sweep derived its expected values from the same table it was
+  testing. It passed with `gpt-4o` mutated from $2.50 to $0.25 — a tenfold
+  billing error that a green suite reported as fine.
+- `SectionPageLayout` silently drops non-slot children. It killed the supplier
+  "Submit credits" button, and the `.tsx` string-grep tests could not catch that
+  class of defect at all, because they matched source text rather than rendered
+  output.
+
+A test can genuinely be wrong — this rule is not a claim that they are
+infallible. It is a claim that **you do not get to decide that unilaterally**,
+because the agent who wants the test changed is always the agent whose change it
+is blocking.
+
+Two specific cases that are easy to rationalise, and are not exempt:
+
+- **The behaviour changed on purpose.** Then the test is encoding the old
+  contract, and replacing it is a commercial or product decision, not a
+  cleanup — exactly the case that needs approval.
+- **The test is flaky.** Quarantining a flake is still a change. Say so, and say
+  what makes it flaky; "it fails sometimes" is a symptom, not a diagnosis.
+
+Renames, reformatting, moving a test between files, and "tidying" a test you are
+not otherwise touching all count as changes. If the diff shows a test file, say
+why in the handoff.
+
+The rule is org-wide; the canonical copy is in `~/unifyai/AGENTS.md`.
+
+## 4c. Releases go to staging first
+
+**Every console change reaches production through staging.** Not just
+significant ones — frontend-only and one-line changes too. Adopted 16 Sep 2026,
+after twelve consecutive releases went straight to production unverified; one
+was a hotfix for a bug the release before it had introduced.
+
+Console is the one product that genuinely has staging: `i-0469afe3c6b3bec23`,
+us-east-1, with its own Postgres and Redis — **a separate database from
+production**. If anyone tells you staging is stopped or unused, make them prove
+it with `aws ec2 describe-instances --region us-east-1 --instance-ids
+i-0469afe3c6b3bec23`. That claim has been wrong before and cost two contradictory
+release reports.
+
+A release reaches production only once staging ran **the exact image** (same tag,
+same digest — not "the same commit, rebuilt"), staging was at production's
+version before the upgrade, and verification against staging passed. A container
+that started is not verification.
+
+When you hand a change over, say:
+
+- the merged commit or tag, and the delta in a sentence per commit;
+- **what to exercise on staging** — the specific behaviour your change alters,
+  not "verify it works". A change that deletes data gets its deletion run on
+  staging, not read about;
+- anything that must happen before the swap: a migration, a seed, an SSM
+  parameter, an env var, an ordering constraint with another agent's change.
+
+**The hotfix exception** is narrow: a live outage, a security issue, or data
+being lost. Then it ships, marked `HOTFIX`, with what was skipped recorded
+afterwards. "My feature is done and I want it live" is not a hotfix; neither is
+a release someone is waiting on, nor a fix for a bug that is not currently
+hurting anyone. If staging is merely inconvenient, that is not the exception —
+that is the rule working.
+
+A hotfix leaves a debt: staging is then behind production, and must be brought
+back to parity before the next ordinary release or that release tests a delta
+production will never take.
+
 ## 4b. You do not deploy this
 
 **Only the UnifyAI CI/CD agent releases to production.** Getting your change

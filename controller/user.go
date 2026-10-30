@@ -238,6 +238,10 @@ func Register(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
 			return
 		}
+		if rejection := accountEmailRejection(c, user.Email); rejection != "" {
+			common.ApiErrorMsg(c, rejection)
+			return
+		}
 		if !common.VerifyCodeWithKey(user.Email, user.VerificationCode, common.EmailVerificationPurpose) {
 			common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
 			return
@@ -277,6 +281,12 @@ func Register(c *gin.Context) {
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
 	}
+	registrationSlot, ok := middleware.ReserveRegistrationSlot(c)
+	if !ok {
+		common.ApiErrorI18n(c, i18n.MsgUserRegisterIPLimit)
+		return
+	}
+	defer registrationSlot.Release()
 	var insertErr error
 	if user.PartnershipCode != "" {
 		_, insertErr = cleanUser.InsertForPartnership(user.PartnershipCode)
@@ -295,6 +305,7 @@ func Register(c *gin.Context) {
 		common.ApiError(c, insertErr)
 		return
 	}
+	registrationSlot.Commit()
 
 	// 获取插入后的用户ID
 	var insertedUser model.User
@@ -1352,6 +1363,10 @@ func EmailBind(c *gin.Context) {
 	email := req.Email
 	email = model.NormalizeEmail(email)
 	code := req.Code
+	if rejection := accountEmailRejection(c, email); rejection != "" {
+		common.ApiErrorMsg(c, rejection)
+		return
+	}
 	if !common.VerifyCodeWithKey(email, code, common.EmailVerificationPurpose) {
 		common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
 		return

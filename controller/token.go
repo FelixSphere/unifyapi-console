@@ -76,6 +76,32 @@ func getTokenRequestUserGroup(c *gin.Context) (string, error) {
 	return model.GetUserGroup(c.GetInt("id"), false)
 }
 
+// ensureTokenGroupIsBillable refuses a token whose group is not one the owner
+// may be billed under.
+//
+// Nothing validated this before: AddToken and UpdateToken copied the group
+// straight out of the request, Token.Insert/Update write it unchecked, and
+// effectiveUsingGroup hands it to pricing verbatim. So a login could point a
+// token at any group name and be billed at that group's rate -- `default`
+// carries the new-customer discount (0.9 on production while every customer
+// group is 1.0), and another customer's group carries their contract.
+//
+// "auto" is not a group and is checked by setTokenAutoGroups instead; an empty
+// group means "use my own", which effectiveUsingGroup already resolves.
+func ensureTokenGroupIsBillable(c *gin.Context, userGroup, tokenGroup string) bool {
+	if tokenGroup == "" || tokenGroup == "auto" {
+		return true
+	}
+	if tokenGroup == userGroup {
+		return true
+	}
+	if service.IsUserBillableGroup(userGroup, tokenGroup) {
+		return true
+	}
+	common.ApiErrorI18n(c, i18n.MsgTokenAutoGroupsInvalid, map[string]any{"Group": tokenGroup})
+	return false
+}
+
 func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) bool {
 	if len(groups) == 0 {
 		if err := token.SetAutoGroups(nil); err != nil {
@@ -299,6 +325,14 @@ func AddToken(c *gin.Context) {
 		})
 		return
 	}
+	createUserGroup, err := getTokenRequestUserGroup(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !ensureTokenGroupIsBillable(c, createUserGroup, token.Group) {
+		return
+	}
 	if token.Group == "auto" {
 		if !setTokenAutoGroups(c, &token, request.AutoGroups.Groups) {
 			return
@@ -405,6 +439,14 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
 		cleanToken.ModelLimits = token.ModelLimits
 		cleanToken.AllowIps = token.AllowIps
+		updateUserGroup, err := getTokenRequestUserGroup(c)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if !ensureTokenGroupIsBillable(c, updateUserGroup, token.Group) {
+			return
+		}
 		cleanToken.Group = token.Group
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
 		if token.Group != "auto" {

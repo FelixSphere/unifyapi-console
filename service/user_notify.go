@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"fmt"
+	"html/template"
 	"net/http"
 	"net/url"
 	"strings"
@@ -111,7 +112,18 @@ func sendEmailNotify(userEmail string, data dto.Notify) error {
 	for _, value := range data.Values {
 		content = strings.Replace(content, dto.ContentValueParam, fmt.Sprintf("%v", value), 1)
 	}
-	return common.SendEmailForPurpose("notification", data.Title, userEmail, content)
+	// UNIFYAPI-BRAND: the body is operator-authored HTML (line breaks, a
+	// link); it becomes the intro of the shared design, with the title as
+	// the headline. The plain-text part is derived from the same body.
+	return SendBrandedEmail("notification", userEmail, common.EmailMessage{
+		Subject:      data.Title,
+		Preheader:    fmt.Sprintf("From your %s account.", common.SystemName),
+		Eyebrow:      notificationEyebrow(data.Type),
+		Headline:     data.Title,
+		IntroHTML:    template.HTML(content),
+		SafetyNote:   fmt.Sprintf("You're receiving this because notifications are enabled for your %s account. You can change the channel or turn them off under Settings.", common.SystemName),
+		FooterReason: "Sent to the notification address on your account.",
+	})
 }
 
 func sendBarkNotify(barkURL string, data dto.Notify) error {
