@@ -10,7 +10,7 @@
 -- seed-rate-limits.sql exist -- branding has already drifted once by being set
 -- only by hand. If you change it in the UI, mirror it back here.
 --
---   psql -U unifyapi -d oneapi -f seed-failover.sql
+--   docker compose exec -T postgres psql -U unifyapi -d unifyapi < seed-failover.sql
 --
 -- A raw SQL write needs no restart either: SyncOptions reloads every
 -- SYNC_FREQUENCY (60s default).
@@ -25,15 +25,22 @@
 -- is the number of ALTERNATE CHANNELS a failed request may be re-sent to --
 -- not a count of repeats against the same one. At the code default of 0 the
 -- loop body runs exactly once and shouldRetry() returns false at
--- `retryTimes <= 0`, so a request dies on the first channel it touched while a
--- healthy second supplier sits unused.
+-- `retryTimes <= 0`, so a request would die on the first channel it touched
+-- while a healthy second supplier sat unused.
 --
--- That was the state on 2026-10-30, when a customer evaluating gpt-6-astra was
--- shown `status_code=520, bad response status code 520`. RelayErrorHandler is
--- handed the UPSTREAM's response, so a 520 is FlatKey's Cloudflare edge, not
--- ours -- and 520 falls inside AutomaticRetryStatusCodeRanges (505-523), so it
--- is a status we are willing to fail over on. We simply never did, because
--- RetryTimes was 0 and nothing in the repository set it.
+-- The hosts have never been in that state, and the value is not the problem --
+-- its ONLY home is the admin UI, so each host drifted on its own. Measured
+-- 2026-10-30: production 2, staging 1. Nothing in the repository set either,
+-- and a rebuilt database would have come back at 0 on both, silently. That is
+-- the same way branding drifted, and it is what this file prevents.
+--
+-- It does NOT explain the `status_code=520, bad response status code 520` a
+-- customer saw while evaluating gpt-6-astra on 2026-10-30 11:48:29Z. That
+-- request was served under RetryTimes=2, so alternates were tried; the 520 is
+-- FlatKey's Cloudflare edge (RelayErrorHandler is handed the UPSTREAM's
+-- response) and 520 does fall inside AutomaticRetryStatusCodeRanges (505-523),
+-- so failover was both allowed and available. It reached the customer anyway,
+-- once, and the cause is still open. Do not read this seed as that fix.
 --
 -- 2, not more. Each retry is another upstream request and another chance to
 -- pay a supplier, on a 2 vCPU box. Three attempts covers one bad channel plus
@@ -54,6 +61,11 @@
 -- stream bills what it delivered (TestAnInterruptedClaudeStreamBillsTheDelivered
 -- Output), so a client that times out and retries pays twice and we buy the
 -- tokens twice. Prefer failover here over retries out there.
+--
+-- Failover also hides a bad channel rather than fixing it: a channel failing
+-- half its requests is paid for on every attempt before an alternate succeeds.
+-- Channel 221 ran at 50.4% failure on 2026-10-30 until its priority was
+-- lowered. Watch the per-channel error rate, not just the customer-facing one.
 --
 -- Note there is no explicit "response already written" guard in the retry loop
 -- (c.Writer.Written() appears only in compute_bridge.go). Interrupted streams
