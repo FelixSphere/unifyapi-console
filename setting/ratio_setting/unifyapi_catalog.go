@@ -298,6 +298,8 @@ var unifyapiCatalog = []CatalogEntry{
 		QuoteSource: "https://platform.moonshot.ai/docs/pricing (retired from the published list; last known price)", QuoteDate: "2026-09-07"},
 	{Model: "kimi-k2.6", Vendor: "moonshotai", InputUSD: 0.95, OutputUSD: 4, CacheReadUSD: 0.16, CacheWriteUSD: 0},
 	{Model: "kimi-k3", Vendor: "moonshotai", InputUSD: 3, OutputUSD: 15, CacheReadUSD: 0.3, CacheWriteUSD: 0},
+	{Model: "kimi-k3.1-pro", Vendor: "", InputUSD: 2, OutputUSD: 10, CacheReadUSD: 0.2, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://platform.moonshot.ai/docs/pricing (live models.dev moonshotai/kimi-k3.1-pro, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
 
 	// ---- 智谱 ----
 	{Model: "glm-4.7", Vendor: "zhipuai", InputUSD: 0.6, OutputUSD: 2.2, CacheReadUSD: 0.11, CacheWriteUSD: 0},
@@ -337,6 +339,8 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "gemini-3-flash-preview", Vendor: "google", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0, AudioInputUSD: 1.0},
 	{Model: "gemini-3-pro-image", Vendor: "google", InputUSD: 2, OutputUSD: 120, CacheReadUSD: 0, CacheWriteUSD: 0},
 	{Model: "gemini-3.1-flash-image", Vendor: "google", InputUSD: 0.5, OutputUSD: 60, CacheReadUSD: 0, CacheWriteUSD: 0},
+	{Model: "gemini-3.1-flash-lite", Vendor: "", InputUSD: 0.25, OutputUSD: 1.5, CacheReadUSD: 0.025, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://ai.google.dev/gemini-api/docs/pricing (live models.dev google/gemini-3.1-flash-lite, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
 	// Nano Banana 2 Lite. Google quotes TWO output rates for every image model
 	// -- text/thinking tokens and image tokens -- and this row carries the
 	// IMAGE rate ($30.00/1M, "equivalent to $0.0336 per 1K resolution image"),
@@ -377,6 +381,12 @@ var unifyapiCatalog = []CatalogEntry{
 	// Clear the flag and set Vendor: "google" once the fixture is refreshed.
 	{Model: "gemini-3.5-flash", Vendor: "", InputUSD: 1.5, OutputUSD: 9, CacheReadUSD: 0.15, CacheWriteUSD: 0, Unverified: true,
 		QuoteSource: "https://ai.google.dev/gemini-api/docs/pricing", QuoteDate: "2026-09-08"},
+	{Model: "gemini-3.5-flash-lite", Vendor: "", InputUSD: 0.3, OutputUSD: 2.5, CacheReadUSD: 0.03, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://ai.google.dev/gemini-api/docs/pricing (live models.dev google/gemini-3.5-flash-lite, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
+	{Model: "gemini-3.6-flash", Vendor: "", InputUSD: 0.75, OutputUSD: 3.75, CacheReadUSD: 0.075, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://ai.google.dev/gemini-api/docs/pricing (live models.dev google/gemini-3.6-flash, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
+	{Model: "gemini-4-argon", Vendor: "", InputUSD: 2, OutputUSD: 10, CacheReadUSD: 0.1, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://ai.google.dev/gemini-api/docs/pricing (live models.dev google/gemini-4-argon, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
 	{Model: "gemini-flash-latest", Vendor: "google", InputUSD: 0.75, OutputUSD: 3.75, CacheReadUSD: 0.075, CacheWriteUSD: 0},
 	{Model: "gemini-pro-latest", Vendor: "google", UpstreamModel: "gemini-3.1-pro-preview", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 0},
 
@@ -402,7 +412,11 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "qwen3.7-max", Vendor: "alibaba", InputUSD: 2.5, OutputUSD: 7.5, CacheReadUSD: 0.5, CacheWriteUSD: 3.125},
 	{Model: "qwen3.7-plus", Vendor: "alibaba", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0.625,
 		ContextTier: &ContextTier{ThresholdTokens: 256000, InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.2, CacheWriteUSD: 2.5}},
+	{Model: "qwen3.7-flash", Vendor: "", InputUSD: 0.03, OutputUSD: 0.13, CacheReadUSD: 0.006, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing (live models.dev alibaba/qwen3.7-flash, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
 	{Model: "qwen3.8-max", Vendor: "alibaba", InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.25, CacheWriteUSD: 2.5},
+	{Model: "qwen3.8-omni-flash", Vendor: "", InputUSD: 0.15, OutputUSD: 0.47, CacheReadUSD: 0.016, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing (live models.dev alibaba/qwen3.8-omni-flash, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
 	{Model: "qwen3.8-flash", Vendor: "", InputUSD: 0.15, OutputUSD: 0.47, CacheReadUSD: 0.016, CacheWriteUSD: 0, Unverified: true,
 		QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing (Singapore: $0.15 in / $0.016 cache hit / $0.47 out per 1M)", QuoteDate: "2026-10-13"},
 
