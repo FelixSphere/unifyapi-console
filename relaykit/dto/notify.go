@@ -15,6 +15,9 @@ const (
 	NotifyTypeChannelTest   = "channel_test"
 	// NotifyTypeOperatorCredit: an operator added credit to the user's account.
 	NotifyTypeOperatorCredit = "operator_credit"
+	// NotifyTypePricingChange: the official list price of a model the user has
+	// been calling changed, was added, or was withdrawn.
+	NotifyTypePricingChange = "pricing_change"
 )
 
 func NewNotify(t string, title string, content string, values []interface{}) Notify {
