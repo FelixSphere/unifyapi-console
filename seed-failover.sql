@@ -1,0 +1,56 @@
+-- Channel failover.
+--
+-- Run against the console database, then restart the container: options are
+-- read into memory once at boot.
+--
+--   psql -U unifyapi -d oneapi -f seed-failover.sql
+--
+-- ---------------------------------------------------------------------------
+-- Why this file exists
+-- ---------------------------------------------------------------------------
+--
+-- A second supplier is not redundancy until RetryTimes says so.
+--
+-- controller/relay.go calls getChannel() INSIDE the retry loop, so RetryTimes
+-- is the number of ALTERNATE CHANNELS a failed request may be re-sent to --
+-- not a count of repeats against the same one. At the code default of 0 the
+-- loop body runs exactly once and shouldRetry() returns false at
+-- `retryTimes <= 0`, so a request dies on the first channel it touched while a
+-- healthy second supplier sits unused.
+--
+-- That was the state on 2026-10-30, when a customer evaluating gpt-6-astra was
+-- shown `status_code=520, bad response status code 520`. RelayErrorHandler is
+-- handed the UPSTREAM's response, so a 520 is FlatKey's Cloudflare edge, not
+-- ours -- and 520 falls inside AutomaticRetryStatusCodeRanges (505-523), so it
+-- is a status we are willing to fail over on. We simply never did, because
+-- RetryTimes was 0 and nothing in the repository set it.
+--
+-- 2, not more. Each retry is another upstream request and another chance to
+-- pay a supplier, on a 2 vCPU box. Three attempts covers one bad channel plus
+-- one unlucky second pick, which is what a two-supplier model needs.
+--
+-- ---------------------------------------------------------------------------
+-- What this does NOT fix
+-- ---------------------------------------------------------------------------
+--
+-- 524 is in alwaysSkipRetryStatusCodes and stays there. A 524 means the edge
+-- already burned its full timeout; retrying buys a second full timeout and a
+-- worse customer experience. Fix 524 by making the request cheaper or the
+-- supplier faster, never by retrying.
+--
+-- A retry is only free of double-billing because a non-2xx upstream status
+-- arrives BEFORE any response body is relayed, so nothing was delivered and
+-- nothing was charged. That is not true of a CLIENT-side retry: an interrupted
+-- stream bills what it delivered (TestAnInterruptedClaudeStreamBillsTheDelivered
+-- Output), so a client that times out and retries pays twice and we buy the
+-- tokens twice. Prefer failover here over retries out there.
+--
+-- Note there is no explicit "response already written" guard in the retry loop
+-- (c.Writer.Written() appears only in compute_bridge.go). Interrupted streams
+-- are settled as delivered rather than returned as retryable errors, so this
+-- is not reachable today -- but it is the thing to re-check if a future change
+-- makes a stream handler return a retryable error after first byte.
+
+INSERT INTO options (key, value) VALUES
+  ('RetryTimes', '2')
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
