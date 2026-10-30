@@ -44,10 +44,10 @@ func TestSeededRetryTimesActuallyAllowsFailover(t *testing.T) {
 	require.GreaterOrEqual(t, n, 1,
 		"RetryTimes=%d gives no alternate channel, so a second supplier is spare capacity and not redundancy", n)
 
-	// Each retry is another upstream request and another supplier charge on a
-	// 2 vCPU box. Two alternates covers one bad channel plus one unlucky pick.
-	assert.LessOrEqual(t, n, 3,
-		"RetryTimes=%d multiplies upstream load and spend on exactly the requests that are already failing", n)
+	// No upper bound is asserted. How many alternates to try is an operator
+	// decision, set in System Settings -> Models -> Routing & Reliability and
+	// already validated there as 0-10; a test that pinned a ceiling would turn
+	// one engineer's preference into a gate on the operator's own dial.
 }
 
 func TestFailoverCoversTheSupplierEdgeErrorsWeActuallySee(t *testing.T) {

@@ -1,9 +1,19 @@
 -- Channel failover.
 --
--- Run against the console database, then restart the container: options are
--- read into memory once at boot.
+-- This is CONFIGURATION, not code. The same value is editable live at
+-- System Settings -> Models -> Routing & Reliability (validated 0-10), and a
+-- save there applies immediately -- model/option.go assigns common.RetryTimes
+-- on write. Prefer the UI for a change you want now.
+--
+-- This file exists only so a rebuilt database comes back with the value we
+-- chose instead of the code default, the same reason seed-branding.sql and
+-- seed-rate-limits.sql exist -- branding has already drifted once by being set
+-- only by hand. If you change it in the UI, mirror it back here.
 --
 --   psql -U unifyapi -d oneapi -f seed-failover.sql
+--
+-- A raw SQL write needs no restart either: SyncOptions reloads every
+-- SYNC_FREQUENCY (60s default).
 --
 -- ---------------------------------------------------------------------------
 -- Why this file exists
