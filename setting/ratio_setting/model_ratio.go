@@ -1,7 +1,6 @@
 package ratio_setting
 
 import (
-	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -382,8 +381,9 @@ func RebuildRatioMapsFromCatalog() {
 	// Some vendor prices cannot be expressed by the flat maps at all -- audio
 	// input above the text rate, or a context tier. Those models go on the
 	// billing-expression engine, with the customer discount baked into every
-	// coefficient because that path never consults modelRatioMap.
-	billing_setting.ApplyCatalogBillingExprs(BillingExprs())
+	// coefficient because that path never consults modelRatioMap. Any other
+	// expression on a catalogued model is removed.
+	EnforceCatalogBillingExprs()
 
 	for option, ratios := range BaselineRatios() {
 		switch option {
