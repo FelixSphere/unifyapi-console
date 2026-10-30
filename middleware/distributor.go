@@ -94,7 +94,12 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if playgroundRequest.Group != "" {
-						if !service.GroupInUserUsableGroups(usingGroup, playgroundRequest.Group) && playgroundRequest.Group != usingGroup {
+						// What may be BILLED UNDER, not what the catalogue may
+						// show: `default` stays visible so the public pricing
+						// page renders, but it carries the new-customer
+						// discount and must not be a group a customer can
+						// switch a request to.
+						if !service.IsUserBillableGroup(usingGroup, playgroundRequest.Group) && playgroundRequest.Group != usingGroup {
 							abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorGroupAccessDenied))
 							return
 						}
@@ -123,12 +128,13 @@ func Distribute() func(c *gin.Context) {
 					common.SetContextKey(c, constant.ContextKeyCreditPricingGroup, pricingGroup)
 				}
 
-				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
+				routing := routingGroup(c, usingGroup)
+				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, routing); found {
 					affinityUsable := false
 					preferred, err := model.CacheGetChannel(preferredChannelID)
 					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
 						channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model) {
-						if usingGroup == "auto" {
+						if routing == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 							autoGroups := service.GetRequestAutoGroups(c, userGroup)
 							for _, g := range autoGroups {
@@ -157,7 +163,7 @@ func Distribute() func(c *gin.Context) {
 					channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
 						Ctx:         c,
 						ModelName:   modelRequest.Model,
-						TokenGroup:  usingGroup,
+						TokenGroup:  routingGroup(c, usingGroup),
 						RequestPath: c.Request.URL.Path,
 						Retry:       common.GetPointer(0),
 					})
@@ -182,18 +188,38 @@ func Distribute() func(c *gin.Context) {
 					channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
 						Ctx:         c,
 						ModelName:   modelRequest.Model,
-						TokenGroup:  usingGroup,
+						TokenGroup:  routingGroup(c, usingGroup),
 						RequestPath: c.Request.URL.Path,
 						Retry:       common.GetPointer(0),
 					})
 				}
 
 				if err != nil {
-					showGroup := usingGroup
-					if usingGroup == "auto" {
+					// UNIFYAPI-FORK: a name we do not serve is the caller's
+					// mistake, not our outage. Answering 503 made SDKs retry a
+					// typo with backoff -- it reads to the customer as an
+					// outage -- and counted it against our own 5xx alarm, so a
+					// broken integration paged our on-call. OpenRouter answers
+					// 400 "is not a valid model ID" for the same request.
+					if !model.ModelIsServed(modelRequest.Model) {
+						abortWithOpenAiMessage(c, http.StatusBadRequest,
+							i18n.T(c, i18n.MsgDistributorUnknownModel, map[string]any{"Model": modelRequest.Model}),
+							types.ErrorCodeModelNotFound)
+						return
+					}
+					// UNIFYAPI-FORK: the routing group stays server-side. It was
+					// in the customer-facing body as "under group auto
+					// (distributor)", which names an internal routing concept
+					// the caller cannot act on. It is still worth having when
+					// someone asks why a model would not route, so it moves to
+					// the log rather than being dropped.
+					showGroup := routingGroup(c, usingGroup)
+					if showGroup == "auto" {
 						showGroup = fmt.Sprintf("auto(%s)", selectGroup)
 					}
-					message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Group": showGroup, "Model": modelRequest.Model, "Error": err.Error()})
+					logger.LogWarn(c, fmt.Sprintf("no channel for model %q in group %q: %v",
+						modelRequest.Model, showGroup, err))
+					message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Model": modelRequest.Model, "Error": err.Error()})
 					// 如果错误，但是渠道不为空，说明是数据库一致性问题
 					//if channel != nil {
 					//	common.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
@@ -203,7 +229,13 @@ func Distribute() func(c *gin.Context) {
 					return
 				}
 				if channel == nil {
-					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+					if !model.ModelIsServed(modelRequest.Model) {
+						abortWithOpenAiMessage(c, http.StatusBadRequest,
+							i18n.T(c, i18n.MsgDistributorUnknownModel, map[string]any{"Model": modelRequest.Model}),
+							types.ErrorCodeModelNotFound)
+						return
+					}
+					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
 					return
 				}
 			}
@@ -220,6 +252,32 @@ func Distribute() func(c *gin.Context) {
 // channelSupportsRequestPath reports whether a channel can serve the request path.
 // Only Advanced Custom (type 58) channels are path-checked; all other channel types
 // always pass. A type-58 channel is usable only when one of its routes matches.
+// routingGroup is the group channel selection searches, as distinct from the
+// group that prices the request.
+//
+// UNIFYAPI-FORK: auth keeps ContextKeyUsingGroup = the user's own group for an
+// `auto` token, so customer pricing stays attached to the owning company. But
+// channel selection walks the Auto list only when it is handed the literal
+// "auto" -- and nothing was handing it that. Every API request from an `auto`
+// token was searched in the user's own group alone; customers whose group
+// carries channels never noticed, and a `default` user (1 model in their group)
+// was refused for everything else. Restoring "auto" here, and only here, gives
+// selection the routing instruction while pricing keeps the user's group; the
+// selected Auto group still reaches pricing through ContextKeyAutoGroup.
+//
+// Playground and credit-pool routes set usingGroup to something other than the
+// user's group on purpose; those are left exactly as they are.
+func routingGroup(c *gin.Context, usingGroup string) string {
+	if usingGroup == "auto" {
+		return usingGroup
+	}
+	if common.GetContextKeyString(c, constant.ContextKeyTokenGroup) == "auto" &&
+		usingGroup == common.GetContextKeyString(c, constant.ContextKeyUserGroup) {
+		return "auto"
+	}
+	return usingGroup
+}
+
 func channelSupportsRequestPath(channel *model.Channel, requestPath string, requestModel string) bool {
 	if channel == nil {
 		return false

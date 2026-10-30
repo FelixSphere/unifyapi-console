@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,17 +28,30 @@ import (
 // Request / Response structures
 // ============================
 
+type viduSubject struct {
+	Name    string   `json:"name"`
+	Images  []string `json:"images"`
+	VoiceID string   `json:"voice_id,omitempty"`
+}
+
 type requestPayload struct {
-	Model             string   `json:"model"`
-	Images            []string `json:"images"`
-	Prompt            string   `json:"prompt,omitempty"`
-	Duration          int      `json:"duration,omitempty"`
-	Seed              int      `json:"seed,omitempty"`
-	Resolution        string   `json:"resolution,omitempty"`
-	MovementAmplitude string   `json:"movement_amplitude,omitempty"`
-	Bgm               bool     `json:"bgm,omitempty"`
-	Payload           string   `json:"payload,omitempty"`
-	CallbackUrl       string   `json:"callback_url,omitempty"`
+	Subjects          []viduSubject `json:"subjects,omitempty"`
+	AutoSubjects      *bool         `json:"auto_subjects,omitempty"`
+	AudioType         string        `json:"audio_type,omitempty"`
+	Audio             *bool         `json:"audio,omitempty"`
+	OffPeak           *bool         `json:"off_peak,omitempty"`
+	AspectRatio       string        `json:"aspect_ratio,omitempty"`
+	Style             string        `json:"style,omitempty"`
+	Model             string        `json:"model"`
+	Images            []string      `json:"images"`
+	Prompt            string        `json:"prompt,omitempty"`
+	Duration          int           `json:"duration,omitempty"`
+	Seed              *int          `json:"seed,omitempty"`
+	Resolution        string        `json:"resolution,omitempty"`
+	MovementAmplitude string        `json:"movement_amplitude,omitempty"`
+	Bgm               bool          `json:"bgm,omitempty"`
+	Payload           string        `json:"payload,omitempty"`
+	CallbackUrl       string        `json:"callback_url,omitempty"`
 }
 
 type responsePayload struct {
@@ -95,6 +109,8 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	action := constant.TaskActionTextGenerate
 	if meatAction, ok := req.Metadata["action"]; ok {
 		action, _ = meatAction.(string)
+	} else if req.Model == "viduq3" || req.Model == "viduq3-mix" || req.Metadata["subjects"] != nil {
+		action = constant.TaskActionReferenceGenerate
 	} else if req.HasImage() {
 		action = constant.TaskActionGenerate
 		if info.ChannelType == constant.ChannelTypeVidu {
@@ -123,6 +139,9 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	}
 
 	if info.Action == constant.TaskActionReferenceGenerate {
+		if body.Model == "viduq3-pro" {
+			body.Model = "viduq3"
+		}
 		if strings.Contains(body.Model, "viduq2") {
 			// 参考图生视频只能用 viduq2 模型, 不能带有pro或turbo后缀 https://platform.vidu.cn/docs/reference-to-video
 			body.Model = "viduq2"
@@ -214,7 +233,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 }
 
 func (a *TaskAdaptor) GetModelList() []string {
-	return []string{"viduq2", "viduq1", "vidu2.0", "vidu1.5"}
+	return []string{"viduq3-pro", "viduq3-pro-fast", "viduq3-turbo", "viduq3", "viduq3-mix", "viduq2", "viduq1", "vidu2.0", "vidu1.5"}
 }
 
 func (a *TaskAdaptor) GetChannelName() string {
@@ -235,8 +254,41 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq, in
 		MovementAmplitude: "auto",
 		Bgm:               false,
 	}
+	if req.Duration == 0 && req.Seconds != "" {
+		duration, err := strconv.Atoi(req.Seconds)
+		if err != nil {
+			return nil, fmt.Errorf("invalid seconds: %w", err)
+		}
+		r.Duration = duration
+	}
+	if strings.HasPrefix(r.Model, "viduq3") && req.Size == "" {
+		r.Resolution = "720p"
+	}
 	if err := taskcommon.UnmarshalMetadata(req.Metadata, &r); err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
+	}
+	if r.Duration <= 0 || r.Duration > relaycommon.MaxTaskDurationSeconds {
+		return nil, fmt.Errorf("invalid duration")
+	}
+	if strings.HasPrefix(r.Model, "viduq3") {
+		if r.Model == "viduq3-pro-fast" && (info.Action != constant.TaskActionGenerate || r.Resolution == "540p") {
+			return nil, fmt.Errorf("Vidu Q3 Pro Fast requires image generation at 720p or 1080p")
+		}
+		if r.Model == "viduq3-mix" && (r.Resolution == "540p" || len(r.Subjects) > 0) {
+			return nil, fmt.Errorf("Vidu Q3 Mix supports image references at 720p or 1080p")
+		}
+		if info.Action == constant.TaskActionReferenceGenerate && r.Model != "viduq3-mix" && r.Duration < 3 {
+			return nil, fmt.Errorf("Vidu Q3 references require at least 3 seconds")
+		}
+		if len(r.Images) > 7 || len(r.Subjects) > 7 {
+			return nil, fmt.Errorf("Vidu Q3 supports at most 7 references")
+		}
+		if r.Duration > 16 {
+			return nil, fmt.Errorf("Vidu Q3 duration must be between 1 and 16 seconds")
+		}
+		if r.Resolution != "540p" && r.Resolution != "720p" && r.Resolution != "1080p" {
+			return nil, fmt.Errorf("unsupported Vidu Q3 resolution")
+		}
 	}
 	return &r, nil
 }

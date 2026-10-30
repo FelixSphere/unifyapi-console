@@ -30,7 +30,10 @@ func partnershipProgramPayload(c *gin.Context) (*model.PartnershipProgram, bool)
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return nil, false
 	}
-	if !ratio_setting.ContainsGroupRatio(program.Group) {
+	// An empty group is how an operator says this program has no default
+	// customer. There is no group to find in Group Pricing, and requiring one
+	// here would refuse the request before the model ever sees it.
+	if program.Group != "" && !ratio_setting.ContainsGroupRatio(program.Group) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "group must exist in Group Pricing"})
 		return nil, false
 	}
@@ -171,6 +174,27 @@ func UpdatePartnershipCustomer(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }
 
+func DeletePartnershipProgram(c *gin.Context) {
+	programId, err := strconv.Atoi(c.Param("id"))
+	if err != nil || programId <= 0 {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid partnership program id"})
+		return
+	}
+	enrolled, err := model.DeletePartnershipProgram(programId)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "partnership program not found"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	// Removing a program reassigns its members the next time they connect.
+	// Report how many there were, so the operator is told what it touched
+	// instead of being shown an unqualified success.
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{"enrolled_members": enrolled}})
+}
+
 func RemovePartnershipCustomer(c *gin.Context) {
 	programId, programErr := strconv.Atoi(c.Param("id"))
 	customerId, customerErr := strconv.Atoi(c.Param("customerId"))
@@ -187,4 +211,31 @@ func RemovePartnershipCustomer(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+}
+
+// BackfillCustomerPools moves members enrolled in a customer onto that
+// customer's wallet, carrying their balance.
+//
+// It defaults to a dry run. Moving where real money lives should be something
+// the operator asks for twice: once to see the numbers, once to apply them.
+func BackfillCustomerPools(c *gin.Context) {
+	apply := c.Query("apply") == "true"
+	result, err := model.BackfillCustomerPools(!apply)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"dry_run":        !apply,
+			"customers":      result.Customers,
+			"members_moved":  result.MembersMoved,
+			"quota_carried":  result.QuotaCarried,
+			"already_pooled": result.AlreadyPooled,
+			"swept":          result.Swept,
+			"skipped":        result.Skipped,
+		},
+	})
 }

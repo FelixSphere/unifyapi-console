@@ -47,6 +47,8 @@ func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dt
 		request, err = GetAndValidateEmbeddingRequest(c, relayMode)
 	case types.RelayFormatRerank:
 		request, err = GetAndValidateRerankRequest(c)
+	case types.RelayFormatSystemOne:
+		request, err = GetAndValidateSystemOneRequest(c)
 	case types.RelayFormatOpenAIAudio:
 		request, err = GetAndValidAudioRequest(c, relayMode)
 	case types.RelayFormatOpenAIRealtime:
@@ -401,6 +403,36 @@ func GetAndValidateGeminiBatchEmbeddingRequest(c *gin.Context) (*dto.GeminiBatch
 	err := common.UnmarshalBodyReusable(c, request)
 	if err != nil {
 		return nil, err
+	}
+	return request, nil
+}
+
+// GetAndValidateSystemOneRequest parses a TypeSafe System One evaluation.
+// Everything it checks is a shape the vendor would reject anyway; the one
+// judgement of our own is the cap on how many questions a single call may
+// carry, because the whole state is re-read per question and the vendor bills
+// input tokens -- an unbounded map is an unbounded bill.
+func GetAndValidateSystemOneRequest(c *gin.Context) (*dto.SystemOneRequest, error) {
+	request := &dto.SystemOneRequest{}
+	if err := common.UnmarshalBodyReusable(c, request); err != nil {
+		return nil, err
+	}
+	if request.Model == "" {
+		return nil, errors.New("model is required")
+	}
+	if request.State == nil {
+		return nil, errors.New("state is required")
+	}
+	if len(request.Questions) == 0 {
+		return nil, errors.New("questions is required and must name at least one question")
+	}
+	if len(request.Questions) > dto.MaxSystemOneQuestions {
+		return nil, fmt.Errorf("questions must contain at most %d entries, got %d", dto.MaxSystemOneQuestions, len(request.Questions))
+	}
+	for name, question := range request.Questions {
+		if _, ok := question.(map[string]any); !ok {
+			return nil, fmt.Errorf("question %q must be an object", name)
+		}
 	}
 	return request, nil
 }

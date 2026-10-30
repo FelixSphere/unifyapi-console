@@ -26,22 +26,30 @@ import (
 // to this list -- a test that reads the catalog to check the catalog would pass
 // no matter what changed.
 var publishedModels = []string{
+	"wan3.0-video", "wan3.0-video-prime", "happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max",
+	"seedance-2.5", "doubao-seedance-2-5-260628", "dreamina-seedance-2-5-260628",
+
 	"MiniMax-M2.5",
 	"MiniMax-M2.7",
 	"claude-fable-5",
 	"claude-fable-5.1",
 	"claude-haiku-4-5-20251001",
+	"claude-haiku-4-5",
+	"claude-haiku-5-5",
 	"claude-opus-4-5",
 	"claude-opus-4-6",
 	"claude-opus-4-7",
 	"claude-opus-4-8",
 	"claude-opus-5",
+	"claude-opus-5-5",
 	"claude-sonnet-4-5",
 	"claude-sonnet-4-6",
 	"claude-sonnet-5",
+	"claude-sonnet-5-5",
 	"deepseek-v3",
 	"deepseek-v3.2",
 	"deepseek-v3.2-thinking",
+	"deepseek-flash",
 	"deepseek-v4-flash",
 	"deepseek-v4-pro",
 	"gemini-2.5-flash",
@@ -51,6 +59,7 @@ var publishedModels = []string{
 	"gemini-3-flash-preview",
 	"gemini-3-pro-image",
 	"gemini-3.1-flash-image",
+	"gemini-3.1-flash-lite-image",
 	"gemini-3.1-flash-lite-preview",
 	"gemini-3.1-pro-preview",
 	"gemini-3.1-pro-preview-customtools",
@@ -58,7 +67,6 @@ var publishedModels = []string{
 	"gemini-3.7-flash",
 	"gemini-3.8-flash",
 	"gemini-flash-latest",
-	"gemini-flash-lite-latest",
 	"gemini-pro-latest",
 	"glm-4.7",
 	"glm-5",
@@ -66,13 +74,27 @@ var publishedModels = []string{
 	"glm-5.1",
 	"glm-5.2",
 	"glm-5.3",
+	"jev-1.13",
 	"gpt-4.1-mini",
 	"gpt-4o",
 	"gpt-4o-mini",
 	"gpt-5",
 	"gpt-5-mini",
 	"gpt-5.4",
+	"gpt-5.6-sol",
+	"gpt-6-astra",
 	"gpt-image-2",
+	"gpt-5.1",
+	"gpt-5.4-mini",
+	"gpt-5.4-nano",
+	"gpt-5.5",
+	"gpt-5.6-luna",
+	"gpt-5.6-terra",
+	"gpt-6-luna",
+	"gpt-6-sol",
+	"gpt-6.1-sol",
+	"grok-4.6",
+	"grok-4.7",
 	"kimi-k2.5",
 	"kimi-k2.6",
 	"kimi-k3",
@@ -87,6 +109,7 @@ var publishedModels = []string{
 	"qwen3.7-max",
 	"qwen3.7-plus",
 	"qwen3.8-max",
+	"qwen3.8-flash",
 }
 
 // resetRatioMapsToBaseline puts the package's global ratio maps back into the
@@ -131,6 +154,10 @@ func TestBaselineRatiosDeriveFromOfficialPrices(t *testing.T) {
 		// 1.25x cache write for every Opus tier.
 		{"claude-opus-4-8", 5, 25, 0.5, 6.25, 2.5, 5, 0.1, 1.25},
 		{"claude-opus-5", 5, 25, 0.5, 6.25, 2.5, 5, 0.1, 1.25},
+		// Opus 5.5 undercuts the tier at $4/$20 AND prices cache hits at 0.05x
+		// input instead of the 0.1x every other Opus uses, so both the model
+		// ratio and the cache ratio differ from the rows above.
+		{"claude-opus-5-5", 4, 20, 0.2, 5, 2, 5, 0.05, 1.25},
 		{"claude-sonnet-5", 2, 10, 0.2, 2.5, 1, 5, 0.1, 1.25},
 		{"claude-fable-5", 10, 50, 1, 12.5, 5, 5, 0.1, 1.25},
 		// Fable 5.1 keeps the $10/$50 base price but Anthropic cut cache
@@ -141,9 +168,17 @@ func TestBaselineRatiosDeriveFromOfficialPrices(t *testing.T) {
 		{"gpt-5", 1.25, 10, 0.125, 0, 0.625, 8, 0.1, 0},
 		{"gpt-5-mini", 0.25, 2, 0.025, 0, 0.125, 8, 0.1, 0},
 		{"gpt-5.4", 2.5, 15, 0.25, 0, 1.25, 6, 0.1, 0},
+		// The one OpenAI model that does publish a cache-write price, so unlike
+		// the rest of the range it must derive a non-zero write ratio.
+		{"gpt-5.6-sol", 4, 20, 0.4, 5, 2, 5, 0.1, 1.25},
+		{"gpt-6-astra", 10, 50, 1, 12.5, 5, 5, 0.1, 1.25},
 		// Google publishes no cache-write price, so there must be no entry.
 		{"gemini-2.5-pro", 1.25, 10, 0.125, 0, 0.625, 8, 0.1, 0},
 		{"gemini-3-pro-image", 2, 120, 0, 0, 1, 60, 0, 0},
+		// The seedance 2.5 family used to be here on a token price. It is billed
+		// PER SECOND by the supplier and is now priced that way, so it has no
+		// token price to assert; its per-second price is pinned by
+		// TestBaselineMapsAreEmptyUntilAModelNeedsThem and by pricing-drift.
 	}
 
 	for _, tc := range cases {
@@ -353,15 +388,36 @@ func TestDetectBaselineShadowCatchesEachWayTheDatabaseCanWin(t *testing.T) {
 // list is pinned here and the drift report prints it every run.
 func TestUnverifiedEntriesAreDeclared(t *testing.T) {
 	want := []string{
-		"deepseek-v3",            // retired; DeepSeek publishes v4 only
-		"deepseek-v3.2",          //
-		"deepseek-v3.2-thinking", //
-		"gemini-3.5-flash",       // newer than the pinned fixture; quoted off Google's page
-		"gemini-3.7-flash",       // same, and on promotional pricing until 2026-12-31
-		"gemini-3.8-flash",       // same
-		"glm-5-turbo",            // not listed; Zhipu lists glm-5v-turbo
-		"kimi-k2.5",              // retired by Moonshot, but still sold and still called
-		"qwen3.5-flash",          // not listed
+		"wan3.0-video", "wan3.0-video-prime", "happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max",
+		"seedance-2.5", "doubao-seedance-2-5-260628", "dreamina-seedance-2-5-260628",
+
+		"deepseek-v3",                 // retired; DeepSeek publishes v4 only
+		"deepseek-v3.2",               //
+		"deepseek-v3.2-thinking",      //
+		"deepseek-flash",              // V4.1 Flash, released 2026-09-10; newer than the pinned fixture, quoted off DeepSeek's page
+		"jev-1.13",                    // TypeSafe System One, released 2026-09-15; not on models.dev, quoted off docs.typesafe.ai
+		"claude-opus-5-5",             // launched after the pinned fixture; quoted off platform.claude.com/pricing
+		"gemini-3.1-flash-lite-image", // Nano Banana 2 Lite; newer than the pinned fixture
+		"gemini-3.5-flash",            // newer than the pinned fixture; quoted off Google's page
+		"gemini-3.7-flash",            // same, and on promotional pricing until 2026-12-31
+		"gemini-3.8-flash",            // same
+		"glm-5-turbo",                 // not listed; Zhipu lists glm-5v-turbo
+		"kimi-k2.5",                   // retired by Moonshot, but still sold and still called
+		"qwen3.5-flash",               // not listed
+		"qwen3.8-flash",               // newer than the pinned fixture; Alibaba Cloud Singapore list, read 2026-10-13
+		"claude-haiku-5-5",            // launched after the pinned fixture; platform.claude.com/pricing, base (<=100K prompt) tier
+		"claude-sonnet-5-5",           // same; cache hits 0.05x like Opus 5.5
+		"gpt-5.1",                     // the nine OpenAI rows below are all newer than the fixture; developers.openai.com/api/docs/pricing, read 2026-10-13
+		"gpt-5.4-mini",                //
+		"gpt-5.4-nano",                //
+		"gpt-5.5",                     //
+		"gpt-5.6-luna",                //
+		"gpt-5.6-terra",               //
+		"gpt-6-luna",                  //
+		"gpt-6-sol",                   //
+		"gpt-6.1-sol",                 //
+		"grok-4.6",                    // xAI is not in the fixture at all; docs.x.ai/docs/models, <200K tier
+		"grok-4.7",                    //
 	}
 
 	var got []string

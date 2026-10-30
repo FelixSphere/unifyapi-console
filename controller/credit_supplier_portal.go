@@ -109,6 +109,45 @@ type portalSupplierView struct {
 	Status       string `json:"status"`
 	StatusReason string `json:"status_reason"`
 	Counterparty string `json:"counterparty"`
+	// The seller's own payout account, in full: it is theirs.
+	PayoutMethod     string `json:"payout_method"`
+	PayoutHolder     string `json:"payout_holder"`
+	PayoutDetails    string `json:"payout_details"`
+	PayoutCurrency   string `json:"payout_currency"`
+	HasPayoutAccount bool   `json:"has_payout_account"`
+	// PayoutMethodLabel is the rail's name, so a screen never has to keep its
+	// own copy of the list and drift from it.
+	PayoutMethodLabel string `json:"payout_method_label"`
+}
+
+// UpdateSupplierPayoutAccount files where the calling seller is paid. It is
+// the one thing a seller must do before they can submit a key.
+func UpdateSupplierPayoutAccount(c *gin.Context) {
+	var acct model.SupplierPayoutAccount
+	if err := c.ShouldBindJSON(&acct); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid request body"})
+		return
+	}
+	supplier, ok := sellerFor(c)
+	if !ok {
+		return
+	}
+	updated, err := model.SetSupplierPayoutAccount(supplier.Id, acct)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": supplierView(updated)})
+}
+
+func supplierView(s *model.CreditSupplier) portalSupplierView {
+	return portalSupplierView{
+		Id: s.Id, Name: s.Name, Code: s.Code, ContactEmail: s.ContactEmail,
+		Status: s.Status, StatusReason: s.StatusReason, Counterparty: s.CounterpartyKey(),
+		PayoutMethod: s.PayoutMethod, PayoutHolder: s.PayoutHolder, PayoutDetails: s.PayoutDetails,
+		PayoutCurrency: s.PayoutCurrency, HasPayoutAccount: s.HasPayoutAccount(),
+		PayoutMethodLabel: s.PayoutMethodLabel(),
+	}
 }
 
 // portalLotView is a lot without the operator's note.
@@ -118,10 +157,8 @@ type portalLotView struct {
 	ChannelId        int     `json:"channel_id"`
 	ChannelName      string  `json:"channel_name"`
 	FaceValueUSD     float64 `json:"face_value_usd"`
-	AcquisitionRate  float64 `json:"acquisition_rate"`
 	ConsumedUSD      float64 `json:"consumed_usd"`
 	RemainingUSD     float64 `json:"remaining_usd"`
-	PayableUSD       float64 `json:"payable_usd"`
 	UnpricedRequests int64   `json:"unpriced_requests"`
 	ExpiresAt        int64   `json:"expires_at"`
 	Status           string  `json:"status"`
@@ -131,10 +168,12 @@ type portalLotView struct {
 	CreatedAt        int64   `json:"created_at"`
 	VerifiedAt       int64   `json:"verified_at"`
 	PayoutMethod     string  `json:"payout_method"`
-	PayoutUSD        float64 `json:"payout_usd"`
-	PaidUSD          float64 `json:"paid_usd"`
-	PaidAt           int64   `json:"paid_at"`
-	PayoutReference  string  `json:"payout_reference"`
+	// The dividend side of a contributed key. Zero on a lot bought outright.
+	RevenueSharePct float64 `json:"revenue_share_pct"`
+	ShareRevenueUSD float64 `json:"share_revenue_usd"`
+	ShareEarnedUSD  float64 `json:"share_earned_usd"`
+	SharePaidUSD    float64 `json:"share_paid_usd"`
+	ShareUnpaidUSD  float64 `json:"share_unpaid_usd"`
 }
 
 func GetSupplierPortal(c *gin.Context) {
@@ -165,17 +204,17 @@ func GetSupplierPortal(c *gin.Context) {
 
 	views := make([]portalLotView, 0, len(lots))
 	totals := gin.H{}
-	terms := model.GetCreditSupplyTerms()
-	var face, consumed, remaining, awaiting, paid float64
+	var face, consumed, remaining float64
 	for _, lot := range lots {
 		views = append(views, portalLotView{
 			Id: lot.Id, Vendor: lot.Vendor, ChannelId: lot.ChannelId, ChannelName: channelNames[lot.ChannelId],
-			FaceValueUSD: lot.FaceValueUSD, AcquisitionRate: lot.AcquisitionRate, ConsumedUSD: lot.ConsumedUSD,
-			RemainingUSD: lot.RemainingUSD(), PayableUSD: lot.PayableUSD(), UnpricedRequests: lot.UnpricedRequests,
+			FaceValueUSD: lot.FaceValueUSD, ConsumedUSD: lot.ConsumedUSD,
+			RemainingUSD: lot.RemainingUSD(), UnpricedRequests: lot.UnpricedRequests,
 			ExpiresAt: lot.ExpiresAt, Status: lot.Status, StatusReason: lot.StatusReason, Source: lot.Source, RetiredAt: lot.RetiredAt, CreatedAt: lot.CreatedAt,
 			VerifiedAt: lot.VerifiedAt, PayoutMethod: lot.PayoutMethod,
-			PayoutUSD: terms.PayoutUSD(lot.FaceValueUSD, lot.AcquisitionRate, lot.PayoutMethod),
-			PaidUSD:   lot.PaidUSD, PaidAt: lot.PaidAt, PayoutReference: lot.PayoutReference,
+			RevenueSharePct: lot.RevenueSharePct,
+			ShareRevenueUSD: lot.ShareRevenueUSD, ShareEarnedUSD: lot.EarnedShareUSD(),
+			SharePaidUSD: lot.PaidShareUSD, ShareUnpaidUSD: lot.UnpaidShareUSD(),
 		})
 		if lot.Status == model.CreditLotStatusRejected {
 			continue
@@ -183,45 +222,77 @@ func GetSupplierPortal(c *gin.Context) {
 		face += lot.FaceValueUSD
 		consumed += lot.ConsumedUSD
 		remaining += lot.RemainingUSD()
-		if lot.Status == model.CreditLotStatusVerified {
-			awaiting += terms.PayoutUSD(lot.FaceValueUSD, lot.AcquisitionRate, lot.PayoutMethod)
-		}
-		paid += lot.PaidUSD
 	}
 	totals["face_usd"] = face
 	totals["consumed_usd"] = consumed
 	totals["remaining_usd"] = remaining
-	totals["awaiting_payment_usd"] = awaiting
-	totals["paid_usd"] = paid
+	share := model.SumCreditShare(lots)
+	totals["share_revenue_usd"] = share.RevenueUSD
+	totals["share_earned_usd"] = share.EarnedUSD
+	totals["share_paid_usd"] = share.PaidUSD
+	totals["share_unpaid_usd"] = share.UnpaidUSD
+
+	payouts, err := model.ListCreditSharePayouts(model.CreditShareFilter{SupplierId: supplier.Id})
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
-		"supplier": portalSupplierView{
-			Id: supplier.Id, Name: supplier.Name, Code: supplier.Code, ContactEmail: supplier.ContactEmail,
-			Status: supplier.Status, StatusReason: supplier.StatusReason, Counterparty: supplier.CounterpartyKey(),
-		},
-		"lots":    views,
-		"totals":  totals,
-		"vendors": supplierVendorPresets(),
-		"terms": gin.H{
-			"buy_rates":             terms.BuyRates,
-			"min_face_usd":          terms.MinFaceUSD,
-			"platform_credit_bonus": terms.PlatformCreditBonus,
-		},
+		"supplier":      supplierView(supplier),
+		"lots":          views,
+		"totals":        totals,
+		"share_payouts": payouts,
+		"vendors":       supplierVendorPresets(),
+		"terms":         postedTerms(model.GetCreditSupplyTerms()),
+		"payout_rails":  payoutRailsFor(supplier),
 	}})
 }
 
-// supplierLotSubmission is what a supplier may propose. The rate is their
-// asking price; the operator may edit it before approving.
 // GetSupplierTerms is the price list a seller sees before typing anything.
 func GetSupplierTerms(c *gin.Context) {
 	terms := model.GetCreditSupplyTerms()
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
-		"buy_rates":             terms.BuyRates,
-		"min_face_usd":          terms.MinFaceUSD,
-		"platform_credit_bonus": terms.PlatformCreditBonus,
-		"channel_priority":      terms.ChannelPriority,
-		"vendors":               supplierVendorPresets(),
-	}})
+	data := postedTerms(terms)
+	data["channel_priority"] = terms.ChannelPriority
+	data["vendors"] = supplierVendorPresets()
+	data["payout_rails"] = payoutRailsFor(nil)
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": data})
+}
+
+// payoutRailsFor is the list the seller's dialog renders. It is the rails
+// Payment Settings actually has an account for, plus -- when the seller
+// already filed a rail that is no longer offered -- that one, so opening the
+// dialog cannot silently switch them onto something else and then save it.
+func payoutRailsFor(supplier *model.CreditSupplier) []model.PayoutRail {
+	rails := model.PayoutRails()
+	if supplier == nil || supplier.PayoutMethod == "" {
+		return rails
+	}
+	current := model.NormalizePayoutMethod(supplier.PayoutMethod)
+	for _, rail := range rails {
+		if rail.Id == current {
+			return rails
+		}
+	}
+	if rail, ok := model.PayoutRailFor(current); ok {
+		return append(rails, rail)
+	}
+	return rails
+}
+
+// postedTerms is the offer, and only the offer: the share a seller keeps and
+// the thresholds around it. Everything else is operator business.
+func postedTerms(terms model.CreditSupplyTerms) gin.H {
+	// Sellers are offered one deal: a share of what their credits sell for.
+	// The buy rates still exist for lots an operator enters by hand, and are
+	// operator business.
+	return gin.H{
+		"min_face_usd":         terms.MinFaceUSD,
+		"revenue_share_rates":  terms.RevenueShareRates,
+		"revenue_share_basis":  terms.ShareBasis(),
+		"min_share_payout_usd": terms.MinSharePayoutUSD,
+		"manual_review":        terms.ManualReview,
+	}
 }
 
 // verifySupplierChannel makes one real request through the submitted key. It
@@ -295,21 +366,17 @@ func sellerFor(c *gin.Context) (*model.CreditSupplier, bool) {
 	return supplier, true
 }
 
+// supplierLotSubmission is a seller handing us a key. There is one deal -- a
+// share of what the credits sell for, at the posted rate -- so the seller
+// names no price and chooses no deal; how they are paid is on their profile.
 type supplierLotSubmission struct {
-	Vendor          string   `json:"vendor"`
-	FaceValueUSD    float64  `json:"face_value_usd"`
-	AcquisitionRate float64  `json:"acquisition_rate"`
-	ExpiresAt       int64    `json:"expires_at"`
-	Note            string   `json:"note"`
-	UpstreamKey     string   `json:"upstream_key"`
-	Models          []string `json:"models"`
-	// PayoutMethod is platform_credit (instant on settlement) or external;
-	// PayoutAccount is where an external payment should go, in the seller's words.
-	PayoutMethod  string `json:"payout_method"`
-	PayoutAccount string `json:"payout_account"`
-	// TransferRightsConfirmed is the supplier's own attestation. It does not
-	// replace the operator's check at approval; it puts the claim on record.
-	TransferRightsConfirmed bool `json:"transfer_rights_confirmed"`
+	Vendor                  string   `json:"vendor"`
+	FaceValueUSD            float64  `json:"face_value_usd"`
+	ExpiresAt               int64    `json:"expires_at"`
+	Note                    string   `json:"note"`
+	UpstreamKey             string   `json:"upstream_key"`
+	Models                  []string `json:"models"`
+	TransferRightsConfirmed bool     `json:"transfer_rights_confirmed"`
 }
 
 func SubmitSupplierLot(c *gin.Context) {
@@ -324,30 +391,28 @@ func SubmitSupplierLot(c *gin.Context) {
 		return
 	}
 	terms := model.GetCreditSupplyTerms()
-	rate, buying := terms.BuyRate(preset.Key)
-	if !buying {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "we are not buying " + preset.Label + " credits at the moment"})
+	sharePct, taking := terms.RevenueShareRate(preset.Key)
+	if !taking {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "we are not taking " + preset.Label + " credits at the moment"})
 		return
 	}
 	if req.FaceValueUSD < terms.MinFaceUSD {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": fmt.Sprintf("the smallest sale we accept is $%.0f of credit", terms.MinFaceUSD)})
-		return
-	}
-	req.PayoutMethod = strings.TrimSpace(req.PayoutMethod)
-	req.PayoutAccount = strings.TrimSpace(req.PayoutAccount)
-	switch req.PayoutMethod {
-	case model.CreditLotPayoutPlatformCredit:
-	case model.CreditLotPayoutExternal:
-		if req.PayoutAccount == "" {
-			c.JSON(http.StatusOK, gin.H{"success": false, "message": "tell us where to send the payment (bank, PayPal, or wallet details)"})
-			return
-		}
-	default:
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "choose how you want to be paid"})
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": fmt.Sprintf("the smallest balance we take on is $%.0f of credit", terms.MinFaceUSD)})
 		return
 	}
 	supplier, ok := sellerFor(c)
 	if !ok {
+		return
+	}
+	if supplier.Status != model.CreditSupplierStatusActive {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": model.ErrCreditSupplierSuspended.Error()})
+		return
+	}
+	if !supplier.HasPayoutAccount() {
+		// Filed first, on purpose: with a share deal nothing is paid up front,
+		// so the account must be on record before the first dollar is owed.
+		c.JSON(http.StatusOK, gin.H{"success": false, "code": "payout_account_required",
+			"message": "add your payout account before submitting credits, so we know where to send your share"})
 		return
 	}
 	req.UpstreamKey = strings.TrimSpace(req.UpstreamKey)
@@ -393,13 +458,14 @@ func SubmitSupplierLot(c *gin.Context) {
 		Group:   "default",
 	}
 	lot := &model.CreditLot{
-		Vendor:          preset.Key,
-		FaceValueUSD:    req.FaceValueUSD,
-		AcquisitionRate: rate, // the posted rate, never the caller's number
-		ExpiresAt:       req.ExpiresAt,
-		Note:            strings.TrimSpace(req.Note),
-		PayoutMethod:    req.PayoutMethod,
-		PayoutAccount:   req.PayoutAccount,
+		Vendor:            preset.Key,
+		DealType:          model.CreditLotDealRevenueShare,
+		FaceValueUSD:      req.FaceValueUSD,
+		RevenueSharePct:   sharePct, // the posted share, never the caller's number
+		RevenueShareBasis: terms.ShareBasis(),
+		ExpiresAt:         req.ExpiresAt,
+		Note:              strings.TrimSpace(req.Note),
+		PayoutMethod:      supplier.ExternalPayoutMethod(),
 	}
 	actor := optionChangeActor(c)
 	if err := model.SubmitSupplierCreditLot(supplier, channel, lot, actor); err != nil {
@@ -428,7 +494,13 @@ func SubmitSupplierLot(c *gin.Context) {
 	// did not happen.
 	// Same pricing path as customer draw-down (RecordCreditSupplyConsumption):
 	// list price with cached reads at the vendor's cache-read rate.
-	verificationUSD, _ := ratio_setting.ListPriceUSD(testModel, int64(usage.PromptTokens), int64(usage.CachedTokens), int64(usage.CompletionTokens))
+	// The verification call is a plain OpenAI-format probe, so its prompt count
+	// already contains any cached reads; no semantic marker is needed.
+	verificationUSD, _ := ratio_setting.ListPriceUSD(testModel, ratio_setting.TokenUsage{
+		PromptTokens:     int64(usage.PromptTokens),
+		CachedTokens:     int64(usage.CachedTokens),
+		CompletionTokens: int64(usage.CompletionTokens),
+	})
 	verified, err := model.MarkCreditLotVerified(lot.Id, "system",
 		fmt.Sprintf("key answered a %s request (%d in, %d of them cached / %d out tokens, $%.6f at list price, drawn from the lot)", testModel, usage.PromptTokens, usage.CachedTokens, usage.CompletionTokens, verificationUSD),
 		verificationUSD)
@@ -436,10 +508,111 @@ func SubmitSupplierLot(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
 	}
+	final := verified
+	if !terms.ManualReview {
+		// The key works, the seller attested, and we owe nothing until it
+		// earns: it goes into service now. An operator can still suspend it.
+		activated, err := model.ActivateVerifiedShareLot(verified.Id, "system (seller attested; auto-activated)")
+		if err != nil {
+			common.SysError("credit supply: verified lot #" + strconv.Itoa(verified.Id) + " could not be activated automatically: " + err.Error())
+		} else {
+			final = activated
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
-		"lot_id": verified.Id, "channel_id": channel.Id, "status": verified.Status,
-		"payout_usd": terms.PayoutUSD(verified.FaceValueUSD, verified.AcquisitionRate, verified.PayoutMethod),
+		"lot_id": final.Id, "channel_id": channel.Id, "status": final.Status,
+		"deal_type": final.DealType, "revenue_share_pct": final.RevenueSharePct,
 	}})
+}
+
+// supplierUsageWindow reads the half-open window a seller asked for, in whole
+// days, defaulting to the last 30.
+func supplierUsageWindow(c *gin.Context) (int64, int64) {
+	const day = int64(86400)
+	now := common.GetTimestamp()
+	end := now + day
+	start := end - 31*day
+	if raw := c.Query("days"); raw != "" {
+		if days, err := strconv.Atoi(raw); err == nil && days > 0 && days <= 366 {
+			start = end - int64(days+1)*day
+		}
+	}
+	return start, end
+}
+
+// sellerSharePct is the share the seller's live keys were taken on. Keys can
+// in principle carry different shares; the highest is used so the figure this
+// screen shows is never lower than what they are actually owed.
+func sellerSharePct(lots []*model.CreditLot) float64 {
+	share := 0.0
+	for _, lot := range lots {
+		if lot.RevenueSharePct > share {
+			share = lot.RevenueSharePct
+		}
+	}
+	return share
+}
+
+// GetSupplierUsageDetail is the seller's own audit trail: their traffic in the
+// shape their vendor console reports it, so the two can be put side by side.
+func GetSupplierUsageDetail(c *gin.Context) {
+	supplier, ok := portalSupplier(c)
+	if !ok {
+		return
+	}
+	lots, err := model.GetCreditLots(model.CreditLotFilter{SupplierId: supplier.Id})
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	start, end := supplierUsageWindow(c)
+	rows, err := model.GetSupplierUsageDetail(supplier.Id, start, end, sellerSharePct(lots))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	var listUSD, soldUSD, shareUSD float64
+	var requests, unpriced int64
+	for _, row := range rows {
+		listUSD += row.ListUSD
+		soldUSD += row.SoldUSD
+		shareUSD += row.ShareUSD
+		requests += row.Requests
+		if !row.Priced {
+			unpriced += row.Requests
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{
+		"rows": rows,
+		"totals": gin.H{
+			"requests": requests, "list_usd": listUSD, "sold_usd": soldUSD,
+			"share_usd": shareUSD, "unpriced_requests": unpriced,
+		},
+		"vendors": supplierVendorPresets(),
+	}})
+}
+
+// ExportSupplierUsageCSV hands the same rows over as a file, so a seller can
+// diff them against an export from their vendor rather than reading a screen.
+func ExportSupplierUsageCSV(c *gin.Context) {
+	supplier, ok := portalSupplier(c)
+	if !ok {
+		return
+	}
+	lots, err := model.GetCreditLots(model.CreditLotFilter{SupplierId: supplier.Id})
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	start, end := supplierUsageWindow(c)
+	rows, err := model.GetSupplierUsageDetail(supplier.Id, start, end, sellerSharePct(lots))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	filename := fmt.Sprintf("unifyapi-usage-%s-%s.csv", supplier.Code, time.Unix(start, 0).Format("20060102"))
+	c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
+	c.Data(http.StatusOK, "text/csv; charset=utf-8", []byte(model.SupplierUsageCSV(rows)))
 }
 
 func GetSupplierUsage(c *gin.Context) {

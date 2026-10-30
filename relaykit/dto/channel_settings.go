@@ -85,6 +85,12 @@ type ChannelOtherSettings struct {
 	UpstreamModelUpdateLastRemovedModels  []string              `json:"upstream_model_update_last_removed_models,omitempty"`  // 上次检测到的可删除模型
 	UpstreamModelUpdateIgnoredModels      []string              `json:"upstream_model_update_ignored_models,omitempty"`       // 手动忽略的模型
 	AdvancedCustom                        *AdvancedCustomConfig `json:"advanced_custom,omitempty"`
+	// SystemOnePath overrides the evaluation path for a TypeSafe (System One)
+	// channel. Aggregators front the same API at different prefixes -- the
+	// vendor serves /v1/systemone, others mount it elsewhere -- so the path is
+	// configuration rather than something the adaptor can know. Empty means
+	// the vendor's own /v1/systemone.
+	SystemOnePath string `json:"system_one_path,omitempty"`
 }
 
 func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {

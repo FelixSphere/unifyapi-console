@@ -37,9 +37,17 @@ export type PricingModel = {
   vendor_icon?: string
   vendor_description?: string
   quota_type: number
+  /**
+   * The model is on an enabled channel but the catalog does not price it, so
+   * the API withheld a price rather than publishing the 37.5 sentinel ($75/1M)
+   * that GetModelRatio returns for an unknown model. The relay refuses these,
+   * so every price formatter renders a dash.
+   */
+  unpriced?: boolean
   model_ratio: number
   completion_ratio: number
   model_price?: number
+  price_unit?: 'second'
   cache_ratio?: number | null
   create_cache_ratio?: number | null
   image_ratio?: number | null
@@ -58,6 +66,12 @@ export type PricingModel = {
   pricing_version?: string
   /** Final multiplier over official price negotiated for this user's group. */
   customer_group_model_ratio?: number
+  /**
+   * Final multiplier the `default` group (every new registration) pays for
+   * this model. Public and identical for every viewer -- it is the advertised
+   * new-user price, not the viewer's contract. Absent = new users pay list.
+   */
+  default_group_model_ratio?: number
   /**
    * Optional model metadata fields reserved for backend-provided catalog data.
    * Keep them data-driven; do not synthesize display values on the client.

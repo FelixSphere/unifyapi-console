@@ -210,7 +210,7 @@ func TestUpstreamCostRatioNeverChangesWhatTheCustomerIsBilled(t *testing.T) {
 		"even the pre-consumed hold must be unaffected")
 
 	// And it must still be visible on the cost side, or it would be inert.
-	cost, ok := ratio_setting.UpstreamCostUSD("gpt-4o", 1, 1_000_000, 0, 0)
+	cost, ok := ratio_setting.UpstreamCostUSD("gpt-4o", 1, ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	require.True(t, ok)
 	require.InDelta(t, 1.25, cost, 1e-9, "$2.50/1M list x 0.5 purchasing ratio")
 }
@@ -231,9 +231,9 @@ func TestTwoSuppliersChangeCostButNeverCustomerContractPrice(t *testing.T) {
 	require.Equal(t, primaryPrice.QuotaToPreConsume, fallbackPrice.QuotaToPreConsume)
 	require.Equal(t, 2_000_000, primaryPrice.QuotaToPreConsume, "$5 official input x 0.8 x 500k quota/$")
 
-	primaryCost, ok := ratio_setting.UpstreamCostUSD("claude-opus-5", 2201, 1_000_000, 0, 0)
+	primaryCost, ok := ratio_setting.UpstreamCostUSD("claude-opus-5", 2201, ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	require.True(t, ok)
-	fallbackCost, ok := ratio_setting.UpstreamCostUSD("claude-opus-5", 2202, 1_000_000, 0, 0)
+	fallbackCost, ok := ratio_setting.UpstreamCostUSD("claude-opus-5", 2202, ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 0})
 	require.True(t, ok)
 	require.InDelta(t, 4.5, primaryCost, 1e-9)
 	require.InDelta(t, 3.0, fallbackCost, 1e-9)

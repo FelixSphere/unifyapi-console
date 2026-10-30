@@ -49,17 +49,35 @@ export function remainingUSD(
   return Math.max(lot.face_value_usd - lot.consumed_usd, 0)
 }
 
-export function payableUSD(
-  lot: Pick<CreditLot, 'consumed_usd' | 'acquisition_rate'>
-) {
-  return lot.consumed_usd * lot.acquisition_rate
+// -- what a key has earned its seller ----------------------------------------
+//
+// These mirror model.CreditLot.ShareBasisUSD / EarnedShareUSD /
+// UnpaidShareUSD. The server is the authority; the screen recomputes them only
+// so a row can show a total without a second round trip.
+
+type ShareFields = Pick<
+  CreditLot,
+  | 'revenue_share_pct'
+  | 'share_revenue_usd'
+  | 'share_cost_usd'
+  | 'paid_share_usd'
+>
+
+export function shareBasisUSD(lot: ShareFields) {
+  return Math.max(lot.share_revenue_usd - lot.share_cost_usd, 0)
 }
 
-// What the sale costs us at the rate it was submitted with.
-export function purchasePriceUSD(
-  lot: Pick<CreditLot, 'face_value_usd' | 'acquisition_rate'>
-) {
-  return lot.face_value_usd * lot.acquisition_rate
+export function earnedShareUSD(lot: ShareFields) {
+  return shareBasisUSD(lot) * lot.revenue_share_pct
+}
+
+// Half a cent and below is rounding noise, not a debt -- the same threshold the
+// server refuses to pay out on.
+export const SHARE_CENT_THRESHOLD = 0.005
+
+export function unpaidShareUSD(lot: ShareFields) {
+  const unpaid = earnedShareUSD(lot) - lot.paid_share_usd
+  return unpaid < SHARE_CENT_THRESHOLD ? 0 : unpaid
 }
 
 export function consumedPct(
@@ -141,8 +159,11 @@ export function availableTransitions(
         { to: 'rejected', labelKey: 'Reject', destructive: true },
       ]
     case 'verified':
-      // The primary action here is Pay & activate, rendered separately.
-      return [{ to: 'rejected', labelKey: 'Reject', destructive: true }]
+      // Nothing is paid up front, so accepting the key is the whole decision.
+      return [
+        { to: 'active', labelKey: 'Accept' },
+        { to: 'rejected', labelKey: 'Reject', destructive: true },
+      ]
     case 'active':
       return [{ to: 'suspended', labelKey: 'Suspend', destructive: true }]
     case 'suspended':

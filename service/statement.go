@@ -103,6 +103,42 @@ type StatementLine struct {
 	Unpriced bool `json:"unpriced,omitempty"`
 }
 
+// StatementUserLine is one login's share of a customer statement.
+//
+// A customer with several logins asks "which of my people spent this" in the
+// same breath as "what did I pay for gpt-4o", so the bill carries both grains.
+// Keyed on the log's user id and labelled with the username the log recorded
+// at the time: a login deleted since still appears, because its usage was
+// still billed to the customer. (22.8M quota of one deleted login went
+// unattributable in production when this was joined through the live users
+// table instead.)
+type StatementUserLine struct {
+	UserID           int     `json:"user_id"`
+	Username         string  `json:"username"`
+	Requests         int64   `json:"requests"`
+	PromptTokens     int64   `json:"prompt_tokens"`
+	CachedTokens     int64   `json:"cached_tokens"`
+	CompletionTokens int64   `json:"completion_tokens"`
+	AmountUSD        float64 `json:"amount_usd"`
+}
+
+// StatementFundingLine is one login's receipts on a customer statement: what
+// they paid in (or an operator granted them) during the period, in the same
+// grain as StatementUserLine so "who spent it" and "who funded it" sit side by
+// side. Keyed on the top-up's user id and labelled from the live users table
+// when the login still exists, by id when it does not.
+type StatementFundingLine struct {
+	UserID   int    `json:"user_id"`
+	Username string `json:"username"`
+	// Orders are gateway top-ups; Grants are operator adjustments, which can
+	// be negative. Neither is a payment against an invoice -- wallet credit is
+	// prepaid, and TestCustomerSettlementResponseNeverTreatsTopUpsAsInvoicePayments
+	// keeps that word out of this document.
+	Orders      int64   `json:"orders"`
+	Grants      int64   `json:"grants"`
+	CreditedUSD float64 `json:"credited_usd"`
+}
+
 // Statement is one counterparty's activity for one period.
 type Statement struct {
 	Kind StatementKind `json:"kind"`
@@ -123,11 +159,25 @@ type Statement struct {
 
 	Lines []StatementLine `json:"lines"`
 
-	Requests         int64   `json:"requests"`
-	PromptTokens     int64   `json:"prompt_tokens"`
-	CachedTokens     int64   `json:"cached_tokens"`
-	CompletionTokens int64   `json:"completion_tokens"`
-	AmountUSD        float64 `json:"amount_usd"`
+	// Users is the same total broken down by login. Customer side only: a
+	// supplier is owed for models on channels, not for who called them.
+	Users []StatementUserLine `json:"users,omitempty"`
+	// Funding is what the customer's logins paid in during the period, by
+	// login; FundedUSD is its total. Customer side only. See AttachFunding.
+	Funding   []StatementFundingLine `json:"funding,omitempty"`
+	FundedUSD float64                `json:"funded_usd,omitempty"`
+	// FundingToDate is everything the customer's logins have ever paid in, up
+	// to the end of this period, and FundedToDateUSD is its total. The period
+	// figures answer "what arrived this month"; these answer "what has this
+	// customer put in altogether", which is the question usually being asked
+	// and which a month-scoped view cannot show. See AttachFundingToDate.
+	FundingToDate    []StatementFundingLine `json:"funding_to_date,omitempty"`
+	FundedToDateUSD  float64                `json:"funded_to_date_usd,omitempty"`
+	Requests         int64                  `json:"requests"`
+	PromptTokens     int64                  `json:"prompt_tokens"`
+	CachedTokens     int64                  `json:"cached_tokens"`
+	CompletionTokens int64                  `json:"completion_tokens"`
+	AmountUSD        float64                `json:"amount_usd"`
 
 	// UnpricedRequests is vendor-side only: traffic whose model has no catalog
 	// price, so it contributes nothing to AmountUSD. A vendor statement with
@@ -150,6 +200,7 @@ func BuildStatements(rows []model.UsageRow, kind StatementKind, periodStart, per
 	type draft struct {
 		statement Statement
 		byModel   map[string]*StatementLine
+		byUser    map[int]*StatementUserLine
 		unpriced  map[string]bool
 	}
 
@@ -168,6 +219,7 @@ func BuildStatements(rows []model.UsageRow, kind StatementKind, periodStart, per
 					PeriodEnd:    periodEnd,
 				},
 				byModel:  map[string]*StatementLine{},
+				byUser:   map[int]*StatementUserLine{},
 				unpriced: map[string]bool{},
 			}
 			drafts[key] = entry
@@ -205,6 +257,23 @@ func BuildStatements(rows []model.UsageRow, kind StatementKind, periodStart, per
 			line.Unpriced = true
 		}
 
+		if kind == StatementKindCustomer {
+			userLine, ok := entry.byUser[row.UserID]
+			if !ok {
+				name := row.Username
+				if name == "" {
+					name = "user " + strconv.Itoa(row.UserID)
+				}
+				userLine = &StatementUserLine{UserID: row.UserID, Username: name}
+				entry.byUser[row.UserID] = userLine
+			}
+			userLine.Requests += row.Requests
+			userLine.PromptTokens += row.PromptTokens
+			userLine.CachedTokens += row.CachedTokens
+			userLine.CompletionTokens += row.CompletionTokens
+			userLine.AmountUSD += amount
+		}
+
 		entry.statement.Requests += row.Requests
 		entry.statement.PromptTokens += row.PromptTokens
 		entry.statement.CachedTokens += row.CachedTokens
@@ -216,6 +285,9 @@ func BuildStatements(rows []model.UsageRow, kind StatementKind, periodStart, per
 	for _, entry := range drafts {
 		statement := entry.statement
 		statement.Lines = sortedLines(entry.byModel)
+		if kind == StatementKindCustomer {
+			statement.Users = sortedUserLines(entry.byUser)
+		}
 		statement.UnpricedModels = sortedKeys(entry.unpriced)
 		out = append(out, statement)
 	}
@@ -231,6 +303,85 @@ func BuildStatements(rows []model.UsageRow, kind StatementKind, periodStart, per
 	return out
 }
 
+// AttachFunding puts the period's receipts on the customer statements they
+// were paid into, one line per login. A customer that paid but did not consume
+// still gets a statement -- with no usage lines -- because money that arrived
+// must appear somewhere. Vendor statements are returned unchanged: a supplier
+// is paid, it does not pay us.
+func AttachFunding(statements []Statement, kind StatementKind, rows []model.FundingRow, periodStart, periodEnd string) []Statement {
+	if kind != StatementKindCustomer || len(rows) == 0 {
+		return statements
+	}
+	out := make([]Statement, len(statements))
+	copy(out, statements)
+	index := map[string]int{}
+	for i := range out {
+		index[out[i].Counterparty] = i
+	}
+	byUser := map[string]map[int]*StatementFundingLine{}
+	for _, row := range rows {
+		key, label, group := fundingParty(row)
+		i, ok := index[key]
+		if !ok {
+			out = append(out, Statement{
+				Kind: kind, Counterparty: key, Label: label, Group: group,
+				PeriodStart: periodStart, PeriodEnd: periodEnd, Lines: []StatementLine{},
+			})
+			i = len(out) - 1
+			index[key] = i
+		}
+		lines, ok := byUser[key]
+		if !ok {
+			lines = map[int]*StatementFundingLine{}
+			byUser[key] = lines
+		}
+		line, ok := lines[row.UserID]
+		if !ok {
+			name := row.Username
+			if name == "" {
+				name = "user " + strconv.Itoa(row.UserID)
+			}
+			line = &StatementFundingLine{UserID: row.UserID, Username: name}
+			lines[row.UserID] = line
+		}
+		if row.Provider == model.PaymentProviderAdmin {
+			line.Grants += row.Orders
+		} else {
+			line.Orders += row.Orders
+		}
+		line.CreditedUSD += row.CreditedUSD
+		out[i].FundedUSD += row.CreditedUSD
+	}
+	for key, lines := range byUser {
+		sorted := make([]StatementFundingLine, 0, len(lines))
+		for _, line := range lines {
+			sorted = append(sorted, *line)
+		}
+		sort.SliceStable(sorted, func(a, b int) bool {
+			if sorted[a].CreditedUSD != sorted[b].CreditedUSD {
+				return sorted[a].CreditedUSD > sorted[b].CreditedUSD
+			}
+			return sorted[a].UserID < sorted[b].UserID
+		})
+		out[index[key]].Funding = sorted
+	}
+	return out
+}
+
+// fundingParty keys a receipt the way statementParty keys usage, so the money
+// lands on the same statement as the consumption it paid for.
+func fundingParty(row model.FundingRow) (key, label, group string) {
+	if row.CustomerGroup == "" || row.CustomerGroup == systemDefaultGroup {
+		key = strconv.Itoa(row.UserID)
+		label = row.Username
+		if label == "" {
+			label = "user " + key
+		}
+		return key, label, row.CustomerGroup
+	}
+	return model.CustomerPricingGroupKey(row.CustomerGroup), row.CustomerGroup, row.CustomerGroup
+}
+
 // statementAmount is the whole asymmetry between the two directions, in one
 // place: what we charged, versus what we think we were charged.
 func statementAmount(row model.UsageRow, kind StatementKind) (amount float64, priced bool) {
@@ -239,9 +390,12 @@ func statementAmount(row model.UsageRow, kind StatementKind) (amount float64, pr
 		// disagree with the deduction the customer already saw.
 		return RevenueUSD(row.Quota), true
 	}
-	return ratio_setting.UpstreamCostUSD(
-		row.Model, row.ChannelID, row.PromptTokens, row.CachedTokens, row.CompletionTokens)
+	return ratio_setting.UpstreamCostUSD(row.Model, row.ChannelID, usageOf(row))
 }
+
+// systemDefaultGroup is the pricing group every account starts in. It is a
+// starting point, not a customer.
+const systemDefaultGroup = "default"
 
 func statementParty(row model.UsageRow, kind StatementKind) (key, label, group string) {
 	if kind == StatementKindCustomer {
@@ -250,6 +404,22 @@ func statementParty(row model.UsageRow, kind StatementKind) (key, label, group s
 			// Deleted/missing users cannot be resolved against today's account
 			// table. Their historical usage must still be billed somewhere.
 			billingGroup = row.UserGroup
+		}
+		// The system default group is not a customer. It is where accounts sit
+		// when they belong to nobody in particular, so billing it as one
+		// counterparty would put unrelated people on a single invoice with no
+		// way to tell their usage apart. Each of them is their own.
+		//
+		// Deliberately only this group. Every other pricing group is somebody's
+		// customer, and re-keying those would split invoices that already
+		// carry real money.
+		if billingGroup == systemDefaultGroup {
+			key = strconv.Itoa(row.UserID)
+			label = row.Username
+			if label == "" {
+				label = "user " + key
+			}
+			return key, label, billingGroup
 		}
 		if billingGroup != "" {
 			return model.CustomerPricingGroupKey(billingGroup), billingGroup, billingGroup
@@ -265,6 +435,22 @@ func statementParty(row model.UsageRow, kind StatementKind) (key, label, group s
 
 	key, label = UpstreamVendor(row)
 	return key, label, ""
+}
+
+// sortedUserLines orders a customer's logins largest spender first -- the one
+// whose figure is worth checking -- with the id as a stable tiebreak.
+func sortedUserLines(byUser map[int]*StatementUserLine) []StatementUserLine {
+	out := make([]StatementUserLine, 0, len(byUser))
+	for _, line := range byUser {
+		out = append(out, *line)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].AmountUSD != out[j].AmountUSD {
+			return out[i].AmountUSD > out[j].AmountUSD
+		}
+		return out[i].UserID < out[j].UserID
+	})
+	return out
 }
 
 func sortedLines(byModel map[string]*StatementLine) []StatementLine {
@@ -303,4 +489,66 @@ func SumStatements(statements []Statement) StatementTotals {
 		totals.UnpricedRequests += statement.UnpricedRequests
 	}
 	return totals
+}
+
+// AttachFundingToDate records everything paid in up to the end of the period,
+// alongside the period's own receipts.
+//
+// Unlike AttachFunding this never creates a statement. A customer that funded
+// long ago and neither paid nor spent this period does not belong in this
+// period's list; adding it would fill a month's view with everyone who ever
+// paid. This only annotates statements that are already there.
+func AttachFundingToDate(statements []Statement, kind StatementKind, rows []model.FundingRow) []Statement {
+	if kind != StatementKindCustomer || len(rows) == 0 {
+		return statements
+	}
+	out := make([]Statement, len(statements))
+	copy(out, statements)
+	index := map[string]int{}
+	for i := range out {
+		index[out[i].Counterparty] = i
+	}
+	byUser := map[string]map[int]*StatementFundingLine{}
+	for _, row := range rows {
+		key, _, _ := fundingParty(row)
+		i, ok := index[key]
+		if !ok {
+			continue
+		}
+		lines, ok := byUser[key]
+		if !ok {
+			lines = map[int]*StatementFundingLine{}
+			byUser[key] = lines
+		}
+		line, ok := lines[row.UserID]
+		if !ok {
+			name := row.Username
+			if name == "" {
+				name = "user " + strconv.Itoa(row.UserID)
+			}
+			line = &StatementFundingLine{UserID: row.UserID, Username: name}
+			lines[row.UserID] = line
+		}
+		if row.Provider == model.PaymentProviderAdmin {
+			line.Grants += row.Orders
+		} else {
+			line.Orders += row.Orders
+		}
+		line.CreditedUSD += row.CreditedUSD
+		out[i].FundedToDateUSD += row.CreditedUSD
+	}
+	for key, lines := range byUser {
+		sorted := make([]StatementFundingLine, 0, len(lines))
+		for _, line := range lines {
+			sorted = append(sorted, *line)
+		}
+		sort.Slice(sorted, func(a, b int) bool {
+			if sorted[a].CreditedUSD != sorted[b].CreditedUSD {
+				return sorted[a].CreditedUSD > sorted[b].CreditedUSD
+			}
+			return sorted[a].UserID < sorted[b].UserID
+		})
+		out[index[key]].FundingToDate = sorted
+	}
+	return out
 }

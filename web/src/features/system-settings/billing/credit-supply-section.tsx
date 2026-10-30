@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import {
   Table,
   TableBody,
@@ -61,6 +62,7 @@ import {
   daysUntil,
   formatUSD,
   remainingUSD,
+  unpaidShareUSD,
 } from './credit-supply-logic'
 import { CreditLotsPanel } from './credit-supply-lots'
 import { CreditSuppliersPanel } from './credit-supply-suppliers'
@@ -82,8 +84,11 @@ function attentionReason(
 ) {
   if (lot.status === 'pending') return t('Verifying the key')
   if (lot.status === 'verified') {
-    return t('Verified — pay {{amount}} to activate', {
-      amount: formatUSD(lot.face_value_usd * lot.acquisition_rate),
+    return t('Verified — accept it to start routing traffic through the key')
+  }
+  if (unpaidShareUSD(lot) > 0) {
+    return t('{{amount}} of revenue share owed to the seller', {
+      amount: formatUSD(unpaidShareUSD(lot)),
     })
   }
   if (
@@ -111,6 +116,11 @@ function attentionReason(
 
 // TermsCard edits the posted buy terms. Saving writes the CreditSupplyTerms
 // option; lots already submitted keep the rate they were submitted under.
+// Mirrors model.maxSaneMinimumUSD. A stored $100bn minimum sale -- which is
+// what production carried -- passes every validation rule and silently blocks
+// every submission, so the screen that writes it refuses the typo up front.
+const MAX_SANE_MINIMUM_USD = 1_000_000
+
 function TermsCard() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -128,7 +138,9 @@ function TermsCard() {
       }),
     onSuccess: () => {
       toast.success(
-        t('Buy terms saved. New sales use them; existing lots keep their rate.')
+        t(
+          'Terms saved. New submissions use them; keys already earning keep their share.'
+        )
       )
       setDraft(null)
       queryClient.invalidateQueries({ queryKey: ['credit-supply'] })
@@ -136,41 +148,44 @@ function TermsCard() {
     onError: (error: Error) => toast.error(error.message),
   })
   if (!current) return null
-  const vendors = Object.keys(current.buy_rates).sort()
-  const setRate = (vendor: string, pct: string) => {
+  // Defensive: a terms payload written before revenue share existed has no
+  // rates at all, and must not take the whole screen down.
+  const shareVendors = Object.keys(current.revenue_share_rates ?? {}).sort()
+  const setShare = (vendor: string, pct: string) => {
     const value = Number(pct)
-    setDraft({
-      ...current,
-      buy_rates: {
-        ...current.buy_rates,
-        [vendor]: Number.isFinite(value) ? value / 100 : 0,
-      },
-    })
+    const rates = { ...(current.revenue_share_rates ?? {}) }
+    if (Number.isFinite(value) && value > 0) rates[vendor] = value / 100
+    else delete rates[vendor]
+    setDraft({ ...current, revenue_share_rates: rates })
   }
   return (
     <Card>
       <CardHeader>
-        <CardTitle className='text-base'>{t('Buy terms')}</CardTitle>
+        <CardTitle className='text-base'>{t('Supply terms')}</CardTitle>
         <CardDescription>
           {t(
-            'What we pay per dollar of each vendor’s credit, shown to sellers before they submit. 20% means a seller of $1,000 Anthropic credit receives $200.'
+            'The deal sellers see before they submit: the share of what their credits sell for that they keep, per vendor. 50% means a key that sells $1,000 of traffic earns its owner $500. Changing a term applies to the next submission; keys already earning keep their share.'
           )}
         </CardDescription>
       </CardHeader>
       <CardContent className='grid gap-3'>
         <div className='grid gap-3 sm:grid-cols-3'>
-          {vendors.map((vendor) => (
+          {shareVendors.map((vendor) => (
             <div key={vendor} className='grid gap-1'>
-              <Label className='capitalize'>{vendor}</Label>
+              <Label className='capitalize'>
+                {t('{{vendor}} — seller keeps', { vendor })}
+              </Label>
               <div className='flex items-center gap-2'>
                 <Input
                   type='number'
-                  min={1}
+                  min={0}
                   max={99}
                   step={1}
-                  value={Math.round((current.buy_rates[vendor] ?? 0) * 100)}
-                  onChange={(event) => setRate(vendor, event.target.value)}
-                  data-testid={`buy-rate-${vendor}`}
+                  value={Math.round(
+                    (current.revenue_share_rates?.[vendor] ?? 0) * 100
+                  )}
+                  onChange={(event) => setShare(vendor, event.target.value)}
+                  data-testid={`revenue-share-${vendor}`}
                 />
                 <span className='text-muted-foreground text-sm'>%</span>
               </div>
@@ -179,10 +194,48 @@ function TermsCard() {
         </div>
         <div className='grid gap-3 sm:grid-cols-3'>
           <div className='grid gap-1'>
-            <Label>{t('Minimum sale (USD)')}</Label>
+            <Label>{t('Minimum payout (USD)')}</Label>
             <Input
               type='number'
               min={0}
+              max={MAX_SANE_MINIMUM_USD}
+              value={current.min_share_payout_usd ?? 0}
+              onChange={(event) =>
+                setDraft({
+                  ...current,
+                  min_share_payout_usd: Number(event.target.value),
+                })
+              }
+            />
+            <p className='text-muted-foreground text-xs'>
+              {t('Below this, a balance waits rather than being sent.')}
+            </p>
+          </div>
+          <div className='grid gap-1'>
+            <Label>{t('Manual review')}</Label>
+            <div className='flex h-9 items-center gap-2'>
+              <Switch
+                checked={Boolean(current.manual_review)}
+                onCheckedChange={(manual_review) =>
+                  setDraft({ ...current, manual_review })
+                }
+                data-testid='manual-review'
+              />
+              <span className='text-muted-foreground text-xs'>
+                {current.manual_review
+                  ? t('Verified keys wait for you to accept them')
+                  : t('Verified keys go live at once')}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className='grid gap-3 border-t pt-3 sm:grid-cols-3'>
+          <div className='grid gap-1'>
+            <Label>{t('Smallest balance we take (USD)')}</Label>
+            <Input
+              type='number'
+              min={0}
+              max={MAX_SANE_MINIMUM_USD}
               value={current.min_face_usd}
               onChange={(event) =>
                 setDraft({
@@ -193,7 +246,7 @@ function TermsCard() {
             />
           </div>
           <div className='grid gap-1'>
-            <Label>{t('Supplier channel priority')}</Label>
+            <Label>{t('Seller channel priority')}</Label>
             <Input
               type='number'
               min={0}
@@ -207,24 +260,9 @@ function TermsCard() {
             />
             <p className='text-muted-foreground text-xs'>
               {t(
-                'Higher than your own channels, so bought credits are consumed first.'
+                'Higher than your own channels, so sellers’ credits are consumed first.'
               )}
             </p>
-          </div>
-          <div className='grid gap-1'>
-            <Label>{t('Bonus for platform credit (%)')}</Label>
-            <Input
-              type='number'
-              min={0}
-              max={100}
-              value={Math.round((current.platform_credit_bonus ?? 0) * 100)}
-              onChange={(event) =>
-                setDraft({
-                  ...current,
-                  platform_credit_bonus: Number(event.target.value) / 100,
-                })
-              }
-            />
           </div>
         </div>
         <div className='flex justify-end gap-2'>
@@ -241,7 +279,7 @@ function TermsCard() {
             disabled={draft === null || save.isPending}
             onClick={() => save.mutate(current)}
           >
-            {t('Save buy terms')}
+            {t('Save terms')}
           </Button>
         </div>
       </CardContent>
@@ -283,7 +321,7 @@ export function CreditSupplySection() {
       <Alert>
         <AlertDescription className='text-xs'>
           {t(
-            'Anyone can sell us vendor credits at the posted buy rates. A sale is verified automatically (one request through the key), then waits for you to pay it; paying books the payout and enables the channel at supplier priority, so bought credits are consumed first and drawn down at list price. The rate paid becomes the channel’s purchasing cost ratio, so Profit already reflects it. Suppliers are paid once, here — never per period from Settlement.'
+            'Anyone can hand us a vendor key and keep the posted share of what its credits sell for. A key is verified automatically (one request through it) and goes live at supplier priority, so contributed credits are consumed first and drawn down at list price; the share becomes the channel’s cost ratio, so Profit already reflects it. Sellers file a payout account before they can sell; you settle what they are owed from the Suppliers tab — never per period from Settlement. Buy-out at a fixed rate exists only for lots you enter yourself.'
           )}
         </AlertDescription>
       </Alert>
@@ -301,9 +339,9 @@ export function CreditSupplySection() {
 
       {overview.data ? (
         <>
-          <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-5'>
+          <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-6'>
             <Headline
-              label={t('Face value in pool')}
+              label={t('Balance sellers handed us')}
               value={formatUSD(overview.data.face_usd)}
               hint={t('{{count}} suppliers', {
                 count: overview.data.suppliers,
@@ -327,17 +365,16 @@ export function CreditSupplySection() {
               hint={t('Across live lots')}
             />
             <Headline
-              label={t('Awaiting payment')}
-              value={formatUSD(overview.data.awaiting_payment_usd)}
-              hint={t('Verified sales; pay to activate')}
-              warn={overview.data.awaiting_payment_usd > 0}
-            />
-            <Headline
-              label={t('Paid to suppliers')}
-              value={formatUSD(overview.data.paid_usd)}
-              hint={t('{{consumed}} of it consumed so far', {
-                consumed: formatUSD(overview.data.payable_usd),
+              label={t('Owed to sellers')}
+              value={formatUSD(overview.data.share?.unpaid_usd ?? 0)}
+              hint={t('{{earned}} earned on {{revenue}} of revenue', {
+                earned: formatUSD(overview.data.share?.earned_usd ?? 0),
+                revenue: formatUSD(overview.data.share?.revenue_usd ?? 0),
               })}
+              warn={
+                (overview.data.share?.unpaid_usd ?? 0) >=
+                Math.max(overview.data.min_share_payout_usd, 0.01)
+              }
             />
           </div>
 
@@ -365,7 +402,7 @@ export function CreditSupplySection() {
                 </CardTitle>
                 <CardDescription>
                   {t(
-                    'Pending submissions, lots at their low-water mark, and lots expiring within seven days.'
+                    'Pending submissions, lots at their low-water mark, lots expiring within seven days, and contributors owed more than the minimum payout.'
                   )}
                 </CardDescription>
               </CardHeader>
@@ -397,7 +434,8 @@ export function CreditSupplySection() {
                     <TableHead>{t('Face value')}</TableHead>
                     <TableHead>{t('Consumed')}</TableHead>
                     <TableHead>{t('Remaining')}</TableHead>
-                    <TableHead>{t('Payable')}</TableHead>
+
+                    <TableHead>{t('Share owed')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -417,7 +455,9 @@ export function CreditSupplySection() {
                         {formatUSD(row.remaining_usd)}
                       </TableCell>
                       <TableCell className='tabular-nums'>
-                        {formatUSD(row.payable_usd)}
+                        {row.share_unpaid_usd > 0
+                          ? formatUSD(row.share_unpaid_usd)
+                          : '—'}
                       </TableCell>
                     </TableRow>
                   ))}

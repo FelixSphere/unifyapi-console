@@ -17,16 +17,18 @@ export type SupplierVendorPreset = {
   models: string[]
 }
 
+// Two ways to hand us a key: sell the credits outright, or contribute the key
+// and keep a share of what it earns. Mirrors model.CreditLotDeal*.
+export type SupplierDeal = 'purchase' | 'revenue_share'
+
 export type SupplierLot = {
   id: number
   vendor: string
   channel_id: number
   channel_name: string
   face_value_usd: number
-  acquisition_rate: number
   consumed_usd: number
   remaining_usd: number
-  payable_usd: number
   unpriced_requests: number
   expires_at: number
   status: CreditLotStatus
@@ -36,17 +38,68 @@ export type SupplierLot = {
   created_at: number
   verified_at: number
   payout_method: 'platform_credit' | 'external' | ''
-  payout_usd: number
-  paid_usd: number
-  paid_at: number
-  payout_reference: string
+  // The dividend side of a contributed key; zeroes on a sale.
+  revenue_share_pct: number
+  share_revenue_usd: number
+  share_earned_usd: number
+  share_paid_usd: number
+  share_unpaid_usd: number
 }
 
-// The posted terms: what we pay per dollar of each vendor's credit.
+// The posted offer: the share of what their credits sell for that a seller
+// keeps, per vendor. Sellers are offered this one deal; buy-out rates exist
+// only for lots an operator enters by hand and are not posted here.
 export type SupplierTerms = {
-  buy_rates: Record<string, number>
   min_face_usd: number
-  platform_credit_bonus: number
+  revenue_share_rates: Record<string, number>
+  revenue_share_basis: 'revenue' | 'margin'
+  min_share_payout_usd: number
+  // When on, a verified key waits for an operator instead of going live.
+  manual_review: boolean
+}
+
+// A way a share can be paid. The server derives the list from the platform's
+// own Payment Settings, so the seller reads the same names here as on the
+// wallet page and a rail switched off there stops being offered here. Never
+// hard-code this list: a copy in the client is a copy that drifts.
+export type PayoutRail = {
+  id: string
+  label: string
+  hint?: string
+  // Whether a holder and account details are needed. Platform credit is the
+  // one rail where they are not: the login is the account.
+  needs_account: boolean
+  // Non-empty on an on-chain rail; the chains the operator actually works
+  // with. The address is stored as "<NETWORK>:<address>".
+  networks?: string[]
+  // Set when the rail settles in one asset and the seller does not choose.
+  currency?: string
+  available: boolean
+  unavailable_reason?: string
+  // A rail nobody new is offered, kept because somebody already filed it.
+  legacy?: boolean
+}
+
+// Where the seller's share goes. Required before the first sale.
+export type SupplierPayoutAccount = {
+  method: string
+  holder: string
+  details: string
+  currency: string
+}
+
+// One dividend payment, as the contributor sees it.
+export type SupplierSharePayout = {
+  id: number
+  lot_id: number
+  batch: string
+  amount_usd: number
+  earned_to_date_usd: number
+  revenue_to_date_usd: number
+  share_pct: number
+  method: 'platform_credit' | 'external'
+  reference: string
+  created_at: number
 }
 
 export type SupplierPortalData = {
@@ -58,23 +111,36 @@ export type SupplierPortalData = {
     status: 'pending' | 'active' | 'suspended' | 'rejected'
     status_reason: string
     counterparty: string
+    payout_method: string
+    payout_method_label: string
+    payout_holder: string
+    payout_details: string
+    payout_currency: string
+    has_payout_account: boolean
   }
   lots: SupplierLot[]
   totals: {
     face_usd: number
     consumed_usd: number
     remaining_usd: number
-    awaiting_payment_usd: number
-    paid_usd: number
+    share_revenue_usd: number
+    share_earned_usd: number
+    share_paid_usd: number
+    share_unpaid_usd: number
   }
+  share_payouts: SupplierSharePayout[]
   vendors: SupplierVendorPreset[]
   terms: SupplierTerms
+  payout_rails: PayoutRail[]
 }
 
 export type SupplierDailyUsage = {
   day: string
   requests: number
   face_usd: number
+  // What customers paid for that day's traffic, which is what a contributed
+  // key's share is calculated from.
+  revenue_usd: number
 }
 
 export type SupplierStatementLine = {
@@ -108,12 +174,12 @@ export async function getSupplierTerms() {
   )
 }
 
+// A seller handing us a key. No price and no deal to choose: the share is
+// posted; how they are paid is on their profile.
 export type SupplierLotSubmission = {
   vendor: string
   face_value_usd: number
   expires_at: number
-  payout_method: 'platform_credit' | 'external'
-  payout_account: string
   note: string
   upstream_key: string
   models: string[]
@@ -168,22 +234,78 @@ export async function submitSupplierLot(submission: SupplierLotSubmission) {
         lot_id: number
         channel_id: number
         status: CreditLotStatus
-        payout_usd?: number
+        revenue_share_pct: number
       }>
     >('/api/supplier/lots', submission)
   )
 }
 
-// payoutPreview is what a seller will receive for a sale under the posted
-// terms, mirrored from the server's PayoutUSD so the form can show it live.
-export function payoutPreview(
-  terms: SupplierTerms,
-  vendor: string,
-  faceUSD: number,
-  method: 'platform_credit' | 'external'
+export async function updateSupplierPayoutAccount(
+  account: SupplierPayoutAccount
 ) {
-  const rate = terms.buy_rates[vendor] ?? 0
-  const bonus =
-    method === 'platform_credit' ? 1 + (terms.platform_credit_bonus || 0) : 1
-  return { rate, amount: faceUSD > 0 ? faceUSD * rate * bonus : 0 }
+  return unwrap(
+    await api.put<Envelope<SupplierPortalData['supplier']>>(
+      '/api/supplier/payout-account',
+      account
+    )
+  )
+}
+
+// sharePreview is what a contributor keeps, mirrored from the server's posted
+// terms so the form can name the deal before anything is submitted.
+export function sharePreview(terms: SupplierTerms, vendor: string) {
+  return terms.revenue_share_rates?.[vendor] ?? 0
+}
+
+// contributableVendors are the ones we currently take keys from on
+// revenue-share terms. An empty list means the offer is not open.
+export function contributableVendors(
+  terms: SupplierTerms,
+  vendors: SupplierVendorPreset[]
+) {
+  return vendors.filter((vendor) => sharePreview(terms, vendor.key) > 0)
+}
+
+// One day of one model on the seller's keys, in the shape their own vendor
+// console reports it. The point of the shape is comparison: if the tokens
+// agree with their console, our consumption figure is honest, and the revenue
+// follows from it by arithmetic against a published price list.
+export type SupplierUsageRow = {
+  day: string
+  model: string
+  requests: number
+  prompt_tokens: number
+  cached_tokens: number
+  cache_write_tokens: number
+  completion_tokens: number
+  list_usd: number
+  priced: boolean
+  sold_usd: number
+  share_usd: number
+}
+
+export type SupplierUsageDetail = {
+  rows: SupplierUsageRow[]
+  totals: {
+    requests: number
+    list_usd: number
+    sold_usd: number
+    share_usd: number
+    unpriced_requests: number
+  }
+  vendors: SupplierVendorPreset[]
+}
+
+export async function getSupplierUsageDetail(days = 30) {
+  return unwrap(
+    await api.get<Envelope<SupplierUsageDetail>>('/api/supplier/usage/detail', {
+      params: { days },
+    })
+  )
+}
+
+// The export URL is handed to the browser rather than fetched: it is a file
+// download, and the session cookie carries the identity.
+export function supplierUsageExportUrl(days = 30) {
+  return `/api/supplier/usage/export?days=${days}`
 }

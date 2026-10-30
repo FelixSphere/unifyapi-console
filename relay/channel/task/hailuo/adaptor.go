@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -33,7 +34,7 @@ type TaskAdaptor struct {
 
 func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.ChannelType = info.ChannelType
-	a.baseURL = info.ChannelBaseUrl
+	a.baseURL = strings.TrimRight(info.ChannelBaseUrl, "/")
 	a.apiKey = info.ApiKey
 }
 
@@ -42,6 +43,12 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	if isH3Model(info.UpstreamModelName) && isFlatkeyBaseURL(a.baseURL) {
+		return a.baseURL + "/v1/videos", nil
+	}
+	if isH3Model(info.UpstreamModelName) {
+		return a.baseURL + "/v2/video_generation", nil
+	}
 	return fmt.Sprintf("%s%s", a.baseURL, TextToVideoEndpoint), nil
 }
 
@@ -62,6 +69,17 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		return nil, fmt.Errorf("invalid request type in context")
 	}
 
+	if isH3Model(info.UpstreamModelName) {
+		body, err := convertH3Request(&req, info)
+		if err != nil {
+			return nil, err
+		}
+		if isFlatkeyBaseURL(a.baseURL) {
+			return buildFlatkeyBody(body, &req)
+		}
+		data, err := common.Marshal(body)
+		return bytes.NewReader(data), err
+	}
 	body, err := a.convertToRequestPayload(&req, info)
 	if err != nil {
 		return nil, errors.Wrap(err, "convert request payload failed")
@@ -87,6 +105,9 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	}
 	_ = resp.Body.Close()
 
+	if isH3Model(info.UpstreamModelName) && isFlatkeyBaseURL(a.baseURL) {
+		return flatkeySubmitResponse(c, responseBody, info)
+	}
 	var hResp VideoResponse
 	if err := common.Unmarshal(responseBody, &hResp); err != nil {
 		taskErr = service.TaskErrorWrapper(errors.Wrapf(err, "body: %s", responseBody), "unmarshal_response_body_failed", http.StatusInternalServerError)
@@ -102,6 +123,9 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 		return
 	}
 
+	if hResp.TaskID == "" {
+		return "", nil, service.TaskErrorWrapper(fmt.Errorf("empty task_id"), "invalid_response", http.StatusBadGateway)
+	}
 	ov := dto.NewOpenAIVideo()
 	ov.ID = info.PublicTaskID
 	ov.TaskID = info.PublicTaskID
@@ -109,6 +133,9 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	ov.Model = info.OriginModelName
 
 	c.JSON(http.StatusOK, ov)
+	if isH3Model(info.UpstreamModelName) {
+		return h3TaskPrefix + hResp.TaskID, responseBody, nil
+	}
 	return hResp.TaskID, responseBody, nil
 }
 
@@ -118,7 +145,15 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 		return nil, fmt.Errorf("invalid task_id")
 	}
 
-	uri := fmt.Sprintf("%s%s?task_id=%s", baseUrl, QueryTaskEndpoint, taskID)
+	baseUrl = strings.TrimRight(baseUrl, "/")
+	uri := fmt.Sprintf("%s%s?task_id=%s", baseUrl, QueryTaskEndpoint, url.QueryEscape(taskID))
+	if strings.HasPrefix(taskID, h3TaskPrefix) {
+		uri = baseUrl + "/v2/query/video_generation/" + url.PathEscape(strings.TrimPrefix(taskID, h3TaskPrefix))
+	}
+
+	if strings.HasPrefix(taskID, flatkeyTaskPrefix) {
+		uri = baseUrl + "/v1/videos/" + url.PathEscape(strings.TrimPrefix(taskID, flatkeyTaskPrefix))
+	}
 
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
 	if err != nil {
@@ -183,6 +218,16 @@ func (a *TaskAdaptor) parseResolutionFromSize(size string, modelConfig ModelConf
 }
 
 func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {
+	if result, matched, err := parseFlatkeyTask(respBody); matched || err != nil {
+		return result, err
+	}
+	var h3 h3Response
+	if err := common.Unmarshal(respBody, &h3); err != nil {
+		return nil, err
+	}
+	if h3.Task != nil {
+		return parseH3Task(respBody)
+	}
 	resTask := QueryTaskResponse{}
 	if err := common.Unmarshal(respBody, &resTask); err != nil {
 		return nil, errors.Wrap(err, "unmarshal task result failed")
@@ -225,6 +270,9 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 }
 
 func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, error) {
+	if strings.HasPrefix(originTask.GetUpstreamTaskID(), h3TaskPrefix) || strings.HasPrefix(originTask.GetUpstreamTaskID(), flatkeyTaskPrefix) {
+		return common.Marshal(originTask.ToOpenAIVideo())
+	}
 	var hailuoResp QueryTaskResponse
 	if err := common.Unmarshal(originTask.Data, &hailuoResp); err != nil {
 		return nil, errors.Wrap(err, "unmarshal hailuo task data failed")

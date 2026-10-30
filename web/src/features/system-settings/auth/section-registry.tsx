@@ -38,6 +38,9 @@ const AUTH_SECTIONS = [
           EmailDomainRestrictionEnabled: settings.EmailDomainRestrictionEnabled,
           EmailAliasRestrictionEnabled: settings.EmailAliasRestrictionEnabled,
           EmailDomainWhitelist: settings.EmailDomainWhitelist,
+          EmailDomainBlocklistEnabled: settings.EmailDomainBlocklistEnabled,
+          EmailDomainBlocklist: settings.EmailDomainBlocklist,
+          RegisterIPDailyLimit: settings.RegisterIPDailyLimit,
         }}
       />
     ),

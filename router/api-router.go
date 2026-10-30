@@ -31,7 +31,27 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/about", controller.GetAbout)
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
-		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
+		// UNIFYAPI-FORK: the marketing site (www.unifyapi.ai) reads the public
+		// catalogue cross-origin to advertise the new-user price. Same rows an
+		// anonymous visitor gets; CORS only lets a browser on another origin
+		// read a response it could already fetch with curl.
+		apiRouter.GET("/pricing", middleware.CORS(), middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
+		apiRouter.POST("/builder/v1/:action", controller.BuilderIntegration)
+		// UNIFYAPI-FORK: weekly-update unsubscribe, signed link, no sign-in.
+		apiRouter.GET("/email/unsubscribe", controller.RetentionUnsubscribePage)
+		apiRouter.POST("/email/unsubscribe", controller.RetentionUnsubscribe)
+		// UNIFYAPI-BRAND: compute billing bridge. Server-signed only, no session
+		// auth; 404 until COMPUTE_BRIDGE_SECRET is set. Registered on the engine,
+		// not apiRouter, so the per-IP global API limiter does not apply -- every
+		// call comes from compute-api's one address -- and the bridge's own
+		// limiter does instead. See controller/compute_bridge.go.
+		computeRoute := router.Group("/api/compute/v1", middleware.RouteTag("api"), controller.ComputeBridgeAuth())
+		computeRoute.POST("/verify", controller.ComputeVerify)
+		computeRoute.POST("/holds", controller.ComputeCreateHold)
+		computeRoute.POST("/holds/:hold_id/settle", controller.ComputeSettleHold)
+		computeRoute.POST("/holds/:hold_id/extend", controller.ComputeExtendHold)
+		computeRoute.POST("/holds/:hold_id/release", controller.ComputeReleaseHold)
+		controller.StartComputeHoldSweeper()
 		apiRouter.GET("/partnership/:code", middleware.DisableCache(), controller.GetPublicPartnershipProgram)
 		apiRouter.POST("/partnership/:code/connect", middleware.UserAuth(), middleware.DisableCache(), controller.ConnectExistingUserToPartnership)
 		perfMetricsRoute := apiRouter.Group("/perf-metrics")
@@ -123,6 +143,10 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/waffo/pay", middleware.CriticalRateLimit(), controller.RequestWaffoPay)
 				selfRoute.POST("/waffo-pancake/amount", controller.RequestWaffoPancakeAmount)
 				selfRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), controller.RequestWaffoPancakePay)
+				// UNIFYAPI-FORK: Binance Pay (personal account) -- no webhook, the wallet polls the order.
+				selfRoute.POST("/binance-pay/amount", controller.RequestBinancePayAmount)
+				selfRoute.POST("/binance-pay/pay", middleware.CriticalRateLimit(), controller.RequestBinancePay)
+				selfRoute.GET("/binance-pay/order/:trade_no", controller.GetBinancePayOrderStatus)
 				selfRoute.POST("/aff_transfer", controller.TransferAffQuota)
 				selfRoute.PUT("/setting", controller.UpdateUserSetting)
 
@@ -148,7 +172,12 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/", controller.GetAllUsers)
 				adminRoute.GET("/topup", controller.GetAllTopUps)
 				adminRoute.POST("/topup/complete", controller.AdminCompleteTopUp)
+				// UNIFYAPI-FORK: Binance Pay evidence and operator matching.
+				adminRoute.GET("/topup/binance-pay/evidence", controller.AdminBinancePayEvidence)
+				adminRoute.GET("/topup/binance-pay/candidates", controller.AdminListBinancePayCandidates)
+				adminRoute.POST("/topup/binance-pay/match", controller.AdminMatchBinancePay)
 				adminRoute.GET("/search", controller.SearchUsers)
+				adminRoute.GET("/unreachable-emails", controller.GetUnreachableEmails)
 				adminRoute.GET("/:id/oauth/bindings", controller.GetUserOAuthBindingsByAdmin)
 				adminRoute.DELETE("/:id/oauth/bindings/:provider_id", controller.UnbindCustomOAuthByAdmin)
 				adminRoute.DELETE("/:id/bindings/:binding_type", controller.AdminClearUserBinding)
@@ -210,6 +239,10 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.GET("/channel_affinity_cache", controller.GetChannelAffinityCacheStats)
 			optionRoute.DELETE("/channel_affinity_cache", controller.ClearChannelAffinityCache)
 			optionRoute.POST("/rest_model_ratio", controller.ResetModelRatio)
+			// UNIFYAPI-FORK: Binance Pay account health for the settings page.
+			optionRoute.GET("/binance-pay/status", controller.AdminBinancePayStatus)
+			optionRoute.POST("/binance-pay/test", controller.AdminBinancePayTest)
+			optionRoute.POST("/binance-pay/refresh-addresses", controller.AdminBinancePayRefreshAddresses)
 			optionRoute.GET("/waffo-pancake/catalog", controller.ListWaffoPancakeCatalog)
 			optionRoute.POST("/waffo-pancake/pair", controller.CreateWaffoPancakePair)
 			optionRoute.POST("/waffo-pancake/save", controller.SaveWaffoPancake)
@@ -222,6 +255,9 @@ func SetApiRouter(router *gin.Engine) {
 			partnershipRoute.GET("/", controller.GetPartnershipPrograms)
 			partnershipRoute.POST("/", controller.CreatePartnershipProgram)
 			partnershipRoute.PUT("/:id", controller.UpdatePartnershipProgram)
+			partnershipRoute.DELETE("/:id", controller.DeletePartnershipProgram)
+			partnershipRoute.POST("/customer-pools/backfill", controller.BackfillCustomerPools)
+			partnershipRoute.POST("/builder-links/:subject/archive", controller.ArchiveOrphanedBuilderIdentity)
 		}
 		partnershipProgramRoute := apiRouter.Group("/partnership-programs")
 		partnershipProgramRoute.Use(middleware.RootAuth())
@@ -235,6 +271,7 @@ func SetApiRouter(router *gin.Engine) {
 		creditSupplyRoute.Use(middleware.RootAuth())
 		{
 			creditSupplyRoute.GET("/overview", controller.GetCreditSupplyOverview)
+			creditSupplyRoute.GET("/terms", controller.GetCreditSupplyTermsAdmin)
 			creditSupplyRoute.GET("/suppliers", controller.GetCreditSuppliers)
 			creditSupplyRoute.POST("/suppliers", controller.CreateCreditSupplier)
 			creditSupplyRoute.PUT("/suppliers/:id", controller.UpdateCreditSupplier)
@@ -244,7 +281,8 @@ func SetApiRouter(router *gin.Engine) {
 			creditSupplyRoute.POST("/lots/:id/transition", controller.TransitionCreditLot)
 			creditSupplyRoute.GET("/lots/:id/usage", controller.GetCreditLotUsage)
 			creditSupplyRoute.GET("/lots/:id/events", controller.GetCreditLotEvents)
-			creditSupplyRoute.POST("/lots/:id/pay", controller.PayCreditLot)
+			creditSupplyRoute.POST("/suppliers/:id/share-payout", controller.PaySupplierShare)
+			creditSupplyRoute.GET("/share-payouts", controller.GetCreditSharePayouts)
 		}
 		// UNIFYAPI-FORK: supplier portal -- an ordinary login mapped to a
 		// supplier by CreditSupplier.UserId. See controller/credit_supplier_portal.go.
@@ -253,8 +291,11 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			supplierRoute.GET("/me", controller.GetSupplierPortal)
 			supplierRoute.GET("/terms", controller.GetSupplierTerms)
+			supplierRoute.PUT("/payout-account", middleware.CriticalRateLimit(), controller.UpdateSupplierPayoutAccount)
 			supplierRoute.POST("/lots", middleware.CriticalRateLimit(), controller.SubmitSupplierLot)
 			supplierRoute.GET("/usage", controller.GetSupplierUsage)
+			supplierRoute.GET("/usage/detail", controller.GetSupplierUsageDetail)
+			supplierRoute.GET("/usage/export", controller.ExportSupplierUsageCSV)
 			supplierRoute.GET("/statements", controller.GetSupplierStatements)
 		}
 
@@ -363,6 +404,26 @@ func SetApiRouter(router *gin.Engine) {
 			tenantRoute.POST("/:id/suspend", middleware.RootAuth(), controller.SuspendTenant)
 			tenantRoute.POST("/:id/resume", middleware.RootAuth(), controller.ResumeTenant)
 			tenantRoute.POST("/:id/extend", middleware.RootAuth(), controller.ExtendTenantTerm)
+		}
+
+		// UNIFYAPI-FORK: customer questions and messages. Customers see only
+		// their own conversations; the inbox is AdminAuth. See
+		// controller/unifyapi_support.go.
+		supportRoute := apiRouter.Group("/support")
+		{
+			supportRoute.GET("/unread", middleware.UserAuth(), controller.SupportUnread)
+			mine := supportRoute.Group("/tickets", middleware.UserAuth())
+			mine.GET("", controller.ListMySupportTickets)
+			mine.POST("", controller.CreateSupportTicket)
+			mine.GET("/:id", controller.GetMySupportTicket)
+			mine.POST("/:id/messages", controller.AddMySupportMessage)
+			mine.POST("/:id/close", controller.CloseMySupportTicket)
+
+			inbox := supportRoute.Group("/admin/tickets", middleware.AdminAuth())
+			inbox.GET("", controller.ListSupportTickets)
+			inbox.GET("/:id", controller.GetSupportTicket)
+			inbox.POST("/:id/messages", controller.ReplySupportTicket)
+			inbox.POST("/:id/status", controller.SetSupportTicketStatus)
 		}
 
 		redemptionRoute := apiRouter.Group("/redemption")

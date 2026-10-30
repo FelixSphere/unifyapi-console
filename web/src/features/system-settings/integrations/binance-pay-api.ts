@@ -1,0 +1,99 @@
+/*
+Copyright (C) 2026 FelixSphere
+
+This file is part of a modified version of new-api, distributed under the
+GNU Affero General Public License v3.0 or later. See LICENSE and NOTICE.
+Upstream: https://github.com/QuantumNous/new-api
+Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
+*/
+import { api } from '@/lib/api'
+
+import {
+  normaliseStatusAccounts,
+  type BinancePayResolvedAddress,
+} from './binance-pay-networks'
+
+export type { BinancePayResolvedAddress }
+
+// Health of the Binance Pay receiving accounts, for the settings page.
+
+export interface BinancePayLastCheck {
+  checked_at: number
+  ok: boolean
+  error?: string
+  source: string
+}
+
+export interface BinancePayAccountStatus {
+  platform: string
+  label: string
+  payment_method: string
+  enabled: boolean
+  has_credentials: boolean
+  api_key_length: number
+  secret_length: number
+  pay_id: string
+  pay_id_valid: boolean
+  supports_pay: boolean
+  address_count: number
+  /** Networks the operator accepts deposits on */
+  networks: string[]
+  /** Addresses as last read from Binance for this account */
+  addresses: BinancePayResolvedAddress[]
+  configured: boolean
+  pending_orders: number
+  last_check?: BinancePayLastCheck
+  configured_reason: string
+}
+
+export interface BinancePayStatusResponse {
+  compliance_confirmed: boolean
+  accounts: BinancePayAccountStatus[]
+}
+
+export async function getBinancePayStatus(): Promise<BinancePayStatusResponse> {
+  const res = await api.get('/api/option/binance-pay/status')
+  const raw = res.data.data as BinancePayStatusResponse | undefined
+  return {
+    compliance_confirmed: raw?.compliance_confirmed ?? false,
+    accounts: normaliseStatusAccounts(raw?.accounts),
+  }
+}
+
+export interface BinancePayTestResult {
+  platform: string
+  label: string
+  deposits_24h?: number
+  pay_transactions_24h?: number
+}
+
+/**
+ * Re-read this account's own deposit addresses from Binance and store them.
+ */
+export async function refreshBinancePayAddresses(platform: string): Promise<{
+  success?: boolean
+  message?: string
+  data?: {
+    platform: string
+    networks: string[]
+    addresses: BinancePayResolvedAddress[]
+  }
+}> {
+  const res = await api.post(
+    '/api/option/binance-pay/refresh-addresses',
+    { platform },
+    { skipBusinessError: true } as Record<string, unknown>
+  )
+  return res.data
+}
+
+export async function testBinancePayAccount(platform: string): Promise<{
+  success?: boolean
+  message?: string
+  data?: BinancePayTestResult
+}> {
+  const res = await api.post('/api/option/binance-pay/test', { platform }, {
+    skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data
+}

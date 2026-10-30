@@ -11,6 +11,34 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// hideGroupsTheCallerMayNotSee rewrites each row's EnableGroup to the groups the
+// caller is actually allowed to use.
+//
+// filterPricingByUsableGroups decides which ROWS to return but leaves
+// EnableGroup untouched, and the whole payload goes out on /api/pricing, which
+// needs no authentication. So every model a customer could use listed that
+// customer's group name to anyone who asked -- which is how the customer list
+// was readable from the open internet.
+//
+// "all" is left alone: it names no customer.
+func hideGroupsTheCallerMayNotSee(pricing []model.Pricing, usableGroup map[string]string) []model.Pricing {
+	out := make([]model.Pricing, len(pricing))
+	copy(out, pricing)
+	for i := range out {
+		if common.StringsContains(out[i].EnableGroup, "all") {
+			continue
+		}
+		visible := make([]string, 0, len(out[i].EnableGroup))
+		for _, group := range out[i].EnableGroup {
+			if _, ok := usableGroup[group]; ok {
+				visible = append(visible, group)
+			}
+		}
+		out[i].EnableGroup = visible
+	}
+	return out
+}
+
 func filterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string]string) []model.Pricing {
 	if len(pricing) == 0 {
 		return pricing
@@ -60,6 +88,11 @@ func GetPricing(c *gin.Context) {
 
 	usableGroup = service.GetUserUsableGroups(group)
 	pricing = filterPricingByUsableGroups(pricing, usableGroup)
+	// Publish only the groups this caller may use. An anonymous visitor -- the
+	// marketing site, which reads default_group_model_ratio and nothing else --
+	// therefore sees `default` and no customer at all.
+	pricing = hideGroupsTheCallerMayNotSee(pricing, usableGroup)
+	pricing = applyDefaultGroupModelPricing(pricing)
 	// check groupRatio contains usableGroup
 	for group := range ratio_setting.GetGroupRatioCopy() {
 		if _, ok := usableGroup[group]; !ok {
@@ -77,6 +110,35 @@ func GetPricing(c *gin.Context) {
 		"auto_groups":        service.GetUserAutoGroup(group),
 		"pricing_version":    "a42d372ccf0b5dd13ecf71203521f9d2",
 	})
+}
+
+// applyDefaultGroupModelPricing annotates every row with the `default` group's
+// per-model multiplier -- the price a brand-new user pays. Unlike the customer
+// annotation above it does not depend on who is asking: anonymous visitors and
+// every logged-in group see the identical value, which is what lets Model
+// Square advertise "xx% off by default" without becoming a per-viewer quote.
+// ModelRatio (the published list price) is never rewritten; the discount is a
+// separate field the client renders beside it.
+func applyDefaultGroupModelPricing(pricing []model.Pricing) []model.Pricing {
+	out := make([]model.Pricing, len(pricing))
+	copy(out, pricing)
+	// Only a per-model override the operator set ON PURPOSE is advertised.
+	//
+	// The `default` group also carries a broad group ratio, and the relay does
+	// fall back to it when no override names the model -- so a model with no
+	// override can still be billed below list. That is deliberately NOT
+	// published here. Operator rule, 2026-09-22: a model the operator never
+	// chose to discount must not be advertised as discounted; inferring a
+	// per-model price from the group ratio commits us to a number nobody set.
+	// Quoting list while charging less is the safe direction of that gap.
+	for i := range out {
+		ratio, ok := ratio_setting.GetGroupModelDiscount(model.DefaultUserGroup, out[i].ModelName)
+		if !ok {
+			continue
+		}
+		out[i].DefaultGroupModelRatio = &ratio
+	}
+	return out
 }
 
 // applyCustomerGroupModelPricing returns request-owned rows. GetPricing caches

@@ -13,7 +13,11 @@ const (
 	RelayFormatOpenAIImage                           = "openai_image"
 	RelayFormatOpenAIRealtime                        = "openai_realtime"
 	RelayFormatRerank                                = "rerank"
-	RelayFormatEmbedding                             = "embedding"
+	// RelayFormatSystemOne is TypeSafe's decision-model API: a state plus a
+	// map of typed questions in, typed answers with calibrated probabilities
+	// out. It is not a chat shape and is forwarded verbatim.
+	RelayFormatSystemOne = "system_one"
+	RelayFormatEmbedding = "embedding"
 
 	RelayFormatTask    = "task"
 	RelayFormatMjProxy = "mj_proxy"

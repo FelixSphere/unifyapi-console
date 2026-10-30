@@ -42,6 +42,7 @@ import {
 import { SettingsSection } from '../components/settings-section'
 import {
   getPartnershipPrograms,
+  deletePartnershipProgram,
   removePartnershipCustomer,
   savePartnershipCustomer,
   savePartnershipProgram,
@@ -51,6 +52,10 @@ import {
   type PartnershipProgramInput,
 } from './partnership-api'
 import { partnershipGroupLabel } from './partnership-group-label'
+import {
+  parseProgramDiscount,
+  programDiscountPercent,
+} from './program-discount'
 
 type FormState = {
   name: string
@@ -58,6 +63,8 @@ type FormState = {
   group: string
   grantUSD: string
   grantLimit: string
+  /** Multiplier over the official price. Empty means the program sets none. */
+  discount: string
   enabled: boolean
   startsAt: string
   endsAt: string
@@ -76,6 +83,7 @@ const emptyForm = (group: string): FormState => ({
   group,
   grantUSD: '0',
   grantLimit: '0',
+  discount: '',
   enabled: false,
   startsAt: '',
   endsAt: '',
@@ -111,6 +119,8 @@ export function PartnershipProgramsSection({
     useState<PartnershipProgram | null>(null)
   const [editingCustomer, setEditingCustomer] =
     useState<PartnershipCustomer | null>(null)
+  const [removingProgram, setRemovingProgram] =
+    useState<PartnershipProgram | null>(null)
   const [removingCustomer, setRemovingCustomer] = useState<{
     program: PartnershipProgram
     customer: PartnershipCustomer
@@ -150,6 +160,24 @@ export function PartnershipProgramsSection({
     onError: (error: Error) => toast.error(error.message),
   })
 
+  const removeProgramMutation = useMutation({
+    mutationFn: deletePartnershipProgram,
+    onSuccess: (response) => {
+      const members = response.data?.enrolled_members ?? 0
+      toast.success(
+        members > 0
+          ? t(
+              'Program removed. {{count}} enrolled member(s) will be reassigned the next time they connect.',
+              { count: members }
+            )
+          : t('Program removed')
+      )
+      setRemovingProgram(null)
+      queryClient.invalidateQueries({ queryKey: ['partnership-programs'] })
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
+
   const removeCustomerMutation = useMutation({
     mutationFn: removePartnershipCustomer,
     onSuccess: () => {
@@ -174,6 +202,7 @@ export function PartnershipProgramsSection({
       group: program.group,
       grantUSD: String(program.grant_quota / quotaUnit),
       grantLimit: String(program.grant_limit),
+      discount: program.discount ? String(program.discount) : '',
       enabled: program.enabled,
       startsAt: dateInput(program.starts_at),
       endsAt: dateInput(program.ends_at),
@@ -184,16 +213,24 @@ export function PartnershipProgramsSection({
   const submit = () => {
     const grantUSD = Number(form.grantUSD)
     const grantLimit = Number(form.grantLimit)
+    // Empty is how an operator says "this program sets no discount", which the
+    // server stores as 0. A typed value is a multiplier over the official
+    // price, so it has to land in (0, 1]: 1.2 would be a surcharge and every
+    // screen that shows it would read it as a discount.
+    const parsedDiscount = parseProgramDiscount(form.discount)
     if (
       !form.name.trim() ||
       !/^[a-z0-9][a-z0-9_-]{2,63}$/.test(form.code.trim().toLowerCase()) ||
-      !form.group ||
       !Number.isFinite(grantUSD) ||
       grantUSD < 0 ||
       !Number.isInteger(grantLimit) ||
       grantLimit < 0
     ) {
-      toast.error(t('Check the name, code, group, credit, and limit.'))
+      toast.error(t('Check the name, code, credit, and limit.'))
+      return
+    }
+    if (!parsedDiscount.ok) {
+      toast.error(t('Discount must be between 0 and 1, or empty for none.'))
       return
     }
     const program: PartnershipProgramInput = {
@@ -202,6 +239,7 @@ export function PartnershipProgramsSection({
       group: form.group,
       grant_quota: Math.round(grantUSD * quotaUnit),
       grant_limit: grantLimit,
+      discount: parsedDiscount.value,
       enabled: form.enabled,
       starts_at: timestamp(form.startsAt),
       ends_at: timestamp(form.endsAt),
@@ -289,6 +327,7 @@ export function PartnershipProgramsSection({
                 <TableHead>{t('Customer groups')}</TableHead>
                 <TableHead>{t('Registration credit')}</TableHead>
                 <TableHead>{t('Claims')}</TableHead>
+                <TableHead>{t('Discount')}</TableHead>
                 <TableHead>{t('Status')}</TableHead>
                 <TableHead className='text-right'>{t('Actions')}</TableHead>
               </TableRow>
@@ -381,6 +420,9 @@ export function PartnershipProgramsSection({
                     {program.claimed_count} / {program.grant_limit}
                   </TableCell>
                   <TableCell>
+                    {program.discount > 0 ? `${program.discount}×` : '—'}
+                  </TableCell>
+                  <TableCell>
                     <Badge variant={program.enabled ? 'default' : 'secondary'}>
                       {program.enabled ? t('Enabled') : t('Disabled')}
                     </Badge>
@@ -394,6 +436,15 @@ export function PartnershipProgramsSection({
                       onClick={() => openEdit(program)}
                     >
                       <Pencil className='size-4' />
+                    </Button>
+                    <Button
+                      type='button'
+                      size='icon-sm'
+                      variant='ghost'
+                      aria-label={t('Remove program')}
+                      onClick={() => setRemovingProgram(program)}
+                    >
+                      <Trash2 className='size-4' />
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -467,12 +518,24 @@ export function PartnershipProgramsSection({
                 setForm({ ...form, group: event.target.value })
               }
             >
+              <NativeSelectOption value=''>
+                {t('None — members must arrive with a team')}
+              </NativeSelectOption>
               {groups.map((group) => (
                 <NativeSelectOption key={group} value={group}>
                   {partnershipGroupLabel(group, query.data?.groups[group])}
                 </NativeSelectOption>
               ))}
             </NativeSelect>
+            <span className='text-muted-foreground text-xs'>
+              {form.group
+                ? t(
+                    'Members who arrive without a team land in this group, and share one invoice.'
+                  )
+                : t(
+                    'No catch-all. This program holds no group open, and its usage is never pooled into a shared invoice.'
+                  )}
+            </span>
           </Field>
           <Field label={t('Registration credit (USD)')}>
             <Input
@@ -495,6 +558,29 @@ export function PartnershipProgramsSection({
                 setForm({ ...form, grantLimit: event.target.value })
               }
             />
+          </Field>
+          <Field label={t('Program discount (multiplier)')}>
+            <Input
+              type='number'
+              min='0'
+              max='1'
+              step='0.01'
+              placeholder={t('empty = no program discount')}
+              value={form.discount}
+              onChange={(event) =>
+                setForm({ ...form, discount: event.target.value })
+              }
+            />
+            <span className='text-muted-foreground mt-1 block text-xs'>
+              {programDiscountPercent(form.discount) !== null
+                ? t(
+                    'Every customer in this program pays {{percent}}% of the official price. Saving writes this into their Customer model prices; a price you set by hand there is kept.',
+                    { percent: programDiscountPercent(form.discount) }
+                  )
+                : t(
+                    'A multiplier over the official price, e.g. 0.85 for 15% off. Leave empty for no program discount.'
+                  )}
+            </span>
           </Field>
           <div className='flex items-end gap-3 pb-2'>
             <Switch
@@ -602,6 +688,44 @@ export function PartnershipProgramsSection({
           </div>
         </div>
       </Dialog>
+
+      <AlertDialog
+        open={removingProgram !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemovingProgram(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('Remove partnership program?')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                'This removes {{program}} from the console and stops its registration links. Existing users, balances, usage, and invoice history are not deleted. Members enrolled in it are reassigned the next time they connect.',
+                { program: removingProgram?.name ?? '' }
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeProgramMutation.isPending}>
+              {t('Cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant='destructive'
+              disabled={
+                removeProgramMutation.isPending || removingProgram === null
+              }
+              onClick={() => {
+                if (!removingProgram) return
+                removeProgramMutation.mutate(removingProgram.id)
+              }}
+            >
+              {t('Remove')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={removingCustomer !== null}

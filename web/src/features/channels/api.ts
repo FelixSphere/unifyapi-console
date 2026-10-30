@@ -221,6 +221,36 @@ export async function testChannel(
   return res.data
 }
 
+export async function submitChannelVideoTest(
+  id: number,
+  request: Record<string, unknown>
+) {
+  const res = await api.post(
+    `/api/channel/test/${id}/video`,
+    request,
+    channelActionConfig()
+  )
+  return res.data as {
+    id?: string
+    task_id?: string
+    message?: string
+    error?: { message?: string }
+  }
+}
+
+export async function fetchChannelVideoTest(id: number, taskId: string) {
+  const res = await api.get(
+    `/api/channel/test/${id}/video/${encodeURIComponent(taskId)}`,
+    channelActionConfig()
+  )
+  return res.data as {
+    success: boolean
+    status: string
+    message?: string
+    time?: number
+  }
+}
+
 /**
  * Update channel balance
  */

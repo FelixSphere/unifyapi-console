@@ -31,12 +31,32 @@ describe('supplier portal surface', () => {
     assert.doesNotMatch(api, /credit-pool\/lots/)
   })
 
-  test('a sale carries the attestation, a write-only key and a payout choice; the rate is posted, not typed', () => {
+  test('the payout rails come from the server, never from a list kept here', () => {
+    const payoutDialog = readFileSync(
+      join(HERE, '../components/payout-account-dialog.tsx'),
+      'utf8'
+    )
+    // A client-side copy of the payment methods is a copy that drifts: it
+    // would keep offering a rail after the operator switched it off in
+    // Payment Settings, which is the whole thing this replaced.
+    assert.doesNotMatch(api, /PAYOUT_METHOD_LABELS/)
+    assert.doesNotMatch(payoutDialog, /PAYOUT_METHOD_LABELS/)
+    assert.doesNotMatch(payoutDialog, /'paypal'|'wise'|'bank'\s*:/)
+    assert.match(payoutDialog, /rails\.map/)
+    assert.match(payoutDialog, /unavailable_reason/)
+  })
+
+  test('a submission carries the attestation and a write-only key; the share is posted, never typed', () => {
     assert.match(dialog, /transfer_rights_confirmed: true/)
     assert.match(dialog, /PasswordInput/)
-    assert.match(dialog, /payout_method: form\.payoutMethod/)
-    // The seller never sets their own price: no acquisition_rate is sent.
-    assert.doesNotMatch(dialog, /acquisition_rate:/)
+    // The seller sets no price, chooses no deal, and the payout lives on the
+    // profile, not the form.
+    assert.doesNotMatch(
+      dialog,
+      /acquisition_rate:|deal_type:|payout_method:|revenue_share_pct:/
+    )
+    assert.doesNotMatch(dialog, /buy_rates/)
+    assert.match(dialog, /nothing is paid up front/i)
   })
 
   test('a login that has not sold yet sees the posted terms, not an error', () => {
@@ -64,6 +84,46 @@ describe('supplier portal surface', () => {
       wallet,
       /SellCreditsCard|credit-contributions|supplier-portal/
     )
+  })
+
+  test('sellers file a payout account before they can sell, and see what their credits sold for', () => {
+    assert.match(api, /\/api\/supplier\/payout-account/)
+    assert.match(page, /has_payout_account/)
+    assert.match(page, /<PayoutAccountDialog/)
+    // Sell is gated on the account; the page turns the gate into the form.
+    assert.match(page, /Add payout account to start/)
+    // The three numbers a seller checks: sold for, their share, unpaid.
+    assert.match(page, /share_revenue_usd/)
+    assert.match(page, /share_earned_usd/)
+    assert.match(page, /share_unpaid_usd/)
+    // No buy-out is offered to sellers anywhere on the page.
+    assert.doesNotMatch(page, /buy_rates|awaiting_payment_usd/)
+    const payout = readFileSync(
+      join(HERE, '../components/payout-account-dialog.tsx'),
+      'utf8'
+    )
+    assert.match(payout, /updateSupplierPayoutAccount/)
+    assert.match(payout, /Never paste an API key/)
+  })
+
+  test('a seller can audit the usage their share is computed from', () => {
+    // The trust argument, pinned: the seller is shown token counts in the
+    // shape their own vendor console reports them, told to compare, told the
+    // key is theirs to revoke, and handed a file they can diff.
+    const proof = readFileSync(
+      join(HERE, '../components/usage-proof-card.tsx'),
+      'utf8'
+    )
+    assert.match(proof, /prompt_tokens/)
+    assert.match(proof, /cached_tokens/)
+    assert.match(proof, /completion_tokens/)
+    assert.match(proof, /Compare the token counts/)
+    assert.match(proof, /cap or revoke it in your vendor account/)
+    assert.match(proof, /supplierUsageExportUrl/)
+    assert.match(page, /<UsageProofCard/)
+    // It reads its own endpoint, not the operator's reconciliation one.
+    assert.match(api, /\/api\/supplier\/usage\/detail/)
+    assert.doesNotMatch(proof, /username|user_id/)
   })
 
   test('the duplicate contribution module is gone', () => {

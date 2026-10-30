@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -42,6 +44,8 @@ type MediaURL struct {
 }
 
 type requestPayload struct {
+	OmniReferenceTaskType string         `json:"omni_reference_task_type,omitempty"`
+	OutputFormat          string         `json:"output_format,omitempty"`
 	Model                 string         `json:"model"`
 	Content               []ContentItem  `json:"content,omitempty"`
 	CallbackURL           string         `json:"callback_url,omitempty"`
@@ -122,9 +126,33 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate)
 }
 
+func usesLASAPI(baseURL string) bool {
+	baseURL = strings.TrimRight(strings.ToLower(baseURL), "/")
+	return strings.Contains(baseURL, "operator.las.") || strings.HasSuffix(baseURL, "/api/v1")
+}
+
+func taskAPIBaseURL(baseURL string) string {
+	baseURL = strings.TrimRight(baseURL, "/")
+	if strings.HasSuffix(baseURL, "/api/v1") || strings.HasSuffix(baseURL, "/api/v3") {
+		return baseURL
+	}
+	// BytePlus LAS exposes Seedance 2.5 through its operator API. ModelArk and
+	// Volcengine Ark retain the v3 path used by the existing Doubao channels.
+	if usesLASAPI(baseURL) {
+		return baseURL + "/api/v1"
+	}
+	return baseURL + "/api/v3"
+}
+
+func isSeedance25Model(model string) bool {
+	return model == "seedance-2.5" ||
+		strings.HasPrefix(model, "doubao-seedance-2-5") ||
+		strings.HasPrefix(model, "dreamina-seedance-2-5")
+}
+
 // BuildRequestURL constructs the upstream URL.
 func (a *TaskAdaptor) BuildRequestURL(_ *relaycommon.RelayInfo) (string, error) {
-	return fmt.Sprintf("%s/api/v3/contents/generations/tasks", a.baseURL), nil
+	return taskAPIBaseURL(a.baseURL) + "/contents/generations/tasks", nil
 }
 
 // BuildRequestHeader sets required headers.
@@ -135,7 +163,33 @@ func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *r
 	return nil
 }
 
+// seedance25MaxSeconds is the longest video the upstream will generate. A
+// request may ask for duration -1 ("let the model decide"), and nothing at
+// request time can know what it will pick, so we reserve the maximum and
+// settle the measured length in AdjustBillingOnComplete.
+const seedance25MaxSeconds = 30
+
+// seedance25RequestSeconds reads the asked-for duration, or the reservation
+// when the caller left it to the model.
+func seedance25RequestSeconds(req *relaycommon.TaskSubmitReq) float64 {
+	if req.Duration > 0 {
+		return float64(req.Duration)
+	}
+	if req.Seconds != "" {
+		if sec, err := strconv.Atoi(req.Seconds); err == nil && sec > 0 {
+			return float64(sec)
+		}
+	}
+	return seedance25MaxSeconds
+}
+
 // EstimateBilling 根据请求 metadata 中的输出分辨率与是否包含视频输入，返回相对基准价的计费 OtherRatio。
+//
+// seedance 2.5 is priced PER SECOND of generated video (catalog PriceUnit
+// "second"), so the estimate must carry the length. Without a "seconds" entry
+// the pre-charge is the flat per-call price and a 4-second clip costs the same
+// as a 30-second one -- which is what happened between the 2026-10-17 repricing
+// and this commit.
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
@@ -144,10 +198,50 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	hasVideo := hasVideoInMetadata(req.Metadata)
 	resolution, _ := req.Metadata["resolution"].(string)
 	ratio, ok := GetVideoInputRatio(info.OriginModelName, resolution, hasVideo)
-	if !ok || ratio == 1.0 {
+
+	out := make(map[string]float64, 2)
+	if ok && ratio != 1.0 {
+		out["video_input"] = ratio
+	}
+	if isSeedance25Model(info.OriginModelName) {
+		out["seconds"] = seedance25RequestSeconds(&req)
+	}
+	if len(out) == 0 {
 		return nil
 	}
-	return map[string]float64{"video_input": ratio}
+	return out
+}
+
+// AdjustBillingOnComplete settles the measured video length at the
+// request-time price. The upstream reports the duration it actually generated,
+// which is the only way a duration -1 request can be billed correctly.
+func (a *TaskAdaptor) AdjustBillingOnComplete(task *model.Task, result *relaycommon.TaskInfo) int {
+	bc := task.PrivateData.BillingContext
+	if bc == nil || bc.PriceUnit != "second" || result.Status != model.TaskStatusSuccess {
+		return 0
+	}
+	var resTask responseTask
+	if common.Unmarshal(task.Data, &resTask) != nil {
+		return 0
+	}
+	if !isSeedance25Model(resTask.Model) {
+		return 0
+	}
+	// Refuse to settle on a length the upstream could not have produced rather
+	// than charging a number we cannot defend; the pre-charge then stands.
+	if resTask.Duration <= 0 || resTask.Duration > seedance25MaxSeconds {
+		return 0
+	}
+	units := float64(resTask.Duration)
+	if r := bc.OtherRatios["video_input"]; r > 0 {
+		units *= r
+	}
+	quota, err := common.QuotaFromFloatStrict(bc.ModelPrice * units * bc.GroupRatio * common.QuotaPerUnit)
+	if err != nil {
+		common.SysError(err.Error())
+		return 0
+	}
+	return quota
 }
 
 // hasVideoInMetadata 直接检查 metadata 的 content 数组是否包含 video_url 条目，
@@ -193,6 +287,14 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	if info.IsModelMapped {
 		body.Model = info.UpstreamModelName
 	} else {
+		if usesLASAPI(a.baseURL) {
+			switch {
+			case body.Model == "seedance-2.5":
+				body.Model = "dreamina-seedance-2-5-260628"
+			case strings.HasPrefix(body.Model, "doubao-seedance-2-5"):
+				body.Model = strings.Replace(body.Model, "doubao-seedance-2-5", "dreamina-seedance-2-5", 1)
+			}
+		}
 		info.UpstreamModelName = body.Model
 	}
 	data, err := common.Marshal(body)
@@ -245,7 +347,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 		return nil, fmt.Errorf("invalid task_id")
 	}
 
-	uri := fmt.Sprintf("%s/api/v3/contents/generations/tasks/%s", baseUrl, taskID)
+	uri := fmt.Sprintf("%s/contents/generations/tasks/%s", taskAPIBaseURL(baseUrl), url.PathEscape(taskID))
 
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
 	if err != nil {
@@ -294,8 +396,43 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
 	}
 
-	if sec, _ := strconv.Atoi(req.Seconds); sec > 0 {
+	if req.Duration > 0 {
+		r.Duration = lo.ToPtr(dto.IntValue(req.Duration))
+	} else if req.Seconds != "" {
+		sec, err := strconv.Atoi(req.Seconds)
+		if err != nil {
+			return nil, fmt.Errorf("invalid seconds: %w", err)
+		}
 		r.Duration = lo.ToPtr(dto.IntValue(sec))
+	}
+	if r.Duration != nil && (*r.Duration < -1 || *r.Duration == 0 || *r.Duration > relaycommon.MaxTaskDurationSeconds) {
+		return nil, fmt.Errorf("invalid video duration")
+	}
+	if isSeedance25Model(req.Model) {
+		if r.Duration != nil && *r.Duration != -1 && (*r.Duration < 4 || *r.Duration > 30) {
+			return nil, fmt.Errorf("Seedance 2.5 duration must be -1 or 4 to 30 seconds")
+		}
+		switch r.OmniReferenceTaskType {
+		case "", "auto", "reference":
+		case "edit", "extend":
+			hasVideo := false
+			for _, content := range r.Content {
+				if content.Type == "video_url" && content.Role == "reference_video" {
+					hasVideo = true
+				}
+			}
+			if !hasVideo || r.Ratio != "adaptive" {
+				return nil, fmt.Errorf("Seedance edit/extend requires reference_video and adaptive ratio")
+			}
+			if r.OmniReferenceTaskType == "edit" && r.Duration != nil && *r.Duration != -1 {
+				return nil, fmt.Errorf("Seedance edit requires duration -1")
+			}
+		default:
+			return nil, fmt.Errorf("invalid omni_reference_task_type")
+		}
+		if r.OutputFormat != "" && r.OutputFormat != "mp4" && r.OutputFormat != "mov" {
+			return nil, fmt.Errorf("output_format must be mp4 or mov")
+		}
 	}
 
 	r.Content = lo.Reject(r.Content, func(c ContentItem, _ int) bool { return c.Type == "text" })
@@ -332,7 +469,7 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 		// 解析 usage 信息用于按倍率计费
 		taskResult.CompletionTokens = resTask.Usage.CompletionTokens
 		taskResult.TotalTokens = resTask.Usage.TotalTokens
-	case "failed":
+	case "failed", "expired", "cancelled":
 		taskResult.Status = model.TaskStatusFailure
 		taskResult.Progress = "100%"
 		taskResult.Reason = resTask.Error.Message
@@ -361,7 +498,7 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, erro
 	openAIVideo.CompletedAt = originTask.UpdatedAt
 	openAIVideo.Model = originTask.Properties.OriginModelName
 
-	if dResp.Status == "failed" {
+	if originTask.Status == model.TaskStatusFailure {
 		openAIVideo.Error = &dto.OpenAIVideoError{
 			Message: dResp.Error.Message,
 			Code:    dResp.Error.Code,

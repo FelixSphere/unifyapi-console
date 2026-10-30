@@ -11,6 +11,12 @@ node web/scripts/check-brand-invariants.mjs
 echo "--> Bun test-runner imports"
 node web/scripts/check-test-runner.mjs
 
+# The root package //go:embed's web/dist, so every Go step below needs the
+# frontend to exist first. Without this, a clean checkout fails go vet with
+# "pattern web/dist: no matching files found" and looks like a code defect.
+echo "--> web build (also regenerates the TanStack route tree)"
+(cd web && bun run build >/dev/null)
+
 echo "--> go vet"
 go vet ./...
 
@@ -32,10 +38,7 @@ echo "--> web formatting"
 echo "--> web tests"
 (cd web && bun test)
 
-echo "--> web build (also regenerates the TanStack route tree)"
-(cd web && bun run build >/dev/null)
-
-echo "--> go build (needs web/dist; //go:embed)"
+echo "--> go build (embeds the web/dist built above)"
 CGO_ENABLED=0 go build -o /dev/null .
 
 echo "OK"

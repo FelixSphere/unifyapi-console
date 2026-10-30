@@ -50,12 +50,20 @@ func InitChannelCache() {
 	for group := range groups {
 		newGroup2model2channels[group] = make(map[string][]int)
 	}
+	// UNIFYAPI-FORK: every pricing group routes through every channel; see
+	// unifyapi_pricing_group_channel_access.go.
+	pricingGroups := routingPricingGroups()
 	for _, channel := range channels {
 		if channel.Status != common.ChannelStatusEnabled {
 			continue // skip disabled channels
 		}
-		groups := strings.Split(channel.Group, ",")
+		groups := channel.routingGroups(pricingGroups)
 		for _, group := range groups {
+			// A pricing group may have no ability row yet (added since the
+			// last grant, or on a slave); the union still routes it.
+			if _, ok := newGroup2model2channels[group]; !ok {
+				newGroup2model2channels[group] = make(map[string][]int)
+			}
 			models := strings.Split(channel.Models, ",")
 			for _, model := range models {
 				if _, ok := newGroup2model2channels[group][model]; !ok {
@@ -170,6 +178,20 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 			}
 		} else {
 			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
+		}
+	}
+
+	// UNIFYAPI-BRAND: drop channels that are over their own upstream quota, so a
+	// busy channel is skipped at selection instead of being sent traffic that
+	// comes back 429. Reads a snapshot, never Redis -- we are under RLock here.
+	// If every candidate is saturated we deliberately fall through with the full
+	// list rather than failing: shedding load is the upstream's job, and
+	// returning "no channel" would turn a slow minute into an outage.
+	if available := dropRateLimitedChannels(targetChannels); len(available) > 0 {
+		targetChannels = available
+		sumWeight = 0
+		for _, ch := range targetChannels {
+			sumWeight += ch.GetWeight()
 		}
 	}
 

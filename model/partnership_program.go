@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,16 +35,23 @@ const partnershipGroupIntegrityLockKey = "unifyapi-partnership-group-integrity"
 // PartnershipProgram is an operator-managed registration offer. It only
 // controls account creation: normal top-up and request billing remain unchanged.
 type PartnershipProgram struct {
-	Id           int                   `json:"id" gorm:"primaryKey"`
-	Name         string                `json:"name" gorm:"type:varchar(120);not null"`
-	Code         string                `json:"code" gorm:"type:varchar(64);not null;uniqueIndex"`
-	Group        string                `json:"group" gorm:"type:varchar(64);not null"`
-	GrantQuota   int                   `json:"grant_quota" gorm:"type:int;not null;default:0"`
+	Id         int    `json:"id" gorm:"primaryKey"`
+	Name       string `json:"name" gorm:"type:varchar(120);not null"`
+	Code       string `json:"code" gorm:"type:varchar(64);not null;uniqueIndex"`
+	Group      string `json:"group" gorm:"type:varchar(255);not null"`
+	GrantQuota int    `json:"grant_quota" gorm:"type:int;not null;default:0"`
+	// Discount is a multiplier over the official price that every customer in
+	// this program gets, written into their Customer model prices when it is
+	// set (see ApplyProgramDiscount). 0 means the program sets none and each
+	// customer is priced by their group ratio alone. It is stored here so a
+	// later re-apply can tell its own rows from prices set by hand.
+	Discount     float64               `json:"discount" gorm:"not null;default:0"`
 	GrantLimit   int                   `json:"grant_limit" gorm:"type:int;not null;default:0"`
 	ClaimedCount int                   `json:"claimed_count" gorm:"type:int;not null;default:0"`
 	Enabled      bool                  `json:"enabled" gorm:"not null;default:false;index"`
 	StartsAt     int64                 `json:"starts_at" gorm:"not null;default:0"`
 	EndsAt       int64                 `json:"ends_at" gorm:"not null;default:0"`
+	RemovedAt    int64                 `json:"removed_at" gorm:"not null;default:0;index"`
 	CreatedAt    int64                 `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt    int64                 `json:"updated_at" gorm:"autoUpdateTime"`
 	Customers    []PartnershipCustomer `json:"customers,omitempty" gorm:"foreignKey:ProgramId"`
@@ -57,12 +65,21 @@ type PartnershipCustomer struct {
 	ProgramId int    `json:"program_id" gorm:"not null;index;uniqueIndex:idx_partnership_customer_group"`
 	Name      string `json:"name" gorm:"type:varchar(120);not null"`
 	Code      string `json:"code" gorm:"type:varchar(64);not null;uniqueIndex"`
-	Group     string `json:"group" gorm:"type:varchar(64);not null;uniqueIndex:idx_partnership_customer_group"`
+	Group     string `json:"group" gorm:"type:varchar(255);not null;uniqueIndex:idx_partnership_customer_group"`
 	IsDefault bool   `json:"is_default" gorm:"not null;default:false;index"`
-	Enabled   bool   `json:"enabled" gorm:"not null;default:true;index"`
-	RemovedAt int64  `json:"removed_at" gorm:"not null;default:0;index"`
-	CreatedAt int64  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt int64  `json:"updated_at" gorm:"autoUpdateTime"`
+	// TenantId owns this customer's wallet. Every member of the team points at
+	// it, which is what makes the team's credit one balance rather than one
+	// balance each. Zero means the legacy per-member wallet.
+	TenantId int `json:"tenant_id" gorm:"not null;default:0;index"`
+	// GrantClaimedAt records that this customer has taken the program's
+	// registration grant. The grant belongs to the customer, so it is claimed
+	// once per customer however many members join.
+	GrantClaimedAt int64 `json:"grant_claimed_at" gorm:"not null;default:0;index"`
+	GrantedQuota   int   `json:"granted_quota" gorm:"not null;default:0"`
+	Enabled        bool  `json:"enabled" gorm:"not null;default:true;index"`
+	RemovedAt      int64 `json:"removed_at" gorm:"not null;default:0;index"`
+	CreatedAt      int64 `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt      int64 `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 type PartnershipEnrollment struct {
@@ -100,11 +117,21 @@ func ValidatePartnershipProgram(program *PartnershipProgram) error {
 	program.Name = strings.TrimSpace(program.Name)
 	program.Code = NormalizePartnershipCode(program.Code)
 	program.Group = strings.TrimSpace(program.Group)
-	if program.Name == "" || !partnershipCodePattern.MatchString(program.Code) || program.Group == "" {
-		return errors.New("name, valid code, and group are required")
+	// An empty Group is how an operator says this program has no default
+	// customer. Members then have to arrive with a team name, and nothing
+	// lands in a shared catch-all whose usage cannot be told apart.
+	if program.Name == "" || !partnershipCodePattern.MatchString(program.Code) {
+		return errors.New("name and a valid code are required")
 	}
 	if program.GrantQuota < 0 || program.GrantLimit < 0 {
 		return errors.New("grant quota and limit cannot be negative")
+	}
+	// A discount is a multiplier over the official price, so it lives in (0,1]:
+	// 0 is how an operator says "no program discount", and anything above 1
+	// would be a surcharge, which is not what this field means and would read
+	// as a discount in every screen that shows it.
+	if program.Discount < 0 || program.Discount > 1 {
+		return errors.New("discount must be between 0 and 1, where 0 means no program discount")
 	}
 	if program.EndsAt != 0 && program.StartsAt != 0 && program.EndsAt <= program.StartsAt {
 		return errors.New("end time must be after start time")
@@ -136,13 +163,13 @@ func GetPartnershipPrograms() ([]PartnershipProgram, error) {
 	var programs []PartnershipProgram
 	err := DB.Preload("Customers", func(db *gorm.DB) *gorm.DB {
 		return db.Where("removed_at = ?", 0).Order("is_default DESC, created_at ASC, id ASC")
-	}).Order("created_at DESC, id DESC").Find(&programs).Error
+	}).Where("removed_at = ?", 0).Order("created_at DESC, id DESC").Find(&programs).Error
 	return programs, err
 }
 
 func GetPartnershipProgramByCode(code string) (*PartnershipProgram, error) {
 	var program PartnershipProgram
-	err := DB.Where("code = ?", NormalizePartnershipCode(code)).First(&program).Error
+	err := DB.Where("code = ? AND removed_at = ?", NormalizePartnershipCode(code), 0).First(&program).Error
 	return &program, err
 }
 
@@ -158,7 +185,7 @@ func initializePartnershipCustomers() error {
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
 		var programs []PartnershipProgram
-		if err := tx.Find(&programs).Error; err != nil {
+		if err := tx.Where("removed_at = ?", 0).Find(&programs).Error; err != nil {
 			return err
 		}
 		for _, program := range programs {
@@ -166,12 +193,41 @@ func initializePartnershipCustomers() error {
 			err := tx.Where("program_id = ? AND is_default = ? AND removed_at = ?", program.Id, true, 0).
 				First(&customer).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				customer = PartnershipCustomer{
-					ProgramId: program.Id, Name: program.Name, Code: program.Code,
-					Group: program.Group, IsDefault: true, Enabled: true,
+				if program.Group == "" {
+					// The operator asked this program not to have a default
+					// customer. The upgrade must not hand one back.
+					continue
 				}
-				if err := tx.Create(&customer).Error; err != nil {
-					return fmt.Errorf("backfill default customer for partnership program %d: %w", program.Id, err)
+				// A default that was retired still holds (program_id, group):
+				// the unique index does not exclude removed rows. Inserting
+				// over it fails forever, not once, so revive the row instead
+				// of minting a second one -- and the revived row keeps
+				// whatever was billed through it.
+				var retired PartnershipCustomer
+				revive := tx.Where("program_id = ? AND is_default = ? AND removed_at <> ?", program.Id, true, 0).
+					Order("id").First(&retired).Error
+				switch {
+				case revive == nil:
+					if err := tx.Model(&PartnershipCustomer{}).Where("id = ?", retired.Id).
+						Updates(map[string]any{
+							"name": program.Name, "code": program.Code, "group": program.Group,
+							"enabled": true, "removed_at": 0,
+						}).Error; err != nil {
+						return err
+					}
+					retired.Name, retired.Code, retired.Group = program.Name, program.Code, program.Group
+					retired.Enabled, retired.RemovedAt = true, 0
+					customer = retired
+				case errors.Is(revive, gorm.ErrRecordNotFound):
+					customer = PartnershipCustomer{
+						ProgramId: program.Id, Name: program.Name, Code: program.Code,
+						Group: program.Group, IsDefault: true, Enabled: true,
+					}
+					if err := tx.Create(&customer).Error; err != nil {
+						return fmt.Errorf("backfill default customer for partnership program %d: %w", program.Id, err)
+					}
+				default:
+					return revive
 				}
 			} else if err != nil {
 				return err
@@ -196,14 +252,19 @@ func CreatePartnershipProgram(program *PartnershipProgram) error {
 	program.ClaimedCount = 0
 	return DB.Transaction(func(tx *gorm.DB) error {
 		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
-			if err := validatePartnershipProgramGroup(tx, program.Group); err != nil {
-				return err
+			if program.Group != "" {
+				if err := validatePartnershipProgramGroup(tx, program.Group); err != nil {
+					return err
+				}
 			}
 			if err := validatePartnershipCodeAvailable(tx, program.Code, 0, 0); err != nil {
 				return err
 			}
 			if err := tx.Create(program).Error; err != nil {
 				return err
+			}
+			if program.Group == "" {
+				return nil
 			}
 			return tx.Create(&PartnershipCustomer{
 				ProgramId: program.Id, Name: program.Name, Code: program.Code,
@@ -220,10 +281,19 @@ func UpdatePartnershipProgram(id int, input *PartnershipProgram) error {
 	if err := ValidatePartnershipProgram(input); err != nil {
 		return err
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
+	// Captured inside the transaction and used after it commits. Applying the
+	// discount writes the GroupModelDiscount option, which takes this same
+	// integrity lock in a transaction of its own -- nesting it here deadlocks a
+	// single-connection pool, the way recording a pricing change does.
+	previousDiscount := 0.0
+	discountChanged := false
+
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
-			if err := validatePartnershipProgramGroup(tx, input.Group); err != nil {
-				return err
+			if input.Group != "" {
+				if err := validatePartnershipProgramGroup(tx, input.Group); err != nil {
+					return err
+				}
 			}
 			var current PartnershipProgram
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, id).Error; err != nil {
@@ -242,10 +312,13 @@ func UpdatePartnershipProgram(id int, input *PartnershipProgram) error {
 			if err := validatePartnershipCodeAvailable(tx, input.Code, current.Id, defaultCustomer.Id); err != nil {
 				return err
 			}
+			previousDiscount = current.Discount
+			discountChanged = !sameDiscount(current.Discount, input.Discount)
 			if err := tx.Model(&current).Updates(map[string]any{
 				"name":        input.Name,
 				"code":        input.Code,
 				"group":       input.Group,
+				"discount":    input.Discount,
 				"grant_quota": input.GrantQuota,
 				"grant_limit": input.GrantLimit,
 				"enabled":     input.Enabled,
@@ -253,6 +326,17 @@ func UpdatePartnershipProgram(id int, input *PartnershipProgram) error {
 				"ends_at":     input.EndsAt,
 			}).Error; err != nil {
 				return err
+			}
+			if input.Group == "" {
+				// No default customer for this program. An existing one is
+				// retired rather than deleted, so any usage already billed
+				// through it stays attributable.
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil
+				}
+				return tx.Model(&defaultCustomer).Updates(map[string]any{
+					"enabled": false, "removed_at": time.Now().Unix(),
+				}).Error
 			}
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return tx.Create(&PartnershipCustomer{
@@ -263,11 +347,30 @@ func UpdatePartnershipProgram(id int, input *PartnershipProgram) error {
 			if err != nil {
 				return err
 			}
+			// Giving a program a group again brings its catch-all back. The
+			// lookup above does not filter on removed_at, so a retired default
+			// is found and would otherwise be updated in place and left
+			// retired -- clearing the group would be a one-way door, and
+			// putting it back would silently do nothing.
 			return tx.Model(&defaultCustomer).Updates(map[string]any{
 				"name": input.Name, "code": input.Code, "group": input.Group,
+				"enabled": true, "removed_at": 0,
 			}).Error
 		})
 	})
+	if err != nil {
+		return err
+	}
+	// The program row is committed, so the discount it now carries is the one
+	// to apply. Failing here leaves the program updated and the customer
+	// prices not -- which is why the error names both halves rather than
+	// reading as "the update failed".
+	if discountChanged {
+		if _, err := ApplyProgramDiscount(id, previousDiscount, input.Discount); err != nil {
+			return fmt.Errorf("program saved, but applying the discount to its customers failed: %w", err)
+		}
+	}
+	return nil
 }
 
 func CreatePartnershipCustomer(programId int, customer *PartnershipCustomer) error {
@@ -280,7 +383,7 @@ func CreatePartnershipCustomer(programId int, customer *PartnershipCustomer) err
 	customer.Id = 0
 	customer.ProgramId = programId
 	customer.IsDefault = false
-	return DB.Transaction(func(tx *gorm.DB) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
 			if err := validatePartnershipProgramGroup(tx, customer.Group); err != nil {
 				return err
@@ -291,7 +394,7 @@ func CreatePartnershipCustomer(programId int, customer *PartnershipCustomer) err
 			}
 			var removed PartnershipCustomer
 			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("program_id = ? AND `group` = ? AND removed_at <> ?", programId, customer.Group, 0).
+				Where("program_id = ? AND "+groupColumn()+" = ? AND removed_at <> ?", programId, customer.Group, 0).
 				First(&removed).Error
 			if err == nil {
 				if err := validatePartnershipCodeAvailable(tx, customer.Code, 0, removed.Id); err != nil {
@@ -318,6 +421,20 @@ func CreatePartnershipCustomer(programId int, customer *PartnershipCustomer) err
 			return tx.Create(customer).Error
 		})
 	})
+	if err != nil {
+		return err
+	}
+	// A customer added after the program's discount was set would otherwise
+	// have no per-model prices and be billed LIST, which is the same gap a new
+	// catalogue model opens. Filling here is idempotent and preserves any
+	// price already set by hand, so it is safe on a re-enabled customer too.
+	var program PartnershipProgram
+	if lookupErr := DB.First(&program, programId).Error; lookupErr == nil && program.Discount > 0 {
+		if _, applyErr := ApplyProgramDiscount(programId, program.Discount, program.Discount); applyErr != nil {
+			return fmt.Errorf("customer saved, but applying the program discount failed: %w", applyErr)
+		}
+	}
+	return nil
 }
 
 func UpdatePartnershipCustomer(programId, customerId int, input *PartnershipCustomer) error {
@@ -379,20 +496,68 @@ func RemovePartnershipCustomer(programId, customerId int) error {
 	})
 }
 
+// DeletePartnershipProgram retires a program and reports how many members
+// were enrolled in it, so the caller can say what the removal affected rather
+// than reporting a silent success.
+//
+// This is a soft delete, the same shape RemovePartnershipCustomer uses. A
+// program is the thing usage, grants and invoices are attributed through, and
+// a row that has billed real money must stay readable after the operator has
+// finished with it. What disappears is the operator's view of it: the program
+// leaves the console list, its registration links stop working, and its name
+// becomes free for a new program to take.
+//
+// Removal also clears Enabled. Several read paths already refuse a program
+// that is not active, so clearing it makes those paths correct without each
+// one having to learn what removal means.
+func DeletePartnershipProgram(programId int) (int64, error) {
+	if programId <= 0 {
+		return 0, errors.New("invalid partnership program id")
+	}
+	var enrolled int64
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
+			var program PartnershipProgram
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ? AND removed_at = ?", programId, 0).
+				First(&program).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&PartnershipEnrollment{}).
+				Where("program_id = ?", programId).Count(&enrolled).Error; err != nil {
+				return err
+			}
+			return tx.Model(&program).Updates(map[string]any{
+				"enabled": false, "removed_at": time.Now().Unix(),
+			}).Error
+		})
+	})
+	if err != nil {
+		return 0, err
+	}
+	return enrolled, nil
+}
+
 // Program codes and customer codes share one public URL namespace. The two
 // tables intentionally duplicate a Program's code for its default customer,
 // so callers may exclude that exact pair while still rejecting every other
 // cross-table collision.
 func validatePartnershipCodeAvailable(tx *gorm.DB, code string, programId, customerId int) error {
-	var programCount int64
+	var clashes []PartnershipProgram
 	programQuery := tx.Model(&PartnershipProgram{}).Where("code = ?", code)
 	if programId > 0 {
 		programQuery = programQuery.Where("id <> ?", programId)
 	}
-	if err := programQuery.Count(&programCount).Error; err != nil {
+	if err := programQuery.Find(&clashes).Error; err != nil {
 		return err
 	}
-	if programCount > 0 {
+	if len(clashes) > 0 {
+		// The code is unique at the database level, so a removed program keeps
+		// holding its code and no new program can take it. Say that plainly:
+		// the operator cannot see the row that is in the way.
+		if clashes[0].RemovedAt != 0 {
+			return fmt.Errorf("registration code %q belongs to the removed program %q; choose another code", code, clashes[0].Name)
+		}
 		return fmt.Errorf("registration code %q is already in use", code)
 	}
 
@@ -504,6 +669,14 @@ func getPartnershipOfferByCode(tx *gorm.DB, code string, lock bool) (*Partnershi
 	if !partnershipProgramActive(&program, time.Now().Unix()) {
 		return nil, ErrPartnershipProgramUnavailable
 	}
+	// A program with no group has no default customer, so there is nothing for
+	// this code to register anyone into. Serving the offer anyway would hand
+	// out an empty pricing group -- an account belonging to no customer, on no
+	// price list -- which is precisely what having no catch-all is meant to
+	// prevent.
+	if program.Group == "" {
+		return nil, ErrPartnershipProgramUnavailable
+	}
 	return &PartnershipOffer{
 		Program: program, CustomerName: program.Name, CustomerCode: program.Code,
 		CustomerGroup: program.Group,
@@ -531,6 +704,18 @@ func ConnectExistingUserToPartnership(userId int, code string) (*PartnershipConn
 		}
 		if user.Group != offer.CustomerGroup {
 			return ErrPartnershipCustomerMismatch
+		}
+		poolTenantId, err := ensureCustomerTenant(tx, offer)
+		if err != nil {
+			return err
+		}
+		if poolTenantId != 0 {
+			if err := JoinCustomerPoolTx(tx, user.Id, poolTenantId); err != nil {
+				return err
+			}
+			if err := claimTeamTenantOwner(tx, poolTenantId, user.Id); err != nil {
+				return err
+			}
 		}
 		var enrollment PartnershipEnrollment
 		err = tx.Where("program_id = ? AND user_id = ?", offer.Program.Id, user.Id).First(&enrollment).Error
@@ -568,6 +753,10 @@ func validateActivePartnershipGroups(db *gorm.DB, groups map[string]struct{}) er
 		return err
 	}
 	for _, program := range programs {
+		if program.Group == "" {
+			// No default customer, so this program holds no group open.
+			continue
+		}
 		if _, ok := groups[program.Group]; !ok {
 			return fmt.Errorf("group %q is used by an enabled partnership program; disable or move the program first", program.Group)
 		}
@@ -587,6 +776,59 @@ func validateActivePartnershipGroups(db *gorm.DB, groups map[string]struct{}) er
 			return fmt.Errorf("group %q is used by an enabled partnership customer; disable or move the customer first", customer.Group)
 		}
 	}
+	return protectPopulatedGroupsOfRemovedPrograms(db, groups)
+}
+
+// Removing a program releases its pricing group, which is what the operator
+// wants for a program that was created by mistake. It is not what they want
+// when members are still billing under that group: deleting the group would
+// leave those accounts pointing at a price that no longer exists, and nothing
+// else would report it.
+//
+// So a released group is only truly free once it is empty.
+func protectPopulatedGroupsOfRemovedPrograms(db *gorm.DB, groups map[string]struct{}) error {
+	candidates := map[string]struct{}{}
+	consider := func(group string) {
+		if _, kept := groups[group]; !kept {
+			candidates[group] = struct{}{}
+		}
+	}
+
+	var removed []PartnershipProgram
+	if err := db.Where("removed_at <> ?", 0).Find(&removed).Error; err != nil {
+		return err
+	}
+	for _, program := range removed {
+		consider(program.Group)
+	}
+
+	if db.Migrator().HasTable(&PartnershipCustomer{}) {
+		var customers []PartnershipCustomer
+		if err := db.Table("partnership_customers AS pc").Select("pc.*").
+			Joins("JOIN partnership_programs AS pp ON pp.id = pc.program_id").
+			Where("pp.removed_at <> ?", 0).Find(&customers).Error; err != nil {
+			return err
+		}
+		for _, customer := range customers {
+			consider(customer.Group)
+		}
+	}
+
+	names := make([]string, 0, len(candidates))
+	for group := range candidates {
+		names = append(names, group)
+	}
+	sort.Strings(names)
+	for _, group := range names {
+		var members int64
+		if err := db.Model(&User{}).Where(map[string]any{"group": group}).
+			Count(&members).Error; err != nil {
+			return err
+		}
+		if members > 0 {
+			return fmt.Errorf("group %q still has %d member(s) from a removed partnership program; move them to another group before deleting it", group, members)
+		}
+	}
 	return nil
 }
 
@@ -604,9 +846,10 @@ func (user *User) InsertForPartnership(code string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	// Partnership grants are the only signup credit on this path. Keep the
-	// ordinary affiliate relationship for attribution, but do not stack the
-	// generic invitee/inviter rewards on top of a capped Program offer.
+	// The ordinary signup credit and the program grant are both recorded;
+	// the generic invitee/inviter rewards are not stacked on top of a capped
+	// Program offer (the inviter is kept for attribution only).
+	user.recordSignupCredit()
 	user.finishInsertWithInitialQuota(0, grantedQuota, "Partnership registration grant")
 	return grantedQuota, nil
 }
@@ -622,13 +865,34 @@ func (user *User) InsertForPartnershipWithTx(tx *gorm.DB, code string) (int, err
 			return err
 		}
 		user.Group = offer.CustomerGroup
-		user.Quota = 0
+		// UNIFYAPI-FORK: a partnership signup is still a new login, so it gets
+		// the ordinary signup credit every registration gets (operator rule,
+		// 2026-09-20: "每个用户给的 default quota" applies to every new user).
+		// The program grant, when one is claimed below, comes on top of it.
+		// Affiliate invitee/inviter rewards remain excluded on this path.
+		user.Quota = common.QuotaForNewUser
 		user.AffCode = common.GetRandomString(4)
 		if user.Setting == "" {
 			user.SetSetting(dto.UserSetting{})
 		}
 
-		if offer.Program.GrantQuota > 0 && offer.Program.ClaimedCount < offer.Program.GrantLimit {
+		// A customer is one wallet. Registering into one joins that wallet
+		// rather than opening a private one, the same as connecting over the
+		// bridge does.
+		poolTenantId, err := ensureCustomerTenant(tx, offer)
+		if err != nil {
+			return err
+		}
+
+		// The grant belongs to the team. A team that has already taken it does
+		// not take it again when its next member registers.
+		team, err := teamGrantHolder(tx, offer)
+		if err != nil {
+			return err
+		}
+		teamAlreadyClaimed := team != nil && team.GrantClaimedAt > 0
+
+		if !teamAlreadyClaimed && offer.Program.GrantQuota > 0 && offer.Program.ClaimedCount < offer.Program.GrantLimit {
 			result := tx.Model(&PartnershipProgram{}).
 				Where("id = ? AND claimed_count < grant_limit", offer.Program.Id).
 				UpdateColumn("claimed_count", gorm.Expr("claimed_count + 1"))
@@ -637,11 +901,35 @@ func (user *User) InsertForPartnershipWithTx(tx *gorm.DB, code string) (int, err
 			}
 			if result.RowsAffected == 1 {
 				grantedQuota = offer.Program.GrantQuota
-				user.Quota = grantedQuota
+				user.Quota += grantedQuota
+				if team != nil {
+					if err := recordTeamGrantClaim(tx, team.Id, grantedQuota); err != nil {
+						return err
+					}
+				}
 			}
+		}
+		pooledCredit := 0
+		if poolTenantId != 0 {
+			// The credit -- signup credit and grant alike -- belongs to the
+			// customer, so it goes into the customer's wallet rather than
+			// sitting in a column nothing spends from.
+			user.TenantId = poolTenantId
+			pooledCredit, user.Quota = user.Quota, 0
 		}
 		if err := tx.Create(user).Error; err != nil {
 			return err
+		}
+		if poolTenantId != 0 {
+			if pooledCredit != 0 {
+				if err := tx.Model(&Tenant{}).Where("id = ?", poolTenantId).
+					Update("quota", gorm.Expr("quota + ?", pooledCredit)).Error; err != nil {
+					return err
+				}
+			}
+			if err := claimTeamTenantOwner(tx, poolTenantId, user.Id); err != nil {
+				return err
+			}
 		}
 		return tx.Create(&PartnershipEnrollment{
 			ProgramId: offer.Program.Id, CustomerId: offer.CustomerId,

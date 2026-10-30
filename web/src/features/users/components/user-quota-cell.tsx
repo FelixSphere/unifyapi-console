@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { StatusBadge } from '@/components/status-badge'
@@ -31,6 +32,9 @@ import { cn } from '@/lib/utils'
 type UserQuotaCellProps = {
   used: number
   remaining: number
+  /** Name of the customer whose wallet this balance belongs to, when shared. */
+  sharedWallet?: string
+  sharedWalletMembers?: number
 }
 
 function getQuotaProgressColor(percentage: number): string {
@@ -45,6 +49,8 @@ export function UserQuotaCell(props: UserQuotaCellProps) {
   const percentage = total > 0 ? (props.remaining / total) * 100 : 0
   const formattedRemaining = formatQuota(props.remaining)
   const formattedTotal = formatQuota(total)
+
+  const shared = props.sharedWallet
 
   if (total === 0) {
     return (
@@ -72,6 +78,14 @@ export function UserQuotaCell(props: UserQuotaCellProps) {
             {formattedTotal}
           </span>
         </div>
+        {shared && (
+          <div className='text-muted-foreground flex min-w-0 items-center gap-1 text-[10px]'>
+            <Users className='size-3 shrink-0' />
+            <span className='min-w-0 truncate'>
+              {t('Shared with {{name}}', { name: shared })}
+            </span>
+          </div>
+        )}
         <Progress
           value={percentage}
           className={cn('h-1.5', getQuotaProgressColor(percentage))}
@@ -91,6 +105,14 @@ export function UserQuotaCell(props: UserQuotaCellProps) {
           <div>
             {t('Percentage:')} {percentage.toFixed(1)}%
           </div>
+          {shared && (
+            <div className='border-t pt-1'>
+              {t(
+                "This balance belongs to {{name}} and is shared by {{count}} members. It is the same figure on each of their rows, not each member's own share.",
+                { name: shared, count: props.sharedWalletMembers ?? 0 }
+              )}
+            </div>
+          )}
         </div>
       </TooltipContent>
     </Tooltip>

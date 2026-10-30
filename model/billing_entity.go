@@ -58,7 +58,30 @@ func ResolveBillingEntity(userId int) (BillingEntity, error) {
 			return BillingEntity{UserId: userId, TenantId: cached.TenantId}, nil
 		}
 	}
-	return resolveBillingEntity(DB, userId)
+	// UNIFYAPI-FORK: settlement resolves the wallet after the response has
+	// been served; a refused connection must not cost the charge. See
+	// settlement_outbox.go.
+	var entity BillingEntity
+	err := retryConnectionClass(func() error {
+		var err error
+		entity, err = resolveBillingEntity(DB, userId)
+		return err
+	})
+	return entity, err
+}
+
+// adjustBillingQuota is adjustBillingQuotaWithTx outside a transaction,
+// retried when the database refused the connection. Only safe because it is
+// not inside a transaction: each attempt is a fresh statement on a fresh
+// connection, and a refused attempt never reached the server.
+func adjustBillingQuota(userId int, delta int) (BillingEntity, error) {
+	var entity BillingEntity
+	err := retryConnectionClass(func() error {
+		var err error
+		entity, err = adjustBillingQuotaWithTx(DB, userId, delta)
+		return err
+	})
+	return entity, err
 }
 
 func getBillingQuotaFromDB(tx *gorm.DB, entity BillingEntity) (int, error) {
@@ -150,10 +173,21 @@ func setBillingQuotaWithTx(tx *gorm.DB, userId int, quota int) (BillingEntity, e
 	return entity, nil
 }
 
+// SetUserQuota writes a balance outright, and a NEGATIVE balance is allowed on
+// purpose: it is how this deployment records that a customer owes us money.
+//
+// Operator decision, 2026-09-22. It also makes the three writers of this field
+// agree. Admin subtract has always been able to push a wallet below zero, so
+// refusing the same state here meant an operator could reach it one way and not
+// the other, and could not correct a debt back to an exact figure.
+//
+// The other "cannot be negative" guards in this file are a different check:
+// they reject a negative AMOUNT to add or subtract, which is a caller mistake
+// rather than a balance. Those stay.
+//
+// Spending is unaffected: the relay refuses a request once the balance is at or
+// below zero, so a customer in debt cannot run up more of it.
 func SetUserQuota(userId int, quota int) error {
-	if quota < 0 {
-		return errors.New("quota cannot be negative")
-	}
 	entity, err := setBillingQuotaWithTx(DB, userId, quota)
 	if err != nil {
 		return err
@@ -241,6 +275,34 @@ func FillEffectiveQuotas(users []*User) error {
 	for _, row := range rows {
 		quotaByTenant[row.Id] = row.Quota
 	}
+	// A wallet with more than one member is a customer's, not a person's. The
+	// same balance then appears on every member's row, which reads as that
+	// many times the money unless the row says whose it is.
+	var shared []struct {
+		TenantId int
+		Name     string
+		Members  int
+	}
+	if err := DB.Model(&User{}).
+		Select("users.tenant_id AS tenant_id, tenants.name AS name, COUNT(*) AS members").
+		Joins("JOIN tenants ON tenants.id = users.tenant_id").
+		Where("users.tenant_id IN ?", tenantIds).
+		Group("users.tenant_id, tenants.name").
+		Having("COUNT(*) > 1").
+		Scan(&shared).Error; err != nil {
+		return err
+	}
+	sharedByTenant := make(map[int]struct {
+		Name    string
+		Members int
+	}, len(shared))
+	for _, row := range shared {
+		sharedByTenant[row.TenantId] = struct {
+			Name    string
+			Members int
+		}{Name: row.Name, Members: row.Members}
+	}
+
 	for _, user := range users {
 		if user == nil || user.TenantId <= 0 {
 			continue
@@ -249,6 +311,10 @@ func FillEffectiveQuotas(users []*User) error {
 		// alone rather than zeroing the display.
 		if quota, ok := quotaByTenant[user.TenantId]; ok {
 			user.Quota = quota
+		}
+		if pool, ok := sharedByTenant[user.TenantId]; ok {
+			user.SharedWallet = pool.Name
+			user.SharedWalletMembers = pool.Members
 		}
 	}
 	return nil

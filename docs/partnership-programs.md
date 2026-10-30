@@ -33,9 +33,15 @@ They describe capacity at lookup time and never reserve a grant. The registratio
 transaction is authoritative, so concurrent users competing for the final slot
 receive at most one grant.
 
-Partnership signup does not stack the ordinary affiliate invitee/inviter rewards
-on top of the Program grant. An inviter relationship may still be retained for
-attribution, but the capped Program grant is the only signup credit on this path.
+A partnership signup is still a new login: it receives the ordinary signup credit
+(System Settings → New User Quota) like every registration, and the capped Program
+grant, when one is claimed, comes on top of it. Both are recorded in the user's
+log. The credit lands where the login spends from — its own wallet, or the
+customer's shared wallet when the code enrols into a customer group — never in the
+`users.quota` column. The same holds for a member connecting over the Builder
+bridge. What is NOT stacked is the ordinary affiliate invitee/inviter reward: an
+inviter relationship may be retained for attribution, but it pays nothing on this
+path.
 
 Connecting an existing account records a zero-grant enrollment and returns
 `connected_existing`. It never silently changes that account's current group.

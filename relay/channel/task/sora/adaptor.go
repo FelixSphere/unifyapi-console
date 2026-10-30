@@ -158,6 +158,13 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		var bodyMap map[string]interface{}
 		if err := common.Unmarshal(cachedBody, &bodyMap); err == nil {
 			bodyMap["model"] = info.UpstreamModelName
+			if isFlatkeySeedance(a.baseURL, info.UpstreamModelName) {
+				req, err := relaycommon.GetTaskRequest(c)
+				if err != nil {
+					return nil, err
+				}
+				normalizeFlatkeySeedance(bodyMap, req)
+			}
 			if newBody, err := common.Marshal(bodyMap); err == nil {
 				return bytes.NewReader(newBody), nil
 			}
@@ -298,6 +305,17 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	}
 
 	switch resTask.Status {
+	case "unknown":
+		if resTask.Error != nil {
+			// Preserve the poller's standard error handling, including its
+			// rate-limit retry rule, rather than classifying errors here.
+			break
+		}
+		// FlatKey can return unknown while a submitted Seedance job becomes
+		// visible, then in_progress on a later poll. Do not finalize/refund it.
+		// A parse error leaves the task unchanged for retry; the normal task
+		// timeout sweep still bounds how long an unresolved job can wait.
+		return nil, fmt.Errorf("upstream video status is temporarily unknown; retry polling")
 	case "queued", "pending":
 		taskResult.Status = model.TaskStatusQueued
 	case "processing", "in_progress":

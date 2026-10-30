@@ -36,6 +36,8 @@ export const PAYMENT_TYPES = {
   CREEM: 'creem',
   WAFFO: 'waffo',
   WAFFO_PANCAKE: 'waffo_pancake',
+  BINANCE_PAY: 'binance_pay',
+  BINANCE_PAY_US: 'binance_pay_us',
 } as const
 
 /**
@@ -53,6 +55,8 @@ export const PAYMENT_ICON_COLORS = {
   [PAYMENT_TYPES.CREEM]: '#6366F1',
   [PAYMENT_TYPES.WAFFO]: '#2563EB',
   [PAYMENT_TYPES.WAFFO_PANCAKE]: '#F97316',
+  [PAYMENT_TYPES.BINANCE_PAY]: '#F0B90B',
+  [PAYMENT_TYPES.BINANCE_PAY_US]: '#F0B90B',
 } as const
 
 /**

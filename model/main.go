@@ -27,6 +27,21 @@ var commonFalseVal string
 var logKeyCol string
 var logGroupCol string
 
+// groupColumn is the portable way to name the reserved word "group" in a
+// query. commonGroupCol is set by initCol, which a running server always calls
+// and a unit test generally does not -- and an empty column name produces SQL
+// that is broken in a quieter way than the reserved word ever was. Falling
+// back on the dialect keeps both honest.
+func groupColumn() string {
+	if commonGroupCol != "" {
+		return commonGroupCol
+	}
+	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+		return `"group"`
+	}
+	return "`group`"
+}
+
 func initCol() {
 	// init common column names
 	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
@@ -193,6 +208,10 @@ func InitDB() (err error) {
 		sqlDB.SetMaxIdleConns(common.GetEnvOrDefault("SQL_MAX_IDLE_CONNS", 100))
 		sqlDB.SetMaxOpenConns(common.GetEnvOrDefault("SQL_MAX_OPEN_CONNS", 1000))
 		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(common.GetEnvOrDefault("SQL_MAX_LIFETIME", 60)))
+		// UNIFYAPI-FORK: keep the pool under Postgres max_connections; see db_pool_ceiling.go.
+		if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+			applyPostgresPoolCeiling(DB, sqlDB, "SQL_DSN")
+		}
 
 		if !common.IsMasterNode {
 			return nil
@@ -237,6 +256,10 @@ func InitLogDB() (err error) {
 		sqlDB.SetMaxIdleConns(common.GetEnvOrDefault("SQL_MAX_IDLE_CONNS", 100))
 		sqlDB.SetMaxOpenConns(common.GetEnvOrDefault("SQL_MAX_OPEN_CONNS", 1000))
 		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(common.GetEnvOrDefault("SQL_MAX_LIFETIME", 60)))
+		// UNIFYAPI-FORK: see db_pool_ceiling.go.
+		if common.UsingLogDatabase(common.DatabaseTypePostgreSQL) {
+			applyPostgresPoolCeiling(LOG_DB, sqlDB, "LOG_SQL_DSN")
+		}
 
 		if !common.IsMasterNode {
 			return nil
@@ -262,7 +285,9 @@ func migrateDB() error {
 		&Channel{},
 		&Token{},
 		&User{},
-		&Tenant{}, // UNIFYAPI-BRAND: see model/tenant.go
+		&Tenant{},         // UNIFYAPI-BRAND: see model/tenant.go
+		&CustomerWallet{}, // UNIFYAPI-BRAND: see model/customer_wallet.go
+
 		&CreditPool{},
 		&CreditPoolLot{},
 		&TenantCreditGrant{},
@@ -271,11 +296,14 @@ func migrateDB() error {
 		&PartnershipProgram{},
 		&PartnershipCustomer{},
 		&PartnershipEnrollment{},
+		&BuilderIdentity{},
+		&EmailDeliveryState{},
 		// UNIFYAPI-FORK: supplier credit supply, see credit_supplier.go / credit_lot.go
 		&CreditSupplier{},
 		&CreditLot{},
 		&CreditLotUsage{},
 		&CreditLotEvent{},
+		&CreditSharePayout{},
 		&UserSession{},
 		&AuthFlow{},
 		&ExternalIdentityClaim{},
@@ -286,6 +314,11 @@ func migrateDB() error {
 		&Log{},
 		&Midjourney{},
 		&TopUp{},
+		&BinancePayTransaction{}, // UNIFYAPI-FORK
+		// UNIFYAPI-BRAND: compute billing bridge, see model/compute_hold.go
+		&ComputeHold{},
+		&ComputeSettlement{},
+		&ComputeExtension{},
 		&QuotaData{},
 		// UNIFYAPI-FORK: persisted reconciliation runs, see reconcile_snapshot.go
 		&ReconcileSnapshot{},
@@ -293,6 +326,8 @@ func migrateDB() error {
 		&Settlement{},
 		// UNIFYAPI-FORK: previous values of billing config, see pricing_config_history.go
 		&PricingConfigHistory{},
+		// UNIFYAPI-FORK: replayed settlements, see settlement_outbox.go
+		&SettlementLedger{},
 		&Task{},
 		&Model{},
 		&Vendor{},
@@ -319,8 +354,14 @@ func migrateDB() error {
 	if err := EnsureSettlementRevisionIndex(); err != nil {
 		return err
 	}
+	// A partnership row this cannot reconcile must not take the product down.
+	// It runs inside InitDB, whose error is fatal in main, so returning one
+	// here stops console AND relay over a single partnership customer. The
+	// backfill is an upgrade convenience: without it a program falls back to
+	// behaving as it did before customers existed, which is a degraded
+	// partnership feature, not an outage.
 	if err := initializePartnershipCustomers(); err != nil {
-		return err
+		common.SysError("partnership customer backfill skipped: " + err.Error())
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err
@@ -351,14 +392,19 @@ func migrateDBFast() error {
 		{&Channel{}, "Channel"},
 		{&Token{}, "Token"},
 		{&User{}, "User"},
-		{&Tenant{}, "Tenant"}, // UNIFYAPI-BRAND: see model/tenant.go
+		{&Tenant{}, "Tenant"},                 // UNIFYAPI-BRAND: see model/tenant.go
+		{&CustomerWallet{}, "CustomerWallet"}, // UNIFYAPI-BRAND: see model/customer_wallet.go
+
 		{&PartnershipProgram{}, "PartnershipProgram"},
 		{&PartnershipCustomer{}, "PartnershipCustomer"},
 		{&PartnershipEnrollment{}, "PartnershipEnrollment"},
+		{&BuilderIdentity{}, "BuilderIdentity"},
+		{&EmailDeliveryState{}, "EmailDeliveryState"},
 		{&CreditSupplier{}, "CreditSupplier"},
 		{&CreditLot{}, "CreditLot"},
 		{&CreditLotUsage{}, "CreditLotUsage"},
 		{&CreditLotEvent{}, "CreditLotEvent"},
+		{&CreditSharePayout{}, "CreditSharePayout"},
 		{&UserSession{}, "UserSession"},
 		{&AuthFlow{}, "AuthFlow"},
 		{&ExternalIdentityClaim{}, "ExternalIdentityClaim"},
@@ -369,7 +415,13 @@ func migrateDBFast() error {
 		{&Log{}, "Log"},
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
+		{&BinancePayTransaction{}, "BinancePayTransaction"}, // UNIFYAPI-FORK
+		// UNIFYAPI-BRAND: compute billing bridge, see model/compute_hold.go
+		{&ComputeHold{}, "ComputeHold"},
+		{&ComputeSettlement{}, "ComputeSettlement"},
+		{&ComputeExtension{}, "ComputeExtension"},
 		{&QuotaData{}, "QuotaData"},
+		{&SettlementLedger{}, "SettlementLedger"}, // UNIFYAPI-FORK: see settlement_outbox.go
 		{&Task{}, "Task"},
 		{&Model{}, "Model"},
 		{&Vendor{}, "Vendor"},
@@ -411,8 +463,14 @@ func migrateDBFast() error {
 			return err
 		}
 	}
+	// A partnership row this cannot reconcile must not take the product down.
+	// It runs inside InitDB, whose error is fatal in main, so returning one
+	// here stops console AND relay over a single partnership customer. The
+	// backfill is an upgrade convenience: without it a program falls back to
+	// behaving as it did before customers existed, which is a degraded
+	// partnership feature, not an outage.
 	if err := initializePartnershipCustomers(); err != nil {
-		return err
+		common.SysError("partnership customer backfill skipped: " + err.Error())
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err

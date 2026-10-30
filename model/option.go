@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -57,6 +58,9 @@ func InitOptionMap() {
 	common.OptionMap["EmailDomainRestrictionEnabled"] = strconv.FormatBool(common.EmailDomainRestrictionEnabled)
 	common.OptionMap["EmailAliasRestrictionEnabled"] = strconv.FormatBool(common.EmailAliasRestrictionEnabled)
 	common.OptionMap["EmailDomainWhitelist"] = strings.Join(common.EmailDomainWhitelist, ",")
+	common.OptionMap["EmailDomainBlocklistEnabled"] = strconv.FormatBool(common.EmailDomainBlocklistEnabled)
+	common.OptionMap["EmailDomainBlocklist"] = strings.Join(common.EmailDomainBlocklist, "\n")
+	common.OptionMap["RegisterIPDailyLimit"] = strconv.Itoa(common.RegisterIPDailyLimit)
 	common.OptionMap["SMTPServer"] = ""
 	common.OptionMap["SMTPFrom"] = ""
 	common.OptionMap["SMTPPort"] = strconv.Itoa(common.SMTPPort)
@@ -118,6 +122,26 @@ func InitOptionMap() {
 	common.OptionMap["WaffoPancakeMinTopUp"] = strconv.Itoa(setting.WaffoPancakeMinTopUp)
 	common.OptionMap["WaffoPancakeStoreID"] = setting.WaffoPancakeStoreID
 	common.OptionMap["WaffoPancakeProductID"] = setting.WaffoPancakeProductID
+	// UNIFYAPI-FORK: Binance Pay (personal account) gateway.
+	common.OptionMap["BinancePayEnabled"] = strconv.FormatBool(setting.BinancePayEnabled)
+	common.OptionMap["BinancePayApiKey"] = setting.BinancePayApiKey
+	common.OptionMap["BinancePaySecretKey"] = setting.BinancePaySecretKey
+	common.OptionMap["BinancePayReceiverId"] = setting.BinancePayReceiverId
+	common.OptionMap["BinancePayReceiverNickname"] = setting.BinancePayReceiverNickname
+	common.OptionMap["BinancePayCurrency"] = setting.BinancePayCurrency
+	common.OptionMap["BinancePayUnitPrice"] = strconv.FormatFloat(setting.BinancePayUnitPrice, 'f', -1, 64)
+	common.OptionMap["BinancePayMinTopUp"] = strconv.Itoa(setting.BinancePayMinTopUp)
+	common.OptionMap["BinancePayOrderTTLMinutes"] = strconv.Itoa(setting.BinancePayOrderTTLMinutes)
+	common.OptionMap["BinancePayDepositAddresses"] = setting.BinancePayDepositAddresses
+	common.OptionMap["BinancePayRecommendForPartners"] = strconv.FormatBool(setting.BinancePayRecommendForPartners)
+	common.OptionMap["BinancePayOverpayTolerancePercent"] = strconv.FormatFloat(setting.BinancePayOverpayTolerancePercent, 'f', -1, 64)
+	common.OptionMap["BinancePayUSEnabled"] = strconv.FormatBool(setting.BinancePayUSEnabled)
+	common.OptionMap["BinancePayUSApiKey"] = setting.BinancePayUSApiKey
+	common.OptionMap["BinancePayUSSecretKey"] = setting.BinancePayUSSecretKey
+	common.OptionMap["BinancePayUSReceiverNickname"] = setting.BinancePayUSReceiverNickname
+	common.OptionMap["BinancePayUSDepositAddresses"] = setting.BinancePayUSDepositAddresses
+	common.OptionMap["BinancePayDepositNetworks"] = setting.BinancePayDepositNetworks
+	common.OptionMap["BinancePayUSDepositNetworks"] = setting.BinancePayUSDepositNetworks
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
@@ -142,6 +166,10 @@ func InitOptionMap() {
 	common.OptionMap["ModelRequestRateLimitDurationMinutes"] = strconv.Itoa(setting.ModelRequestRateLimitDurationMinutes)
 	common.OptionMap["ModelRequestRateLimitSuccessCount"] = strconv.Itoa(setting.ModelRequestRateLimitSuccessCount)
 	common.OptionMap["ModelRequestRateLimitGroup"] = setting.ModelRequestRateLimitGroup2JSONString()
+	// UNIFYAPI-FORK: per-customer TOKEN allowance. The request-count limiter
+	// above cannot distinguish a 200k-token context from "hello"; this can.
+	common.OptionMap["ModelRequestTokenLimitCount"] = strconv.Itoa(setting.ModelRequestTokenLimitCount)
+	common.OptionMap["ModelRequestTokenLimitGroup"] = setting.ModelRequestTokenLimitGroup2JSONString()
 	// UNIFYAPI-FORK: per-model customer discount. Kept separate from ModelRatio
 	// so the baseline can stay at the vendors' official prices -- see
 	// setting/ratio_setting/unifyapi_discount.go.
@@ -205,7 +233,33 @@ func InitOptionMap() {
 func loadOptionsFromDatabase() {
 	options, _ := AllOption()
 	for _, option := range options {
-		err := updateOptionMap(option.Key, option.Value)
+		value := option.Value
+		// UNIFYAPI-FORK: a customer price naming a model that has since been
+		// delisted is a stale reference, and validation is all-or-nothing --
+		// so one such row rejected the ENTIRE customer price table, here, on
+		// every sync and every boot. Measured on staging while delisting one
+		// model: default_group_model_ratio went from 52 of 52 models to 0 and
+		// stayed there, and because the relay reads the same map, every
+		// customer with a negotiated price would have fallen back to their
+		// group ratio.
+		//
+		// Saving such a row is still refused (UpdateGroupModelDiscountByJSONString
+		// validates); what changes is that READING the table no longer throws
+		// the good rows away with the stale one.
+		if option.Key == "GroupModelDiscount" {
+			cleaned, dropped, err := ratio_setting.SanitizeGroupModelDiscountJSON(value)
+			if err != nil {
+				common.SysLog("customer model prices: unreadable, leaving the loaded table alone: " + err.Error())
+				continue
+			}
+			if len(dropped) > 0 {
+				common.SysLog(fmt.Sprintf(
+					"customer model prices: ignoring %d entr(ies) naming delisted models: %s",
+					len(dropped), strings.Join(dropped, ", ")))
+			}
+			value = cleaned
+		}
+		err := updateOptionMap(option.Key, value)
 		if err != nil {
 			common.SysLog("failed to update option map: " + err.Error())
 		}
@@ -230,6 +284,11 @@ func validateOptionValueWithDB(db *gorm.DB, key string, value string) error {
 	}
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
+	}
+	if key == "RegisterIPDailyLimit" {
+		if limit, err := strconv.Atoi(strings.TrimSpace(value)); err != nil || limit < 0 {
+			return fmt.Errorf("RegisterIPDailyLimit must be a non-negative integer, got %q", value)
+		}
 	}
 	if key == "GroupRatio" {
 		var values map[string]float64
@@ -367,7 +426,24 @@ func UpdateOptionAs(key, value, actor string) error {
 	return updateOptionAs(key, value, actor)
 }
 
-func updateOptionMap(key string, value string) (err error) {
+// updateOptionMap publishes a saved option into memory. Group Pricing is the
+// one key with a side effect outside the option maps: a new pricing group must
+// be able to route through every channel, so its ability rows are added once
+// the map is published. That runs after the option lock is released, because
+// it writes to the database and rebuilds the channel cache.
+func updateOptionMap(key string, value string) error {
+	if err := updateOptionMapLocked(key, value); err != nil {
+		return err
+	}
+	if key == "GroupRatio" {
+		if _, err := GrantAllChannelsToPricingGroups(); err != nil {
+			common.SysError("grant pricing groups on channels after Group Pricing save: " + err.Error())
+		}
+	}
+	return nil
+}
+
+func updateOptionMapLocked(key string, value string) (err error) {
 	if key == retiredThemeOptionKey {
 		common.OptionMapRWMutex.Lock()
 		delete(common.OptionMap, key)
@@ -422,6 +498,8 @@ func updateOptionMap(key string, value string) (err error) {
 			common.EmailDomainRestrictionEnabled = boolValue
 		case "EmailAliasRestrictionEnabled":
 			common.EmailAliasRestrictionEnabled = boolValue
+		case "EmailDomainBlocklistEnabled":
+			common.EmailDomainBlocklistEnabled = boolValue
 		case "AutomaticDisableChannelEnabled":
 			common.AutomaticDisableChannelEnabled = boolValue
 		case "AutomaticEnableChannelEnabled":
@@ -489,6 +567,14 @@ func updateOptionMap(key string, value string) (err error) {
 	switch key {
 	case "EmailDomainWhitelist":
 		common.EmailDomainWhitelist = strings.Split(value, ",")
+	case "EmailDomainBlocklist":
+		common.EmailDomainBlocklist = common.ParseEmailDomainList(value)
+	case "RegisterIPDailyLimit":
+		// validateOptionValue rejects bad input on save; a bad value already in
+		// the database keeps the previous limit rather than switching it off.
+		if limit, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && limit >= 0 {
+			common.RegisterIPDailyLimit = limit
+		}
 	case "SMTPServer":
 		common.SMTPServer = value
 	case "SMTPPort":
@@ -594,6 +680,45 @@ func updateOptionMap(key string, value string) (err error) {
 		setting.WaffoPancakeUnitPrice, _ = strconv.ParseFloat(value, 64)
 	case "WaffoPancakeMinTopUp":
 		setting.WaffoPancakeMinTopUp, _ = strconv.Atoi(value)
+	// UNIFYAPI-FORK: Binance Pay (personal account) gateway.
+	case "BinancePayEnabled":
+		setting.BinancePayEnabled = value == "true"
+	case "BinancePayApiKey":
+		setting.BinancePayApiKey = value
+	case "BinancePaySecretKey":
+		setting.BinancePaySecretKey = value
+	case "BinancePayReceiverId":
+		setting.BinancePayReceiverId = value
+	case "BinancePayReceiverNickname":
+		setting.BinancePayReceiverNickname = value
+	case "BinancePayCurrency":
+		setting.BinancePayCurrency = value
+	case "BinancePayUnitPrice":
+		setting.BinancePayUnitPrice, _ = strconv.ParseFloat(value, 64)
+	case "BinancePayMinTopUp":
+		setting.BinancePayMinTopUp, _ = strconv.Atoi(value)
+	case "BinancePayOrderTTLMinutes":
+		setting.BinancePayOrderTTLMinutes, _ = strconv.Atoi(value)
+	case "BinancePayDepositAddresses":
+		setting.BinancePayDepositAddresses = value
+	case "BinancePayRecommendForPartners":
+		setting.BinancePayRecommendForPartners = value == "true"
+	case "BinancePayOverpayTolerancePercent":
+		setting.BinancePayOverpayTolerancePercent, _ = strconv.ParseFloat(value, 64)
+	case "BinancePayUSEnabled":
+		setting.BinancePayUSEnabled = value == "true"
+	case "BinancePayUSApiKey":
+		setting.BinancePayUSApiKey = value
+	case "BinancePayUSSecretKey":
+		setting.BinancePayUSSecretKey = value
+	case "BinancePayUSReceiverNickname":
+		setting.BinancePayUSReceiverNickname = value
+	case "BinancePayUSDepositAddresses":
+		setting.BinancePayUSDepositAddresses = value
+	case "BinancePayDepositNetworks":
+		setting.BinancePayDepositNetworks = value
+	case "BinancePayUSDepositNetworks":
+		setting.BinancePayUSDepositNetworks = value
 	case "TopupGroupRatio":
 		err = common.UpdateTopupGroupRatioByJSONString(value)
 	case "GitHubClientId":
@@ -644,6 +769,11 @@ func updateOptionMap(key string, value string) (err error) {
 		setting.ModelRequestRateLimitSuccessCount, _ = strconv.Atoi(value)
 	case "ModelRequestRateLimitGroup":
 		err = setting.UpdateModelRequestRateLimitGroupByJSONString(value)
+	// UNIFYAPI-FORK: per-customer token allowance.
+	case "ModelRequestTokenLimitCount":
+		setting.ModelRequestTokenLimitCount, _ = strconv.Atoi(value)
+	case "ModelRequestTokenLimitGroup":
+		err = setting.UpdateModelRequestTokenLimitGroupByJSONString(value)
 	case "RetryTimes":
 		common.RetryTimes, _ = strconv.Atoi(value)
 	case "DataExportInterval":
@@ -782,6 +912,9 @@ func handleConfigUpdate(key, value string) bool {
 	if configName == "performance_setting" {
 		performance_setting.UpdateAndSync()
 	} else if configName == "billing_setting" {
+		// UNIFYAPI-FORK: a stored expression for a catalogued model, including
+		// one loaded from the database at startup, never outranks the catalog.
+		ratio_setting.EnforceCatalogBillingExprs()
 		InvalidatePricingCache()
 		ratio_setting.InvalidateExposedDataCache()
 	}

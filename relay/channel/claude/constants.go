@@ -6,6 +6,9 @@ var ModelList = []string{
 	"claude-3-haiku-20240307",
 	"claude-3-5-haiku-20241022",
 	"claude-haiku-4-5-20251001",
+	"claude-haiku-4-5",
+	"claude-haiku-5-5",
+	"claude-sonnet-5-5",
 	"claude-3-5-sonnet-20240620",
 	"claude-3-5-sonnet-20241022",
 	"claude-3-7-sonnet-20250219",
@@ -40,6 +43,7 @@ var ModelList = []string{
 	"claude-opus-4-8-medium",
 	"claude-opus-4-8-low",
 	"claude-opus-4-8-thinking",
+	"claude-opus-5-5",
 }
 
 var ChannelName = "claude"

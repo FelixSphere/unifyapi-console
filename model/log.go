@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -58,8 +59,15 @@ func sanitizeClickHouseLikePattern(input string) (string, error) {
 }
 
 type Log struct {
-	Id               int    `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2"`
-	UserId           int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
+	Id     int `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2"`
+	UserId int `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
+	// TenantId is the wallet this consumption was drawn from, stamped at write
+	// time. top_ups has carried one since the tenant model landed; consume logs
+	// did not, so attributing spend to a wallet meant joining through the
+	// login's CURRENT tenant_id -- which loses every row of a login deleted or
+	// moved since. 22.8M quota of one deleted login was unattributable in
+	// production for exactly that reason. 0 on rows written before this column.
+	TenantId         int    `json:"tenant_id" gorm:"index;default:0;column:tenant_id"`
 	CreatedAt        int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type"`
 	Type             int    `json:"type" gorm:"index:idx_created_at_type"`
 	Content          string `json:"content"`
@@ -79,10 +87,28 @@ type Log struct {
 	// cache-heavy traffic and makes every margin look negative. Rows written
 	// before this column exists read 0, which is the conservative direction:
 	// cost is overstated, never understated.
-	CachedTokens int  `json:"cached_tokens" gorm:"default:0"`
-	UseTime      int  `json:"use_time" gorm:"default:0"`
-	IsStream     bool `json:"is_stream"`
-	ChannelId    int  `json:"channel" gorm:"index"`
+	CachedTokens int `json:"cached_tokens" gorm:"default:0"`
+	// CacheWriteTokens is the prompt-cache creation count. Vendors charge a
+	// PREMIUM for these (Anthropic 1.25x input), and the customer is billed
+	// that premium too, so leaving them out of modelled cost overstates margin
+	// on exactly the traffic that writes cache.
+	//
+	// UNIFYAPI-FORK: promoted to a column for the same reason CachedTokens was
+	// -- reconciliation cannot see inside the `other` blob.
+	CacheWriteTokens int `json:"cache_write_tokens" gorm:"default:0"`
+	// UsageSemantic says what PromptTokens means on this row, and it genuinely
+	// differs by upstream: Anthropic reports fresh input only, while OpenAI
+	// reports a total that already contains the cached reads. The billing
+	// engine has always branched on this (service/text_quota.go); the cost
+	// model did not, and subtracted cached tokens from a number that never
+	// contained them.
+	//
+	// Empty on rows written before this column existed; treat as unknown
+	// rather than assuming either vendor's convention.
+	UsageSemantic string `json:"usage_semantic" gorm:"type:varchar(16);default:''"`
+	UseTime       int    `json:"use_time" gorm:"default:0"`
+	IsStream      bool   `json:"is_stream"`
+	ChannelId     int    `json:"channel" gorm:"index"`
 	// ChannelBaseURL snapshots the upstream endpoint that this request actually
 	// hit. A channel can proxy models from several model authors (OpenRouter is
 	// the common case), so the model catalog cannot identify who we owe. Keeping
@@ -381,6 +407,45 @@ func cachedTokensFromOther(other map[string]interface{}) int {
 	}
 }
 
+// cacheWriteTokensFromOther pulls the prompt-cache creation count out of the
+// log's `other` map so it can be stored as a column.
+func cacheWriteTokensFromOther(other map[string]interface{}) int {
+	raw, ok := other["cache_creation_tokens"]
+	if !ok {
+		return 0
+	}
+	switch typed := raw.(type) {
+	case int:
+		return maxInt(typed, 0)
+	case int64:
+		return maxInt(int(typed), 0)
+	case float64:
+		return maxInt(int(typed), 0)
+	default:
+		return 0
+	}
+}
+
+// usageSemanticFromOther reports which vendor convention PromptTokens follows.
+//
+// Two markers exist because they were added at different times: the explicit
+// `usage_semantic` string, and the older `claude` bool that the Claude log
+// builder still sets. Both are read so a row is classified whichever one it
+// carries; an unmarked row stays empty and is priced as unknown.
+func usageSemanticFromOther(other map[string]interface{}) string {
+	if raw, ok := other["usage_semantic"]; ok {
+		if semantic, ok := raw.(string); ok && semantic != "" {
+			return semantic
+		}
+	}
+	if raw, ok := other["claude"]; ok {
+		if isClaude, ok := raw.(bool); ok && isClaude {
+			return ratio_setting.UsageSemanticAnthropic
+		}
+	}
+	return ""
+}
+
 func maxInt(value, floor int) int {
 	if value < floor {
 		return floor
@@ -389,11 +454,31 @@ func maxInt(value, floor int) int {
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
+	// UNIFYAPI-BRAND: count this request's tokens against the channel's TPM
+	// window. Here rather than earlier because completion length is only known
+	// once the upstream has answered -- so a channel can overshoot by at most
+	// one request, which is inherent to token limiting, not a gap.
+	RecordChannelTokens(c, params.ChannelId, params.PromptTokens+params.CompletionTokens)
+
+	// UNIFYAPI-BRAND: and against the caller's own token window, for the TPM
+	// limiter in middleware/model_token_rate_limit.go.
+	RecordUserTokens(c, userId, params.PromptTokens+params.CompletionTokens)
+
 	// UNIFYAPI-FORK: draw the supplier credit lot down before anything can
 	// return early. Pool accounting protects the supplier's balance and must
 	// run even when consume logging itself is switched off.
-	RecordCreditSupplyConsumption(params.ChannelId, params.ModelName,
-		params.PromptTokens, cachedTokensFromOther(params.Other), params.CompletionTokens)
+	RecordCreditSupplyConsumption(CreditSupplyUsage{
+		ChannelId: params.ChannelId,
+		ModelName: params.ModelName,
+		TokenUsage: ratio_setting.TokenUsage{
+			PromptTokens:     int64(params.PromptTokens),
+			CachedTokens:     int64(cachedTokensFromOther(params.Other)),
+			CacheWriteTokens: int64(cacheWriteTokensFromOther(params.Other)),
+			CompletionTokens: int64(params.CompletionTokens),
+			Semantic:         usageSemanticFromOther(params.Other),
+		},
+		QuotaCharged: params.Quota,
+	})
 	if !common.LogConsumeEnabled {
 		return
 	}
@@ -425,8 +510,12 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			needRecordIp = true
 		}
 	}
+	// Resolved once here so the row records the wallet it was actually drawn
+	// from; the resolver is cached, and an unresolvable login stamps 0.
+	wallet, walletErr := ResolveBillingEntity(userId)
 	log := &Log{
 		UserId:           userId,
+		TenantId:         wallet.TenantId,
 		Username:         username,
 		CreatedAt:        createdAt,
 		Type:             LogTypeConsume,
@@ -434,6 +523,8 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		PromptTokens:     params.PromptTokens,
 		CompletionTokens: params.CompletionTokens,
 		CachedTokens:     cachedTokensFromOther(params.Other),
+		CacheWriteTokens: cacheWriteTokensFromOther(params.Other),
+		UsageSemantic:    usageSemanticFromOther(params.Other),
 		TokenName:        params.TokenName,
 		ModelName:        params.ModelName,
 		Quota:            params.Quota,
@@ -453,7 +544,10 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
 	}
-	err := createLog(log)
+	// UNIFYAPI-FORK: this row is what invoices and reconciliation read; a
+	// refused connection retries and then parks it rather than dropping it.
+	// See settlement_outbox.go.
+	err := createConsumeLogDurably(log, walletErr)
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
 	}

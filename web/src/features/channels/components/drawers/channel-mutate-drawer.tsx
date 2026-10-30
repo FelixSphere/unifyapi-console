@@ -159,6 +159,7 @@ import {
   getChannelTypeIcon,
   getKeyPromptForType,
   parseModelsString,
+  splitChannelGroups,
   formatModelsArray,
   extractRedirectModels,
   extractMappingSourceModels,
@@ -300,6 +301,7 @@ const SENSITIVE_FORM_FIELDS = [
   'upstream_model_update_check_enabled',
   'upstream_model_update_auto_sync_enabled',
   'upstream_model_update_ignored_models',
+  'system_one_path',
 ] satisfies (keyof ChannelFormValues)[]
 
 function readAdvancedSettingsPreference(): boolean {
@@ -913,6 +915,13 @@ export function ChannelMutateDrawer({
       label: group,
     }))
   }, [groupsData, currentGroups])
+
+  // Every pricing group not picked above still has access; see
+  // lib/channel-groups.ts.
+  const inheritedGroups = useMemo(
+    () => splitChannelGroups(currentGroups || [], groupsData?.data).inherited,
+    [groupsData, currentGroups]
+  )
 
   // Parse current models as array
   const currentModelsArray = useMemo(
@@ -2205,6 +2214,33 @@ export function ChannelMutateDrawer({
                                   )}
                                 />
                               </>
+                            )}
+
+                            {/* TypeSafe System One (type 61) */}
+                            {currentType === 61 && (
+                              <FormField
+                                control={form.control}
+                                name='system_one_path'
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>
+                                      {t('System One Endpoint Path')}
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        placeholder={t('e.g., /v1/systemone')}
+                                        {...field}
+                                      />
+                                    </FormControl>
+                                    <FormDescription>
+                                      {t(
+                                        'Leave empty for /v1/systemone, which TypeSafe and OpenRouter both use. Set it only for an aggregator that mounts the System One API somewhere else.'
+                                      )}
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
                             )}
 
                             {/* Custom (type 8) */}
@@ -3601,6 +3637,19 @@ export function ChannelMutateDrawer({
                                       />
                                     )}
                                   </FormControl>
+                                  {inheritedGroups.length > 0 && (
+                                    <p
+                                      className='text-muted-foreground text-xs'
+                                      data-inherited-groups
+                                    >
+                                      {t(
+                                        'Also open to every other customer group: {{groups}}',
+                                        {
+                                          groups: inheritedGroups.join(', '),
+                                        }
+                                      )}
+                                    </p>
+                                  )}
                                   <FormMessage />
                                 </FormItem>
                               )}
@@ -3681,6 +3730,61 @@ export function ChannelMutateDrawer({
                                     </FormControl>
                                     <FormDescription>
                                       {t(FIELD_DESCRIPTIONS.WEIGHT)}
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              {/* UNIFYAPI-BRAND: per-channel upstream quota */}
+                              <FormField
+                                control={form.control}
+                                name='rate_limit_rpm'
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>
+                                      {t('Requests per minute')}
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type='number'
+                                        min={0}
+                                        placeholder='0'
+                                        {...field}
+                                        onChange={(e) =>
+                                          field.onChange(Number(e.target.value))
+                                        }
+                                      />
+                                    </FormControl>
+                                    <FormDescription>
+                                      {t(FIELD_DESCRIPTIONS.RATE_LIMIT_RPM)}
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              <FormField
+                                control={form.control}
+                                name='rate_limit_tpm'
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>
+                                      {t('Tokens per minute')}
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type='number'
+                                        min={0}
+                                        placeholder='0'
+                                        {...field}
+                                        onChange={(e) =>
+                                          field.onChange(Number(e.target.value))
+                                        }
+                                      />
+                                    </FormControl>
+                                    <FormDescription>
+                                      {t(FIELD_DESCRIPTIONS.RATE_LIMIT_TPM)}
                                     </FormDescription>
                                     <FormMessage />
                                   </FormItem>

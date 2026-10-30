@@ -41,7 +41,23 @@ func statementRowsForWindow(kind service.StatementKind, start, end string) ([]se
 	if err != nil {
 		return nil, nil, false, err
 	}
-	return service.BuildStatements(rows, kind, start, end), rows, truncated, nil
+	statements := service.BuildStatements(rows, kind, start, end)
+	if kind == service.StatementKindCustomer {
+		funding, err := model.FetchCustomerFunding(from, to)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		statements = service.AttachFunding(statements, kind, funding, start, end)
+		// Everything paid in up to the end of this period, not only within it.
+		// A month-scoped figure cannot answer "how much has this customer put
+		// in altogether", which is the question usually being asked.
+		toDate, err := model.FetchCustomerFunding(0, to)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		statements = service.AttachFundingToDate(statements, kind, toDate)
+	}
+	return statements, rows, truncated, nil
 }
 
 // settlementRow pairs what the period looks like NOW with what was frozen when

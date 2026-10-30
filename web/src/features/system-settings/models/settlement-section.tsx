@@ -78,6 +78,8 @@ import {
   customerInvoiceUI,
   csvHref,
   deriveStatement,
+  fundingLinesAreBalanced,
+  userLinesAreBalanced,
   formatSigned,
   formatTokens,
   formatUSD,
@@ -630,14 +632,14 @@ function SettlementTableRow({
         <TableCell className='font-mono text-xs'>
           {displayedStatement.label}
           {displayedStatement.group ? (
-            <Badge variant='outline' className='ml-2 text-[10px]'>
+            <Badge variant='outline' className='ml-2 text-[11px]'>
               {displayedStatement.group}
             </Badge>
           ) : null}
           {displayedStatement.unpriced_requests > 0 ? (
             <Badge
               variant='outline'
-              className='text-destructive ml-2 gap-1 text-[10px]'
+              className='text-destructive ml-2 gap-1 text-[11px]'
             >
               <AlertTriangle className='size-3' />
               {t('not costable')}
@@ -668,7 +670,7 @@ function SettlementTableRow({
             {t(SETTLEMENT_STATE_LABELS[state])}
           </span>
           {kind === 'vendor' ? (
-            <span className={`block text-[10px] ${varianceClass(verdict)}`}>
+            <span className={`block text-[11px] ${varianceClass(verdict)}`}>
               {verdict === 'pending'
                 ? t(VARIANCE_VERDICT_LABELS[verdict])
                 : `${formatSigned(row.variance_usd ?? 0)} · ${t(VARIANCE_VERDICT_LABELS[verdict])}`}
@@ -927,7 +929,7 @@ function SettlementTableRow({
               </div>
 
               {row.settlement ? (
-                <p className='text-muted-foreground text-[10px]'>
+                <p className='text-muted-foreground text-[11px]'>
                   {t(
                     'Frozen at {{amount}} against the {{snapshot}} price catalog. Typing an invoice does not re-model the period — that would replace the figure the invoice is being compared against.',
                     {
@@ -963,7 +965,7 @@ function StatementDetail({ row }: { row: SettlementRow }) {
         </Alert>
       ) : null}
       <div>
-        <div className='text-muted-foreground mb-1 text-[10px] font-semibold tracking-wider uppercase'>
+        <div className='text-muted-foreground mb-1 text-[11px] font-semibold tracking-wider uppercase'>
           {t('Line items')}
         </div>
         <div className='overflow-x-auto rounded border'>
@@ -1007,7 +1009,7 @@ function StatementDetail({ row }: { row: SettlementRow }) {
                     {line.unpriced ? (
                       <Badge
                         variant='outline'
-                        className='text-destructive ml-2 text-[10px]'
+                        className='text-destructive ml-2 text-[11px]'
                       >
                         {t('no catalog price')}
                       </Badge>
@@ -1020,7 +1022,7 @@ function StatementDetail({ row }: { row: SettlementRow }) {
                   ) : null}
                   {vendor ? (
                     <TableCell
-                      className='max-w-56 truncate font-mono text-[10px]'
+                      className='max-w-56 truncate font-mono text-[11px]'
                       title={line.channel_base_url}
                     >
                       {line.channel_base_url || '—'}
@@ -1053,8 +1055,148 @@ function StatementDetail({ row }: { row: SettlementRow }) {
         </div>
       </div>
 
+      {!vendor && statement.users?.length ? (
+        <div>
+          <div className='text-muted-foreground mb-1 text-[11px] font-semibold tracking-wider uppercase'>
+            {t('By user')}
+          </div>
+          {!userLinesAreBalanced(statement) ? (
+            <Alert variant='destructive' className='mb-2'>
+              <AlertTriangle className='size-4' />
+              <AlertDescription className='text-xs'>
+                {t('Error')}: {t('By user')} ≠ {t('Total')}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {!vendor ? (
+            <div>
+              <div className='text-muted-foreground mb-1 text-[11px] font-semibold tracking-wider uppercase'>
+                {t('Funded by user')} · {t('this period')} ·{' '}
+                {formatUSD(statement.funded_usd ?? 0)}
+                {statement.funding_to_date?.length ? (
+                  <>
+                    {'  ·  '}
+                    {t('all time')} ·{' '}
+                    {formatUSD(statement.funded_to_date_usd ?? 0)}
+                  </>
+                ) : null}
+              </div>
+              {!statement.funding?.length ? (
+                <p className='text-muted-foreground mb-2 text-xs'>
+                  {statement.funding_to_date?.length
+                    ? t(
+                        'Nothing was paid in during this period. {{total}} has been paid in altogether — widen the date range to see it.',
+                        { total: formatUSD(statement.funded_to_date_usd ?? 0) }
+                      )
+                    : t(
+                        'No money has been recorded as paid into this customer. Balances credited before funding was recorded do not appear here.'
+                      )}
+                </p>
+              ) : null}
+              {!fundingLinesAreBalanced(statement) ? (
+                <Alert variant='destructive' className='mb-2'>
+                  <AlertTriangle className='size-4' />
+                  <AlertDescription className='text-xs'>
+                    {t('Error')}: {t('Funded by user')} ≠ {t('Total')}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+              {statement.funding?.length ? (
+                <div className='overflow-x-auto rounded border'>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className='text-xs'>
+                          {t('Username')}
+                        </TableHead>
+                        <TableHead className='text-right text-xs'>
+                          {t('Top-ups')}
+                        </TableHead>
+                        <TableHead className='text-right text-xs'>
+                          {t('Admin grants')}
+                        </TableHead>
+                        <TableHead className='text-right text-xs'>
+                          {t('Credited')}
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(statement.funding ?? []).map((line) => (
+                        <TableRow key={line.user_id}>
+                          <TableCell className='font-mono text-xs'>
+                            {line.username}
+                          </TableCell>
+                          <TableCell className='text-right font-mono text-xs tabular-nums'>
+                            {line.orders.toLocaleString()}
+                          </TableCell>
+                          <TableCell className='text-right font-mono text-xs tabular-nums'>
+                            {line.grants.toLocaleString()}
+                          </TableCell>
+                          <TableCell className='text-right font-mono text-xs tabular-nums'>
+                            {formatUSD(line.credited_usd)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          <div className='overflow-x-auto rounded border'>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className='text-xs'>{t('Username')}</TableHead>
+                  <TableHead className='text-right text-xs'>
+                    {t('Requests')}
+                  </TableHead>
+                  <TableHead className='text-right text-xs'>
+                    {t('Input Tokens')}
+                  </TableHead>
+                  <TableHead className='text-right text-xs'>
+                    {t('Cached')}
+                  </TableHead>
+                  <TableHead className='text-right text-xs'>
+                    {t('Output Tokens')}
+                  </TableHead>
+                  <TableHead className='text-right text-xs'>
+                    {t('Amount')}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {statement.users.map((user) => (
+                  <TableRow key={user.user_id}>
+                    <TableCell className='font-mono text-xs'>
+                      {user.username}
+                    </TableCell>
+                    <TableCell className='text-right font-mono text-xs tabular-nums'>
+                      {user.requests.toLocaleString()}
+                    </TableCell>
+                    <TableCell className='text-right font-mono text-xs tabular-nums'>
+                      {formatTokens(user.prompt_tokens)}
+                    </TableCell>
+                    <TableCell className='text-right font-mono text-xs tabular-nums'>
+                      {formatTokens(user.cached_tokens)}
+                    </TableCell>
+                    <TableCell className='text-right font-mono text-xs tabular-nums'>
+                      {formatTokens(user.completion_tokens)}
+                    </TableCell>
+                    <TableCell className='text-right font-mono text-xs tabular-nums'>
+                      {formatUSD(user.amount_usd)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      ) : null}
+
       <div className='flex flex-col gap-1'>
-        <div className='text-muted-foreground mb-1 text-[10px] font-semibold tracking-wider uppercase'>
+        <div className='text-muted-foreground mb-1 text-[11px] font-semibold tracking-wider uppercase'>
           {t('How this amount is derived')}
         </div>
         {deriveStatement(statement).map((step) => (
@@ -1067,7 +1209,7 @@ function StatementDetail({ row }: { row: SettlementRow }) {
             <div className='flex flex-col'>
               <span>{t(step.labelKey)}</span>
               {step.noteKey ? (
-                <span className='text-muted-foreground text-[10px]'>
+                <span className='text-muted-foreground text-[11px]'>
                   {t(step.noteKey, step.noteParams)}
                 </span>
               ) : null}

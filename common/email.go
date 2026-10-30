@@ -7,6 +7,7 @@ import (
 	"net/smtp"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -75,7 +76,53 @@ func newSMTPClient(addr string) (*smtp.Client, error) {
 	return client, nil
 }
 
+// emailDeliveryRecorder is set by the model layer at startup. common cannot
+// import model without a cycle, so the recorder is injected rather than called
+// directly. Every SendEmail caller is covered by the wrapper below, so a new
+// call site cannot forget to record.
+var emailDeliveryRecorder atomic.Pointer[func(receiver string, purpose string, err error)]
+
+// SetEmailDeliveryRecorder installs the recorder. Safe to call before or after
+// mail starts flowing; until it is set, sends simply go unrecorded.
+func SetEmailDeliveryRecorder(record func(receiver string, purpose string, err error)) {
+	if record == nil {
+		emailDeliveryRecorder.Store(nil)
+		return
+	}
+	emailDeliveryRecorder.Store(&record)
+}
+
+// SendEmail sends one message and records whether the mail server accepted it.
+// Acceptance is not delivery: a message accepted here can still bounce or be
+// filed as spam. What is recorded is only what send time can observe.
 func SendEmail(subject string, receiver string, content string) error {
+	return SendEmailForPurpose("", subject, receiver, content)
+}
+
+// SendEmailForPurpose is SendEmail with a label for the recorded attempt, so an
+// operator can tell a failed verification code from a failed billing notice.
+func SendEmailForPurpose(purpose string, subject string, receiver string, content string) error {
+	err := sendEmail(subject, receiver, content)
+	if recorder := emailDeliveryRecorder.Load(); recorder != nil {
+		(*recorder)(receiver, purpose, err)
+	}
+	return err
+}
+
+func sendEmail(subject string, receiver string, content string) error {
+	return sendEmailWithContentType(subject, receiver, "text/html; charset=UTF-8", []byte(content))
+}
+
+// sendEmailWithContentType writes one message with the given body, which is
+// either a single HTML part (upstream's path) or a multipart/alternative body
+// built by BuildMultipartEmail (UNIFYAPI-BRAND: every branded email).
+func sendEmailWithContentType(subject string, receiver string, contentType string, body []byte) error {
+	return sendEmailWithHeaders(subject, receiver, contentType, body, "")
+}
+
+// sendEmailWithHeaders is sendEmailWithContentType plus extra header lines,
+// each ending in CRLF (UNIFYAPI-FORK: List-Unsubscribe on the weekly update).
+func sendEmailWithHeaders(subject string, receiver string, contentType string, body []byte, extraHeaders string) error {
 	if SMTPFrom == "" { // for compatibility
 		SMTPFrom = SMTPAccount
 	}
@@ -92,8 +139,10 @@ func SendEmail(subject string, receiver string, content string) error {
 		"Subject: %s\r\n"+
 		"Date: %s\r\n"+
 		"Message-ID: %s\r\n"+ // 添加 Message-ID 头
-		"Content-Type: text/html; charset=UTF-8\r\n\r\n%s\r\n",
-		receiver, SystemName, SMTPFrom, encodedSubject, time.Now().Format(time.RFC1123Z), id, content))
+		"%s"+
+		"MIME-Version: 1.0\r\n"+
+		"Content-Type: %s\r\n\r\n%s\r\n",
+		receiver, SystemName, SMTPFrom, encodedSubject, time.Now().Format(time.RFC1123Z), id, extraHeaders, contentType, body))
 	auth := getSMTPAuth()
 	addr := fmt.Sprintf("%s:%d", SMTPServer, SMTPPort)
 	to := strings.Split(receiver, ";")

@@ -21,6 +21,7 @@ import { parseCurrencyDisplayType } from '@/lib/currency'
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
+import { BinancePaySettingsSection } from '../integrations/binance-pay-settings-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
 import { ProfitSection } from '../models/profit-section'
 import { RatioSettingsCard } from '../models/ratio-settings-card'
@@ -178,6 +179,11 @@ const BILLING_SECTIONS = [
   {
     id: 'payment',
     titleKey: 'Payment Gateway',
+    // UNIFYAPI-FORK: Binance Pay is a gateway like Stripe or Waffo, so it is
+    // a tab on this page. Its form is independent of the upstream gateway
+    // form and nesting one <form> in another is not HTML, so the tab renders
+    // it in embedded mode: no <form>, its own save button. The old
+    // `binance-pay` section id redirects here.
     build: (settings: BillingSettings) => (
       <PaymentSettingsSection
         defaultValues={{
@@ -234,6 +240,33 @@ const BILLING_SECTIONS = [
           confirmedAt: settings['payment_setting.compliance_confirmed_at'] ?? 0,
           confirmedBy: settings['payment_setting.compliance_confirmed_by'] ?? 0,
         }}
+        binancePaySlot={
+          <BinancePaySettingsSection
+            embedded
+            defaultValues={{
+              BinancePayEnabled: settings.BinancePayEnabled ?? false,
+              BinancePayReceiverId: settings.BinancePayReceiverId ?? '',
+              BinancePayReceiverNickname:
+                settings.BinancePayReceiverNickname ?? '',
+              BinancePayDepositNetworks:
+                settings.BinancePayDepositNetworks ?? '[]',
+              BinancePayUSEnabled: settings.BinancePayUSEnabled ?? false,
+              BinancePayUSReceiverNickname:
+                settings.BinancePayUSReceiverNickname ?? '',
+              BinancePayUSDepositNetworks:
+                settings.BinancePayUSDepositNetworks ?? '[]',
+              BinancePayCurrency: settings.BinancePayCurrency ?? 'USDT',
+              BinancePayUnitPrice: settings.BinancePayUnitPrice ?? 1,
+              BinancePayMinTopUp: settings.BinancePayMinTopUp ?? 1,
+              BinancePayOrderTTLMinutes:
+                settings.BinancePayOrderTTLMinutes ?? 60,
+              BinancePayRecommendForPartners:
+                settings.BinancePayRecommendForPartners ?? true,
+              BinancePayOverpayTolerancePercent:
+                settings.BinancePayOverpayTolerancePercent ?? 5,
+            }}
+          />
+        }
       />
     ),
   },

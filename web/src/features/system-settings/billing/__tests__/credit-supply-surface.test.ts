@@ -41,22 +41,55 @@ describe('credit supply operator surface', () => {
     assert.match(section, /transfer_rights_confirmed: true/)
   })
 
-  test('a verified sale is paid, never approved for free', () => {
-    assert.match(section, /payCreditLot/)
-    assert.match(section, /Pay & activate/)
-    assert.match(section, /reference: payReference\.trim\(\)/)
+  test('buying credits outright is gone from the operator screen', () => {
+    // One deal. Nothing on this screen pays a seller up front, quotes a buy
+    // rate, or offers the platform-credit bonus that only a purchase had.
+    assert.doesNotMatch(
+      section,
+      /payCreditLot|Pay & activate|buy_rates|platform_credit_bonus/
+    )
+    const lots = readFileSync(join(HERE, '../credit-supply-lots.tsx'), 'utf8')
+    assert.doesNotMatch(lots, /payCreditLot|Pay & activate|acquisition_rate/)
     const logic = readFileSync(join(HERE, '../credit-supply-logic.ts'), 'utf8')
-    // availableTransitions offers no `to: 'active'` from `verified`.
+    assert.doesNotMatch(logic, /payableUSD|purchasePriceUSD|isRevenueShare/)
+  })
+
+  test('a verified key is accepted, and accepting still asks the compliance question', () => {
+    const logic = readFileSync(join(HERE, '../credit-supply-logic.ts'), 'utf8')
     const verifiedCase = logic.slice(
       logic.indexOf("case 'verified':", logic.indexOf('availableTransitions')),
       logic.indexOf("case 'active':", logic.indexOf('availableTransitions'))
     )
-    assert.doesNotMatch(verifiedCase, /to: 'active'/)
+    assert.match(verifiedCase, /to: 'active'/)
+    const lots = readFileSync(join(HERE, '../credit-supply-lots.tsx'), 'utf8')
+    assert.match(
+      lots,
+      /lot\.status === 'pending' \|\| lot\.status === 'verified'/,
+      'activating a submission opens the right-to-transfer dialog either way'
+    )
   })
 
-  test('the buy terms are posted from the operator screen', () => {
+  test('a seller can be paid their share from the suppliers tab', () => {
+    const suppliers = readFileSync(
+      join(HERE, '../credit-supply-suppliers.tsx'),
+      'utf8'
+    )
+    assert.match(suppliers, /paySupplierShare/)
+    assert.match(suppliers, /unpaidShareUSD/)
+    // The operator posts the offer the seller is paid under.
+    assert.match(section, /revenue_share_rates/)
+  })
+
+  test('the supply terms are posted from the operator screen', () => {
     assert.match(section, /TermsCard/)
     assert.match(section, /key: 'CreditSupplyTerms'/)
+    // Share per vendor, the two thresholds, channel priority and manual
+    // review are all operator-editable, and that is the whole offer.
+    assert.match(section, /revenue-share-/)
+    assert.match(section, /manual-review/)
+    // The operator screen reads the full terms from its own root endpoint.
+    const adminApi = readFileSync(join(HERE, '../credit-supply-api.ts'), 'utf8')
+    assert.match(adminApi, /\/api\/credit-supply\/terms/)
     // No application queue any more: suppliers are created by their first sale.
     const suppliers = readFileSync(
       join(HERE, '../credit-supply-suppliers.tsx'),

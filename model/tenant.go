@@ -43,7 +43,7 @@ type Tenant struct {
 	UsedQuota int    `json:"used_quota" gorm:"type:int;default:0;column:used_quota"`
 	// Group mirrors User.Group so pricing tiers can eventually be a tenant
 	// property rather than a per-member one. Not yet consulted by the relay.
-	Group  string `json:"group" gorm:"type:varchar(64);default:'default'"`
+	Group  string `json:"group" gorm:"type:varchar(255);default:'default'"`
 	Remark string `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
 	// ExpiresAt is the end of the paid term, 0 meaning open-ended. Operators
 	// extend it rather than editing a subscription row, because a tenant term is
@@ -194,6 +194,27 @@ func EnsureTenantForUserTx(tx *gorm.DB, userId int) (*Tenant, error) {
 			return nil, err
 		}
 		return tenant, nil
+	}
+	// A pricing group is a customer, and a customer has one wallet. Only a
+	// `default` login gets a wallet of its own. See model/customer_wallet.go.
+	customer, err := isCustomerGroupTx(tx, user.Group)
+	if err != nil {
+		return nil, err
+	}
+	if customer {
+		walletId, err := customerWalletTx(tx, user.Group, user.Group, slugFromName("customer-"+user.Group))
+		if err != nil {
+			return nil, err
+		}
+		if err := JoinCustomerPoolTx(tx, user.Id, walletId); err != nil {
+			return nil, err
+		}
+		if err := claimTeamTenantOwner(tx, walletId, user.Id); err != nil {
+			return nil, err
+		}
+		tenant := &Tenant{}
+		err = tx.First(tenant, "id = ?", walletId).Error
+		return tenant, err
 	}
 
 	name := user.DisplayName

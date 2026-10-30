@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"sync"
@@ -495,4 +496,23 @@ func TestSweepTimedOutTasksHonorsRefundRolloutBoundary(t *testing.T) {
 	assert.Contains(t, reloadedModern.FailReason, "任务超时")
 	assert.Equal(t, initialQuota+modernTaskQuota, getUserQuota(t, userID))
 	assert.Equal(t, int64(1), countLogs(t))
+}
+
+// Retryable provider states must not finalize a task or release its reservation.
+type retryableVideoStatusAdaptor struct{ taskPollingFetchAdaptor }
+
+func (a *retryableVideoStatusAdaptor) FetchTask(_ string, _ string, _ map[string]any, _ string) (*http.Response, error) {
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader([]byte(`{"id":"upstream_job","status":"unknown"}`)))}, nil
+}
+
+func (a *retryableVideoStatusAdaptor) ParseTaskResult([]byte) (*relaycommon.TaskInfo, error) {
+	return nil, errors.New("upstream video status is temporarily unknown; retry polling")
+}
+
+func TestRetryableVideoParseErrorPreservesTaskAndReservation(t *testing.T) {
+	task := &model.Task{TaskID: "task_retry_unknown", Status: model.TaskStatusSubmitted, Quota: 1250, Progress: "0%"}
+	before := *task
+	err := updateVideoSingleTask(context.Background(), &retryableVideoStatusAdaptor{}, &model.Channel{}, task.TaskID, map[string]*model.Task{task.TaskID: task})
+	require.ErrorContains(t, err, "retry polling")
+	require.Equal(t, before, *task)
 }

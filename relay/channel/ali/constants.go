@@ -4,6 +4,8 @@ var ModelList = []string{
 	"qwen-turbo",
 	"qwen-plus",
 	"qwen-max",
+	"qwen3.8-flash",
+	"qwen3.8-max",
 	"qwen-max-longcontext",
 	"qwq-32b",
 	"qwen3-235b-a22b",

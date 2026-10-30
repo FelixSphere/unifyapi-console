@@ -15,7 +15,7 @@ type TopUp struct {
 	Id            int    `json:"id"`
 	UserId        int    `json:"user_id" gorm:"index"`
 	TenantId      int    `json:"tenant_id" gorm:"type:int;default:0;column:tenant_id;index"`
-	CustomerGroup string `json:"customer_group" gorm:"type:varchar(64);index"`
+	CustomerGroup string `json:"customer_group" gorm:"type:varchar(255);index"`
 	Amount        int64  `json:"amount"`
 	// Money means different things per gateway: epay stores the fiat charged and
 	// credits from Amount, while Stripe credits from Money (see model.Recharge,
@@ -55,7 +55,12 @@ const (
 	PaymentMethodCreem        = "creem"
 	PaymentMethodWaffo        = "waffo"
 	PaymentMethodWaffoPancake = "waffo_pancake"
+	PaymentMethodBinancePay   = "binance_pay"    // UNIFYAPI-FORK: binance.com account
+	PaymentMethodBinancePayUS = "binance_pay_us" // UNIFYAPI-FORK: Binance.US account
 	PaymentMethodBalance      = "balance"
+	// UNIFYAPI-BRAND: an operator's hand adjustment, recorded like a payment so
+	// receipts views see it. See model/operator_grant.go.
+	PaymentMethodAdmin = "admin"
 )
 
 const (
@@ -64,7 +69,9 @@ const (
 	PaymentProviderCreem        = "creem"
 	PaymentProviderWaffo        = "waffo"
 	PaymentProviderWaffoPancake = "waffo_pancake"
+	PaymentProviderBinancePay   = "binance_pay" // UNIFYAPI-FORK
 	PaymentProviderBalance      = "balance"
+	PaymentProviderAdmin        = "admin"
 )
 
 var (

@@ -76,9 +76,24 @@ func TestValidateCatalogRejectsEveryMalformedRow(t *testing.T) {
 			want:  "input price must be positive",
 		},
 		{
-			name:  "free output",
+			// A zero output price is a missing price unless the row says the
+			// vendor meters no output at all. Forgetting to fill it in and
+			// pricing a decision-only model must not look alike.
+			name:  "free output without the flag",
 			entry: CatalogEntry{Model: "probe", Vendor: "google", InputUSD: 1, OutputUSD: 0},
-			want:  "output price must be positive",
+			want:  "output price is zero without FreeOutput",
+		},
+		{
+			name:  "negative output price",
+			entry: CatalogEntry{Model: "probe", Vendor: "google", InputUSD: 1, OutputUSD: -1},
+			want:  "output price must not be negative",
+		},
+		{
+			// The transposition guard must survive the FreeOutput exception:
+			// a swapped pair is positive but below the input price.
+			name:  "transposed prices",
+			entry: CatalogEntry{Model: "probe", Vendor: "google", InputUSD: 10, OutputUSD: 2},
+			want:  "likely transposed",
 		},
 		{
 			name:  "negative cache price",

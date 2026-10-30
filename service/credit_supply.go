@@ -29,8 +29,8 @@ func notifyCreditLotEvent(lot model.CreditLot, event string) {
 		subject = fmt.Sprintf("Credit lot #%d exhausted (%s)", lot.Id, lot.Vendor)
 		content = fmt.Sprintf(
 			"Credit lot #%d (%s) consumed $%.2f of its $%.2f face value and has been retired. "+
-				"Channel #%d is auto-disabled. Payable to the supplier for this lot: $%.2f.",
-			lot.Id, lot.Vendor, lot.ConsumedUSD, lot.FaceValueUSD, lot.ChannelId, lot.PayableUSD())
+				"Channel #%d is auto-disabled. %s",
+			lot.Id, lot.Vendor, lot.ConsumedUSD, lot.FaceValueUSD, lot.ChannelId, outstanding(lot))
 	case model.CreditLotEventExpired:
 		subject = fmt.Sprintf("Credit lot #%d expired (%s)", lot.Id, lot.Vendor)
 		content = fmt.Sprintf(
@@ -47,4 +47,14 @@ func notifyCreditLotEvent(lot model.CreditLot, event string) {
 		return
 	}
 	NotifyRootUser(fmt.Sprintf("credit_lot_%s_%d", event, lot.Id), subject, content)
+}
+
+// outstanding says what is still owed to the seller for a retired lot: the
+// part of the share its traffic earned that has not been settled yet.
+func outstanding(lot model.CreditLot) string {
+	if unpaid := lot.UnpaidShareUSD(); unpaid > 0 {
+		return fmt.Sprintf("Share still owed to the seller: $%.2f of $%.2f earned on $%.2f of revenue.",
+			unpaid, lot.EarnedShareUSD(), lot.ShareRevenueUSD)
+	}
+	return "Everything this key earned has been settled."
 }

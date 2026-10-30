@@ -66,6 +66,7 @@ type ReconcileLine struct {
 	Requests         int64   `json:"requests"`
 	PromptTokens     int64   `json:"prompt_tokens"`
 	CachedTokens     int64   `json:"cached_tokens"`
+	CacheWriteTokens int64   `json:"cache_write_tokens"`
 	CompletionTokens int64   `json:"completion_tokens"`
 	RevenueUSD       float64 `json:"revenue_usd"`
 	CostUSD          float64 `json:"cost_usd"`
@@ -91,6 +92,20 @@ type ReconcileReport struct {
 	// the whole reason the report exists: a mispriced model is invisible in a
 	// revenue chart and obvious here.
 	LossMakers []ReconcileLine `json:"loss_makers,omitempty"`
+}
+
+// usageOf carries a usage row's token counts into the cost model, semantic
+// included. Cost is wrong without it: an Anthropic row's prompt count excludes
+// the cache buckets, so subtracting them would price a cache read as fresh
+// input it never was.
+func usageOf(row model.UsageRow) ratio_setting.TokenUsage {
+	return ratio_setting.TokenUsage{
+		PromptTokens:     row.PromptTokens,
+		CachedTokens:     row.CachedTokens,
+		CacheWriteTokens: row.CacheWriteTokens,
+		CompletionTokens: row.CompletionTokens,
+		Semantic:         row.UsageSemantic,
+	}
 }
 
 // RevenueUSD converts deducted quota into dollars. QuotaPerUnit is how many
@@ -126,11 +141,11 @@ func Reconcile(rows []model.UsageRow, groupBy GroupBy) ReconcileReport {
 		entry.line.Requests += row.Requests
 		entry.line.PromptTokens += row.PromptTokens
 		entry.line.CachedTokens += row.CachedTokens
+		entry.line.CacheWriteTokens += row.CacheWriteTokens
 		entry.line.CompletionTokens += row.CompletionTokens
 		entry.line.RevenueUSD += RevenueUSD(row.Quota)
 
-		cost, priced := ratio_setting.UpstreamCostUSD(
-			row.Model, row.ChannelID, row.PromptTokens, row.CachedTokens, row.CompletionTokens)
+		cost, priced := ratio_setting.UpstreamCostUSD(row.Model, row.ChannelID, usageOf(row))
 		if priced {
 			entry.line.CostUSD += cost
 		} else {
@@ -150,6 +165,7 @@ func Reconcile(rows []model.UsageRow, groupBy GroupBy) ReconcileReport {
 		report.Total.Requests += line.Requests
 		report.Total.PromptTokens += line.PromptTokens
 		report.Total.CachedTokens += line.CachedTokens
+		report.Total.CacheWriteTokens += line.CacheWriteTokens
 		report.Total.CompletionTokens += line.CompletionTokens
 		report.Total.RevenueUSD += line.RevenueUSD
 		report.Total.CostUSD += line.CostUSD

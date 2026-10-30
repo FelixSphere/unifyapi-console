@@ -95,6 +95,35 @@ func GetTopUpInfo(c *gin.Context) {
 		}
 	}
 
+	// UNIFYAPI-FORK: Binance Pay (personal account). Recommended -- and listed
+	// first, so it becomes the default -- for Partnership Program customers.
+	enableBinancePay := isBinancePayTopUpEnabled()
+	binancePayRecommended := false
+	if enableBinancePay {
+		if setting.BinancePayRecommendForPartners {
+			if group, err := model.GetUserGroup(c.GetInt("id"), false); err == nil {
+				binancePayRecommended = model.IsPartnershipCustomerGroup(group)
+			}
+		}
+		present := map[string]bool{}
+		for _, method := range payMethods {
+			if isBinancePayMethodType(method["type"]) {
+				present[method["type"]] = true
+			}
+		}
+		var fresh []map[string]string
+		for _, entry := range binancePayMethodEntries() {
+			if !present[entry["type"]] {
+				fresh = append(fresh, entry)
+			}
+		}
+		if binancePayRecommended {
+			payMethods = append(fresh, payMethods...)
+		} else {
+			payMethods = append(payMethods, fresh...)
+		}
+	}
+
 	data := gin.H{
 		"enable_online_topup":              isEpayTopUpEnabled(),
 		"enable_stripe_topup":              isStripeTopUpEnabled(),
@@ -120,6 +149,9 @@ func GetTopUpInfo(c *gin.Context) {
 		"amount_options":          operation_setting.GetPaymentSetting().AmountOptions,
 		"discount":                operation_setting.GetPaymentSetting().AmountDiscount,
 		"topup_link":              common.TopUpLink,
+	}
+	for k, v := range binancePayInfoFields(enableBinancePay, binancePayRecommended) { // UNIFYAPI-FORK
+		data[k] = v
 	}
 	common.ApiSuccess(c, data)
 }
@@ -497,6 +529,13 @@ func AdminCompleteTopUp(c *gin.Context) {
 	var req AdminCompleteTopupRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.TradeNo == "" {
 		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+
+	// UNIFYAPI-FORK: a Binance Pay order is completed by matching it to a
+	// transaction in the receiving account's history, never blind.
+	if order := model.GetTopUpByTradeNo(req.TradeNo); order != nil && order.PaymentProvider == model.PaymentProviderBinancePay {
+		common.ApiErrorMsg(c, "Binance Pay 订单必须匹配一笔币安收款记录后才能完成，请使用「匹配币安交易」")
 		return
 	}
 

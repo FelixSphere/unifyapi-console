@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 
@@ -133,8 +134,77 @@ func ObjectData(c *gin.Context, object interface{}) error {
 	return StringData(c, string(jsonData))
 }
 
+// streamStatusContextKey carries how a stream ended from StreamScannerHandler
+// to Done, which are in the same package but ten vendor handlers apart.
+const streamStatusContextKey = "unifyapi_stream_status"
+
+func rememberStreamStatus(c *gin.Context, status *relaycommon.StreamStatus) {
+	if c == nil || status == nil {
+		return
+	}
+	c.Set(streamStatusContextKey, status)
+}
+
+func streamStatusFrom(c *gin.Context) *relaycommon.StreamStatus {
+	if c == nil {
+		return nil
+	}
+	if value, ok := c.Get(streamStatusContextKey); ok {
+		if status, ok := value.(*relaycommon.StreamStatus); ok {
+			return status
+		}
+	}
+	return nil
+}
+
+// truncatedStreamEndReasons are the ends that leave the answer incomplete. They
+// are listed explicitly rather than derived from "not done", because a reason
+// nobody thought about should keep the old behaviour rather than start
+// reporting a failure that did not happen.
+//
+// client_gone is deliberately absent: there is nobody left to tell, and
+// StringData refuses to write to a finished request anyway.
+var truncatedStreamEndReasons = map[relaycommon.StreamEndReason]string{
+	relaycommon.StreamEndReasonScannerErr: "the upstream connection failed part-way through the response",
+	relaycommon.StreamEndReasonTimeout:    "the upstream stopped sending data and the stream timed out",
+	relaycommon.StreamEndReasonPanic:      "the stream was interrupted by an internal error",
+	relaycommon.StreamEndReasonPingFail:   "the connection to the client failed while the response was streaming",
+}
+
+// Done writes the terminal frame of an SSE stream.
+//
+// `data: [DONE]` states that the response is COMPLETE, so it must not be sent
+// for a stream that was cut short. Until 2026-09-24 it always was: an upstream
+// that died after three chunks produced three chunks, a synthesised usage
+// frame, `[DONE]` and HTTP 200, and the caller was billed for a truncated
+// answer with no way to tell it was truncated. The server logged the failure;
+// the client could not see it.
+//
+// An OpenAI-shaped error frame is what an SDK understands, so a truncated
+// stream now ends with one and no [DONE].
 func Done(c *gin.Context) {
-	_ = StringData(c, "[DONE]")
+	status := streamStatusFrom(c)
+	if status == nil {
+		_ = StringData(c, "[DONE]")
+		return
+	}
+	if status.EndReason == relaycommon.StreamEndReasonClientGone {
+		return
+	}
+	message, truncated := truncatedStreamEndReasons[status.EndReason]
+	if !truncated {
+		_ = StringData(c, "[DONE]")
+		return
+	}
+	if status.EndError != nil {
+		message = message + ": " + status.EndError.Error()
+	}
+	_ = ObjectData(c, gin.H{"error": gin.H{
+		"message": message,
+		"type":    string(types.ErrorTypeUpstreamError),
+		"param":   "",
+		"code":    string(types.ErrorCodeBadResponse),
+	}})
 }
 
 func WssString(c *gin.Context, ws *websocket.Conn, str string) error {

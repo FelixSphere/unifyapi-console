@@ -20,7 +20,11 @@ import { formatCurrencyFromUSD } from '@/lib/currency'
 
 import { QUOTA_TYPE_VALUES, TOKEN_UNIT_DIVISORS } from '../constants'
 import type { PricingModel, TokenUnit, PriceType } from '../types'
-import { getConfiguredGroupRatio, getDisplayGroupRatio } from './model-helpers'
+import {
+  getConfiguredGroupRatio,
+  getDefaultGroupDiscount,
+  getDisplayGroupRatio,
+} from './model-helpers'
 
 // ----------------------------------------------------------------------------
 // Price Calculation Utilities
@@ -150,6 +154,9 @@ export function formatPrice(
   usdExchangeRate = 1,
   selectedGroup?: string
 ): string {
+  if (model.unpriced) {
+    return '-'
+  }
   if (model.quota_type === QUOTA_TYPE_VALUES.REQUEST) {
     return '-'
   }
@@ -173,6 +180,93 @@ export function formatPrice(
 }
 
 /**
+ * The official list price: the published price with no group ratio and no
+ * per-model override applied.
+ *
+ * This is the only honest reference for the "N% off by default" badge, because
+ * that badge is a percentage off LIST. formatPrice cannot serve as the
+ * reference: it prices at the cheapest group the viewer can see, and a visitor
+ * who can only see `default` therefore gets the discounted figure back. The
+ * card then showed the same number twice, collapsed to one, and left a badge
+ * advertising a discount with nothing to compare it against.
+ */
+export function formatOfficialListPrice(
+  model: PricingModel,
+  type: PriceType,
+  tokenUnit: TokenUnit,
+  showWithRecharge = false,
+  priceRate = 1,
+  usdExchangeRate = 1
+): string {
+  if (model.unpriced || model.quota_type === QUOTA_TYPE_VALUES.REQUEST) {
+    return '-'
+  }
+
+  let priceInUSD = calculateTokenPrice(model, type, 1)
+  priceInUSD = applyRechargeRate(
+    priceInUSD,
+    showWithRecharge,
+    priceRate,
+    usdExchangeRate
+  )
+
+  const price = priceInUSD / TOKEN_UNIT_DIVISORS[tokenUnit]
+  return formatCurrencyFromUSD(price, {
+    digitsLarge: 4,
+    digitsSmall: 6,
+    abbreviate: false,
+  })
+}
+
+/**
+ * The price a NEW user pays: the same published price pipeline as formatPrice,
+ * multiplied by the `default` group's final ratio. Returns null when the model
+ * carries no new-user discount, so callers render the list price alone.
+ */
+export function formatDefaultGroupPrice(
+  model: PricingModel,
+  type: PriceType,
+  tokenUnit: TokenUnit,
+  showWithRecharge = false,
+  priceRate = 1,
+  usdExchangeRate = 1,
+  // Kept for signature compatibility with formatPrice, and deliberately
+  // unused: the new-user price is a multiple of LIST, so no group ratio may
+  // enter it. Taking it again is what double-counted the discount.
+  _selectedGroup?: string
+): string | null {
+  if (model.unpriced || model.quota_type === QUOTA_TYPE_VALUES.REQUEST) {
+    return null
+  }
+  const discount = getDefaultGroupDiscount(model)
+  if (!discount) return null
+
+  // The override REPLACES the group ratio, it does not multiply with it --
+  // HandleGroupRatio assigns it (relay/helper/price.go), and the fork comment
+  // there spells out why: multiplying would turn a negotiated 0.8 into
+  // 0.8 x 0.9 x 0.7 and nobody could say what a customer owes.
+  //
+  // This used to be `calculateTokenPrice(model, type, displayGroupRatio) *
+  // discount.ratio`, which counted the group ratio twice. With the default
+  // group at 0.85 and a 0.85 per-model override, the card advertised
+  // 0.7225 x list while the relay billed 0.85 x list -- a public price 15%
+  // under what we charge, on every model carrying a badge.
+  let priceInUSD = calculateTokenPrice(model, type, discount.ratio)
+  priceInUSD = applyRechargeRate(
+    priceInUSD,
+    showWithRecharge,
+    priceRate,
+    usdExchangeRate
+  )
+  const price = priceInUSD / TOKEN_UNIT_DIVISORS[tokenUnit]
+  return formatCurrencyFromUSD(price, {
+    digitsLarge: 4,
+    digitsSmall: 6,
+    abbreviate: false,
+  })
+}
+
+/**
  * Format price for a specific group (token-based)
  */
 export function formatGroupPrice(
@@ -185,6 +279,9 @@ export function formatGroupPrice(
   usdExchangeRate = 1,
   groupRatio: Record<string, number>
 ): string {
+  if (model.unpriced) {
+    return '-'
+  }
   if (model.quota_type === QUOTA_TYPE_VALUES.REQUEST) {
     return '-'
   }
@@ -218,6 +315,9 @@ export function formatFixedPrice(
   usdExchangeRate = 1,
   groupRatio: Record<string, number>
 ): string {
+  if (model.unpriced) {
+    return '-'
+  }
   if (model.quota_type !== QUOTA_TYPE_VALUES.REQUEST) {
     return '-'
   }
@@ -249,6 +349,9 @@ export function formatRequestPrice(
   usdExchangeRate = 1,
   selectedGroup?: string
 ): string {
+  if (model.unpriced) {
+    return '-'
+  }
   if (model.quota_type !== QUOTA_TYPE_VALUES.REQUEST) {
     return '-'
   }

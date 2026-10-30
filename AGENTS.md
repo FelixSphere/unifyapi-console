@@ -132,6 +132,8 @@ Pricing code decides what a customer is invoiced and what we owe a vendor. A def
 - **Tests must be able to fail.** A pricing test that derives its expected value from the same table it is testing proves nothing — a sweep built that way passed with `gpt-4o` mutated from $2.50 to $0.25. Pin hand-typed vendor dollar figures for the models carrying traffic (`TestPinnedDollarsForTheModelsThatCarryTheTraffic`), and check that the assertion actually breaks when you mutate the value it guards.
 - **Before changing anything under `setting/ratio_setting/`, `pkg/billingexpr/`, or the billing path in `service/`, read `docs/HOW-PRICING-WORKS.md`.** It gives the full derivation and names which test guards each step.
 
+**Existing tests are not yours to change.** Operator rule, 2026-09-22: do not modify or delete a test that already exists. Adding tests is always welcome; changing one needs the operator's personal approval — not a reviewer's, not another agent's. Ask first, stating (1) why the test must change, as distinct from why it is inconvenient, (2) what it will assert afterwards that it does not assert today, and (3) what regression the change could let through — name the defect class the current assertion catches and say whether the new one still catches it. Then wait; a red build does not authorise editing the assertion. Renames, reformatting, moving a test between files, and tidying a test you are not otherwise touching all count as changes. A test can genuinely be wrong — the rule is that you do not get to decide that unilaterally, because the agent who wants it changed is always the agent it is blocking. Two cases from this repository show why: a pricing sweep that derived its expectations from the table under test passed with `gpt-4o` mutated from $2.50 to $0.25, and the `.tsx` string-grep tests could not catch `SectionPageLayout` silently dropping non-slot children, which killed the supplier "Submit credits" button. If the behaviour changed on purpose, the test is encoding the old contract and replacing it is a product decision, not a cleanup — exactly the case that needs approval. **How the operator approves**, any one of these, posted on the PR _after_ the commit it approves: a comment whose entire body is `LGTM` (the short form, added 2026-09-25); an approving review; or a comment containing `APPROVED-TEST-CHANGE <head sha>`. `LGTM` must be the whole comment — "LGTM once CI is green" does not count — and an `LGTM` posted before the commit does not count either, because pushing clears an approval by design. If you use the SHA form, read the SHA from `gh pr view <n> --json headRefOid`; an invented one is rejected, which is the gate working rather than failing. `.github/workflows/test-guard.yml` enforces this. Asking for the approval, and saying which test changed and why, is your job — not the operator's to remember that a PR is waiting. One wrinkle: a comment does not re-trigger the check — the `pull_request` event does not fire on one — so after the operator comments, re-run the job (`gh run rerun --failed <run id>`), which is also your job rather than theirs.
+
 **Backend test quality:** Backend tests must protect real behavior, API contracts, billing/accounting invariants, data compatibility, or regression paths.
 
 - Do not add tests that only improve coverage numbers, prove that code happens to run, or lock in implementation details without a user-visible or cross-module contract.
@@ -155,6 +157,40 @@ Pricing code decides what a customer is invoiced and what we owe a vendor. A def
 - Frontend UI text must support i18n with `i18next`/`react-i18next`. Use flat JSON locale files in `web/src/i18n/locales/{lang}.json`, with English source strings as keys.
 - In React components, use `useTranslation()` and call `t('English key')` for user-facing text.
 - Follow `web/AGENTS.md` for detailed frontend conventions, including TypeScript, component structure, styling, accessibility, testing, and build checks.
+
+### Releasing — you almost certainly do not do this
+
+**Merging to `main` publishes nothing.** Releases of this console belong to the
+**UnifyAI CI/CD agent**. Any agent may take work through review, get it green,
+and merge it. Turning that into a customer-visible release is a separate, owned
+decision. When your change is merged, say what is waiting to ship and stop.
+
+**Every release goes to staging first, is verified there, and only then reaches
+production.** Adopted 16 Sep 2026, after twelve consecutive releases of this
+repository went straight to production unverified — v0.1.62 through v0.1.74.
+One of them, v0.1.62, was a hotfix for a bug the release before it introduced.
+
+The mechanism lives in `FelixSphere/unifyapi`:
+
+```bash
+infra/scripts/console-staging-verify.sh unifyapi-vX.Y.Z
+infra/scripts/console-promote.sh        unifyapi-vX.Y.Z
+```
+
+`console-promote.sh` refuses production unless staging validated that exact tag
+and the same digest still sits behind it.
+
+Two consequences for what you write here:
+
+- **A migration is tested on staging against a real database.** Staging carries
+  a copy of production data, so a migration that only works on an empty schema
+  will be caught — but only if you say in the PR that there is one.
+- **A change that deletes or rewrites business data gets exercised on staging,
+  not read about.** Say so in the PR so the release owner knows to run it.
+
+The only exception is a genuine hotfix — a live outage, a security issue, data
+being lost. It takes `--hotfix "<reason>"`, which records the bypass. "I would
+like my feature to be live" is not a hotfix.
 
 ### Project Governance
 

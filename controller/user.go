@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/bytedance/gopkg/util/gopool"
 
 	"github.com/QuantumNous/new-api/constant"
 
@@ -237,6 +238,10 @@ func Register(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
 			return
 		}
+		if rejection := accountEmailRejection(c, user.Email); rejection != "" {
+			common.ApiErrorMsg(c, rejection)
+			return
+		}
 		if !common.VerifyCodeWithKey(user.Email, user.VerificationCode, common.EmailVerificationPurpose) {
 			common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
 			return
@@ -276,6 +281,12 @@ func Register(c *gin.Context) {
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
 	}
+	registrationSlot, ok := middleware.ReserveRegistrationSlot(c)
+	if !ok {
+		common.ApiErrorI18n(c, i18n.MsgUserRegisterIPLimit)
+		return
+	}
+	defer registrationSlot.Release()
 	var insertErr error
 	if user.PartnershipCode != "" {
 		_, insertErr = cleanUser.InsertForPartnership(user.PartnershipCode)
@@ -294,6 +305,7 @@ func Register(c *gin.Context) {
 		common.ApiError(c, insertErr)
 		return
 	}
+	registrationSlot.Commit()
 
 	// 获取插入后的用户ID
 	var insertedUser model.User
@@ -767,6 +779,12 @@ func UpdateUser(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// A group change moves the login onto that customer's wallet and may have
+	// carried a balance into it; the balance cached for that wallet is stale.
+	if err := model.InvalidateBillingQuotaCacheForUser(updatedUser.Id); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	recordManageAuditFor(c, updatedUser.Id, "user.update", map[string]interface{}{
 		"username": originUser.Username,
 		"id":       updatedUser.Id,
@@ -1120,6 +1138,33 @@ type ManageRequest struct {
 	Mode   string `json:"mode"`
 }
 
+// notifyOperatorCredit sends the "credit added" notice for a positive delta,
+// off the request path so a slow mail server never delays the operator. The
+// balance is read after the adjustment so the notice states what the user can
+// spend now, from the wallet they actually spend from.
+//
+// operatorCreditNotified is a test seam: it is signalled once the send has
+// been attempted (or skipped). nil outside tests.
+var operatorCreditNotified chan<- int
+
+func notifyOperatorCredit(user *model.User, added int) {
+	if added <= 0 {
+		return
+	}
+	snapshot := *user
+	gopool.Go(func() {
+		balance, err := model.GetUserQuota(snapshot.Id, true)
+		if err != nil {
+			common.SysError(fmt.Sprintf("operator credit notice for user %d: balance unavailable: %s", snapshot.Id, err.Error()))
+			balance = 0
+		}
+		service.NotifyOperatorCredit(&snapshot, added, balance)
+		if operatorCreditNotified != nil {
+			operatorCreditNotified <- snapshot.Id
+		}
+	})
+}
+
 // ManageUser Only admin user can do this
 func ManageUser(c *gin.Context) {
 	var req ManageRequest
@@ -1206,19 +1251,20 @@ func ManageUser(c *gin.Context) {
 				common.ApiErrorI18n(c, i18n.MsgUserQuotaChangeZero)
 				return
 			}
-			if err := model.IncreaseUserQuota(user.Id, req.Value, true); err != nil {
+			if _, err := model.AdjustQuotaByOperator(user.Id, "add", req.Value); err != nil {
 				common.ApiError(c, err)
 				return
 			}
 			recordManageAuditFor(c, user.Id, "user.quota_add", map[string]interface{}{
 				"quota": logger.LogQuota(req.Value),
 			})
+			notifyOperatorCredit(&user, req.Value)
 		case "subtract":
 			if req.Value <= 0 {
 				common.ApiErrorI18n(c, i18n.MsgUserQuotaChangeZero)
 				return
 			}
-			if err := model.DecreaseUserQuota(user.Id, req.Value, true); err != nil {
+			if _, err := model.AdjustQuotaByOperator(user.Id, "subtract", req.Value); err != nil {
 				common.ApiError(c, err)
 				return
 			}
@@ -1226,19 +1272,17 @@ func ManageUser(c *gin.Context) {
 				"quota": logger.LogQuota(req.Value),
 			})
 		case "override":
-			oldQuota, err := model.GetUserQuota(user.Id, true)
+			delta, err := model.AdjustQuotaByOperator(user.Id, "override", req.Value)
 			if err != nil {
 				common.ApiError(c, err)
 				return
 			}
-			if err := model.SetUserQuota(user.Id, req.Value); err != nil {
-				common.ApiError(c, err)
-				return
-			}
 			recordManageAuditFor(c, user.Id, "user.quota_override", map[string]interface{}{
-				"from": logger.LogQuota(oldQuota),
+				"from": logger.LogQuota(req.Value - delta),
 				"to":   logger.LogQuota(req.Value),
 			})
+			// An override that raises the balance is money added too.
+			notifyOperatorCredit(&user, delta)
 		default:
 			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 			return
@@ -1319,6 +1363,10 @@ func EmailBind(c *gin.Context) {
 	email := req.Email
 	email = model.NormalizeEmail(email)
 	code := req.Code
+	if rejection := accountEmailRejection(c, email); rejection != "" {
+		common.ApiErrorMsg(c, rejection)
+		return
+	}
 	if !common.VerifyCodeWithKey(email, code, common.EmailVerificationPurpose) {
 		common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
 		return

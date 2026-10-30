@@ -48,6 +48,9 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 // BuildRequestURL constructs the Gemini API predictLongRunning endpoint for Veo.
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	modelName := info.UpstreamModelName
+	if modelName == omniModel {
+		return strings.TrimRight(a.baseURL, "/") + "/v1beta/interactions", nil
+	}
 	version := model_setting.GetGeminiVersionSetting(modelName)
 
 	return fmt.Sprintf(
@@ -77,6 +80,16 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		return nil, fmt.Errorf("unexpected task_request type")
 	}
 
+	if info.UpstreamModelName == omniModel {
+		if !info.PriceData.UsePrice {
+			return nil, fmt.Errorf("Omni video requires an explicit fixed task price until multimodal token settlement is configured")
+		}
+		data, err := omniRequest(req)
+		if err != nil {
+			return nil, err
+		}
+		return bytes.NewReader(data), nil
+	}
 	instance := VeoInstance{Prompt: req.Prompt}
 	if img := ExtractMultipartImage(c, info); img != nil {
 		instance.Image = img
@@ -91,9 +104,7 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	if err := taskcommon.UnmarshalMetadata(req.Metadata, params); err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
 	}
-	if params.DurationSeconds == 0 && req.Duration > 0 {
-		params.DurationSeconds = req.Duration
-	}
+	params.DurationSeconds = ResolveVeoDuration(req.Metadata, req.Duration, req.Seconds)
 	if params.Resolution == "" && req.Size != "" {
 		params.Resolution = SizeToVeoResolution(req.Size)
 	}
@@ -102,6 +113,9 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	}
 	params.Resolution = strings.ToLower(params.Resolution)
 	params.SampleCount = 1
+	if info.UpstreamModelName == "veo-3.1-lite-generate-preview" && params.Resolution == "4k" {
+		return nil, fmt.Errorf("Veo Lite does not support 4k")
+	}
 
 	body := VeoRequestPayload{
 		Instances:  []VeoInstance{instance},
@@ -132,6 +146,13 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	if err := common.Unmarshal(responseBody, &s); err != nil {
 		return "", nil, service.TaskErrorWrapper(err, "unmarshal_response_failed", http.StatusInternalServerError)
 	}
+	if info.UpstreamModelName == omniModel {
+		var interaction omniResponse
+		if err := common.Unmarshal(responseBody, &interaction); err != nil || interaction.ID == "" {
+			return "", nil, service.TaskErrorWrapper(fmt.Errorf("missing interaction id"), "invalid_response", http.StatusBadGateway)
+		}
+		s.Name = "interactions/" + interaction.ID
+	}
 	if strings.TrimSpace(s.Name) == "" {
 		return "", nil, service.TaskErrorWrapper(fmt.Errorf("missing operation name"), "invalid_response", http.StatusInternalServerError)
 	}
@@ -147,6 +168,8 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 
 func (a *TaskAdaptor) GetModelList() []string {
 	return []string{
+		omniModel,
+		"veo-3.1-lite-generate-preview",
 		"veo-3.0-generate-001",
 		"veo-3.0-fast-generate-001",
 		"veo-3.1-generate-preview",
@@ -169,9 +192,12 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		return nil
 	}
 
+	if info.UpstreamModelName == omniModel {
+		return nil
+	}
 	seconds := ResolveVeoDuration(req.Metadata, req.Duration, req.Seconds)
 	resolution := ResolveVeoResolution(req.Metadata, req.Size)
-	resRatio := VeoResolutionRatio(info.UpstreamModelName, resolution)
+	resRatio := GeminiDeveloperVeoRatio(info.UpstreamModelName, resolution)
 
 	return map[string]float64{
 		"seconds":    float64(seconds),
@@ -192,6 +218,9 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 	}
 
 	version := model_setting.GetGeminiVersionSetting("default")
+	if isOmniInteraction(upstreamName) {
+		version = "v1beta"
+	}
 	url := fmt.Sprintf("%s/%s/%s", baseUrl, version, upstreamName)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -210,6 +239,9 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 }
 
 func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {
+	if result, omni, err := parseOmniResponse(respBody); omni || err != nil {
+		return result, err
+	}
 	var op operationResponse
 	if err := common.Unmarshal(respBody, &op); err != nil {
 		return nil, fmt.Errorf("unmarshal operation response failed: %w", err)
@@ -249,6 +281,9 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	upstreamName, err := taskcommon.DecodeLocalTaskID(upstreamTaskID)
 	if err != nil {
 		upstreamName = ""
+	}
+	if isOmniInteraction(upstreamName) {
+		return common.Marshal(task.ToOpenAIVideo())
 	}
 	modelName := extractModelFromOperationName(upstreamName)
 	if strings.TrimSpace(modelName) == "" {

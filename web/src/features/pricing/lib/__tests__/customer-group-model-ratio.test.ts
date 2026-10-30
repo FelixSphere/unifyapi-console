@@ -10,6 +10,7 @@ import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 
 import type { PricingModel } from '../../types'
+import { filterByQuotaType } from '../filters'
 import { getDisplayGroupRatio } from '../model-helpers'
 
 /*
@@ -89,4 +90,18 @@ test('with every group at 1, the page quotes official list price', () => {
     group_ratio: { GenAI: 1, UnifyAI: 1 },
   })
   assert.equal(getDisplayGroupRatio(m), 1)
+})
+
+test('per-second videos are separate from fixed request prices', () => {
+  const token = model()
+  const request = model({ quota_type: 1, model_price: 0.1 })
+  const second = model({
+    quota_type: 1,
+    model_price: 0.14,
+    price_unit: 'second',
+  })
+  const models = [token, request, second]
+  assert.deepEqual(filterByQuotaType(models, 'token'), [token])
+  assert.deepEqual(filterByQuotaType(models, 'request'), [request])
+  assert.deepEqual(filterByQuotaType(models, 'second'), [second])
 })

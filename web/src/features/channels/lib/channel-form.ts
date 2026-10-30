@@ -211,6 +211,9 @@ export const channelFormSchema = z
       ),
     priority: z.number().optional(),
     weight: z.number().optional(),
+    // UNIFYAPI-BRAND: 0 clears the limit, so min is 0 rather than 1.
+    rate_limit_rpm: z.number().min(0).optional(),
+    rate_limit_tpm: z.number().min(0).optional(),
     test_model: z.string().optional(),
     auto_ban: z.number().optional(),
     status: z.number(),
@@ -266,6 +269,7 @@ export const channelFormSchema = z
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
     aws_key_type: z.enum(['ak_sk', 'api_key']).optional(), // AWS specific
     azure_responses_version: z.string().optional(), // Azure specific
+    system_one_path: z.string().optional(), // TypeSafe System One specific
     // Field passthrough controls (stored in settings JSON)
     allow_service_tier: z.boolean().optional(), // OpenAI/Anthropic
     disable_store: z.boolean().optional(), // OpenAI only
@@ -409,6 +413,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   model_mapping: '',
   priority: 0,
   weight: 0,
+  rate_limit_rpm: 0,
+  rate_limit_tpm: 0,
   test_model: '',
   auto_ban: 1,
   status: CHANNEL_STATUS.ENABLED,
@@ -438,6 +444,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   vertex_key_type: 'json',
   aws_key_type: 'ak_sk',
   azure_responses_version: '',
+  system_one_path: '',
   // Field passthrough controls
   allow_service_tier: false,
   disable_store: false,
@@ -515,12 +522,14 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
   let advancedCustom = ''
+  let systemOnePath = ''
 
   if (channel.settings) {
     try {
       const parsed = JSON.parse(channel.settings)
       vertexKeyType = parsed.vertex_key_type || 'json'
       azureResponsesVersion = parsed.azure_responses_version || ''
+      systemOnePath = parsed.system_one_path || ''
       isEnterpriseAccount = parsed.openrouter_enterprise === true
       awsKeyType = parsed.aws_key_type || 'ak_sk'
       allowServiceTier = parsed.allow_service_tier === true
@@ -560,6 +569,8 @@ export function transformChannelToFormDefaults(
     model_mapping: channel.model_mapping || '',
     priority: channel.priority || 0,
     weight: channel.weight || 0,
+    rate_limit_rpm: channel.rate_limit_rpm || 0,
+    rate_limit_tpm: channel.rate_limit_tpm || 0,
     test_model: channel.test_model || '',
     auto_ban: channel.auto_ban ?? 1,
     status: channel.status,
@@ -581,6 +592,7 @@ export function transformChannelToFormDefaults(
     is_enterprise_account: isEnterpriseAccount,
     vertex_key_type: vertexKeyType,
     azure_responses_version: azureResponsesVersion,
+    system_one_path: systemOnePath,
     aws_key_type: awsKeyType,
     allow_service_tier: allowServiceTier,
     disable_store: disableStore,
@@ -654,6 +666,13 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.azure_responses_version = formData.azure_responses_version
   } else if ('azure_responses_version' in settingsObj) {
     delete settingsObj.azure_responses_version
+  }
+
+  // Add system_one_path for TypeSafe channels (type 61)
+  if (formData.type === 61 && formData.system_one_path) {
+    settingsObj.system_one_path = formData.system_one_path
+  } else if ('system_one_path' in settingsObj) {
+    delete settingsObj.system_one_path
   }
 
   // Add enterprise account setting for OpenRouter (type 20)
@@ -786,6 +805,12 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
     model_mapping: formData.model_mapping || null,
     priority: formData.priority || null,
     weight: formData.weight || null,
+    // UNIFYAPI-BRAND: send 0 as 0, not null. The backend field is a pointer so
+    // that an explicit 0 clears the limit; `|| null` would make that
+    // indistinguishable from "not sent", and GORM would then preserve the old
+    // value -- the limit could never be removed from this form.
+    rate_limit_rpm: formData.rate_limit_rpm ?? null,
+    rate_limit_tpm: formData.rate_limit_tpm ?? null,
     test_model: formData.test_model || null,
     auto_ban: formData.auto_ban ?? 1,
     status: formData.status,
@@ -834,6 +859,12 @@ export function transformFormDataToUpdatePayload(
     model_mapping: formData.model_mapping || null,
     priority: formData.priority ?? 0,
     weight: formData.weight ?? 0,
+    // UNIFYAPI-BRAND: ?? not ||, so an explicit 0 reaches the backend and
+    // clears the limit. The backend field is a pointer precisely so 0 and
+    // "absent" mean different things; sending null for 0 would make the limit
+    // impossible to remove from this form.
+    rate_limit_rpm: formData.rate_limit_rpm ?? 0,
+    rate_limit_tpm: formData.rate_limit_tpm ?? 0,
     test_model: formData.test_model || null,
     auto_ban: formData.auto_ban ?? 1,
     status_code_mapping: formData.status_code_mapping || null,

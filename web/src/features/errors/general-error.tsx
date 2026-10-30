@@ -23,7 +23,8 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 // UNIFYAPI-BRAND: our own issue tracker, not upstream's. See BRANDING.md.
-const FEEDBACK_URL = 'https://github.com/FelixSphere/unifyapi-console/issues'
+// UI-STANDARD.md: no FelixSphere links in the interface; the contact mailbox is the one exception kept for now.
+const FEEDBACK_URL = 'mailto:contactus@felixsphere.com'
 
 type GeneralErrorProps = React.HTMLAttributes<HTMLDivElement> & {
   minimal?: boolean

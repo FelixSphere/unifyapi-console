@@ -81,12 +81,13 @@ export const CHANNEL_TYPES = {
   58: 'Advanced Custom',
   59: 'Sub2API',
   60: 'New API',
+  61: 'TypeSafe (System One)',
 } as const
 
 const CHANNEL_TYPE_DISPLAY_ORDER: number[] = [
   1, 14, 33, 24, 43, 3, 41, 48, 60, 58, 42, 34, 20, 4, 40, 27, 25, 17, 26, 15,
   46, 23, 18, 45, 31, 35, 49, 19, 47, 37, 38, 39, 11, 8, 57, 59, 22, 21, 44, 2,
-  5, 36, 50, 51, 52, 53, 54, 55, 56,
+  5, 36, 50, 51, 52, 53, 54, 55, 56, 61,
 ]
 
 export const CHANNEL_TYPE_OPTIONS: { value: number; label: string }[] = (() => {
@@ -288,6 +289,8 @@ export const DEFAULT_CHANNEL_VALUES = {
   status: CHANNEL_STATUS.ENABLED,
   priority: 0,
   weight: 0,
+  rate_limit_rpm: 0,
+  rate_limit_tpm: 0,
   auto_ban: 1,
   remark: '',
 } as const
@@ -365,11 +368,16 @@ export const FIELD_DESCRIPTIONS = {
   KEY: 'API key from the provider',
   MODELS:
     'List of models supported by this channel. Use comma to separate multiple models.',
-  GROUP: 'User groups that can access this channel. ',
+  GROUP:
+    "Every customer group can route through every channel. The groups picked here are this channel's own and are kept as configured.",
   MODEL_MAPPING:
     'Map request model names to actual provider model names (JSON format)',
   PRIORITY: 'Higher priority channels are selected first',
   WEIGHT: 'Used for load balancing. Higher weight = more requests',
+  RATE_LIMIT_RPM:
+    'Max requests per minute this channel may send upstream. 0 means unlimited. While over the limit the channel is skipped during selection, so traffic goes elsewhere instead of returning 429.',
+  RATE_LIMIT_TPM:
+    'Max tokens per minute for this channel. 0 means unlimited. Counted after each request completes, so the limit can be exceeded by one request.',
   TEST_MODEL: 'Model to use when testing channel connectivity',
   AUTO_BAN: 'Automatically disable channel on repeated failures',
   STATUS_CODE_MAPPING: 'Map response status codes (JSON format)',
@@ -403,10 +411,12 @@ export const TYPE_TO_KEY_PROMPT: Record<number, string> = {
   57: 'Paste Codex OAuth JSON credential (access_token / refresh_token / account_id)',
   59: 'Enter API key for this channel',
   60: 'Enter API key for this channel',
+  61: 'Enter your TypeSafe API key',
 }
 
 export const CHANNEL_TYPE_WARNINGS: Record<number, string> = {
   3: 'For channels added after May 10, 2025, no need to remove "." from model names during deployment',
   8: 'If connecting to upstream One API or New API relay projects, use OpenAI type instead unless you know what you are doing',
   37: 'Dify channels only support chatflow and agent, and agent does not support images',
+  61: 'TypeSafe serves decision models at /v1/systemone, not chat completions. Requests reach it only through that endpoint; chat, embedding and rerank calls to this channel are refused.',
 }

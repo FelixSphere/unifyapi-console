@@ -128,6 +128,9 @@ export type AuthSettings = {
   EmailDomainRestrictionEnabled: boolean
   EmailAliasRestrictionEnabled: boolean
   EmailDomainWhitelist: string
+  EmailDomainBlocklistEnabled: boolean
+  EmailDomainBlocklist: string
+  RegisterIPDailyLimit: number
   ServerAddress: string
   GitHubOAuthEnabled: boolean
   GitHubClientId: string
@@ -329,6 +332,26 @@ export type BillingSettings = {
   // section (saved via /api/option/waffo-pancake/save).
   WaffoPancakeStoreID: string
   WaffoPancakeProductID: string
+  // UNIFYAPI-FORK: Binance Pay (personal account) gateway.
+  BinancePayEnabled: boolean
+  BinancePayApiKey: string
+  BinancePaySecretKey: string
+  BinancePayReceiverId: string
+  BinancePayReceiverNickname: string
+  BinancePayCurrency: string
+  BinancePayUnitPrice: number
+  BinancePayMinTopUp: number
+  BinancePayOrderTTLMinutes: number
+  BinancePayDepositAddresses: string
+  BinancePayRecommendForPartners: boolean
+  BinancePayOverpayTolerancePercent: number
+  BinancePayUSEnabled: boolean
+  BinancePayUSApiKey: string
+  BinancePayUSSecretKey: string
+  BinancePayUSReceiverNickname: string
+  BinancePayUSDepositAddresses: string
+  BinancePayDepositNetworks: string
+  BinancePayUSDepositNetworks: string
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number
@@ -372,6 +395,11 @@ export type SecuritySettings = {
   ModelRequestRateLimitSuccessCount: number
   ModelRequestRateLimitDurationMinutes: number
   ModelRequestRateLimitGroup: string
+  // UNIFYAPI-BRAND: token allowance. Requests and tokens are different
+  // dimensions -- one 200k-context call costs the same as "hello" to the
+  // request counter above.
+  ModelRequestTokenLimitCount: number
+  ModelRequestTokenLimitGroup: string
   CheckSensitiveEnabled: boolean
   CheckSensitiveOnPromptEnabled: boolean
   SensitiveWords: string
@@ -672,6 +700,27 @@ export type StatementLine = {
   unpriced?: boolean
 }
 
+/** One login's share of a customer statement. Keyed on the log's user id, so a
+ *  login deleted since still appears -- its spend was still the customer's. */
+export type StatementUserLine = {
+  user_id: number
+  username: string
+  requests: number
+  prompt_tokens: number
+  cached_tokens: number
+  completion_tokens: number
+  amount_usd: number
+}
+
+/** One login's receipts on a customer statement: gateway top-ups plus operator grants. */
+export type StatementFundingLine = {
+  user_id: number
+  username: string
+  orders: number
+  grants: number
+  credited_usd: number
+}
+
 export type Statement = {
   kind: StatementKind
   counterparty: string
@@ -680,6 +729,13 @@ export type Statement = {
   period_start: string
   period_end: string
   lines: StatementLine[]
+  /** Customer side only: the same total broken down by login. */
+  users?: StatementUserLine[]
+  /** Customer side only: what the customer's logins paid in this period, by login. */
+  funding?: StatementFundingLine[]
+  funded_usd?: number
+  funding_to_date?: StatementFundingLine[]
+  funded_to_date_usd?: number
   requests: number
   prompt_tokens: number
   cached_tokens: number

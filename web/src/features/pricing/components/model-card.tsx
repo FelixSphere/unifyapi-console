@@ -30,8 +30,16 @@ import {
   getDynamicPricingSummary,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
-import { isTokenBasedModel } from '../lib/model-helpers'
-import { formatPrice, formatRequestPrice } from '../lib/price'
+import {
+  getDefaultGroupDiscount,
+  isTokenBasedModel,
+} from '../lib/model-helpers'
+import {
+  formatDefaultGroupPrice,
+  formatOfficialListPrice,
+  formatPrice,
+  formatRequestPrice,
+} from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
 import { ModelPerfBadge, type ModelPerfBadgeData } from './model-perf-badge'
@@ -56,6 +64,68 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const showRechargePrice = props.showRechargePrice ?? false
   const isTokenBased = isTokenBasedModel(props.model)
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
+  const defaultDiscount = getDefaultGroupDiscount(props.model)
+
+  // One price slot: the list price, or -- when new users pay less -- the
+  // new-user price in front with the official list price beside it.
+  const renderTokenPrice = (type: 'input' | 'output' | 'cache') => {
+    const newUser = formatDefaultGroupPrice(
+      props.model,
+      type,
+      tokenUnit,
+      showRechargePrice,
+      priceRate,
+      usdExchangeRate,
+      props.selectedGroup
+    )
+    // The reference beside a discounted price has to be OFFICIAL LIST, because
+    // that is what the badge is a percentage off. formatPrice prices at the
+    // cheapest group the viewer can see, so for a visitor who can only see
+    // `default` it returns the discounted figure itself -- the two matched, the
+    // card collapsed to a single number, and the "15% off by default" badge was
+    // left pointing at nothing. Seen in production on 49 models.
+    const list =
+      newUser === null
+        ? formatPrice(
+            props.model,
+            type,
+            tokenUnit,
+            showRechargePrice,
+            priceRate,
+            usdExchangeRate,
+            props.selectedGroup
+          )
+        : formatOfficialListPrice(
+            props.model,
+            type,
+            tokenUnit,
+            showRechargePrice,
+            priceRate,
+            usdExchangeRate
+          )
+    // Two identical figures read as a rendering fault, not as a deal. With the
+    // reference at list this needs a discount too small to survive formatting,
+    // but the guard costs nothing.
+    if (newUser === null || newUser === list) {
+      return (
+        <span className='text-foreground font-mono font-semibold'>{list}</span>
+      )
+    }
+    return (
+      <>
+        <span
+          className='text-foreground font-mono text-base font-bold sm:text-lg'
+          data-new-user-price
+        >
+          {newUser}
+        </span>
+        <span className='text-muted-foreground/50 mx-1'>·</span>
+        <span className='text-muted-foreground font-mono' data-list-price>
+          {list}
+        </span>
+      </>
+    )
+  }
   const tags = parseTags(props.model.tags)
   const groups = props.model.enable_groups || []
   const endpoints = props.model.supported_endpoint_types || []
@@ -131,47 +201,14 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     priceSummary = (
       <>
         <span className='text-muted-foreground whitespace-nowrap'>
-          {t('Input')}{' '}
-          <span className='text-foreground font-mono font-semibold'>
-            {formatPrice(
-              props.model,
-              'input',
-              tokenUnit,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate,
-              props.selectedGroup
-            )}
-          </span>
+          {t('Input')} {renderTokenPrice('input')}
         </span>
         <span className='text-muted-foreground whitespace-nowrap'>
-          {t('Output')}{' '}
-          <span className='text-foreground font-mono font-semibold'>
-            {formatPrice(
-              props.model,
-              'output',
-              tokenUnit,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate,
-              props.selectedGroup
-            )}
-          </span>
+          {t('Output')} {renderTokenPrice('output')}
         </span>
         {hasCachedPrice && (
           <span className='text-muted-foreground whitespace-nowrap'>
-            {t('Cached')}{' '}
-            <span className='text-foreground font-mono font-semibold'>
-              {formatPrice(
-                props.model,
-                'cache',
-                tokenUnit,
-                showRechargePrice,
-                priceRate,
-                usdExchangeRate,
-                props.selectedGroup
-              )}
-            </span>
+            {t('Cached')} {renderTokenPrice('cache')}
           </span>
         )}
       </>
@@ -188,7 +225,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             props.selectedGroup
           )}
         </span>{' '}
-        / {t('request')}
+        / {props.model.price_unit === 'second' ? t('second') : t('request')}
       </span>
     )
   }
@@ -214,6 +251,18 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             <h3 className='text-foreground truncate font-mono text-[15px] leading-tight font-bold'>
               {props.model.model_name}
             </h3>
+            {defaultDiscount && (
+              <div className='mt-1.5'>
+                <span
+                  className='bg-accent text-accent-foreground inline-flex items-center rounded-full px-2.5 py-1 font-mono text-[11px] leading-none font-medium tracking-wide whitespace-nowrap uppercase'
+                  data-default-discount-badge
+                >
+                  {t('{{percent}}% off by default', {
+                    percent: defaultDiscount.percentOff,
+                  })}
+                </span>
+              </div>
+            )}
             <div className='mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm sm:mt-1 sm:gap-x-3'>
               {priceSummary}
             </div>

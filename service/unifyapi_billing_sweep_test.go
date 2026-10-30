@@ -105,7 +105,7 @@ func TestUpstreamCostIsOfficialPriceTimesThePurchasingRatio(t *testing.T) {
 
 	for _, entry := range sweepableCatalog(t) {
 		t.Run(entry.Model, func(t *testing.T) {
-			cost, priced := ratio_setting.UpstreamCostUSD(entry.Model, channel, 1_000_000, 0, 1_000_000)
+			cost, priced := ratio_setting.UpstreamCostUSD(entry.Model, channel, ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 1_000_000})
 			require.True(t, priced, "%s has a catalog row but cannot be costed", entry.Model)
 			require.InDelta(t, (entry.InputUSD+entry.OutputUSD)*0.6, cost, 1e-9,
 				"%s: cost must be the vendor's price times the purchasing ratio", entry.Model)
@@ -128,10 +128,10 @@ func TestACustomerDiscountNeverMovesUpstreamCost(t *testing.T) {
 
 	for _, entry := range sweepableCatalog(t) {
 		withDiscount(t, `{}`)
-		before, _ := ratio_setting.UpstreamCostUSD(entry.Model, channel, 1_000_000, 0, 1_000_000)
+		before, _ := ratio_setting.UpstreamCostUSD(entry.Model, channel, ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 1_000_000})
 
 		withDiscount(t, `{"`+entry.Model+`":0.1}`)
-		after, _ := ratio_setting.UpstreamCostUSD(entry.Model, channel, 1_000_000, 0, 1_000_000)
+		after, _ := ratio_setting.UpstreamCostUSD(entry.Model, channel, ratio_setting.TokenUsage{PromptTokens: 1_000_000, CachedTokens: 0, CompletionTokens: 1_000_000})
 
 		require.InDelta(t, before, after, 1e-12,
 			"%s: a 90%% customer discount changed the modelled UPSTREAM cost. "+
@@ -211,11 +211,19 @@ func TestPinnedDollarsForTheModelsThatCarryTheTraffic(t *testing.T) {
 	// model -> what 1M input + 1M output costs at the vendor's list price.
 	pinned := map[string]float64{
 		"claude-opus-4-8":   5 + 25,      // Anthropic $5 / $25
+		"claude-opus-5-5":   4 + 20,      // Anthropic $4 / $20, page read 2026-09-22
 		"claude-sonnet-5":   2 + 10,      // Anthropic $2 / $10
+		"claude-sonnet-5-5": 2 + 10,      // Anthropic $2 / $10, page read 2026-10-13
+		"claude-haiku-5-5":  0.1 + 0.5,   // Anthropic $0.10 / $0.50 (prompts up to 100K), page read 2026-10-13
+		"gpt-5.5":           5 + 30,      // OpenAI $5 / $30, page read 2026-10-13
+		"gpt-6-sol":         2 + 10,      // OpenAI $2 / $10, page read 2026-10-13
+		"grok-4.7":          2 + 6,       // xAI $2 / $6 (<200K tokens), page read 2026-10-13
 		"gpt-4o":            2.5 + 10,    // OpenAI $2.50 / $10
 		"gpt-5-mini":        0.25 + 2,    // OpenAI $0.25 / $2
 		"deepseek-v4-flash": 0.44 + 1.32, // DeepSeek peak tier, 2026-08-16 increase
 		"deepseek-v4-pro":   1.32 + 3.96,
+		"deepseek-flash":    0.3 + 1.2, // DeepSeek V4.1 Flash, peak tier, page read 2026-09-17
+		"jev-1.13":          0.042 + 0, // TypeSafe Jev: input only; a decision model meters no output
 		"glm-5.3":           1.4 + 4.4, // Zhipu $1.40 / $4.40
 		"kimi-k3":           3 + 15,    // Moonshot $3 / $15
 	}

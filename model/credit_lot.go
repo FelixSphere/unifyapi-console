@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"gorm.io/gorm"
@@ -40,10 +39,24 @@ const (
 	CreditLotSourceAdmin    = "admin"
 	CreditLotSourceSupplier = "supplier"
 
+	// How the contributor is paid.
+	//
+	// CreditLotDealPurchase is HISTORY. Buying credits outright was withdrawn
+	// on 2026-09-22: it put our cash in front of a face value only the seller
+	// could see, on a key they could revoke at any moment. The constant stays
+	// so any row that predates the withdrawal still reads, and so the refusal
+	// can name what it is refusing; nothing creates one.
+	CreditLotDealPurchase     = "purchase"
+	CreditLotDealRevenueShare = "revenue_share"
+
 	// CreditLotAttestationVersion names the wording of the right-to-transfer
 	// attestation a lot was recorded under. Bump it when the wording changes so
 	// old lots keep pointing at what was actually agreed.
 	CreditLotAttestationVersion = "2026-09-credit-supply-v1"
+
+	// creditShareCentThreshold is half a cent: below it a dividend is rounding
+	// noise, not a debt, and paying it out would cost more than it is worth.
+	creditShareCentThreshold = 0.005
 )
 
 var (
@@ -53,9 +66,9 @@ var (
 	// ErrCreditLotApprovalNeedsConfirmation is enforced here, not only in the
 	// screen: approval is the one moment the right-to-transfer question can be
 	// asked, so the server refuses to activate a submission without the answer.
-	ErrCreditLotNeedsPayment              = errors.New("a verified sale is activated by paying the supplier, not by approving it")
 	ErrCreditLotApprovalNeedsConfirmation = errors.New("approval requires confirming the supplier's right to transfer these credits")
 	ErrCreditLotReasonRequired            = errors.New("a reason is required when rejecting or suspending a lot")
+	ErrCreditLotBuyOutWithdrawn           = errors.New("buying credits outright has been withdrawn: a key earns its owner a share of what it sells")
 	ErrCreditLotSecretInText              = errors.New("that text looks like it contains an API key; keys belong on the channel, never in notes")
 	creditLotVendorPattern                = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,63}$`)
 )
@@ -89,9 +102,35 @@ type CreditLot struct {
 
 	// FaceValueUSD is the lot's worth at the vendor's official list price.
 	FaceValueUSD float64 `json:"face_value_usd" gorm:"column:face_value_usd;not null;default:0"`
-	// AcquisitionRate is what we pay per $1 of face value consumed, in (0, 1].
-	// It becomes the bound channel's ChannelCostRatio on activation.
-	AcquisitionRate float64 `json:"acquisition_rate" gorm:"not null;default:1"`
+	// AcquisitionRate is what we pay per $1 of face value, in (0, 1]. It
+	// becomes the bound channel's ChannelCostRatio on activation. A
+	// revenue-share lot may set it to 0: nothing is bought up front.
+	//
+	// The column default is 0, not 1: GORM leaves a zero-valued field out of
+	// an INSERT when the column has a default, so a default of 1 would quietly
+	// turn every contributed key into a purchase at full face value. Nothing
+	// relies on the default -- ValidateCreditLot refuses a rate of 0 on a lot
+	// that is being bought.
+	AcquisitionRate float64 `json:"acquisition_rate" gorm:"not null;default:0"`
+
+	// DealType is purchase (bought outright) or revenue_share (a dividend on
+	// what the key earns). See the constants above.
+	DealType string `json:"deal_type" gorm:"type:varchar(16);not null;default:'purchase'"`
+	// RevenueSharePct is the contributor's cut, frozen at submission so that
+	// re-posting the terms never reprices a key that is already earning.
+	RevenueSharePct float64 `json:"revenue_share_pct" gorm:"not null;default:0"`
+	// RevenueShareBasis is the snapshot of what that cut is a cut of.
+	RevenueShareBasis string `json:"revenue_share_basis" gorm:"type:varchar(16)"`
+	// ShareRevenueUSD is everything customers paid for traffic this lot served
+	// and ShareCostUSD what that traffic cost us up front (drawn face value at
+	// the acquisition rate). Both accrue on the consume path, in the same
+	// statement as the draw-down, and only on revenue-share lots. The share
+	// itself is derived from them rather than accrued per request, so a
+	// loss-making request cannot be rounded up to zero and paid for anyway.
+	ShareRevenueUSD float64 `json:"share_revenue_usd" gorm:"column:share_revenue_usd;not null;default:0"`
+	ShareCostUSD    float64 `json:"share_cost_usd" gorm:"column:share_cost_usd;not null;default:0"`
+	// PaidShareUSD is the dividend paid out to date; see credit_share_payout.go.
+	PaidShareUSD float64 `json:"paid_share_usd" gorm:"column:paid_share_usd;not null;default:0"`
 	// ConsumedUSD is face value drawn down so far, at list price.
 	ConsumedUSD float64 `json:"consumed_usd" gorm:"column:consumed_usd;not null;default:0"`
 	// UnpricedRequests counts requests that drew nothing because the model has
@@ -127,12 +166,8 @@ type CreditLot struct {
 
 	// The purchase. We pay first and consume afterwards, so these are filled
 	// exactly once, when the operator settles the sale.
-	PayoutMethod    string  `json:"payout_method" gorm:"type:varchar(24)"`
-	PayoutAccount   string  `json:"payout_account" gorm:"type:varchar(255)"`
-	PayoutReference string  `json:"payout_reference" gorm:"type:varchar(191)"`
-	PaidUSD         float64 `json:"paid_usd" gorm:"column:paid_usd;not null;default:0"`
-	PaidAt          int64   `json:"paid_at" gorm:"not null;default:0"`
-	PaidBy          string  `json:"paid_by" gorm:"type:varchar(64)"`
+	PayoutMethod  string `json:"payout_method" gorm:"type:varchar(24)"`
+	PayoutAccount string `json:"payout_account" gorm:"type:varchar(255)"`
 	// RetiredAt is when the lot became exhausted or expired.
 	RetiredAt int64 `json:"retired_at" gorm:"not null;default:0"`
 
@@ -184,6 +219,47 @@ type CreditLotUsage struct {
 	Day      string  `json:"day" gorm:"type:varchar(10);not null;uniqueIndex:uidx_credit_lot_usage_day,priority:2"`
 	Requests int64   `json:"requests" gorm:"not null;default:0"`
 	FaceUSD  float64 `json:"face_usd" gorm:"column:face_usd;not null;default:0"`
+	// RevenueUSD is what customers paid for that day's traffic. It is the
+	// chart behind a contributor's dividend; the money itself is derived from
+	// the lot's own running totals, which are the record.
+	RevenueUSD float64 `json:"revenue_usd" gorm:"column:revenue_usd;not null;default:0"`
+}
+
+// IsRevenueShare reports whether this lot pays its contributor a dividend
+// rather than a one-off purchase price.
+func (lot *CreditLot) IsRevenueShare() bool {
+	return lot.DealType == CreditLotDealRevenueShare
+}
+
+// ShareBasisUSD is the amount the contributor's cut is taken from: revenue, or
+// revenue net of what we paid up front, never below zero.
+func (lot *CreditLot) ShareBasisUSD() float64 {
+	if !lot.IsRevenueShare() {
+		return 0
+	}
+	basis := lot.ShareRevenueUSD
+	if lot.RevenueShareBasis != CreditShareBasisRevenue {
+		basis -= lot.ShareCostUSD
+	}
+	if basis < 0 {
+		return 0
+	}
+	return basis
+}
+
+// EarnedShareUSD is the dividend this lot has earned its contributor in total,
+// paid and unpaid.
+func (lot *CreditLot) EarnedShareUSD() float64 {
+	return lot.ShareBasisUSD() * lot.RevenueSharePct
+}
+
+// UnpaidShareUSD is what is owed right now.
+func (lot *CreditLot) UnpaidShareUSD() float64 {
+	unpaid := lot.EarnedShareUSD() - lot.PaidShareUSD
+	if unpaid < creditShareCentThreshold {
+		return 0
+	}
+	return unpaid
 }
 
 func (lot *CreditLot) RemainingUSD() float64 {
@@ -192,11 +268,6 @@ func (lot *CreditLot) RemainingUSD() float64 {
 		return 0
 	}
 	return remaining
-}
-
-// PayableUSD is what we owe the supplier for this lot to date.
-func (lot *CreditLot) PayableUSD() float64 {
-	return lot.ConsumedUSD * lot.AcquisitionRate
 }
 
 // Live reports whether the lot occupies its channel binding.
@@ -217,8 +288,16 @@ func (lot *CreditLot) Live() bool {
 func ValidateCreditLot(lot *CreditLot, now int64) error {
 	lot.Vendor = strings.ToLower(strings.TrimSpace(lot.Vendor))
 	lot.Note = strings.TrimSpace(lot.Note)
+	if lot.DealType == "" {
+		lot.DealType = CreditLotDealRevenueShare
+	}
 	if lot.Status == "" {
 		lot.Status = CreditLotStatusPending
+	}
+	if lot.RevenueShareBasis == "" {
+		// Unset means the posted basis, not an error: only the operator ever
+		// chooses one, and they choose it once, on the terms screen.
+		lot.RevenueShareBasis = GetCreditSupplyTerms().ShareBasis()
 	}
 	if lot.Source == "" {
 		lot.Source = CreditLotSourceAdmin
@@ -235,8 +314,21 @@ func ValidateCreditLot(lot *CreditLot, now int64) error {
 	if lot.FaceValueUSD <= 0 {
 		return errors.New("face value must be greater than 0")
 	}
-	if lot.AcquisitionRate <= 0 || lot.AcquisitionRate > 1 {
-		return errors.New("acquisition rate must be in (0, 1]: we pay at most face value for credits")
+	switch lot.DealType {
+	case CreditLotDealRevenueShare:
+		if lot.RevenueSharePct <= 0 || lot.RevenueSharePct > 1 {
+			return errors.New("revenue share must be in (0, 1]: a key earns its owner a share of what it sells")
+		}
+		if lot.AcquisitionRate < 0 || lot.AcquisitionRate > 1 {
+			return errors.New("acquisition rate must be in [0, 1]")
+		}
+		if lot.RevenueShareBasis != CreditShareBasisRevenue && lot.RevenueShareBasis != CreditShareBasisMargin {
+			return fmt.Errorf("revenue share basis must be %q or %q", CreditShareBasisRevenue, CreditShareBasisMargin)
+		}
+	case CreditLotDealPurchase:
+		return ErrCreditLotBuyOutWithdrawn
+	default:
+		return fmt.Errorf("deal type must be %q", CreditLotDealRevenueShare)
 	}
 	if lot.LowWaterUSD < 0 || lot.LowWaterUSD > lot.FaceValueUSD {
 		return errors.New("low-water mark must be between 0 and the face value")
@@ -255,7 +347,8 @@ func ValidateCreditLot(lot *CreditLot, now int64) error {
 	if lot.Status == CreditLotStatusActive && lot.ChannelId == 0 {
 		return ErrCreditLotNeedsChannel
 	}
-	if textLooksLikeProviderSecret(lot.Note) {
+	lot.PayoutAccount = strings.TrimSpace(lot.PayoutAccount)
+	if textLooksLikeProviderSecret(lot.Note, lot.PayoutAccount) {
 		return ErrCreditLotSecretInText
 	}
 	return nil
@@ -293,11 +386,26 @@ func applyLotCostRatio(lot *CreditLot, actor string) error {
 	if lot.ChannelId == 0 {
 		return nil
 	}
+	// The cost basis reconciliation reads for this channel. A bought lot costs
+	// its acquisition rate x list. A contributed key costs its SHARE of
+	// revenue, i.e. share x list x customer discount; ChannelCostRatio is a
+	// multiple of list, so the share itself is the closest expressible figure
+	// and errs conservative: it overstates cost by the customer discount and
+	// never understates it. Without it the channel would be costed at full
+	// list and every share request would read as 0% margin on the profit
+	// screen. What is actually owed is exact on the lot (UnpaidShareUSD).
+	ratio := lot.AcquisitionRate
+	if lot.IsRevenueShare() && lot.RevenueSharePct > 0 {
+		ratio = lot.RevenueSharePct
+	}
+	if ratio <= 0 {
+		return nil
+	}
 	ratios := ratio_setting.GetChannelCostRatioCopy()
 	if ratios == nil {
 		ratios = map[string]float64{}
 	}
-	ratios[strconv.Itoa(lot.ChannelId)] = lot.AcquisitionRate
+	ratios[strconv.Itoa(lot.ChannelId)] = ratio
 	encoded, err := common.Marshal(ratios)
 	if err != nil {
 		return err
@@ -369,6 +477,9 @@ func UpdateCreditLot(id int, patch *CreditLot, actor string) error {
 		candidate.LowWaterUSD = patch.LowWaterUSD
 		candidate.ExpiresAt = patch.ExpiresAt
 		candidate.Note = patch.Note
+		// DealType, RevenueSharePct and the accrued share are deliberately not
+		// in this list: the deal a contributor agreed to is not an editable
+		// field, and candidate starts as a copy of the stored row.
 		// Validation is written for creation, where only pending/active exist.
 		// Run it against a pending shape so a retired lot can still be edited
 		// (raising its face value is how it gets reactivated).
@@ -454,14 +565,14 @@ func TransitionCreditLot(id int, req CreditLotTransition) (*CreditLot, error) {
 		allowed := false
 		switch lot.Status {
 		case CreditLotStatusPending:
-			// A supplier's own submission is paid for (PayCreditLot), never
-			// approved for free; only operator-entered lots activate directly.
+			// A seller's own submission goes live once the key answers a real
+			// request; only an operator-entered lot skips verification.
 			allowed = (to == CreditLotStatusActive && lot.Source != CreditLotSourceSupplier) || to == CreditLotStatusRejected
 		case CreditLotStatusVerified:
-			if to == CreditLotStatusActive {
-				return ErrCreditLotNeedsPayment
-			}
-			allowed = to == CreditLotStatusRejected
+			// Nothing is owed up front, so accepting a verified key is the
+			// whole decision -- and it still has to be an explicit one, with
+			// the right-to-transfer question answered.
+			allowed = to == CreditLotStatusActive || to == CreditLotStatusRejected
 		case CreditLotStatusActive:
 			allowed = to == CreditLotStatusSuspended
 		case CreditLotStatusSuspended:
@@ -478,7 +589,7 @@ func TransitionCreditLot(id int, req CreditLotTransition) (*CreditLot, error) {
 			if lot.ChannelId == 0 {
 				return ErrCreditLotNeedsChannel
 			}
-			if from == CreditLotStatusPending && !req.TransferRightsConfirmed {
+			if (from == CreditLotStatusPending || from == CreditLotStatusVerified) && !req.TransferRightsConfirmed {
 				return ErrCreditLotApprovalNeedsConfirmation
 			}
 			if err := ensureChannelFree(tx, lot.ChannelId, lot.Id); err != nil {
@@ -489,7 +600,7 @@ func TransitionCreditLot(id int, req CreditLotTransition) (*CreditLot, error) {
 			}
 			lot.RetiredAt = 0
 			lot.StatusReason = ""
-			if from == CreditLotStatusPending {
+			if from == CreditLotStatusPending || from == CreditLotStatusVerified {
 				lot.ApprovedBy = actor
 				lot.ApprovedAt = now
 			}
@@ -558,18 +669,26 @@ func detachAndDeleteLotChannel(lot *CreditLot) error {
 	return nil
 }
 
-// PurchasePriceUSD is what the sale costs us under the rate the lot was
-// submitted with. It is what PayCreditLot pays, before any platform-credit
-// bonus.
-func (lot *CreditLot) PurchasePriceUSD() float64 {
-	return lot.FaceValueUSD * lot.AcquisitionRate
-}
-
 // MarkCreditLotVerified records that the submitted key answered a real
 // request. The lot now waits for payment; the channel stays disabled.
 // verificationUSD is the list-price cost of the verification request, booked
 // against the lot's face value: the seller's vendor balance really did go
 // down by that much, so the remaining figure must not overstate it.
+// ActivateVerifiedShareLot puts a verified, contributed key into service
+// without an operator click. Nothing is paid up front, the seller attested at
+// submission, and the key just answered a real request: there is no decision
+// left for a human to make, so the sale does not wait for one.
+func ActivateVerifiedShareLot(id int, actor string) (*CreditLot, error) {
+	lot, err := GetCreditLotById(id)
+	if err != nil {
+		return nil, err
+	}
+	if !lot.IsRevenueShare() {
+		return nil, errors.New("only a contributed key activates without payment")
+	}
+	return TransitionCreditLot(id, CreditLotTransition{To: CreditLotStatusActive, Actor: actor, TransferRightsConfirmed: true})
+}
+
 func MarkCreditLotVerified(id int, actor, note string, verificationUSD float64) (*CreditLot, error) {
 	var lot CreditLot
 	err := DB.Transaction(func(tx *gorm.DB) error {
@@ -597,111 +716,6 @@ func MarkCreditLotVerified(id int, actor, note string, verificationUSD float64) 
 		return nil, err
 	}
 	invalidateChannelLot(lot.ChannelId)
-	return &lot, nil
-}
-
-// CreditLotPayment is the operator settling a verified sale.
-type CreditLotPayment struct {
-	Actor string
-	// Method overrides the supplier's choice only when set.
-	Method string
-	// Reference is required for an external transfer: the bank/PayPal id the
-	// supplier can look up. Platform credit needs none; the ledger is it.
-	Reference string
-}
-
-// PayCreditLot pays the supplier and activates the lot in one step. Payment
-// in platform credit is booked into the supplier's own wallet inside the same
-// transaction, so a lot can never be live without its payment or vice versa.
-// External payment is recorded, not moved: the operator has already sent it.
-func PayCreditLot(id int, payment CreditLotPayment) (*CreditLot, error) {
-	reference := strings.TrimSpace(payment.Reference)
-	if textLooksLikeProviderSecret(reference) {
-		return nil, ErrCreditLotSecretInText
-	}
-	terms := GetCreditSupplyTerms()
-	now := common.GetTimestamp()
-	var lot CreditLot
-	var paidQuota int
-	var supplier CreditSupplier
-	var wallet BillingEntity
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		// Locked for the transaction: two operators paying, verifying or
-		// transitioning the same lot at once must serialise, or both would
-		// pass the status check and the payout would be booked twice.
-		if err := lockForUpdate(tx).First(&lot, "id = ?", id).Error; err != nil {
-			return err
-		}
-		if lot.Status != CreditLotStatusVerified {
-			return fmt.Errorf("%w: only a verified sale can be paid, this lot is %s", ErrCreditLotTransition, lot.Status)
-		}
-		if lot.ChannelId == 0 {
-			return ErrCreditLotNeedsChannel
-		}
-		if lot.ExpiresAt != 0 && lot.ExpiresAt <= now {
-			return errors.New("the credits have already expired; reject the sale instead")
-		}
-		if err := tx.First(&supplier, "id = ?", lot.SupplierId).Error; err != nil {
-			return err
-		}
-		if err := ensureChannelFree(tx, lot.ChannelId, lot.Id); err != nil {
-			return err
-		}
-		method := lot.PayoutMethod
-		if payment.Method != "" {
-			method = payment.Method
-		}
-		switch method {
-		case CreditLotPayoutPlatformCredit:
-			if supplier.UserId <= 0 {
-				return errors.New("this supplier has no login to credit; pay externally instead")
-			}
-		case CreditLotPayoutExternal:
-			if reference == "" {
-				return errors.New("record the transfer reference the supplier can look up")
-			}
-		default:
-			return fmt.Errorf("unknown payout method %q", method)
-		}
-		lot.PayoutMethod = method
-		lot.PayoutReference = reference
-		lot.PaidUSD = terms.PayoutUSD(lot.FaceValueUSD, lot.AcquisitionRate, method)
-		lot.PaidAt = now
-		lot.PaidBy = payment.Actor
-		lot.ApprovedBy = payment.Actor
-		lot.ApprovedAt = now
-		lot.Status = CreditLotStatusActive
-		lot.StatusReason = ""
-		lot.RetiredAt = 0
-		if err := tx.Save(&lot).Error; err != nil {
-			return err
-		}
-		if method == CreditLotPayoutPlatformCredit {
-			// Through the billing entity: a login inside a tenant is paid
-			// into the tenant wallet it actually spends from.
-			paidQuota = int(lot.PaidUSD * common.QuotaPerUnit)
-			entity, err := IncreaseUserQuotaWithTx(tx, supplier.UserId, paidQuota)
-			if err != nil {
-				return err
-			}
-			wallet = entity
-		}
-		message := fmt.Sprintf("paid %.2f USD via %s %s", lot.PaidUSD, method, reference)
-		return appendCreditLotEvent(tx, lot.Id, payment.Actor, "paid", CreditLotStatusVerified, CreditLotStatusActive, message)
-	})
-	if err != nil {
-		return nil, err
-	}
-	if paidQuota > 0 {
-		RecordLog(supplier.UserId, LogTypeTopup, fmt.Sprintf("credit supply: sale of lot #%d paid in platform credit, %s", lot.Id, logger.LogQuota(paidQuota)))
-		_ = invalidateBillingQuotaCache(wallet)
-	}
-	invalidateChannelLot(lot.ChannelId)
-	invalidateChannelSupplierIndex()
-	UpdateChannelStatus(lot.ChannelId, "", common.ChannelStatusEnabled, "")
-	if err := applyLotCostRatio(&lot, payment.Actor); err != nil {
-		return &lot, err
-	}
 	return &lot, nil
 }
 
@@ -786,7 +800,9 @@ type CreditSupplyVendorTotals struct {
 	FaceUSD      float64 `json:"face_usd"`
 	ConsumedUSD  float64 `json:"consumed_usd"`
 	RemainingUSD float64 `json:"remaining_usd"`
-	PayableUSD   float64 `json:"payable_usd"`
+	// ShareUnpaidUSD is the dividend owed on this vendor's contributed keys.
+	ShareRevenueUSD float64 `json:"share_revenue_usd"`
+	ShareUnpaidUSD  float64 `json:"share_unpaid_usd"`
 }
 
 // CreditSupplyOverview is the headline the admin screen opens on.
@@ -796,13 +812,13 @@ type CreditSupplyOverview struct {
 	FaceUSD      float64        `json:"face_usd"`
 	ConsumedUSD  float64        `json:"consumed_usd"`
 	RemainingUSD float64        `json:"remaining_usd"`
-	PayableUSD   float64        `json:"payable_usd"`
-	// AwaitingPaymentUSD is what verified sales will cost us when settled;
-	// PaidUSD is what has been paid out to date.
-	AwaitingPaymentUSD float64                    `json:"awaiting_payment_usd"`
-	PaidUSD            float64                    `json:"paid_usd"`
-	UnpricedLots       int                        `json:"unpriced_lots"`
-	ByVendor           []CreditSupplyVendorTotals `json:"by_vendor"`
+	UnpricedLots int            `json:"unpriced_lots"`
+	// The dividend side: what contributed keys have earned their owners, what
+	// has been paid, and what is owed now. Unlike a purchase, this is an
+	// ongoing liability that grows with traffic.
+	Share             CreditShareTotals          `json:"share"`
+	MinSharePayoutUSD float64                    `json:"min_share_payout_usd"`
+	ByVendor          []CreditSupplyVendorTotals `json:"by_vendor"`
 	// Attention lists live lots that need a human: pending approval, at or
 	// below low water, or expiring within seven days.
 	Attention []*CreditLot `json:"attention"`
@@ -819,9 +835,6 @@ func GetCreditSupplyOverview() (*CreditSupplyOverview, error) {
 	}
 	now := common.GetTimestamp()
 	terms := GetCreditSupplyTerms()
-	if err := attachChannelStatus(lots); err != nil {
-		return nil, err
-	}
 	overview := &CreditSupplyOverview{
 		Suppliers:    int(supplierCount),
 		LotsByStatus: map[string]int{},
@@ -836,11 +849,6 @@ func GetCreditSupplyOverview() (*CreditSupplyOverview, error) {
 		overview.FaceUSD += lot.FaceValueUSD
 		overview.ConsumedUSD += lot.ConsumedUSD
 		overview.RemainingUSD += lot.RemainingUSD()
-		overview.PayableUSD += lot.PayableUSD()
-		if lot.Status == CreditLotStatusVerified {
-			overview.AwaitingPaymentUSD += terms.PayoutUSD(lot.FaceValueUSD, lot.AcquisitionRate, lot.PayoutMethod)
-		}
-		overview.PaidUSD += lot.PaidUSD
 		if lot.UnpricedRequests > 0 {
 			overview.UnpricedLots++
 		}
@@ -853,7 +861,8 @@ func GetCreditSupplyOverview() (*CreditSupplyOverview, error) {
 		totals.FaceUSD += lot.FaceValueUSD
 		totals.ConsumedUSD += lot.ConsumedUSD
 		totals.RemainingUSD += lot.RemainingUSD()
-		totals.PayableUSD += lot.PayableUSD()
+		totals.ShareRevenueUSD += lot.ShareRevenueUSD
+		totals.ShareUnpaidUSD += lot.UnpaidShareUSD()
 
 		needsAttention := lot.Status == CreditLotStatusPending ||
 			lot.Status == CreditLotStatusVerified ||
@@ -862,11 +871,16 @@ func GetCreditSupplyOverview() (*CreditSupplyOverview, error) {
 			// An active lot whose channel the relay auto-disabled (bad key,
 			// vendor says no balance) looks live in this ledger while nothing
 			// flows through it. The face value was probably overstated.
-			(lot.Status == CreditLotStatusActive && lot.ChannelStatus != 0 && lot.ChannelStatus != common.ChannelStatusEnabled)
+			(lot.Status == CreditLotStatusActive && lot.ChannelStatus != 0 && lot.ChannelStatus != common.ChannelStatusEnabled) ||
+			// A contributor is owed enough to be paid. Nothing chases this on
+			// its own, so it belongs on the list the operator already reads.
+			(lot.UnpaidShareUSD() >= terms.MinSharePayoutUSD && lot.UnpaidShareUSD() > 0)
 		if needsAttention {
 			overview.Attention = append(overview.Attention, lot)
 		}
 	}
+	overview.Share = SumCreditShare(lots)
+	overview.MinSharePayoutUSD = terms.MinSharePayoutUSD
 	overview.ByVendor = make([]CreditSupplyVendorTotals, 0, len(byVendor))
 	for _, totals := range byVendor {
 		overview.ByVendor = append(overview.ByVendor, *totals)

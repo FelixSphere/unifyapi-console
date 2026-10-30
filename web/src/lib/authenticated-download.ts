@@ -13,8 +13,15 @@ import { api } from '@/lib/api'
  * cannot attach the dashboard Authorization header, so protected CSV routes
  * otherwise return an auth JSON error disguised as a download.
  */
-export async function downloadAuthenticatedFile(path: string): Promise<string> {
-  const { blob, filename } = await fetchAuthenticatedFile(path)
+export async function downloadAuthenticatedFile(
+  path: string,
+  fallbackFilename = 'unifyapi-export.csv'
+): Promise<string> {
+  const { blob, filename } = await fetchAuthenticatedFile(
+    path,
+    undefined,
+    fallbackFilename
+  )
   const objectURL = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = objectURL
@@ -36,7 +43,8 @@ type DownloadRequester = (
 
 export async function fetchAuthenticatedFile(
   path: string,
-  request: DownloadRequester = (url, config) => api.get<Blob>(url, config)
+  request: DownloadRequester = (url, config) => api.get<Blob>(url, config),
+  fallbackFilename = 'unifyapi-export.csv'
 ): Promise<{ blob: Blob; filename: string }> {
   const response = await request(path, { responseType: 'blob' })
   return {
@@ -45,7 +53,7 @@ export async function fetchAuthenticatedFile(
       typeof response.headers['content-disposition'] === 'string'
         ? response.headers['content-disposition']
         : undefined,
-      'unifyapi-export.csv'
+      fallbackFilename
     ),
   }
 }

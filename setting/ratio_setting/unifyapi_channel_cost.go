@@ -86,51 +86,113 @@ func ValidateChannelCostRatios(ratios map[string]float64) []error {
 	return problems
 }
 
+// UsageSemanticAnthropic marks a row whose PromptTokens counts fresh input
+// only, with cached reads and cache writes reported separately. Anything else
+// (OpenAI and the formats modelled on it) reports a prompt total that already
+// contains the cached reads.
+const UsageSemanticAnthropic = "anthropic"
+
+// TokenUsage is the token counts of one request, or of an aggregate of them,
+// together with the one fact needed to price them correctly.
+//
+// A struct rather than five int64 parameters on purpose: the old positional
+// form let a caller pass cache-write tokens where completion tokens go, and
+// nothing would have caught it.
+type TokenUsage struct {
+	PromptTokens     int64
+	CachedTokens     int64
+	CacheWriteTokens int64
+	CompletionTokens int64
+
+	// Semantic is the row's logs.usage_semantic. Empty means unknown, which
+	// happens on rows written before the column existed.
+	Semantic string
+}
+
+// promptIsFreshOnly reports whether PromptTokens excludes the cache buckets.
+//
+// Unknown rows are treated as prompt-includes-cached, which is what the cost
+// model did for every row before semantics were recorded. That keeps a
+// historical report stable rather than silently restating it; run the backfill
+// (scripts/backfill-usage-semantic) to classify those rows properly.
+func (u TokenUsage) promptIsFreshOnly() bool {
+	return u.Semantic == UsageSemanticAnthropic
+}
+
 // ListPriceUSD is what a request's tokens cost at the vendor's official list
 // price, before any purchasing discount. It is the denomination a vendor's own
-// prepaid credit balance decrements in, which is why the credit supply draws lots
-// down by this figure rather than by UpstreamCostUSD (see model/credit_lot.go).
+// prepaid credit balance decrements in, which is why the credit supply draws
+// lots down by this figure rather than by UpstreamCostUSD (see
+// model/credit_lot.go).
 //
-// The split matters: cached reads are an order of magnitude cheaper than fresh
-// input at every vendor that offers them (Anthropic bills them at 0.1x), so
-// folding them into promptTokens would overstate cost badly on cache-heavy
-// traffic. cachedTokens is the subset of promptTokens that was served from
-// cache; it is subtracted, not added.
+// Three prices, not two. Cached reads are an order of magnitude cheaper than
+// fresh input wherever they are offered (Anthropic bills them at 0.1x) and
+// cache WRITES are dearer than it (Anthropic 1.25x, and we bill the customer
+// that premium), so a two-way split understates cost on cache-heavy traffic in
+// the one direction that flatters a margin report.
+//
+// Whether the buckets are inside PromptTokens depends on the upstream, which is
+// why TokenUsage carries the semantic. Subtracting cached reads from an
+// Anthropic prompt count -- which never contained them -- is how a 12.8M-token
+// cache read once priced as 838 tokens in production.
 //
 // Returns false for a model with no official price, since a cost we cannot
 // compute must be reported as unknown rather than silently counted as zero.
-func ListPriceUSD(model string, promptTokens, cachedTokens, completionTokens int64) (float64, bool) {
+func ListPriceUSD(model string, usage TokenUsage) (float64, bool) {
 	entry, ok := CatalogEntryFor(model)
 	if !ok {
 		return 0, false
 	}
 
-	if cachedTokens > promptTokens {
-		cachedTokens = promptTokens
+	cached := usage.CachedTokens
+	if cached < 0 {
+		cached = 0
 	}
-	if cachedTokens < 0 {
-		cachedTokens = 0
+	write := usage.CacheWriteTokens
+	if write < 0 {
+		write = 0
 	}
-	freshTokens := promptTokens - cachedTokens
+
+	fresh := usage.PromptTokens
+	if !usage.promptIsFreshOnly() {
+		// The prompt count is a total: take the buckets back out of it so each
+		// is charged at its own price exactly once.
+		if cached > fresh {
+			cached = fresh
+		}
+		fresh -= cached
+		if write > fresh {
+			write = fresh
+		}
+		fresh -= write
+	}
+	if fresh < 0 {
+		fresh = 0
+	}
 
 	const perMillion = 1_000_000.0
-	cost := float64(freshTokens)/perMillion*entry.InputUSD +
-		float64(completionTokens)/perMillion*entry.OutputUSD
+	cost := float64(fresh)/perMillion*entry.InputUSD +
+		float64(usage.CompletionTokens)/perMillion*entry.OutputUSD
 
 	// A vendor with no published cached-read price charges full input price for
-	// them, so they stay at InputUSD rather than becoming free.
+	// them, so they stay at InputUSD rather than becoming free. Same for
+	// writes: no published premium means the vendor charges plain input.
 	cachedPrice := entry.InputUSD
 	if entry.CacheReadUSD != 0 {
 		cachedPrice = entry.CacheReadUSD
 	}
-	cost += float64(cachedTokens) / perMillion * cachedPrice
+	writePrice := entry.InputUSD
+	if entry.CacheWriteUSD != 0 {
+		writePrice = entry.CacheWriteUSD
+	}
+	cost += float64(cached)/perMillion*cachedPrice + float64(write)/perMillion*writePrice
 	return cost, true
 }
 
 // UpstreamCostUSD is what a channel charges us for a request's tokens, in USD:
 // the list price scaled by that channel's purchasing ratio.
-func UpstreamCostUSD(model string, channelID int, promptTokens, cachedTokens, completionTokens int64) (float64, bool) {
-	cost, ok := ListPriceUSD(model, promptTokens, cachedTokens, completionTokens)
+func UpstreamCostUSD(model string, channelID int, usage TokenUsage) (float64, bool) {
+	cost, ok := ListPriceUSD(model, usage)
 	if !ok {
 		return 0, false
 	}

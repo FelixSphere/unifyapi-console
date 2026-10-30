@@ -70,23 +70,18 @@ func GetTenantOverviews(startAt int64, endAt int64, limit int, offset int) ([]*T
 		offset = 0
 	}
 
+	// "group" is reserved. This used to guess with backticks and retry on the
+	// portable form after the error came back, which on PostgreSQL meant every
+	// call failed, logged a syntax error, and ran twice. groupColumn() knows
+	// the dialect, so ask it once.
 	var rows []*TenantOverview
-	err := DB.Model(&Tenant{}).
-		Select("id as tenant_id, name, slug, status, `group`, created_at, quota, used_quota").
+	if err := DB.Model(&Tenant{}).
+		Select("id as tenant_id, name, slug, status, " + groupColumn() + ", created_at, quota, used_quota").
 		Order("id asc").
 		Limit(limit).
 		Offset(offset).
-		Find(&rows).Error
-	if err != nil {
-		// `group` is reserved; MySQL needs backticks, Postgres needs double
-		// quotes. Retry with the portable quoted form before giving up.
-		var retry []*TenantOverview
-		if retryErr := DB.Model(&Tenant{}).
-			Select(`id as tenant_id, name, slug, status, "group", created_at, quota, used_quota`).
-			Order("id asc").Limit(limit).Offset(offset).Find(&retry).Error; retryErr != nil {
-			return nil, err
-		}
-		rows = retry
+		Find(&rows).Error; err != nil {
+		return nil, err
 	}
 	if len(rows) == 0 {
 		return rows, nil

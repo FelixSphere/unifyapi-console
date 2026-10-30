@@ -96,7 +96,7 @@ type User struct {
 	Quota            int                        `json:"quota" gorm:"type:int;default:0"`
 	UsedQuota        int                        `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
 	RequestCount     int                        `json:"request_count" gorm:"type:int;default:0;"`               // request number
-	Group            string                     `json:"group" gorm:"type:varchar(64);default:'default'"`
+	Group            string                     `json:"group" gorm:"type:varchar(255);default:'default'"`
 	AffCode          string                     `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
 	AffCount         int                        `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
 	AffQuota         int                        `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
@@ -115,6 +115,12 @@ type User struct {
 	// user is its own billing entity and behaves exactly as upstream does.
 	// See model/tenant.go and BRANDING.md.
 	TenantId int `json:"tenant_id" gorm:"type:int;default:0;column:tenant_id;index"`
+	// UNIFYAPI-BRAND: a customer is one wallet and every member draws on it, so
+	// the balance shown against each member is the same number -- the
+	// customer's, not that member's share. These say so, and are filled by
+	// FillEffectiveQuotas rather than stored.
+	SharedWallet        string `json:"shared_wallet,omitempty" gorm:"-:all"`
+	SharedWalletMembers int    `json:"shared_wallet_members,omitempty" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -625,6 +631,15 @@ func (user *User) Insert(inviterId int) error {
 	return nil
 }
 
+// recordSignupCredit writes the audit line for the ordinary signup credit on
+// the paths that grant it outside finishInsertWithInitialQuota (partnership
+// and Builder signups, whose "initial quota" argument is the program grant).
+func (user *User) recordSignupCredit() {
+	if common.QuotaForNewUser > 0 {
+		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
+	}
+}
+
 func (user *User) finishInsert(inviterId int) {
 	user.finishInsertWithInitialQuota(inviterId, common.QuotaForNewUser, "新用户注册赠送")
 }
@@ -703,6 +718,7 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 func (user *User) FinalizePartnershipOAuthUserCreation(grantedQuota int) {
 	// Program grants are capped and must not stack with ordinary affiliate
 	// signup rewards. The caller may still retain InviterId for attribution.
+	user.recordSignupCredit()
 	user.finalizeOAuthUserCreationWithInitialQuota(0, grantedQuota, "Partnership registration grant")
 }
 
@@ -808,6 +824,9 @@ func (user *User) Edit(updatePassword bool) error {
 	if err := updateUserCache(*user); err != nil {
 		return err
 	}
+	if err := InvalidateBillingQuotaCacheForUser(user.Id); err != nil {
+		return err
+	}
 	if user.AuthVersion > previousAuthVersion {
 		_, err := RevokeAllUserSessions(user.Id, "user_security_changed")
 		return err
@@ -846,8 +865,16 @@ func (user *User) EditWithTx(tx *gorm.DB, updatePassword bool) error {
 			return err
 		}
 	}
+	previous := current
 	if err = tx.Model(&current).Updates(updates).Error; err != nil {
 		return err
+	}
+	// UNIFYAPI-BRAND: the pricing group is the customer, so changing it moves
+	// the login onto that customer's wallet. See model/customer_wallet.go.
+	if previous.Group != newUser.Group && !IsStaffRole(previous.Role) {
+		if err = reattachWalletTx(tx, previous, newUser.Group); err != nil {
+			return err
+		}
 	}
 	return tx.First(user, user.Id).Error
 }
@@ -1295,7 +1322,7 @@ func IncreaseUserQuota(id int, quota int, db bool) (err error) {
 		return err
 	}
 	if entity.IsTenant() {
-		if _, err := adjustBillingQuotaWithTx(DB, id, quota); err != nil {
+		if _, err := adjustBillingQuota(id, quota); err != nil { // UNIFYAPI-FORK: retried, see settlement_outbox.go
 			return err
 		}
 		_ = invalidateBillingQuotaCache(entity)
@@ -1331,7 +1358,7 @@ func DecreaseUserQuota(id int, quota int, db bool) (err error) {
 		return err
 	}
 	if entity.IsTenant() {
-		if _, err := adjustBillingQuotaWithTx(DB, id, -quota); err != nil {
+		if _, err := adjustBillingQuota(id, -quota); err != nil { // UNIFYAPI-FORK: retried, see settlement_outbox.go
 			return err
 		}
 		_ = invalidateBillingQuotaCache(entity)

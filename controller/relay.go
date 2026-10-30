@@ -25,6 +25,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/samber/lo"
@@ -46,6 +47,8 @@ func relayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIErro
 		err = relay.AudioHelper(c, info)
 	case relayconstant.RelayModeRerank:
 		err = relay.RerankHelper(c, info)
+	case relayconstant.RelayModeSystemOne:
+		err = relay.SystemOneHelper(c, info)
 	case relayconstant.RelayModeEmbeddings:
 		err = relay.EmbeddingHelper(c, info)
 	case relayconstant.RelayModeResponses, relayconstant.RelayModeResponsesCompact:
@@ -66,6 +69,29 @@ func geminiRelayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewA
 		err = relay.GeminiHelper(c, info)
 	}
 	return err
+}
+
+// requestValidationError maps a failure from GetAndValidateRequest onto the
+// error the caller will see.
+//
+// The status matters as much as the message. A request the caller got wrong is
+// not a server fault, and reporting it as one costs twice: OpenAI and Anthropic
+// SDKs treat 5xx as retryable, so a typo is retried with backoff even though it
+// can never succeed, and the same requests land in our own 5xx alarms, where a
+// customer's broken integration pages the on-call instead of showing up as 4xx.
+func requestValidationError(err error) *types.NewAPIError {
+	var wrapped *types.NewAPIError
+	switch {
+	case common.IsRequestBodyTooLargeError(err) || errors.Is(err, common.ErrRequestBodyTooLarge):
+		// Map "request body too large" to 413 so clients can handle it correctly
+		return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusRequestEntityTooLarge, types.ErrOptionWithSkipRetry())
+	case errors.As(err, &wrapped):
+		// Already carries a status chosen deeper in validation (a malformed body
+		// is a 400 already). NewError preserves it rather than flattening it.
+		return types.NewError(err, types.ErrorCodeInvalidRequest)
+	default:
+		return types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+	}
 }
 
 func Relay(c *gin.Context, relayFormat types.RelayFormat) {
@@ -111,12 +137,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	request, err := helper.GetAndValidateRequest(c, relayFormat)
 	if err != nil {
-		// Map "request body too large" to 413 so clients can handle it correctly
-		if common.IsRequestBodyTooLargeError(err) || errors.Is(err, common.ErrRequestBodyTooLarge) {
-			newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusRequestEntityTooLarge, types.ErrOptionWithSkipRetry())
-		} else {
-			newAPIError = types.NewError(err, types.ErrorCodeInvalidRequest)
-		}
+		newAPIError = requestValidationError(err)
 		return
 	}
 
@@ -500,6 +521,12 @@ func RelayTask(c *gin.Context) {
 		return
 	}
 
+	relayTaskWithInfo(c, relayInfo)
+}
+
+// Shared by the public relay and authenticated admin video tests. Keeping one
+// submission path preserves reservation, durable polling, settlement and refunds.
+func relayTaskWithInfo(c *gin.Context, relayInfo *relaycommon.RelayInfo) {
 	if taskErr := relay.ResolveOriginTask(c, relayInfo); taskErr != nil {
 		respondTaskError(c, taskErr)
 		return
@@ -599,6 +626,9 @@ func RelayTask(c *gin.Context) {
 			OriginModelName: relayInfo.OriginModelName,
 			UserGroup:       relayInfo.UserGroup,
 			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+		}
+		if entry, ok := ratio_setting.CatalogEntryFor(relayInfo.OriginModelName); ok {
+			task.PrivateData.BillingContext.PriceUnit = entry.PriceUnit
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData

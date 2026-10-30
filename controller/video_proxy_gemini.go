@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay"
+	geminitask "github.com/QuantumNous/new-api/relay/channel/task/gemini"
 )
 
 func getGeminiVideoURL(channel *model.Channel, task *model.Task, apiKey string) (string, error) {
@@ -55,6 +57,9 @@ func getGeminiVideoURL(channel *model.Channel, task *model.Task, apiKey string) 
 		return ensureAPIKey(taskInfo.RemoteUrl, apiKey), nil
 	}
 
+	if parseErr == nil && taskInfo != nil && strings.HasPrefix(taskInfo.Url, "data:") {
+		return taskInfo.Url, nil
+	}
 	if url := extractGeminiVideoURLFromPayload(body); url != "" {
 		return ensureAPIKey(url, apiKey), nil
 	}
@@ -74,7 +79,18 @@ func extractGeminiVideoURLFromTaskData(task *model.Task) string {
 	if err := common.Unmarshal(task.Data, &payload); err != nil {
 		return ""
 	}
-	return extractGeminiVideoURLFromMap(payload)
+	if uri := extractGeminiVideoURLFromMap(payload); uri != "" {
+		return uri
+	}
+	if result, err := (&geminitask.TaskAdaptor{}).ParseTaskResult(task.Data); err == nil && result != nil {
+		if result.RemoteUrl != "" {
+			return result.RemoteUrl
+		}
+		if strings.HasPrefix(result.Url, "data:") {
+			return result.Url
+		}
+	}
+	return ""
 }
 
 func extractGeminiVideoURLFromPayload(body []byte) string {
@@ -281,6 +297,10 @@ func buildVideoDataURL(mimeType string, encoding string, base64Data string) stri
 }
 
 func ensureAPIKey(uri, key string) string {
+	parsed, err := url.Parse(uri)
+	if err != nil || parsed.Scheme != "https" || parsed.Hostname() != "generativelanguage.googleapis.com" {
+		return uri
+	}
 	if key == "" || uri == "" {
 		return uri
 	}

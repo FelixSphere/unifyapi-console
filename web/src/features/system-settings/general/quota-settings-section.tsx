@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useMemo } from 'react'
 import type { ChangeEvent } from 'react'
 import type { Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -34,7 +35,7 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { formatQuota } from '@/lib/format'
+import { formatQuota, quotaUnitsToUsd, usdToQuotaUnits } from '@/lib/format'
 
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
 import { FormNavigationGuard } from '../components/form-navigation-guard'
@@ -64,11 +65,38 @@ const quotaSchema = z.object({
   }),
 })
 
+// These four options are stored in quota units, where `quotaPerUnit` (500,000
+// by default) is one USD. The form used to take that raw number, so an
+// operator entering the amount they meant -- 5, for five dollars -- set the
+// new user grant to 5 units, which is $0.00001 and cannot pay for a single
+// request. That happened in production.
+//
+// Storage stays in units, because the server reads them that way. The form is
+// in US DOLLARS specifically, not the console's display currency: the server's
+// money is dollars (model/topup.go computes quota = USD * QuotaPerUnit with no
+// exchange rate), so how much credit a new user gets must not change meaning
+// because someone switched the display to RM.
+const CURRENCY_DENOMINATED_KEYS = [
+  'QuotaForNewUser',
+  'PreConsumedQuota',
+  'QuotaForInviter',
+  'QuotaForInvitee',
+] as const
+
+type CurrencyDenominatedKey = (typeof CURRENCY_DENOMINATED_KEYS)[number]
+
+function isCurrencyDenominated(key: string): key is CurrencyDenominatedKey {
+  return (CURRENCY_DENOMINATED_KEYS as readonly string[]).includes(key)
+}
+
 type QuotaFormValues = z.infer<typeof quotaSchema>
 type QuotaInputValue = number | ''
 
+// The field now holds a display amount, so convert back to units before
+// formatting -- otherwise the hint under the input converts a second time and
+// contradicts what was typed.
 function formatQuotaInputValue(value: QuotaInputValue): string {
-  return formatQuota(value === '' ? 0 : value)
+  return formatQuota(usdToQuotaUnits(value === '' ? 0 : value))
 }
 
 type QuotaSettingsSectionProps = {
@@ -82,6 +110,16 @@ export function QuotaSettingsSection({
 }: QuotaSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+
+  // Units in, display amount on the form.
+  const displayDefaults = useMemo(() => {
+    const next = { ...defaultValues }
+    for (const key of CURRENCY_DENOMINATED_KEYS) {
+      const raw = next[key]
+      if (typeof raw === 'number') next[key] = quotaUnitsToUsd(raw)
+    }
+    return next
+  }, [defaultValues])
   const handleNumberChange =
     (onChange: (value: QuotaInputValue) => void) =>
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -96,12 +134,16 @@ export function QuotaSettingsSection({
         unknown,
         QuotaFormValues
       >,
-      defaultValues,
+      defaultValues: displayDefaults,
       onSubmit: async (_data, changedFields) => {
         for (const [key, value] of Object.entries(changedFields)) {
           await updateOption.mutateAsync({
             key,
-            value: value as string | number | boolean,
+            // Back to units on the way out. Round-tripping through the same
+            // pair of helpers keeps an untouched field byte-identical.
+            value: isCurrencyDenominated(key)
+              ? usdToQuotaUnits(Number(value) || 0)
+              : (value as string | number | boolean),
           })
         }
       },

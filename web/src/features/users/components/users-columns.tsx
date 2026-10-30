@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 
@@ -32,6 +33,7 @@ import {
 } from '@/components/ui/tooltip'
 import { formatQuota, formatTimestamp } from '@/lib/format'
 
+import { getUnreachableEmails } from '../api'
 import {
   USER_STATUS,
   USER_STATUSES,
@@ -43,6 +45,18 @@ import { DataTableRowActions } from './data-table-row-actions'
 import { UserQuotaCell } from './user-quota-cell'
 
 export function useUsersColumns(): ColumnDef<User>[] {
+  // Only refused addresses come back, so one small request marks up the whole
+  // page. A failure here must not hide the user list, so it degrades to "no
+  // address is known to be unreachable" rather than surfacing an error.
+  const { data: unreachable } = useQuery({
+    queryKey: ['users', 'unreachable-emails'],
+    queryFn: () => getUnreachableEmails(),
+    staleTime: 60_000,
+  })
+  const unreachableByEmail = new Map(
+    (unreachable ?? []).map((state) => [state.email.toLowerCase(), state])
+  )
+
   const { t } = useTranslation()
   return [
     {
@@ -122,6 +136,45 @@ export function useUsersColumns(): ColumnDef<User>[] {
       meta: { mobileTitle: true },
     },
     {
+      accessorKey: 'email',
+      header: t('Email'),
+      cell: ({ row }) => {
+        const email = (row.original.email ?? '').trim()
+        if (!email) {
+          return <span className='text-muted-foreground text-sm'>—</span>
+        }
+        const failure = unreachableByEmail.get(email.toLowerCase())
+        return (
+          <div className='flex min-w-[180px] items-center gap-2'>
+            <LongText className='max-w-[200px] text-sm' data-user-email>
+              {email}
+            </LongText>
+            {failure && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={<StatusBadge variant='danger' copyable={false} />}
+                >
+                  {t('Unreachable')}
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className='text-xs'>
+                    {t('Last send was refused')} ·{' '}
+                    {formatTimestamp(failure.last_attempt_at)}
+                  </p>
+                  {failure.last_error && (
+                    <p className='text-xs opacity-80'>{failure.last_error}</p>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        )
+      },
+      enableSorting: false,
+      size: 240,
+      meta: { mobileOrder: 15 },
+    },
+    {
       accessorKey: 'status',
       header: t('Status'),
       cell: ({ row }) => {
@@ -166,7 +219,14 @@ export function useUsersColumns(): ColumnDef<User>[] {
       header: t('Quota'),
       cell: ({ row }) => {
         const user = row.original
-        return <UserQuotaCell used={user.used_quota} remaining={user.quota} />
+        return (
+          <UserQuotaCell
+            used={user.used_quota}
+            remaining={user.quota}
+            sharedWallet={user.shared_wallet}
+            sharedWalletMembers={user.shared_wallet_members}
+          />
+        )
       },
       size: 300,
       minSize: 260,
