@@ -190,11 +190,12 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "gpt-5", Vendor: "openai", InputUSD: 1.25, OutputUSD: 10, CacheReadUSD: 0.125, CacheWriteUSD: 0,
 		QuoteSource: "https://models.dev/api.json (openai/gpt-5)", QuoteDate: "2026-08-30"},
 	{Model: "gpt-5-mini", Vendor: "openai", InputUSD: 0.25, OutputUSD: 2, CacheReadUSD: 0.025, CacheWriteUSD: 0},
-	// Standard tier. OpenAI also publishes a higher band above a 272k context
-	// ($5/$22.5); the catalog carries one price per model, and the standard
-	// tier is what the relay bills, so that is what is recorded here.
+	// The 272k tier is OpenAI's published long-context price (read 2026-10-30).
+	// Production billed it through a hand-written expression until the catalog
+	// took over every expression on a catalogued model.
 	{Model: "gpt-5.4", Vendor: "openai", InputUSD: 2.5, OutputUSD: 15, CacheReadUSD: 0.25, CacheWriteUSD: 0,
-		QuoteSource: "https://models.dev/api.json (openai/gpt-5.4)", QuoteDate: "2026-08-30"},
+		QuoteSource: "https://models.dev/api.json (openai/gpt-5.4)", QuoteDate: "2026-08-30",
+		ContextTier: &ContextTier{ThresholdTokens: 272000, InputUSD: 5, OutputUSD: 22.5, CacheReadUSD: 0.5}},
 	// Served by channel 186 and previously uncatalogued, so its upstream cost
 	// modelled as zero.
 	//
@@ -224,12 +225,17 @@ var unifyapiCatalog = []CatalogEntry{
 		QuoteSource: "https://developers.openai.com/api/docs/pricing ($0.75 in / $0.075 cached / $4.50 out per 1M)", QuoteDate: "2026-10-13"},
 	{Model: "gpt-5.4-nano", Vendor: "", InputUSD: 0.2, OutputUSD: 1.25, CacheReadUSD: 0.02, CacheWriteUSD: 0, Unverified: true,
 		QuoteSource: "https://developers.openai.com/api/docs/pricing ($0.20 in / $0.02 cached / $1.25 out per 1M)", QuoteDate: "2026-10-13"},
+	// gpt-5.5, gpt-5.6-luna and gpt-5.6-terra carry OpenAI's 272k tier, and
+	// luna and terra its 30-minute cache-write price (read 2026-10-30).
 	{Model: "gpt-5.5", Vendor: "", InputUSD: 5, OutputUSD: 30, CacheReadUSD: 0.5, CacheWriteUSD: 0, Unverified: true,
-		QuoteSource: "https://developers.openai.com/api/docs/pricing ($5 in / $0.50 cached / $30 out per 1M)", QuoteDate: "2026-10-13"},
-	{Model: "gpt-5.6-luna", Vendor: "", InputUSD: 0.2, OutputUSD: 1.2, CacheReadUSD: 0.02, CacheWriteUSD: 0, Unverified: true,
-		QuoteSource: "https://developers.openai.com/api/docs/pricing ($0.20 in / $0.02 cached / $1.20 out per 1M)", QuoteDate: "2026-10-13"},
-	{Model: "gpt-5.6-terra", Vendor: "", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 0, Unverified: true,
-		QuoteSource: "https://developers.openai.com/api/docs/pricing ($2 in / $0.20 cached / $12 out per 1M)", QuoteDate: "2026-10-13"},
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($5 in / $0.50 cached / $30 out per 1M)", QuoteDate: "2026-10-13",
+		ContextTier: &ContextTier{ThresholdTokens: 272000, InputUSD: 10, OutputUSD: 45, CacheReadUSD: 1}},
+	{Model: "gpt-5.6-luna", Vendor: "", InputUSD: 0.2, OutputUSD: 1.2, CacheReadUSD: 0.02, CacheWriteUSD: 0.25, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($0.20 in / $0.02 cached / $0.25 30m cache write / $1.20 out per 1M)", QuoteDate: "2026-10-30",
+		ContextTier: &ContextTier{ThresholdTokens: 272000, InputUSD: 0.4, OutputUSD: 1.8, CacheReadUSD: 0.04, CacheWriteUSD: 0.5}},
+	{Model: "gpt-5.6-terra", Vendor: "", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 2.5, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($2 in / $0.20 cached / $2.50 30m cache write / $12 out per 1M)", QuoteDate: "2026-10-30",
+		ContextTier: &ContextTier{ThresholdTokens: 272000, InputUSD: 4, OutputUSD: 18, CacheReadUSD: 0.4, CacheWriteUSD: 5}},
 	{Model: "gpt-6-luna", Vendor: "", InputUSD: 0.1, OutputUSD: 0.5, CacheReadUSD: 0.01, CacheWriteUSD: 0, Unverified: true,
 		QuoteSource: "https://developers.openai.com/api/docs/pricing ($0.10 in / $0.01 cached / $0.50 out per 1M)", QuoteDate: "2026-10-13"},
 	{Model: "gpt-6-sol", Vendor: "", InputUSD: 2, OutputUSD: 10, CacheReadUSD: 0.2, CacheWriteUSD: 0, Unverified: true,
