@@ -302,6 +302,13 @@ func GetTokenByKey(key string, fromDB bool) (token *Token, err error) {
 			return token, nil
 		}
 		// Don't return error - fall through to DB
+		// UNIFYAPI-FORK: ...but collapse the fall-through. Without this, a
+		// Redis miss or outage turns N concurrent requests carrying the same
+		// token into N identical queries against a Postgres that shares this
+		// box and cannot widen. See token_singleflight.go.
+		fromDB = true
+		token, err = loadTokenFromDBOnce(key)
+		return token, err
 	}
 	fromDB = true
 	err = DB.Where(commonKeyCol+" = ?", key).First(&token).Error

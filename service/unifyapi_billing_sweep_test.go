@@ -24,6 +24,7 @@ package service
 // Verified by mutation: injecting that leak fails the test by name.
 
 import (
+	"github.com/QuantumNous/new-api/common"
 	"testing"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -86,8 +87,21 @@ func TestEveryModelRespondsToItsDiscount(t *testing.T) {
 			withDiscount(t, `{"`+entry.Model+`":0.25}`)
 			quarter := chargeUSD(t, entry.Model, "default", oneMillionEach())
 
-			require.InDelta(t, 0.25, quarter/full, 1e-9,
-				"%s: a 0.25 discount must produce exactly a quarter of the charge", entry.Model)
+			// The ledger stores quota as an INTEGER of 1/QuotaPerUnit dollars,
+			// so a discounted charge can only land on a whole unit: when
+			// full*0.25 falls on a half-unit (glm-5.2 and glm-5.3 do, at
+			// 672277.5) the quarter is off by half a unit and no price can
+			// avoid it. Older prices passed a 1e-9 tolerance by luck -- $1 and
+			// $3.20 happen to make a quarter that divides exactly -- not
+			// because the system guarantees it.
+			//
+			// So the bound is derived from the quantum rather than guessed: one
+			// whole quota unit, expressed as a fraction of the full charge. That
+			// is ~4e-7 here and still fails loudly on the bug this test exists
+			// for, where a discount does not apply at all and the ratio is 1.0.
+			oneQuotaUnit := (1.0 / common.QuotaPerUnit) / full
+			require.InDelta(t, 0.25, quarter/full, oneQuotaUnit,
+				"%s: a 0.25 discount must produce a quarter of the charge, within one quota unit", entry.Model)
 		})
 	}
 }
@@ -222,10 +236,10 @@ func TestPinnedDollarsForTheModelsThatCarryTheTraffic(t *testing.T) {
 		"gpt-5-mini":        0.25 + 2,    // OpenAI $0.25 / $2
 		"deepseek-v4-flash": 0.44 + 1.32, // DeepSeek peak tier, 2026-08-16 increase
 		"deepseek-v4-pro":   1.32 + 3.96,
-		"deepseek-flash":    0.3 + 1.2, // DeepSeek V4.1 Flash, peak tier, page read 2026-09-17
-		"jev-1.13":          0.042 + 0, // TypeSafe Jev: input only; a decision model meters no output
-		"glm-5.3":           1.4 + 4.4, // Zhipu $1.40 / $4.40
-		"kimi-k3":           3 + 15,    // Moonshot $3 / $15
+		"deepseek-flash":    0.3 + 1.2,         // DeepSeek V4.1 Flash, peak tier, page read 2026-09-17
+		"jev-1.13":          0.042 + 0,         // TypeSafe Jev: input only; a decision model meters no output
+		"glm-5.3":           1.19516 + 4.18306, // Zhipu, models.dev zhipuai feed read 2026-10-30 (was $1.40/$4.40)
+		"kimi-k3":           3 + 15,            // Moonshot $3 / $15
 	}
 	for model, want := range pinned {
 		t.Run(model, func(t *testing.T) {

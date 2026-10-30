@@ -912,6 +912,9 @@ func handleConfigUpdate(key, value string) bool {
 	if configName == "performance_setting" {
 		performance_setting.UpdateAndSync()
 	} else if configName == "billing_setting" {
+		// UNIFYAPI-FORK: a stored expression for a catalogued model, including
+		// one loaded from the database at startup, never outranks the catalog.
+		ratio_setting.EnforceCatalogBillingExprs()
 		InvalidatePricingCache()
 		ratio_setting.InvalidateExposedDataCache()
 	}
