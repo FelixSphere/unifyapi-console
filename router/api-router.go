@@ -37,6 +37,21 @@ func SetApiRouter(router *gin.Engine) {
 		// read a response it could already fetch with curl.
 		apiRouter.GET("/pricing", middleware.CORS(), middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
 		apiRouter.POST("/builder/v1/:action", controller.BuilderIntegration)
+		// UNIFYAPI-FORK: weekly-update unsubscribe, signed link, no sign-in.
+		apiRouter.GET("/email/unsubscribe", controller.RetentionUnsubscribePage)
+		apiRouter.POST("/email/unsubscribe", controller.RetentionUnsubscribe)
+		// UNIFYAPI-BRAND: compute billing bridge. Server-signed only, no session
+		// auth; 404 until COMPUTE_BRIDGE_SECRET is set. Registered on the engine,
+		// not apiRouter, so the per-IP global API limiter does not apply -- every
+		// call comes from compute-api's one address -- and the bridge's own
+		// limiter does instead. See controller/compute_bridge.go.
+		computeRoute := router.Group("/api/compute/v1", middleware.RouteTag("api"), controller.ComputeBridgeAuth())
+		computeRoute.POST("/verify", controller.ComputeVerify)
+		computeRoute.POST("/holds", controller.ComputeCreateHold)
+		computeRoute.POST("/holds/:hold_id/settle", controller.ComputeSettleHold)
+		computeRoute.POST("/holds/:hold_id/extend", controller.ComputeExtendHold)
+		computeRoute.POST("/holds/:hold_id/release", controller.ComputeReleaseHold)
+		controller.StartComputeHoldSweeper()
 		apiRouter.GET("/partnership/:code", middleware.DisableCache(), controller.GetPublicPartnershipProgram)
 		apiRouter.POST("/partnership/:code/connect", middleware.UserAuth(), middleware.DisableCache(), controller.ConnectExistingUserToPartnership)
 		perfMetricsRoute := apiRouter.Group("/perf-metrics")
@@ -389,6 +404,26 @@ func SetApiRouter(router *gin.Engine) {
 			tenantRoute.POST("/:id/suspend", middleware.RootAuth(), controller.SuspendTenant)
 			tenantRoute.POST("/:id/resume", middleware.RootAuth(), controller.ResumeTenant)
 			tenantRoute.POST("/:id/extend", middleware.RootAuth(), controller.ExtendTenantTerm)
+		}
+
+		// UNIFYAPI-FORK: customer questions and messages. Customers see only
+		// their own conversations; the inbox is AdminAuth. See
+		// controller/unifyapi_support.go.
+		supportRoute := apiRouter.Group("/support")
+		{
+			supportRoute.GET("/unread", middleware.UserAuth(), controller.SupportUnread)
+			mine := supportRoute.Group("/tickets", middleware.UserAuth())
+			mine.GET("", controller.ListMySupportTickets)
+			mine.POST("", controller.CreateSupportTicket)
+			mine.GET("/:id", controller.GetMySupportTicket)
+			mine.POST("/:id/messages", controller.AddMySupportMessage)
+			mine.POST("/:id/close", controller.CloseMySupportTicket)
+
+			inbox := supportRoute.Group("/admin/tickets", middleware.AdminAuth())
+			inbox.GET("", controller.ListSupportTickets)
+			inbox.GET("/:id", controller.GetSupportTicket)
+			inbox.POST("/:id/messages", controller.ReplySupportTicket)
+			inbox.POST("/:id/status", controller.SetSupportTicketStatus)
 		}
 
 		redemptionRoute := apiRouter.Group("/redemption")

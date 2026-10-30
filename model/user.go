@@ -1322,7 +1322,7 @@ func IncreaseUserQuota(id int, quota int, db bool) (err error) {
 		return err
 	}
 	if entity.IsTenant() {
-		if _, err := adjustBillingQuotaWithTx(DB, id, quota); err != nil {
+		if _, err := adjustBillingQuota(id, quota); err != nil { // UNIFYAPI-FORK: retried, see settlement_outbox.go
 			return err
 		}
 		_ = invalidateBillingQuotaCache(entity)
@@ -1358,7 +1358,7 @@ func DecreaseUserQuota(id int, quota int, db bool) (err error) {
 		return err
 	}
 	if entity.IsTenant() {
-		if _, err := adjustBillingQuotaWithTx(DB, id, -quota); err != nil {
+		if _, err := adjustBillingQuota(id, -quota); err != nil { // UNIFYAPI-FORK: retried, see settlement_outbox.go
 			return err
 		}
 		_ = invalidateBillingQuotaCache(entity)

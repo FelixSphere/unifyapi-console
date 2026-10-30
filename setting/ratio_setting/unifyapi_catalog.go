@@ -124,15 +124,28 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "happyhorse-1.1-t2v", Vendor: "", PerCallUSD: 0.14, PriceUnit: "second", Unverified: true, QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing", QuoteDate: "2026-09-10"},
 	{Model: "happyhorse-1.1-i2v", Vendor: "", PerCallUSD: 0.14, PriceUnit: "second", Unverified: true, QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing", QuoteDate: "2026-09-10"},
 	{Model: "happyhorse-1.1-r2v", Vendor: "", PerCallUSD: 0.14, PriceUnit: "second", Unverified: true, QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing", QuoteDate: "2026-09-10"},
-	{Model: "MiniMax-H3", Vendor: "", PerCallUSD: 0.08, PriceUnit: "second", Unverified: true, QuoteSource: "https://platform.minimax.io/docs/guides/pricing-paygo", QuoteDate: "2026-09-10"},
+	// $0.08 was MiniMax's own list, and it is also exactly what our supplier
+	// charges us (FlatKey, Seedance2.0 Official group, ratio 1x, read signed-in
+	// 2026-10-16). Selling at list earned nothing and every discount sold below
+	// cost. $0.10 restores the floor: 20% at list, 5.9% at 0.85.
+	{Model: "MiniMax-H3", Vendor: "", PerCallUSD: 0.10, PriceUnit: "second", Unverified: true, QuoteSource: "https://console.flatkey.ai/available-models", QuoteDate: "2026-10-16"},
 	{Model: "MiniMax-H3-Max", Vendor: "", PerCallUSD: 0.08, PriceUnit: "second", Unverified: true, QuoteSource: "https://platform.minimax.io/docs/guides/pricing-paygo", QuoteDate: "2026-09-10"},
 	// Seedance 2.5 reports completion_tokens/total_tokens when the async task
 	// finishes, so it remains token-billed. $10.70/M is the no-video baseline;
 	// the Doubao task adaptor applies 6.40/10.70 when the request contains video.
 	// The doubao-prefixed name is retained as a compatibility alias.
-	{Model: "seedance-2.5", Vendor: "", InputUSD: 10.7, OutputUSD: 10.7, Unverified: true, QuoteSource: "https://ai.byteplus.com/en", QuoteDate: "2026-09-10"},
-	{Model: "doubao-seedance-2-5-260628", Vendor: "", InputUSD: 10.7, OutputUSD: 10.7, Unverified: true, QuoteSource: "https://ai.byteplus.com/en", QuoteDate: "2026-09-10"},
-	{Model: "dreamina-seedance-2-5-260628", Vendor: "", InputUSD: 10.7, OutputUSD: 10.7, Unverified: true, QuoteSource: "https://ai.byteplus.com/en", QuoteDate: "2026-09-10"},
+	// seedance 2.5 is billed PER SECOND of generated video, not per token. We
+	// sold it per token, which is not a wrong number so much as the wrong unit:
+	// there is nothing on the supplier side to compare $/1M tokens against.
+	// FlatKey's own console, read 2026-10-16 while signed in, prices it at
+	// $0.084 per second (its token "price" there is 37.5, which is FlatKey's
+	// NOT-PRICED sentinel and not a quote -- see supply/README.md).
+	//
+	// $0.105 leaves 20% at list and 5.9% at the 0.85 every customer group gets,
+	// which is the floor this catalog is held to.
+	{Model: "seedance-2.5", Vendor: "", PerCallUSD: 0.105, PriceUnit: "second", Unverified: true, QuoteSource: "https://console.flatkey.ai/available-models", QuoteDate: "2026-10-16"},
+	{Model: "doubao-seedance-2-5-260628", Vendor: "", PerCallUSD: 0.105, PriceUnit: "second", Unverified: true, QuoteSource: "https://console.flatkey.ai/available-models", QuoteDate: "2026-10-16"},
+	{Model: "dreamina-seedance-2-5-260628", Vendor: "", PerCallUSD: 0.105, PriceUnit: "second", Unverified: true, QuoteSource: "https://console.flatkey.ai/available-models", QuoteDate: "2026-10-16"},
 
 	// ---- unlisted vendor ----
 	{Model: "nano-banana-pro-preview", Vendor: "google", UpstreamModel: "gemini-3-pro-image", InputUSD: 2, OutputUSD: 120, CacheReadUSD: 0, CacheWriteUSD: 0},
@@ -142,6 +155,17 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "claude-fable-5.1", Vendor: "anthropic", UpstreamModel: "claude-fable-5-1", InputUSD: 10, OutputUSD: 50, CacheReadUSD: 0.25, CacheWriteUSD: 12.5,
 		QuoteSource: "https://www.anthropic.com/claude/fable", QuoteDate: "2026-09-01"},
 	{Model: "claude-haiku-4-5-20251001", Vendor: "anthropic", InputUSD: 1, OutputUSD: 5, CacheReadUSD: 0.1, CacheWriteUSD: 1.25},
+	// The undated alias Anthropic (and FlatKey) also serve; same price, same models.dev row.
+	{Model: "claude-haiku-4-5", Vendor: "anthropic", UpstreamModel: "claude-haiku-4-5-20251001", InputUSD: 1, OutputUSD: 5, CacheReadUSD: 0.1, CacheWriteUSD: 1.25},
+	// Haiku 5.5 is tiered by prompt length: prompts over 100K tokens cost 5x
+	// ($0.50 / $2.50, cache hit $0.05). The catalogue carries the base tier, as
+	// it does for every other tiered vendor; the long-prompt tier is not billed.
+	{Model: "claude-haiku-5-5", Vendor: "", InputUSD: 0.1, OutputUSD: 0.5, CacheReadUSD: 0.01, CacheWriteUSD: 0.125, Unverified: true,
+		QuoteSource: "https://platform.claude.com/docs/en/about-claude/pricing (prompts up to 100K tokens: $0.10 in / $0.50 out per 1M; 5m cache write $0.125; cache hit $0.01)", QuoteDate: "2026-10-13"},
+	// Sonnet 5.5 keeps Sonnet 5's $2 / $10 but, like Opus 5.5, prices cache
+	// hits at 0.05x input ($0.10), not the 0.1x of Sonnet 5 ($0.20).
+	{Model: "claude-sonnet-5-5", Vendor: "", InputUSD: 2, OutputUSD: 10, CacheReadUSD: 0.1, CacheWriteUSD: 2.5, Unverified: true,
+		QuoteSource: "https://platform.claude.com/docs/en/about-claude/pricing ($2 in / $10 out per 1M; 5m cache write $2.50; cache hit $0.10 = 0.05x input)", QuoteDate: "2026-10-13"},
 	{Model: "claude-opus-4-5", Vendor: "anthropic", InputUSD: 5, OutputUSD: 25, CacheReadUSD: 0.5, CacheWriteUSD: 6.25},
 	{Model: "claude-opus-4-6", Vendor: "anthropic", InputUSD: 5, OutputUSD: 25, CacheReadUSD: 0.5, CacheWriteUSD: 6.25},
 	{Model: "claude-opus-4-7", Vendor: "anthropic", InputUSD: 5, OutputUSD: 25, CacheReadUSD: 0.5, CacheWriteUSD: 6.25},
@@ -166,16 +190,22 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "gpt-5", Vendor: "openai", InputUSD: 1.25, OutputUSD: 10, CacheReadUSD: 0.125, CacheWriteUSD: 0,
 		QuoteSource: "https://models.dev/api.json (openai/gpt-5)", QuoteDate: "2026-08-30"},
 	{Model: "gpt-5-mini", Vendor: "openai", InputUSD: 0.25, OutputUSD: 2, CacheReadUSD: 0.025, CacheWriteUSD: 0},
-	// Standard tier. OpenAI also publishes a higher band above a 272k context
-	// ($5/$22.5); the catalog carries one price per model, and the standard
-	// tier is what the relay bills, so that is what is recorded here.
+	// The 272k tier is OpenAI's published long-context price (read 2026-10-30).
+	// Production billed it through a hand-written expression until the catalog
+	// took over every expression on a catalogued model.
 	{Model: "gpt-5.4", Vendor: "openai", InputUSD: 2.5, OutputUSD: 15, CacheReadUSD: 0.25, CacheWriteUSD: 0,
-		QuoteSource: "https://models.dev/api.json (openai/gpt-5.4)", QuoteDate: "2026-08-30"},
+		QuoteSource: "https://models.dev/api.json (openai/gpt-5.4)", QuoteDate: "2026-08-30",
+		ContextTier: &ContextTier{ThresholdTokens: 272000, InputUSD: 5, OutputUSD: 22.5, CacheReadUSD: 0.5}},
 	// Served by channel 186 and previously uncatalogued, so its upstream cost
-	// modelled as zero. Standard tier only, as for the rest of the range;
-	// OpenAI also publishes a band above a 272k context ($8/$30).
+	// modelled as zero.
+	//
+	// Carries its 272k context tier so the catalog owns this model's billing
+	// expression. Without one, a hand-written expression copied from gpt-5.5
+	// ($5/$30) survived every rebuild and billed 25% over list on input and 50%
+	// over on output, while the console displayed $4/$20.
 	{Model: "gpt-5.6-sol", Vendor: "openai", InputUSD: 4, OutputUSD: 20, CacheReadUSD: 0.4, CacheWriteUSD: 5,
-		QuoteSource: "https://models.dev/api.json (openai/gpt-5.6-sol)", QuoteDate: "2026-09-11"},
+		QuoteSource: "https://developers.openai.com/api/docs/pricing (gpt-5.6-sol)", QuoteDate: "2026-10-17",
+		ContextTier: &ContextTier{ThresholdTokens: 272000, InputUSD: 8, OutputUSD: 30, CacheReadUSD: 0.8, CacheWriteUSD: 10}},
 	// Standard tier. OpenAI also publishes a higher band above a 272k context
 	// ($20/$75); the catalog carries one price per model, and the standard tier
 	// is what the relay bills, so that is what is recorded here.
@@ -186,6 +216,41 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "gpt-6-astra", Vendor: "openai", InputUSD: 10, OutputUSD: 50, CacheReadUSD: 1, CacheWriteUSD: 12.5,
 		QuoteSource: "https://models.dev/api.json (openai/gpt-6-astra)", QuoteDate: "2026-09-11"},
 	{Model: "gpt-image-2", Vendor: "openai", InputUSD: 5, OutputUSD: 30, CacheReadUSD: 1.25, CacheWriteUSD: 0},
+	// Added 2026-10-13 from OpenAI's pricing page (standard tier). All are
+	// newer than the pinned models.dev fixture, so they are manual quotes.
+	// Cache reads are 0.1x input throughout except gpt-6.1-sol (0.05x).
+	{Model: "gpt-5.1", Vendor: "", InputUSD: 1.25, OutputUSD: 10, CacheReadUSD: 0.125, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($1.25 in / $0.125 cached / $10 out per 1M)", QuoteDate: "2026-10-13"},
+	{Model: "gpt-5.4-mini", Vendor: "", InputUSD: 0.75, OutputUSD: 4.5, CacheReadUSD: 0.075, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($0.75 in / $0.075 cached / $4.50 out per 1M)", QuoteDate: "2026-10-13"},
+	{Model: "gpt-5.4-nano", Vendor: "", InputUSD: 0.2, OutputUSD: 1.25, CacheReadUSD: 0.02, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($0.20 in / $0.02 cached / $1.25 out per 1M)", QuoteDate: "2026-10-13"},
+	// gpt-5.5, gpt-5.6-luna and gpt-5.6-terra carry OpenAI's 272k tier, and
+	// luna and terra its 30-minute cache-write price (read 2026-10-30).
+	{Model: "gpt-5.5", Vendor: "", InputUSD: 5, OutputUSD: 30, CacheReadUSD: 0.5, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($5 in / $0.50 cached / $30 out per 1M)", QuoteDate: "2026-10-13",
+		ContextTier: &ContextTier{ThresholdTokens: 272000, InputUSD: 10, OutputUSD: 45, CacheReadUSD: 1}},
+	{Model: "gpt-5.6-luna", Vendor: "", InputUSD: 0.2, OutputUSD: 1.2, CacheReadUSD: 0.02, CacheWriteUSD: 0.25, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($0.20 in / $0.02 cached / $0.25 30m cache write / $1.20 out per 1M)", QuoteDate: "2026-10-30",
+		ContextTier: &ContextTier{ThresholdTokens: 272000, InputUSD: 0.4, OutputUSD: 1.8, CacheReadUSD: 0.04, CacheWriteUSD: 0.5}},
+	{Model: "gpt-5.6-terra", Vendor: "", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 2.5, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($2 in / $0.20 cached / $2.50 30m cache write / $12 out per 1M)", QuoteDate: "2026-10-30",
+		ContextTier: &ContextTier{ThresholdTokens: 272000, InputUSD: 4, OutputUSD: 18, CacheReadUSD: 0.4, CacheWriteUSD: 5}},
+	{Model: "gpt-6-luna", Vendor: "", InputUSD: 0.1, OutputUSD: 0.5, CacheReadUSD: 0.01, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($0.10 in / $0.01 cached / $0.50 out per 1M)", QuoteDate: "2026-10-13"},
+	{Model: "gpt-6-sol", Vendor: "", InputUSD: 2, OutputUSD: 10, CacheReadUSD: 0.2, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($2 in / $0.20 cached / $10 out per 1M)", QuoteDate: "2026-10-13"},
+	{Model: "gpt-6.1-sol", Vendor: "", InputUSD: 2, OutputUSD: 10, CacheReadUSD: 0.1, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://developers.openai.com/api/docs/pricing ($2 in / $0.10 cached / $10 out per 1M; cache 0.05x, unlike gpt-6-sol)", QuoteDate: "2026-10-13"},
+
+	// ---- xAI ----
+	// Grok is tiered by context: the prices below are the under-200K-token
+	// tier; at 200K and above xAI doubles every column. Base tier only, as
+	// for every other tiered vendor here.
+	{Model: "grok-4.6", Vendor: "", InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.5, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://docs.x.ai/docs/models (<200K tokens: $2 in / $0.50 cached / $6 out per 1M)", QuoteDate: "2026-10-13"},
+	{Model: "grok-4.7", Vendor: "", InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.5, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://docs.x.ai/docs/models (<200K tokens: $2 in / $0.50 cached / $6 out per 1M)", QuoteDate: "2026-10-13"},
 
 	// ---- Moonshot ----
 	// Moonshot retired kimi-k2.5 from its published list -- it is gone from
@@ -217,11 +282,17 @@ var unifyapiCatalog = []CatalogEntry{
 	//	input < 32K   in CNY 5   out CNY 22   cache CNY 1.2
 	//	input >= 32K  in CNY 7   out CNY 26   cache CNY 1.8
 	//
-	// The figures below are the CHEAP tier at roughly 6.9 CNY/USD. Two open
-	// questions, both business decisions rather than lookups: whether that rate
-	// is still the one to use, and that a single USD number cannot express a
-	// tier -- every request over 32K input costs 40% more than we charge for it.
-	{Model: "glm-5-turbo", Vendor: "", InputUSD: 0.72, OutputUSD: 3.2, CacheReadUSD: 0.144, CacheWriteUSD: 0, Unverified: true},
+	// The figures below are the EXPENSIVE tier at roughly 6.9 CNY/USD. They used
+	// to be the cheap one, and the note here already said why that was a
+	// problem: a single USD number cannot express a tier, so every request over
+	// 32K input cost 40% more than we charged for it. Measured against the live
+	// supplier ratio the whole model was under water -- our list was 62% of what
+	// the supplier bills, so it lost money even at list price, on both tiers.
+	//
+	// Pricing the higher tier is the only single number that is never below
+	// cost: CNY 7 / 26 / 1.8 at 6.9 CNY/USD. A request under 32K is now sold
+	// slightly above its own cost, which is the safe direction of the gap.
+	{Model: "glm-5-turbo", Vendor: "", InputUSD: 1.015, OutputUSD: 3.77, CacheReadUSD: 0.261, CacheWriteUSD: 0, Unverified: true},
 	{Model: "glm-5.1", Vendor: "zhipuai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
 	{Model: "glm-5.2", Vendor: "zhipuai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
 	// Same price as 5.1 and 5.2, confirmed on Zhipu's own international list
@@ -279,7 +350,6 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "gemini-3.5-flash", Vendor: "", InputUSD: 1.5, OutputUSD: 9, CacheReadUSD: 0.15, CacheWriteUSD: 0, Unverified: true,
 		QuoteSource: "https://ai.google.dev/gemini-api/docs/pricing", QuoteDate: "2026-09-08"},
 	{Model: "gemini-flash-latest", Vendor: "google", InputUSD: 0.75, OutputUSD: 3.75, CacheReadUSD: 0.075, CacheWriteUSD: 0},
-	{Model: "gemini-flash-lite-latest", Vendor: "google", InputUSD: 0.3, OutputUSD: 2.5, CacheReadUSD: 0.03, CacheWriteUSD: 0},
 	{Model: "gemini-pro-latest", Vendor: "google", UpstreamModel: "gemini-3.1-pro-preview", InputUSD: 2, OutputUSD: 12, CacheReadUSD: 0.2, CacheWriteUSD: 0},
 
 	// ---- MiniMax ----
@@ -305,6 +375,8 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "qwen3.7-plus", Vendor: "alibaba", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0.625,
 		ContextTier: &ContextTier{ThresholdTokens: 256000, InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.2, CacheWriteUSD: 2.5}},
 	{Model: "qwen3.8-max", Vendor: "alibaba", InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.25, CacheWriteUSD: 2.5},
+	{Model: "qwen3.8-flash", Vendor: "", InputUSD: 0.15, OutputUSD: 0.47, CacheReadUSD: 0.016, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing (Singapore: $0.15 in / $0.016 cache hit / $0.47 out per 1M)", QuoteDate: "2026-10-13"},
 
 	// ---- DeepSeek ----
 	// RETIRED BY THE VENDOR -- these three have no price because they no longer
@@ -318,7 +390,21 @@ var unifyapiCatalog = []CatalogEntry{
 	// and needs the same review as any other repricing, which is why they are
 	// still here rather than quietly deleted.
 	{Model: "deepseek-v3", Vendor: "", InputUSD: 0.287, OutputUSD: 1.147, CacheReadUSD: 0, CacheWriteUSD: 0, Unverified: true},
-	{Model: "deepseek-v3.2", Vendor: "", InputUSD: 0.18, OutputUSD: 0.35, CacheReadUSD: 0.04, CacheWriteUSD: 0, Unverified: true},
+	// deepseek-v3.2 was the one row of the three that LOST money on every
+	// request, measured against the supplier's own published price rather than
+	// inferred: FlatKey bills us $0.2261 in / $0.3774 out, and we were selling
+	// at $0.18 / $0.35 -- under cost on BOTH token types, so no input/output
+	// mix made it profitable.
+	//
+	// Repriced to FlatKey's rate divided by 0.85, which is the same 15% margin
+	// every other DeepSeek row already carries. That 0.85 is not a guess: the
+	// supplier's published price is exactly 0.85x DeepSeek's list for
+	// deepseek-v4-pro, deepseek-v4-flash and deepseek-v3.2-thinking, so
+	// dividing back recovers the list price this row should have had. The
+	// other two rows were left alone deliberately -- v3.2-thinking already
+	// sits within a cent of the same rule, and v3 is a separate decision.
+	{Model: "deepseek-v3.2", Vendor: "", InputUSD: 0.266, OutputUSD: 0.444, CacheReadUSD: 0.04, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://console.flatkey.ai (supplier list $0.2261/$0.3774, / 0.85 for the 15% margin the other DeepSeek rows carry)", QuoteDate: "2026-09-25"},
 	{Model: "deepseek-v3.2-thinking", Vendor: "", InputUSD: 0.29, OutputUSD: 0.43, CacheReadUSD: 0, CacheWriteUSD: 0, Unverified: true},
 	// DeepSeek raised prices at 16:00 UTC on 2026-08-16 (announced 2026-08-13)
 	// and moved to peak/off-peak billing, off-peak being half of peak. The PEAK

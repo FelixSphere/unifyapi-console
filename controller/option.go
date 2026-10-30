@@ -248,6 +248,16 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	// UNIFYAPI-FORK: a catalogued model bills only what the catalog says.
+	case "billing_setting.billing_expr", "billing_setting.billing_mode":
+		err = ratio_setting.ValidateBillingSettingOption(option.Key, option.Value.(string))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
 	case "gemini.safety_settings":
 		err = model_setting.ValidateGeminiSafetySettings(option.Value.(string))
 		if err != nil {

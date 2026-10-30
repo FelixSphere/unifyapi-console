@@ -211,6 +211,9 @@ export const channelFormSchema = z
       ),
     priority: z.number().optional(),
     weight: z.number().optional(),
+    // UNIFYAPI-BRAND: 0 clears the limit, so min is 0 rather than 1.
+    rate_limit_rpm: z.number().min(0).optional(),
+    rate_limit_tpm: z.number().min(0).optional(),
     test_model: z.string().optional(),
     auto_ban: z.number().optional(),
     status: z.number(),
@@ -410,6 +413,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   model_mapping: '',
   priority: 0,
   weight: 0,
+  rate_limit_rpm: 0,
+  rate_limit_tpm: 0,
   test_model: '',
   auto_ban: 1,
   status: CHANNEL_STATUS.ENABLED,
@@ -564,6 +569,8 @@ export function transformChannelToFormDefaults(
     model_mapping: channel.model_mapping || '',
     priority: channel.priority || 0,
     weight: channel.weight || 0,
+    rate_limit_rpm: channel.rate_limit_rpm || 0,
+    rate_limit_tpm: channel.rate_limit_tpm || 0,
     test_model: channel.test_model || '',
     auto_ban: channel.auto_ban ?? 1,
     status: channel.status,
@@ -798,6 +805,12 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
     model_mapping: formData.model_mapping || null,
     priority: formData.priority || null,
     weight: formData.weight || null,
+    // UNIFYAPI-BRAND: send 0 as 0, not null. The backend field is a pointer so
+    // that an explicit 0 clears the limit; `|| null` would make that
+    // indistinguishable from "not sent", and GORM would then preserve the old
+    // value -- the limit could never be removed from this form.
+    rate_limit_rpm: formData.rate_limit_rpm ?? null,
+    rate_limit_tpm: formData.rate_limit_tpm ?? null,
     test_model: formData.test_model || null,
     auto_ban: formData.auto_ban ?? 1,
     status: formData.status,
@@ -846,6 +859,12 @@ export function transformFormDataToUpdatePayload(
     model_mapping: formData.model_mapping || null,
     priority: formData.priority ?? 0,
     weight: formData.weight ?? 0,
+    // UNIFYAPI-BRAND: ?? not ||, so an explicit 0 reaches the backend and
+    // clears the limit. The backend field is a pointer precisely so 0 and
+    // "absent" mean different things; sending null for 0 would make the limit
+    // impossible to remove from this form.
+    rate_limit_rpm: formData.rate_limit_rpm ?? 0,
+    rate_limit_tpm: formData.rate_limit_tpm ?? 0,
     test_model: formData.test_model || null,
     auto_ban: formData.auto_ban ?? 1,
     status_code_mapping: formData.status_code_mapping || null,

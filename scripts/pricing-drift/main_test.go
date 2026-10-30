@@ -146,20 +146,21 @@ func TestUnverifiableCountIsStable(t *testing.T) {
 	// (DeepSeek-V4.1-Flash, 2026-09-10), newer than the pinned fixture; the 22nd
 	// is jev-1.13 (TypeSafe System One), which models.dev does not carry at all.
 	// The 23rd is claude-opus-5-5, launched after the fixture was pinned.
-	require.Equal(t, 23, count,
+	// 2026-10-13 added fourteen more, all newer than the fixture: claude-haiku-5-5,
+	// claude-sonnet-5-5, nine OpenAI rows (gpt-5.1, gpt-5.4-mini, gpt-5.4-nano,
+	// gpt-5.5, gpt-5.6-luna, gpt-5.6-terra, gpt-6-luna, gpt-6-sol, gpt-6.1-sol),
+	// grok-4.6, grok-4.7 and qwen3.8-flash. Each carries a QuoteSource and date.
+	require.Equal(t, 37, count,
 		"unverifiable entries require a documented reason and a maintained quote")
-	for _, name := range []string{"happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max", "wan3.0-video", "wan3.0-video-prime"} {
+	// The seedance 2.5 family joined this list on 2026-10-17: the supplier bills
+	// it per second, so a token price was the wrong unit rather than a wrong
+	// number. A per-second row must still carry a dated quote.
+	for _, name := range []string{"happyhorse-1.1-t2v", "happyhorse-1.1-i2v", "happyhorse-1.1-r2v", "MiniMax-H3", "MiniMax-H3-Max", "wan3.0-video", "wan3.0-video-prime", "seedance-2.5", "doubao-seedance-2-5-260628", "dreamina-seedance-2-5-260628"} {
 		entry, ok := ratio_setting.CatalogEntryFor(name)
 		require.True(t, ok)
 		require.Equal(t, "second", entry.PriceUnit)
-		require.NotEmpty(t, entry.QuoteSource)
-		require.NotEmpty(t, entry.QuoteDate)
-	}
-	for _, name := range []string{"seedance-2.5", "doubao-seedance-2-5-260628", "dreamina-seedance-2-5-260628"} {
-		entry, ok := ratio_setting.CatalogEntryFor(name)
-		require.True(t, ok)
-		require.Zero(t, entry.PerCallUSD)
-		require.Equal(t, 10.7, entry.InputUSD)
+		require.NotZero(t, entry.PerCallUSD, "a per-second row must carry a price")
+		require.Zero(t, entry.InputUSD, "a per-second row must not also carry a token price")
 		require.NotEmpty(t, entry.QuoteSource)
 		require.NotEmpty(t, entry.QuoteDate)
 	}

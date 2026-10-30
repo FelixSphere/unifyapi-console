@@ -56,6 +56,41 @@ func maskHostForPlainDomain(domain string) string {
 	return stars + "." + strings.Join(tail, ".")
 }
 
+// knownGTLDs holds the multi-letter top-level domains worth masking. Every
+// country-code TLD is exactly two letters and is covered by length below, so
+// only the generic ones need listing.
+var knownGTLDs = map[string]bool{
+	"com": true, "net": true, "org": true, "edu": true, "gov": true, "mil": true,
+	"int": true, "info": true, "biz": true, "name": true, "pro": true, "asia": true,
+	"app": true, "dev": true, "cloud": true, "xyz": true, "online": true, "site": true,
+	"tech": true, "store": true, "shop": true, "live": true, "life": true, "world": true,
+	"space": true, "website": true, "press": true, "host": true, "fun": true, "run": true,
+	"studio": true, "agency": true, "digital": true, "systems": true, "services": true,
+	"solutions": true, "network": true, "center": true, "company": true, "group": true,
+	"media": true, "design": true, "email": true, "global": true, "today": true,
+	"news": true, "blog": true, "wiki": true, "page": true, "link": true, "click": true,
+	"chat": true, "inc": true, "llc": true, "ltd": true, "aero": true, "coop": true,
+	"jobs": true, "mobi": true, "museum": true, "post": true, "tel": true, "travel": true,
+}
+
+// isLikelyTLD reports whether label could be a real top-level domain.
+//
+// maskDomainPattern is a hostname regex, but "a.b" and a dotted identifier are
+// indistinguishable to it, so without this guard it rewrote anything with a dot
+// in it. In production that destroyed the part of a vendor error the caller
+// actually needs: Anthropic's "thinking.type.enabled is not supported for this
+// model, use thinking.type.adaptive and output_config.effort" reached the
+// customer as `"***.***.enabled" is not supported`, which names no parameter at
+// all. Go struct fields, JSON pointers and filenames were mangled the same way.
+func isLikelyTLD(label string) bool {
+	lower := strings.ToLower(label)
+	if len(lower) == 2 {
+		// Every ccTLD is two letters: .cn .uk .jp .ai .io .co
+		return true
+	}
+	return knownGTLDs[lower]
+}
+
 // MaskSensitiveInfo masks sensitive information like URLs, IPs, and domain names in a string
 // Example:
 // http://example.com -> http://***.com
@@ -119,8 +154,13 @@ func MaskSensitiveInfo(str string) string {
 		return result
 	})
 
-	// Mask domain names without protocol (like openai.com, www.openai.com)
+	// Mask domain names without protocol (like openai.com, www.openai.com).
+	// Only when the last label is plausibly a TLD -- see isLikelyTLD.
 	str = maskDomainPattern.ReplaceAllStringFunc(str, func(domain string) string {
+		parts := strings.Split(domain, ".")
+		if !isLikelyTLD(parts[len(parts)-1]) {
+			return domain
+		}
 		return maskHostForPlainDomain(domain)
 	})
 

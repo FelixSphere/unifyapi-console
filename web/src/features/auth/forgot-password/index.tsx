@@ -16,40 +16,35 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
 import { AuthLayout } from '../auth-layout'
+import { AuthHeading } from '../components/auth-heading'
+import { SwitchLink } from '../components/switch-link'
 import { ForgotPasswordForm } from './components/forgot-password-form'
 
+// UNIFYAPI-BRAND: UI-STANDARD.md verify / reset screens use the same card.
 export function ForgotPassword() {
   const { t } = useTranslation()
   return (
     <AuthLayout>
-      <div className='w-full space-y-8'>
-        <div className='space-y-3'>
-          <h2 className='text-center text-2xl font-semibold tracking-tight sm:text-left'>
-            {t('Forgot password')}
-          </h2>
-          <p className='text-muted-foreground text-left text-sm sm:text-base'>
-            {t(
-              'Enter your registered email and we will send you a link to reset your password.'
-            )}
-          </p>
-          <p className='text-muted-foreground text-left text-sm sm:text-base'>
-            {t("Don't have an account?")}{' '}
-            <Link
-              to='/sign-up'
-              className='hover:text-primary font-medium underline underline-offset-4'
-            >
-              {t('Sign up')}
-            </Link>
-            .
-          </p>
-        </div>
+      <AuthHeading title={t('Reset your password')}>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Enter your registered email and we will send you a link to reset your password.'
+          )}
+        </p>
+      </AuthHeading>
 
-        <ForgotPasswordForm className='space-y-0' />
+      <div className='mt-6'>
+        <ForgotPasswordForm />
       </div>
+
+      <SwitchLink
+        prompt={t('Remembered it?')}
+        to='/sign-in'
+        label={t('Log in')}
+      />
     </AuthLayout>
   )
 }

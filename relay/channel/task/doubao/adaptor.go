@@ -163,7 +163,33 @@ func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *r
 	return nil
 }
 
+// seedance25MaxSeconds is the longest video the upstream will generate. A
+// request may ask for duration -1 ("let the model decide"), and nothing at
+// request time can know what it will pick, so we reserve the maximum and
+// settle the measured length in AdjustBillingOnComplete.
+const seedance25MaxSeconds = 30
+
+// seedance25RequestSeconds reads the asked-for duration, or the reservation
+// when the caller left it to the model.
+func seedance25RequestSeconds(req *relaycommon.TaskSubmitReq) float64 {
+	if req.Duration > 0 {
+		return float64(req.Duration)
+	}
+	if req.Seconds != "" {
+		if sec, err := strconv.Atoi(req.Seconds); err == nil && sec > 0 {
+			return float64(sec)
+		}
+	}
+	return seedance25MaxSeconds
+}
+
 // EstimateBilling 根据请求 metadata 中的输出分辨率与是否包含视频输入，返回相对基准价的计费 OtherRatio。
+//
+// seedance 2.5 is priced PER SECOND of generated video (catalog PriceUnit
+// "second"), so the estimate must carry the length. Without a "seconds" entry
+// the pre-charge is the flat per-call price and a 4-second clip costs the same
+// as a 30-second one -- which is what happened between the 2026-10-17 repricing
+// and this commit.
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
@@ -172,10 +198,50 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	hasVideo := hasVideoInMetadata(req.Metadata)
 	resolution, _ := req.Metadata["resolution"].(string)
 	ratio, ok := GetVideoInputRatio(info.OriginModelName, resolution, hasVideo)
-	if !ok || ratio == 1.0 {
+
+	out := make(map[string]float64, 2)
+	if ok && ratio != 1.0 {
+		out["video_input"] = ratio
+	}
+	if isSeedance25Model(info.OriginModelName) {
+		out["seconds"] = seedance25RequestSeconds(&req)
+	}
+	if len(out) == 0 {
 		return nil
 	}
-	return map[string]float64{"video_input": ratio}
+	return out
+}
+
+// AdjustBillingOnComplete settles the measured video length at the
+// request-time price. The upstream reports the duration it actually generated,
+// which is the only way a duration -1 request can be billed correctly.
+func (a *TaskAdaptor) AdjustBillingOnComplete(task *model.Task, result *relaycommon.TaskInfo) int {
+	bc := task.PrivateData.BillingContext
+	if bc == nil || bc.PriceUnit != "second" || result.Status != model.TaskStatusSuccess {
+		return 0
+	}
+	var resTask responseTask
+	if common.Unmarshal(task.Data, &resTask) != nil {
+		return 0
+	}
+	if !isSeedance25Model(resTask.Model) {
+		return 0
+	}
+	// Refuse to settle on a length the upstream could not have produced rather
+	// than charging a number we cannot defend; the pre-charge then stands.
+	if resTask.Duration <= 0 || resTask.Duration > seedance25MaxSeconds {
+		return 0
+	}
+	units := float64(resTask.Duration)
+	if r := bc.OtherRatios["video_input"]; r > 0 {
+		units *= r
+	}
+	quota, err := common.QuotaFromFloatStrict(bc.ModelPrice * units * bc.GroupRatio * common.QuotaPerUnit)
+	if err != nil {
+		common.SysError(err.Error())
+		return 0
+	}
+	return quota
 }
 
 // hasVideoInMetadata 直接检查 metadata 的 content 数组是否包含 video_url 条目，

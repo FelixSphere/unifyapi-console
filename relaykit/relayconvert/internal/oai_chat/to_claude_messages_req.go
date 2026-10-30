@@ -27,6 +27,36 @@ type openRouterRequestReasoning struct {
 	Exclude   bool   `json:"exclude,omitempty"`
 }
 
+// claudeOutputFormat maps OpenAI's response_format onto the value Anthropic
+// expects at output_config.format.
+//
+// Anthropic deprecated the top-level output_format field and now rejects it
+// with HTTP 400 ("Use 'output_config.format' instead"), so every structured
+// -output request failed. Observed in production 2026-09-25 on channel 188.
+//
+// Only json_schema carries over. "json_object" asks for valid JSON without
+// saying which shape, and Anthropic's format has no equivalent of that,
+// so sending one without a schema would be rejected -- that case is left as it
+// behaves today rather than converted into a 400 the caller did not have
+// before.
+func claudeOutputFormat(responseFormat *dto.ResponseFormat) json.RawMessage {
+	if responseFormat == nil || responseFormat.Type != "json_schema" || len(responseFormat.JsonSchema) == 0 {
+		return nil
+	}
+	var jsonSchema dto.FormatJsonSchema
+	if err := kitutil.Unmarshal(responseFormat.JsonSchema, &jsonSchema); err != nil || jsonSchema.Schema == nil {
+		return nil
+	}
+	encoded, err := kitutil.Marshal(map[string]any{
+		"type":   "json_schema",
+		"schema": jsonSchema.Schema,
+	})
+	if err != nil {
+		return nil
+	}
+	return encoded
+}
+
 func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, textRequest dto.GeneralOpenAIRequest) (*dto.ClaudeRequest, error) {
 	opts := convmeta.OptionsOf(info)
 	claudeTools := make([]any, 0, len(textRequest.Tools))
@@ -123,6 +153,20 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 		}
 	}
 
+	// UNIFYAPI: carry the caller's structured-output request across to Anthropic.
+	//
+	// Anthropic Messages has no response_format. It used to take a top-level
+	// output_format; that is now deprecated and returns HTTP 400, so the schema
+	// goes to output_config.format instead.
+	//
+	// Merged, not assigned: the effort branches below also write output_config,
+	// and they run after this. Assigning the whole object here would have the
+	// schema silently overwritten a few lines later on exactly the Opus models
+	// that take an effort suffix.
+	if outputFormat := claudeOutputFormat(textRequest.ResponseFormat); len(outputFormat) > 0 {
+		claudeRequest.MergeOutputConfig("format", outputFormat)
+	}
+
 	if claudeRequest.MaxTokens == nil || *claudeRequest.MaxTokens == 0 {
 		if defaultMaxTokens, configured := opts.Claude.DefaultMaxTokensFor(textRequest.Model); configured {
 			value := uint(defaultMaxTokens)
@@ -138,7 +182,7 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 		claudeRequest.Thinking = &dto.Thinking{
 			Type: "adaptive",
 		}
-		claudeRequest.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
+		claudeRequest.MergeOutputConfig("effort", effortLevel)
 		if strings.HasPrefix(baseModel, "claude-opus-4-7") ||
 			strings.HasPrefix(baseModel, "claude-opus-4-8") {
 			claudeRequest.Thinking.Display = "summarized"
@@ -156,7 +200,7 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 		if strings.HasPrefix(trimmedModel, "claude-opus-4-7") ||
 			strings.HasPrefix(trimmedModel, "claude-opus-4-8") {
 			claudeRequest.Thinking = &dto.Thinking{Type: "adaptive", Display: "summarized"}
-			claudeRequest.OutputConfig = json.RawMessage(`{"effort":"high"}`)
+			claudeRequest.MergeOutputConfig("effort", "high")
 			claudeRequest.Temperature = nil
 			claudeRequest.TopP = nil
 			claudeRequest.TopK = nil
@@ -273,8 +317,9 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 				for _, ctx := range message.ParseContent() {
 					if ctx.Type == "text" && ctx.Text != "" {
 						systemMessages = append(systemMessages, dto.ClaudeMediaMessage{
-							Type: "text",
-							Text: kitutil.GetPointer[string](ctx.Text),
+							Type:         "text",
+							Text:         kitutil.GetPointer[string](ctx.Text),
+							CacheControl: ctx.CacheControl, // UNIFYAPI: prompt caching
 						})
 					}
 				}
@@ -342,8 +387,9 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 				case "text":
 					if mediaMessage.Text != "" {
 						claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
-							Type: "text",
-							Text: kitutil.GetPointer[string](mediaMessage.Text),
+							Type:         "text",
+							Text:         kitutil.GetPointer[string](mediaMessage.Text),
+							CacheControl: mediaMessage.CacheControl, // UNIFYAPI: prompt caching
 						})
 					}
 				default:
@@ -359,6 +405,7 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 						Source: &dto.ClaudeMessageSource{
 							Type: "base64",
 						},
+						CacheControl: mediaMessage.CacheControl, // UNIFYAPI: prompt caching
 					}
 					if strings.HasPrefix(mimeType, "application/pdf") {
 						claudeMediaMessage.Type = "document"

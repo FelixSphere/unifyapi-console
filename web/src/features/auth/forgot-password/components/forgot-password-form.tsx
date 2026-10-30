@@ -102,26 +102,24 @@ export function ForgotPasswordForm({
           name='email'
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Email</FormLabel>
+              <FormLabel>{t('Email')}</FormLabel>
               <FormControl>
-                <Input placeholder='name@example.com' {...field} />
+                <Input
+                  className='h-11'
+                  type='email'
+                  autoComplete='email'
+                  placeholder='name@example.com'
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
 
-        <Button
-          type='submit'
-          className='mt-2'
-          disabled={isLoading || isActive || !turnstileReady}
-        >
-          {isActive
-            ? t('Resend ({{seconds}}s)', { seconds: secondsLeft })
-            : t('Send reset email')}
-          {isLoading ? <Loader2 className='animate-spin' /> : <ArrowRight />}
-        </Button>
-
+        {/* UNIFYAPI: same defect as the sign-up form -- the submit button is
+            disabled until turnstileReady, so the challenge has to render above
+            it, not below. */}
         {isTurnstileEnabled && (
           <div className='mt-2'>
             <Turnstile
@@ -130,6 +128,17 @@ export function ForgotPasswordForm({
             />
           </div>
         )}
+
+        <Button
+          type='submit'
+          className='mt-2 h-11 w-full'
+          disabled={isLoading || isActive || !turnstileReady}
+        >
+          {isActive
+            ? t('Resend ({{seconds}}s)', { seconds: secondsLeft })
+            : t('Send reset email')}
+          {isLoading ? <Loader2 className='animate-spin' /> : <ArrowRight />}
+        </Button>
       </form>
     </Form>
   )
