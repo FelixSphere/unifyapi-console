@@ -66,11 +66,16 @@ func TestContractOnTheExpressionPathChargesTheContractedDollars(t *testing.T) {
 	require.NoError(t, ratio_setting.UpdateModelDiscountByJSONString(`{"qwen3.7-plus":0.5}`))
 	require.NoError(t, ratio_setting.UpdateGroupModelDiscountByJSONString(`{"GenAI":{"qwen3.7-plus":0.8}}`))
 
-	// qwen3.7-plus lists at $0.50 in / $3.00 out below 256K. 100k tokens each
-	// is $0.35 at list; the contract says 80% of that, $0.28, which is
-	// 140,000 quota at 500,000 quota per dollar.
+	// qwen3.7-plus lists at $0.40 in / $1.60 out below 256K (aligned to the
+	// vendor's list on 2026-10-30; it was $0.50 / $3.00, and this number moved
+	// with it). 100k tokens each is $0.20 at list; the contract says 80% of
+	// that, $0.16, which is 80,000 quota at 500,000 quota per dollar.
+	//
+	// The figure still identifies correct behaviour uniquely: stacking the
+	// global 0.5 discount under the contract would give 40,000, and ignoring
+	// the contract would give 100,000.
 	ctx, info := billingContextFor(t, "qwen3.7-plus", "GenAI")
 	priceData, err := ModelPriceHelper(ctx, info, 100_000, &types.TokenCountMeta{MaxTokens: 100_000})
 	require.NoError(t, err)
-	require.Equal(t, 140_000, priceData.QuotaToPreConsume)
+	require.Equal(t, 80_000, priceData.QuotaToPreConsume)
 }

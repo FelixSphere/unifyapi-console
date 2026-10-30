@@ -34,7 +34,7 @@ package ratio_setting
 
 // PricingSnapshotDate is the day the official prices below were last verified
 // against models.dev. scripts/pricing-drift compares against it.
-const PricingSnapshotDate = "2026-09-11"
+const PricingSnapshotDate = "2026-10-30"
 
 // CatalogEntry is one model's official vendor list price. Prices are USD per
 // 1M tokens, exactly as the vendor publishes them. A zero CacheReadUSD or
@@ -297,13 +297,15 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "kimi-k2.5", Vendor: "", InputUSD: 0.6, OutputUSD: 3, CacheReadUSD: 0.1, CacheWriteUSD: 0, Unverified: true,
 		QuoteSource: "https://platform.moonshot.ai/docs/pricing (retired from the published list; last known price)", QuoteDate: "2026-09-07"},
 	{Model: "kimi-k2.6", Vendor: "moonshotai", InputUSD: 0.95, OutputUSD: 4, CacheReadUSD: 0.16, CacheWriteUSD: 0},
-	{Model: "kimi-k3", Vendor: "moonshotai", InputUSD: 3, OutputUSD: 15, CacheReadUSD: 0.3, CacheWriteUSD: 0},
+	{Model: "kimi-k3", Vendor: "moonshotai", InputUSD: 3, OutputUSD: 15, CacheReadUSD: 0.3, CacheWriteUSD: 3},
 	{Model: "kimi-k3.1-pro", Vendor: "", InputUSD: 2, OutputUSD: 10, CacheReadUSD: 0.2, CacheWriteUSD: 0, Unverified: true,
 		QuoteSource: "https://platform.moonshot.ai/docs/pricing (live models.dev moonshotai/kimi-k3.1-pro, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
 
 	// ---- 智谱 ----
-	{Model: "glm-4.7", Vendor: "zhipuai", InputUSD: 0.6, OutputUSD: 2.2, CacheReadUSD: 0.11, CacheWriteUSD: 0},
-	{Model: "glm-5", Vendor: "zhipuai", InputUSD: 1, OutputUSD: 3.2, CacheReadUSD: 0.2, CacheWriteUSD: 0},
+	{Model: "glm-4.7", Vendor: "zhipuai", InputUSD: 0.44819, OutputUSD: 2.09153, CacheReadUSD: 0.08964, CacheWriteUSD: 0,
+		ContextTier: &ContextTier{ThresholdTokens: 32000, InputUSD: 0.59758, OutputUSD: 2.39032, CacheReadUSD: 0.11952}},
+	{Model: "glm-5", Vendor: "zhipuai", InputUSD: 0.59758, OutputUSD: 2.68911, CacheReadUSD: 0.1494, CacheWriteUSD: 0,
+		ContextTier: &ContextTier{ThresholdTokens: 32000, InputUSD: 0.89637, OutputUSD: 3.28669, CacheReadUSD: 0.22409}},
 	// glm-5-turbo is CHINA-ONLY. Zhipu's international list (docs.z.ai, which is
 	// what models.dev mirrors) does not carry it, so there is no official USD
 	// price to copy. Zhipu's own CNY list, read 2026-08-30, is tiered by input
@@ -323,12 +325,13 @@ var unifyapiCatalog = []CatalogEntry{
 	// cost: CNY 7 / 26 / 1.8 at 6.9 CNY/USD. A request under 32K is now sold
 	// slightly above its own cost, which is the safe direction of the gap.
 	{Model: "glm-5-turbo", Vendor: "", InputUSD: 1.015, OutputUSD: 3.77, CacheReadUSD: 0.261, CacheWriteUSD: 0, Unverified: true},
-	{Model: "glm-5.1", Vendor: "zhipuai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
-	{Model: "glm-5.2", Vendor: "zhipuai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
+	{Model: "glm-5.1", Vendor: "zhipuai", InputUSD: 0.89637, OutputUSD: 3.58548, CacheReadUSD: 0.19421, CacheWriteUSD: 0,
+		ContextTier: &ContextTier{ThresholdTokens: 32000, InputUSD: 1.19516, OutputUSD: 4.18306, CacheReadUSD: 0.29879}},
+	{Model: "glm-5.2", Vendor: "zhipuai", InputUSD: 1.19516, OutputUSD: 4.18306, CacheReadUSD: 0.29879, CacheWriteUSD: 0},
 	// Same price as 5.1 and 5.2, confirmed on Zhipu's own international list
 	// (docs.z.ai) and by models.dev's zhipuai provider. Cached-input storage is
 	// "limited-time free", hence CacheWriteUSD 0.
-	{Model: "glm-5.3", Vendor: "zhipuai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
+	{Model: "glm-5.3", Vendor: "zhipuai", InputUSD: 1.19516, OutputUSD: 4.18306, CacheReadUSD: 0.29879, CacheWriteUSD: 0},
 
 	// ---- Google ----
 	{Model: "gemini-2.5-flash", Vendor: "google", InputUSD: 0.3, OutputUSD: 2.5, CacheReadUSD: 0.03, CacheWriteUSD: 0, AudioInputUSD: 1.0},
@@ -410,8 +413,8 @@ var unifyapiCatalog = []CatalogEntry{
 	{Model: "qwen3.6-plus", Vendor: "alibaba", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0.625,
 		ContextTier: &ContextTier{ThresholdTokens: 256000, InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.2, CacheWriteUSD: 2.5}},
 	{Model: "qwen3.7-max", Vendor: "alibaba", InputUSD: 2.5, OutputUSD: 7.5, CacheReadUSD: 0.5, CacheWriteUSD: 3.125},
-	{Model: "qwen3.7-plus", Vendor: "alibaba", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0.625,
-		ContextTier: &ContextTier{ThresholdTokens: 256000, InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.2, CacheWriteUSD: 2.5}},
+	{Model: "qwen3.7-plus", Vendor: "alibaba", InputUSD: 0.4, OutputUSD: 1.6, CacheReadUSD: 0.08, CacheWriteUSD: 0.5,
+		ContextTier: &ContextTier{ThresholdTokens: 256000, InputUSD: 1.2, OutputUSD: 4.8, CacheReadUSD: 0.24, CacheWriteUSD: 1.5}},
 	{Model: "qwen3.7-flash", Vendor: "", InputUSD: 0.03, OutputUSD: 0.13, CacheReadUSD: 0.006, CacheWriteUSD: 0, Unverified: true,
 		QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing (live models.dev alibaba/qwen3.7-flash, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
 	{Model: "qwen3.8-max", Vendor: "alibaba", InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.25, CacheWriteUSD: 2.5},
