@@ -166,7 +166,21 @@ func TestChannelVideoGenerationPersistsBillsPollsAndRefunds(t *testing.T) {
 			require.True(t, exists)
 			require.Equal(t, ch.Id, task.ChannelId)
 			require.Equal(t, 0, task.PrivateData.TokenId)
-			require.Equal(t, 250000, task.Quota) // 5 seconds * $0.10 * 500000
+			// $0.10/s is our list price for MiniMax-H3 at 768p, which is what the
+			// native and flatkey routes submit. The openrouter route submits 2K
+			// (asserted above): OpenRouter renders minimax/hailuo-3 at 2K only and
+			// charges $0.13/s for it, so billing it at the 768p price sold $0.085
+			// against a $0.13 cost. The 2K tier is $0.13/$0.08 of 768p, the same
+			// multiplier the native channel has always applied.
+			//
+			// Both figures still identify correct behaviour uniquely: dropping the
+			// resolution ratio again gives 250000 on the openrouter subtest, and
+			// applying it to the native route would give 406250 there.
+			wantQuota := 250000 // 5 seconds * $0.10 * 500000
+			if openrouter {
+				wantQuota = 406250 // 5 seconds * $0.10 * (0.13/0.08 at 2K) * 500000
+			}
+			require.Equal(t, wantQuota, task.Quota)
 			require.Equal(t, "queued", videoTestStatus(task)["status"])
 			service.RunTaskPollingOnce(context.Background(), nil)
 			task, _, err = model.GetByTaskId(user.Id, taskID)
@@ -186,7 +200,7 @@ func TestChannelVideoGenerationPersistsBillsPollsAndRefunds(t *testing.T) {
 			}
 
 			require.NoError(t, db.First(&user, user.Id).Error)
-			require.Equal(t, 9750000, user.Quota)
+			require.Equal(t, 10000000-wantQuota, user.Quota)
 			// Same path preserves failure refunds and does not enable a disabled channel.
 			state = "failed"
 			taskID = submit()
@@ -196,7 +210,7 @@ func TestChannelVideoGenerationPersistsBillsPollsAndRefunds(t *testing.T) {
 			require.Equal(t, model.TaskStatus(model.TaskStatusFailure), task.Status)
 			require.Equal(t, "fixture rejection", videoTestStatus(task)["message"])
 			require.NoError(t, db.First(&user, user.Id).Error)
-			require.Equal(t, 9750000, user.Quota)
+			require.Equal(t, 10000000-wantQuota, user.Quota)
 			require.NoError(t, db.First(&ch, ch.Id).Error)
 			require.Equal(t, common.ChannelStatusManuallyDisabled, ch.Status)
 			require.Equal(t, 2, posts)
