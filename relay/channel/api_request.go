@@ -510,7 +510,13 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		}
 	}
 
-	resp, err := client.Do(req)
+	// UNIFYAPI-FORK: on streams, stop waiting for the first token if the
+	// customer disconnects. See service.DoRelayRequest.
+	var clientCtx context.Context
+	if info.IsStream && c.Request != nil {
+		clientCtx = c.Request.Context()
+	}
+	resp, err := service.DoRelayRequest(client, req, clientCtx)
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
