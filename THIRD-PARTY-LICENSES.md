@@ -15,10 +15,12 @@ Transitive dependencies should be audited before a final external release.
 | backend     | test        | Go        | `github.com/alicebob/miniredis/v2`                    | `v2.38.0`                            | MIT                                                |
 | backend     | production  | Go        | `github.com/andybalholm/brotli`                       | `v1.1.1`                             | MIT                                                |
 | backend     | production  | Go        | `github.com/anknown/ahocorasick`                      | `v0.0.0-20190904063843-d75dbd5169c0` | MIT                                                |
-| backend     | production  | Go        | `github.com/aws/aws-sdk-go-v2`                        | `v1.41.5`                            | Apache-2.0                                         |
-| backend     | production  | Go        | `github.com/aws/aws-sdk-go-v2/credentials`            | `v1.19.10`                           | Apache-2.0                                         |
+| backend     | production  | Go        | `github.com/aws/aws-sdk-go-v2`                        | `v1.47.6`                            | Apache-2.0                                         |
+| backend     | production  | Go        | `github.com/aws/aws-sdk-go-v2/credentials`            | `v1.20.14`                           | Apache-2.0                                         |
 | backend     | production  | Go        | `github.com/aws/aws-sdk-go-v2/service/bedrockruntime` | `v1.50.4`                            | Apache-2.0                                         |
-| backend     | production  | Go        | `github.com/aws/smithy-go`                            | `v1.24.2`                            | Apache-2.0                                         |
+| backend     | production  | Go        | `github.com/aws/aws-sdk-go-v2/config`                  | `v1.33.14`                             | Apache-2.0                                         |
+| backend     | production  | Go        | `github.com/aws/aws-sdk-go-v2/service/s3`              | `v1.114.7`                             | Apache-2.0                                         |
+| backend     | production  | Go        | `github.com/aws/smithy-go`                            | `v1.28.8`                            | Apache-2.0                                         |
 | backend     | production  | Go        | `github.com/bytedance/gopkg`                          | `v0.1.3`                             | Apache-2.0                                         |
 | backend     | production  | Go        | `github.com/gin-contrib/cors`                         | `v1.7.2`                             | MIT                                                |
 | backend     | production  | Go        | `github.com/gin-contrib/gzip`                         | `v0.0.6`                             | MIT                                                |

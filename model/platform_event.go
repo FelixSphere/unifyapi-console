@@ -74,8 +74,15 @@ const (
 	PlatformEventSourceALBConn   = "alb_conn"
 
 	PlatformEventKindTokenNotRecognised = "token_not_recognised"
+	// The handshake never completed: no protocol was agreed, and this is what
+	// ClientTLSNegotiationErrorCount counts. The only shape that produces the
+	// "no response at all" a customer describes.
 	PlatformEventKindTLSHandshakeFailed = "tls_handshake_failed"
-	PlatformEventKindHTTPRejected       = "http_rejected"
+	// TLS was negotiated and the connection died afterwards. CloudWatch does
+	// NOT count this, and the client did get a connection -- a different root
+	// cause, so it must not be collapsed into the one above.
+	PlatformEventKindTLSConnectionFailed = "tls_connection_failed"
+	PlatformEventKindHTTPRejected        = "http_rejected"
 )
 
 // RecordPlatformEvents writes a batch, skipping rows whose Dedupe is already

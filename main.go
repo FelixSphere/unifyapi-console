@@ -118,6 +118,9 @@ func main() {
 	// UNIFYAPI-FORK: replay settlements the database refused after the
 	// response was served; see model/settlement_outbox.go.
 	model.StartSettlementOutboxWorker()
+	// UNIFYAPI-FORK: pull the load balancer's own logs into the platform log.
+	// No-op unless ALB_LOG_BUCKET is set; see service/alb_log_ingest.go.
+	service.StartALBLogIngest()
 	// UNIFYAPI-FORK: our feature tables, created on every boot whether or not
 	// the feature is switched on, so no environment is missing one.
 	if err := model.MigrateSupport(); err != nil {
