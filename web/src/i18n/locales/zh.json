@@ -5469,6 +5469,16 @@
     "What each number means": "每个数字的含义",
     "Customer charge = official model price x customer-model final multiplier.": "客户扣费 = 官方模型价格 × 客户模型最终倍率。",
     "Upstream cost = official model price x selected channel purchasing ratio.": "上游成本 = 官方模型价格 × 实际选中渠道的采购倍率。",
-    "Profit = customer charge - upstream cost.": "利润 = 客户扣费 − 上游成本。"
+    "Profit = customer charge - upstream cost.": "利润 = 客户扣费 − 上游成本。",
+    "Platform Log": "平台日志",
+    "All sources": "全部来源",
+    "TLS handshake": "TLS 握手",
+    "Load balancer": "负载均衡器",
+    "Client IP": "客户端 IP",
+    "Key prefix": "密钥前缀",
+    "What happened": "发生了什么",
+    "Nothing recorded for this filter.": "此筛选条件下没有记录。",
+    "{{total}} entries": "共 {{total}} 条",
+    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "从未到达转发层的请求,因此在使用日志里不会留下任何记录:失败的 TLS 握手、被负载均衡器拒绝的连接,以及在鉴权阶段被挡回的调用方。"
   }
 }

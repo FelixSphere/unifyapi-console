@@ -5451,6 +5451,16 @@
     "What each number means": "Ý nghĩa của từng con số",
     "Customer charge = official model price x customer-model final multiplier.": "Phí khách hàng = giá mô hình chính thức × hệ số cuối cùng theo khách hàng-mô hình.",
     "Upstream cost = official model price x selected channel purchasing ratio.": "Chi phí thượng nguồn = giá mô hình chính thức × hệ số mua của kênh được chọn.",
-    "Profit = customer charge - upstream cost.": "Lợi nhuận = phí khách hàng − chi phí thượng nguồn."
+    "Profit = customer charge - upstream cost.": "Lợi nhuận = phí khách hàng − chi phí thượng nguồn.",
+    "Platform Log": "Nhật ký nền tảng",
+    "All sources": "Tất cả nguồn",
+    "TLS handshake": "Bắt tay TLS",
+    "Load balancer": "Bộ cân bằng tải",
+    "Client IP": "IP máy khách",
+    "Key prefix": "Tiền tố khóa",
+    "What happened": "Điều đã xảy ra",
+    "Nothing recorded for this filter.": "Không có bản ghi nào cho bộ lọc này.",
+    "{{total}} entries": "{{total}} mục",
+    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Các yêu cầu chưa từng đến lớp chuyển tiếp nên không để lại dòng nào trong nhật ký sử dụng: bắt tay TLS thất bại, kết nối bị bộ cân bằng tải từ chối, và bên gọi bị chặn ở bước xác thực."
   }
 }

@@ -5451,6 +5451,16 @@
     "What each number means": "各数値の意味",
     "Customer charge = official model price x customer-model final multiplier.": "顧客請求 = 公式モデル価格 × 顧客別モデル最終倍率。",
     "Upstream cost = official model price x selected channel purchasing ratio.": "上流コスト = 公式モデル価格 × 選択チャネルの仕入倍率。",
-    "Profit = customer charge - upstream cost.": "利益 = 顧客請求 − 上流コスト。"
+    "Profit = customer charge - upstream cost.": "利益 = 顧客請求 − 上流コスト。",
+    "Platform Log": "プラットフォームログ",
+    "All sources": "すべてのソース",
+    "TLS handshake": "TLS ハンドシェイク",
+    "Load balancer": "ロードバランサー",
+    "Client IP": "クライアント IP",
+    "Key prefix": "キーのプレフィックス",
+    "What happened": "発生した内容",
+    "Nothing recorded for this filter.": "この条件に該当する記録はありません。",
+    "{{total}} entries": "全 {{total}} 件",
+    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "リレーに到達しなかったリクエスト。利用ログには一切残りません。失敗した TLS ハンドシェイク、ロードバランサーが拒否した接続、認証で弾かれた呼び出し元が含まれます。"
   }
 }

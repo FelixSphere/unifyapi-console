@@ -45,6 +45,7 @@ import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authentica
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
 import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authenticated/models/$section'
 import { Route as AuthenticatedOpsIndexRouteImport } from './routes/_authenticated/ops/index'
+import { Route as AuthenticatedPlatformLogIndexRouteImport } from './routes/_authenticated/platform-log/index'
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
 import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authenticated/profile/index'
 import { Route as AuthenticatedRedemptionCodesIndexRouteImport } from './routes/_authenticated/redemption-codes/index'
@@ -258,6 +259,12 @@ const AuthenticatedOpsIndexRoute = AuthenticatedOpsIndexRouteImport.update({
   path: '/ops/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedPlatformLogIndexRoute =
+  AuthenticatedPlatformLogIndexRouteImport.update({
+    id: '/platform-log/',
+    path: '/platform-log/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedPlaygroundIndexRoute =
   AuthenticatedPlaygroundIndexRouteImport.update({
     id: '/playground/',
@@ -449,6 +456,7 @@ export interface FileRoutesByFullPath {
   '/keys/': typeof AuthenticatedKeysIndexRoute
   '/models/': typeof AuthenticatedModelsIndexRoute
   '/ops/': typeof AuthenticatedOpsIndexRoute
+  '/platform-log/': typeof AuthenticatedPlatformLogIndexRoute
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/profile/': typeof AuthenticatedProfileIndexRoute
   '/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
@@ -510,6 +518,7 @@ export interface FileRoutesByTo {
   '/keys': typeof AuthenticatedKeysIndexRoute
   '/models': typeof AuthenticatedModelsIndexRoute
   '/ops': typeof AuthenticatedOpsIndexRoute
+  '/platform-log': typeof AuthenticatedPlatformLogIndexRoute
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
   '/profile': typeof AuthenticatedProfileIndexRoute
   '/redemption-codes': typeof AuthenticatedRedemptionCodesIndexRoute
@@ -575,6 +584,7 @@ export interface FileRoutesById {
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
   '/_authenticated/ops/': typeof AuthenticatedOpsIndexRoute
+  '/_authenticated/platform-log/': typeof AuthenticatedPlatformLogIndexRoute
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/_authenticated/profile/': typeof AuthenticatedProfileIndexRoute
   '/_authenticated/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
@@ -639,6 +649,7 @@ export interface FileRouteTypes {
     | '/keys/'
     | '/models/'
     | '/ops/'
+    | '/platform-log/'
     | '/playground/'
     | '/profile/'
     | '/redemption-codes/'
@@ -700,6 +711,7 @@ export interface FileRouteTypes {
     | '/keys'
     | '/models'
     | '/ops'
+    | '/platform-log'
     | '/playground'
     | '/profile'
     | '/redemption-codes'
@@ -764,6 +776,7 @@ export interface FileRouteTypes {
     | '/_authenticated/keys/'
     | '/_authenticated/models/'
     | '/_authenticated/ops/'
+    | '/_authenticated/platform-log/'
     | '/_authenticated/playground/'
     | '/_authenticated/profile/'
     | '/_authenticated/redemption-codes/'
@@ -1065,6 +1078,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/platform-log/': {
+      id: '/_authenticated/platform-log/'
+      path: '/platform-log'
+      fullPath: '/platform-log/'
+      preLoaderRoute: typeof AuthenticatedPlatformLogIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/playground/': {
       id: '/_authenticated/playground/'
       path: '/playground'
@@ -1347,6 +1367,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
   AuthenticatedOpsIndexRoute: typeof AuthenticatedOpsIndexRoute
+  AuthenticatedPlatformLogIndexRoute: typeof AuthenticatedPlatformLogIndexRoute
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
   AuthenticatedProfileIndexRoute: typeof AuthenticatedProfileIndexRoute
   AuthenticatedRedemptionCodesIndexRoute: typeof AuthenticatedRedemptionCodesIndexRoute
@@ -1373,6 +1394,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
   AuthenticatedOpsIndexRoute: AuthenticatedOpsIndexRoute,
+  AuthenticatedPlatformLogIndexRoute: AuthenticatedPlatformLogIndexRoute,
   AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,
   AuthenticatedProfileIndexRoute: AuthenticatedProfileIndexRoute,
   AuthenticatedRedemptionCodesIndexRoute:
