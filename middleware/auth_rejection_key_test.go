@@ -60,3 +60,21 @@ func TestTheTokenNamedRejectionCarriesNoKeyMaterial(t *testing.T) {
 	assert.NotContains(t, helper, "key",
 		"no key value, and no variable named key, may appear in this path")
 }
+
+// A row labelled token_not_recognised on a rejection where the token WAS
+// recognised sends whoever reads the platform log looking for the wrong thing
+// -- the same mistake as collapsing two distinct TLS failures into one name.
+func TestTheAllowListRejectionIsNotLabelledUnrecognised(t *testing.T) {
+	body, err := os.ReadFile("auth.go")
+	require.NoError(t, err)
+	fn := string(body)
+	start := strings.Index(fn, "func logAuthRejectionForToken")
+	require.Greater(t, start, 0)
+	end := strings.Index(fn[start:], "\nfunc ")
+	require.Greater(t, end, 0)
+	helper := fn[start : start+end]
+
+	assert.Contains(t, helper, "PlatformEventKindIPNotAllowed",
+		"this rejection must state its own kind; the default is token_not_recognised and the token was recognised")
+	assert.NotContains(t, helper, "PlatformEventKindTokenNotRecognised")
+}

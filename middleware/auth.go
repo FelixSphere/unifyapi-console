@@ -607,6 +607,9 @@ func logAuthRejectionForToken(c *gin.Context, reason string, token *model.Token)
 		reason, id, name, c.ClientIP(), c.Request.URL.Path, c.Request.UserAgent()))
 
 	model.RecordAuthRejection(model.PlatformEvent{
+		// Not token_not_recognised: it WAS recognised. A row that says
+		// otherwise sends whoever reads this page looking for the wrong thing.
+		Kind:      model.PlatformEventKindIPNotAllowed,
 		ClientIP:  c.ClientIP(),
 		KeyPrefix: fmt.Sprintf("token #%d", id),
 		Method:    c.Request.Method,
