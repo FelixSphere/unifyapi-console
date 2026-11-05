@@ -435,7 +435,12 @@ func TokenAuth() func(c *gin.Context) {
 				return
 			}
 			if common.IsIpInCIDRList(ip, allowIps) == false {
-				logAuthRejection(c, "client ip outside the token's allow list", key)
+				// NOT the key prefix. ValidateUserToken has already succeeded
+				// here, so this is a live, working key -- unlike the "not
+				// recognised" branch, where the value is one we do not hold.
+				// The token is known by this point, so naming it is both safer
+				// and more useful than eight characters of a valid secret.
+				logAuthRejectionForToken(c, "client ip outside the token's allow list", token)
 				abortWithOpenAiMessage(c, http.StatusForbidden, "您的 IP 不在令牌允许访问的列表中", types.ErrorCodeAccessDenied)
 				return
 			}
@@ -587,6 +592,30 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n]
+}
+
+// For a rejection where the token IS known. Carries no key material at all:
+// the id and name identify it uniquely for anyone who can already list tokens,
+// and leak nothing to anyone who cannot.
+func logAuthRejectionForToken(c *gin.Context, reason string, token *model.Token) {
+	id, name := 0, ""
+	if token != nil {
+		id, name = token.Id, token.Name
+	}
+	logger.LogWarn(c.Request.Context(), fmt.Sprintf(
+		"auth rejected: %s | token=%d (%q) | ip=%s | path=%s | ua=%q",
+		reason, id, name, c.ClientIP(), c.Request.URL.Path, c.Request.UserAgent()))
+
+	model.RecordAuthRejection(model.PlatformEvent{
+		ClientIP:  c.ClientIP(),
+		KeyPrefix: fmt.Sprintf("token #%d", id),
+		Method:    c.Request.Method,
+		Path:      c.Request.URL.Path,
+		Status:    http.StatusForbidden,
+		UserAgent: truncate(c.Request.UserAgent(), 255),
+		RequestId: c.GetString(common.RequestIdKey),
+		Detail:    reason + " (token " + name + ")",
+	})
 }
 
 func redactedKeyPrefix(key string) string {
