@@ -5479,6 +5479,8 @@
     "What happened": "发生了什么",
     "Nothing recorded for this filter.": "此筛选条件下没有记录。",
     "{{total}} entries": "共 {{total}} 条",
-    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "从未到达转发层的请求,因此在使用日志里不会留下任何记录:失败的 TLS 握手、被负载均衡器拒绝的连接,以及在鉴权阶段被挡回的调用方。"
+    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "从未到达转发层的请求,因此在使用日志里不会留下任何记录:失败的 TLS 握手、被负载均衡器拒绝的连接,以及在鉴权阶段被挡回的调用方。",
+    "Seen used by": "曾被谁使用",
+    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "这个地址曾被该账号使用过。这不能证明本次请求就是他们发的:共享出口或办公室网络会把多方映射到同一个地址上。"
   }
 }

@@ -5461,6 +5461,8 @@
     "What happened": "Điều đã xảy ra",
     "Nothing recorded for this filter.": "Không có bản ghi nào cho bộ lọc này.",
     "{{total}} entries": "{{total}} mục",
-    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Các yêu cầu chưa từng đến lớp chuyển tiếp nên không để lại dòng nào trong nhật ký sử dụng: bắt tay TLS thất bại, kết nối bị bộ cân bằng tải từ chối, và bên gọi bị chặn ở bước xác thực."
+    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Các yêu cầu chưa từng đến lớp chuyển tiếp nên không để lại dòng nào trong nhật ký sử dụng: bắt tay TLS thất bại, kết nối bị bộ cân bằng tải từ chối, và bên gọi bị chặn ở bước xác thực.",
+    "Seen used by": "Đã thấy được dùng bởi",
+    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "Địa chỉ này đã từng được tài khoản này sử dụng. Đây không phải bằng chứng rằng yêu cầu này là của họ: một cổng ra dùng chung hoặc mạng văn phòng gộp nhiều bên vào cùng một địa chỉ."
   }
 }

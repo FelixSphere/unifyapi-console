@@ -121,6 +121,10 @@ func main() {
 	// UNIFYAPI-FORK: pull the load balancer's own logs into the platform log.
 	// No-op unless ALB_LOG_BUCKET is set; see service/alb_log_ingest.go.
 	service.StartALBLogIngest()
+	// UNIFYAPI-FORK: the platform log mirrors S3 buckets that expire at 30 days
+	// and a host log that is now pruned at 30; this keeps the table on the same
+	// clock instead of being the one place that grows forever.
+	model.StartPlatformEventRetention(30)
 	// UNIFYAPI-FORK: our feature tables, created on every boot whether or not
 	// the feature is switched on, so no environment is missing one.
 	if err := model.MigrateSupport(); err != nil {

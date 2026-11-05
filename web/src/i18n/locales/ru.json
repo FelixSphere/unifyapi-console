@@ -5461,6 +5461,8 @@
     "What happened": "Что произошло",
     "Nothing recorded for this filter.": "По этому фильтру записей нет.",
     "{{total}} entries": "Записей: {{total}}",
-    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Запросы, не дошедшие до ретрансляции, поэтому в журнале использования их нет: неудавшиеся рукопожатия TLS, соединения, отклонённые балансировщиком нагрузки, и вызывающие стороны, отклонённые при аутентификации."
+    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Запросы, не дошедшие до ретрансляции, поэтому в журнале использования их нет: неудавшиеся рукопожатия TLS, соединения, отклонённые балансировщиком нагрузки, и вызывающие стороны, отклонённые при аутентификации.",
+    "Seen used by": "Замечен у",
+    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "Этот адрес ранее использовался этой учётной записью. Это не доказывает, что запрос принадлежал ей: общий выход или офисная сеть сводят несколько сторон к одному адресу."
   }
 }
