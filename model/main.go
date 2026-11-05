@@ -298,6 +298,7 @@ func migrateDB() error {
 		&PartnershipEnrollment{},
 		&BuilderIdentity{},
 		&EmailDeliveryState{},
+		&PlatformEvent{}, // UNIFYAPI-FORK: see model/platform_event.go
 		// UNIFYAPI-FORK: supplier credit supply, see credit_supplier.go / credit_lot.go
 		&CreditSupplier{},
 		&CreditLot{},

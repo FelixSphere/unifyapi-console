@@ -557,9 +557,36 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 // case is worth its own wording: "no key sent" and "wrong key" look identical
 // from the outside and have completely different fixes.
 func logAuthRejection(c *gin.Context, reason string, key string) {
+	prefix := redactedKeyPrefix(key)
 	logger.LogWarn(c.Request.Context(), fmt.Sprintf(
 		"auth rejected: %s | key=%s | ip=%s | path=%s | ua=%q",
-		reason, redactedKeyPrefix(key), c.ClientIP(), c.Request.URL.Path, c.Request.UserAgent()))
+		reason, prefix, c.ClientIP(), c.Request.URL.Path, c.Request.UserAgent()))
+
+	// The line above goes to the host log file, which answers the question only
+	// for someone with SSM access. The same rejection goes to the platform log
+	// so it can be answered from the console instead -- that is the whole point
+	// of recording it. Writing is asynchronous and best effort: the caller is
+	// already being refused, and a database that is struggling must not turn a
+	// 401 into a hang.
+	model.RecordAuthRejection(model.PlatformEvent{
+		ClientIP:  c.ClientIP(),
+		KeyPrefix: prefix,
+		Method:    c.Request.Method,
+		Path:      c.Request.URL.Path,
+		Status:    http.StatusUnauthorized,
+		UserAgent: truncate(c.Request.UserAgent(), 255),
+		RequestId: c.GetString(common.RequestIdKey),
+		Detail:    reason,
+	})
+}
+
+// Columns are varchar(255); a user agent is attacker-controlled and arbitrarily
+// long, and an over-length insert would fail the whole row.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }
 
 func redactedKeyPrefix(key string) string {
