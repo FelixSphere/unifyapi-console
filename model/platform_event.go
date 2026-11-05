@@ -77,6 +77,10 @@ const (
 	// The handshake never completed: no protocol was agreed, and this is what
 	// ClientTLSNegotiationErrorCount counts. The only shape that produces the
 	// "no response at all" a customer describes.
+	// The token WAS recognised. Refused only because the client address is
+	// not on its allow list, which is a different fact about a different
+	// caller than a key we do not hold.
+	PlatformEventKindIPNotAllowed       = "ip_not_allowed"
 	PlatformEventKindTLSHandshakeFailed = "tls_handshake_failed"
 	// TLS was negotiated and the connection died afterwards. CloudWatch does
 	// NOT count this, and the client did get a connection -- a different root
@@ -105,7 +109,9 @@ func RecordPlatformEvents(events []PlatformEvent) error {
 // A rejected caller is already being answered; recording why is best effort.
 func RecordAuthRejection(e PlatformEvent) {
 	e.Source = PlatformEventSourceAuth
-	e.Kind = PlatformEventKindTokenNotRecognised
+	if e.Kind == "" {
+		e.Kind = PlatformEventKindTokenNotRecognised
+	}
 	e.Severity = "warn"
 	if e.CreatedAt == 0 {
 		e.CreatedAt = time.Now().Unix()
