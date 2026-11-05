@@ -5451,6 +5451,16 @@
     "What each number means": "Что означает каждое число",
     "Customer charge = official model price x customer-model final multiplier.": "Списание клиента = официальная цена модели × итоговый множитель клиент-модель.",
     "Upstream cost = official model price x selected channel purchasing ratio.": "Себестоимость = официальная цена модели × закупочный множитель выбранного канала.",
-    "Profit = customer charge - upstream cost.": "Прибыль = списание клиента − себестоимость."
+    "Profit = customer charge - upstream cost.": "Прибыль = списание клиента − себестоимость.",
+    "Platform Log": "Журнал платформы",
+    "All sources": "Все источники",
+    "TLS handshake": "Рукопожатие TLS",
+    "Load balancer": "Балансировщик нагрузки",
+    "Client IP": "IP клиента",
+    "Key prefix": "Префикс ключа",
+    "What happened": "Что произошло",
+    "Nothing recorded for this filter.": "По этому фильтру записей нет.",
+    "{{total}} entries": "Записей: {{total}}",
+    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Запросы, не дошедшие до ретрансляции, поэтому в журнале использования их нет: неудавшиеся рукопожатия TLS, соединения, отклонённые балансировщиком нагрузки, и вызывающие стороны, отклонённые при аутентификации."
   }
 }

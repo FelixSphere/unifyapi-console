@@ -31,6 +31,7 @@ import {
   Radio,
   ServerCog,
   Settings,
+  ShieldAlert,
   Ticket,
   User,
   Users,
@@ -170,6 +171,15 @@ export function useSidebarData(): SidebarData {
             title: t('System Info'),
             url: '/system-info',
             icon: ServerCog,
+            requiredRole: ROLE.SUPER_ADMIN,
+          },
+          {
+            // UNIFYAPI-FORK: requests that never reached the relay, so they
+            // leave no row in Usage Logs. Carries other customers' source
+            // addresses, hence SUPER_ADMIN like System Info above.
+            title: t('Platform Log'),
+            url: '/platform-log',
+            icon: ShieldAlert,
             requiredRole: ROLE.SUPER_ADMIN,
           },
           {

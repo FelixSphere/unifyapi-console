@@ -5465,6 +5465,16 @@
     "What each number means": "What each number means",
     "Customer charge = official model price x customer-model final multiplier.": "Customer charge = official model price × customer-model final multiplier.",
     "Upstream cost = official model price x selected channel purchasing ratio.": "Upstream cost = official model price × selected channel purchasing ratio.",
-    "Profit = customer charge - upstream cost.": "Profit = customer charge − upstream cost."
+    "Profit = customer charge - upstream cost.": "Profit = customer charge − upstream cost.",
+    "Platform Log": "Platform Log",
+    "All sources": "All sources",
+    "TLS handshake": "TLS handshake",
+    "Load balancer": "Load balancer",
+    "Client IP": "Client IP",
+    "Key prefix": "Key prefix",
+    "What happened": "What happened",
+    "Nothing recorded for this filter.": "Nothing recorded for this filter.",
+    "{{total}} entries": "{{total}} entries",
+    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication."
   }
 }

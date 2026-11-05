@@ -5451,6 +5451,16 @@
     "What each number means": "Signification de chaque nombre",
     "Customer charge = official model price x customer-model final multiplier.": "Facturation client = prix officiel du modèle × multiplicateur final client-modèle.",
     "Upstream cost = official model price x selected channel purchasing ratio.": "Coût amont = prix officiel du modèle × ratio d’achat du canal sélectionné.",
-    "Profit = customer charge - upstream cost.": "Bénéfice = facturation client − coût amont."
+    "Profit = customer charge - upstream cost.": "Bénéfice = facturation client − coût amont.",
+    "Platform Log": "Journal de la plateforme",
+    "All sources": "Toutes les sources",
+    "TLS handshake": "Poignée de main TLS",
+    "Load balancer": "Équilibreur de charge",
+    "Client IP": "IP du client",
+    "Key prefix": "Préfixe de clé",
+    "What happened": "Ce qui s'est passé",
+    "Nothing recorded for this filter.": "Aucun enregistrement pour ce filtre.",
+    "{{total}} entries": "{{total}} entrées",
+    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Requêtes qui n'ont jamais atteint le relais et ne laissent donc aucune ligne dans le journal d'utilisation : échecs de poignée de main TLS, connexions refusées par l'équilibreur de charge et appelants rejetés à l'authentification."
   }
 }
