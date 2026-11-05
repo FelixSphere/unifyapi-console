@@ -376,12 +376,14 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
           />
         </div>
 
-        {/* Record IP Log */}
+        {/* Show the client IP on the user's own log rows */}
         <div className='flex items-start justify-between gap-3 rounded-lg border p-3 sm:items-center sm:p-4'>
           <div className='space-y-0.5'>
-            <Label htmlFor='recordIp'>{t('Record IP Address')}</Label>
+            <Label htmlFor='recordIp'>{t('Show IP Address in Logs')}</Label>
             <p className='text-muted-foreground text-xs sm:text-sm'>
-              {t('Log IP address for usage and error logs')}
+              {t(
+                'Show the client IP address on your own usage and error log entries'
+              )}
             </p>
           </div>
           <Switch

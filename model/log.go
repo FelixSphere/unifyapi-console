@@ -157,9 +157,43 @@ func assignDisplayLogIds(logs []*Log, startIdx int) {
 	}
 }
 
-func formatUserLogs(logs []*Log, startIdx int) {
+// clientIPForLog is c.ClientIP() with the one nil dereference that matters
+// made survivable. gin's ClientIP reads c.Request.RemoteAddr without checking
+// it, and until this file recorded the address unconditionally that branch was
+// reachable only for a login that had opted in -- which no login ever had, so
+// it had never run in production at all. It now runs on every billed request,
+// inside the writer that turns a deducted quota into a billable row. A panic
+// there loses the row and the money with it; an empty address loses neither.
+func clientIPForLog(c *gin.Context) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	return c.ClientIP()
+}
+
+// userWantsIpInLogs reports whether this login asked to see the client IP on
+// its own log rows. It governs DISPLAY only: the platform records the IP on
+// every relay log either way, because resolving an address to an account is
+// how a support report or an abuse report gets answered at all, and that
+// question is asked after the fact, when an unrecorded address is gone for
+// good.
+func userWantsIpInLogs(userId int) bool {
+	setting, err := GetUserSetting(userId, false)
+	if err != nil {
+		return false
+	}
+	return setting.RecordIpLog
+}
+
+func formatUserLogs(logs []*Log, startIdx int, showIp bool) {
 	for i := range logs {
 		logs[i].ChannelName = ""
+		// Only the relay rows. A login or audit row has carried its address
+		// since long before this switch meant anything, and the user can see
+		// it today; hiding it now would take away something that works.
+		if !showIp && (logs[i].Type == LogTypeConsume || logs[i].Type == LogTypeError) {
+			logs[i].Ip = ""
+		}
 		var otherMap map[string]interface{}
 		otherMap, _ = common.StrToMap(logs[i].Other)
 		if otherMap != nil {
@@ -175,13 +209,13 @@ func formatUserLogs(logs []*Log, startIdx int) {
 	assignDisplayLogIds(logs, startIdx)
 }
 
-func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
+func GetLogByTokenId(tokenId int, viewerUserId int) (logs []*Log, err error) {
 	order := "id desc"
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		order = clickHouseLogOrder("")
 	}
 	err = LOG_DB.Model(&Log{}).Where("token_id = ?", tokenId).Order(order).Limit(common.MaxRecentItems).Find(&logs).Error
-	formatUserLogs(logs, 0)
+	formatUserLogs(logs, 0, userWantsIpInLogs(viewerUserId))
 	return logs, err
 }
 
@@ -330,35 +364,23 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	otherStr := common.MapToJsonStr(other)
-	// 判断是否需要记录 IP
-	needRecordIp := false
-	if settingMap, err := GetUserSetting(userId, false); err == nil {
-		if settingMap.RecordIpLog {
-			needRecordIp = true
-		}
-	}
 	log := &Log{
-		UserId:           userId,
-		Username:         username,
-		CreatedAt:        common.GetTimestamp(),
-		Type:             LogTypeError,
-		Content:          content,
-		PromptTokens:     0,
-		CompletionTokens: 0,
-		TokenName:        tokenName,
-		ModelName:        modelName,
-		Quota:            0,
-		ChannelId:        channelId,
-		TokenId:          tokenId,
-		UseTime:          useTimeSeconds,
-		IsStream:         isStream,
-		Group:            group,
-		Ip: func() string {
-			if needRecordIp {
-				return c.ClientIP()
-			}
-			return ""
-		}(),
+		UserId:            userId,
+		Username:          username,
+		CreatedAt:         common.GetTimestamp(),
+		Type:              LogTypeError,
+		Content:           content,
+		PromptTokens:      0,
+		CompletionTokens:  0,
+		TokenName:         tokenName,
+		ModelName:         modelName,
+		Quota:             0,
+		ChannelId:         channelId,
+		TokenId:           tokenId,
+		UseTime:           useTimeSeconds,
+		IsStream:          isStream,
+		Group:             group,
+		Ip:                clientIPForLog(c),
 		RequestId:         requestId,
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
@@ -503,43 +525,31 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	createdAt := common.GetTimestamp()
 	otherStr := common.MapToJsonStr(params.Other)
-	// 判断是否需要记录 IP
-	needRecordIp := false
-	if settingMap, err := GetUserSetting(userId, false); err == nil {
-		if settingMap.RecordIpLog {
-			needRecordIp = true
-		}
-	}
 	// Resolved once here so the row records the wallet it was actually drawn
 	// from; the resolver is cached, and an unresolvable login stamps 0.
 	wallet, walletErr := ResolveBillingEntity(userId)
 	log := &Log{
-		UserId:           userId,
-		TenantId:         wallet.TenantId,
-		Username:         username,
-		CreatedAt:        createdAt,
-		Type:             LogTypeConsume,
-		Content:          params.Content,
-		PromptTokens:     params.PromptTokens,
-		CompletionTokens: params.CompletionTokens,
-		CachedTokens:     cachedTokensFromOther(params.Other),
-		CacheWriteTokens: cacheWriteTokensFromOther(params.Other),
-		UsageSemantic:    usageSemanticFromOther(params.Other),
-		TokenName:        params.TokenName,
-		ModelName:        params.ModelName,
-		Quota:            params.Quota,
-		ChannelId:        params.ChannelId,
-		ChannelBaseURL:   NormalizeChannelBaseURL(common.GetContextKeyString(c, constant.ContextKeyChannelBaseUrl)),
-		TokenId:          params.TokenId,
-		UseTime:          params.UseTimeSeconds,
-		IsStream:         params.IsStream,
-		Group:            params.Group,
-		Ip: func() string {
-			if needRecordIp {
-				return c.ClientIP()
-			}
-			return ""
-		}(),
+		UserId:            userId,
+		TenantId:          wallet.TenantId,
+		Username:          username,
+		CreatedAt:         createdAt,
+		Type:              LogTypeConsume,
+		Content:           params.Content,
+		PromptTokens:      params.PromptTokens,
+		CompletionTokens:  params.CompletionTokens,
+		CachedTokens:      cachedTokensFromOther(params.Other),
+		CacheWriteTokens:  cacheWriteTokensFromOther(params.Other),
+		UsageSemantic:     usageSemanticFromOther(params.Other),
+		TokenName:         params.TokenName,
+		ModelName:         params.ModelName,
+		Quota:             params.Quota,
+		ChannelId:         params.ChannelId,
+		ChannelBaseURL:    NormalizeChannelBaseURL(common.GetContextKeyString(c, constant.ContextKeyChannelBaseUrl)),
+		TokenId:           params.TokenId,
+		UseTime:           params.UseTimeSeconds,
+		IsStream:          params.IsStream,
+		Group:             params.Group,
+		Ip:                clientIPForLog(c),
 		RequestId:         requestId,
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
@@ -769,7 +779,7 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 		return nil, 0, errors.New("查询日志失败")
 	}
 
-	formatUserLogs(logs, startIdx)
+	formatUserLogs(logs, startIdx, userWantsIpInLogs(userId))
 	return logs, total, err
 }
 
