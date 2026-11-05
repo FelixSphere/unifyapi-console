@@ -135,6 +135,9 @@ func main() {
 	}
 	// UNIFYAPI-FORK: weekly customer email; off unless UNIFYAPI_RETENTION_EMAIL=on.
 	service.StartRetentionEmailWorker()
+	// UNIFYAPI-FORK: emails staff about support messages the AI agent did not
+	// handle; off unless SUPPORT_AGENT_URL and SUPPORT_AGENT_SECRET are set.
+	service.StartSupportAgentSweep()
 
 	if os.Getenv("CHANNEL_UPDATE_FREQUENCY") != "" {
 		frequency, err := strconv.Atoi(os.Getenv("CHANNEL_UPDATE_FREQUENCY"))

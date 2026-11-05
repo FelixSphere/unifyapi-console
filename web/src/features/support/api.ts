@@ -7,7 +7,7 @@ Upstream: https://github.com/QuantumNous/new-api
 Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
 import i18n from '@/i18n/config'
-import { api } from '@/lib/api'
+import { api, getFreshAuthHeaders } from '@/lib/api'
 
 // Customer questions and messages. Server side: controller/unifyapi_support.go.
 
@@ -32,6 +32,8 @@ export type SupportMessage = {
   ticket_id: number
   user_id: number
   from_staff: boolean
+  /** Written by the AI support agent (it is also from_staff). */
+  from_ai?: boolean
   body: string
   created_at: number
 }
@@ -121,3 +123,63 @@ export type SupportUnread = { count: number; ticket_ids: number[] }
 // Conversations with a message from the other side the caller has not opened.
 export const getUnread = () =>
   call(api.get<Envelope<SupportUnread>>('/api/support/unread'))
+
+// The AI first responder (server: controller/unifyapi_support_ai.go).
+export const getAIStatus = () =>
+  call(api.get<Envelope<{ enabled: boolean }>>('/api/support/ai'))
+
+export type AIEvent =
+  | { event: 'status' }
+  | { event: 'tool'; name: string; ok: boolean }
+  | { event: 'answer'; text: string }
+  | { event: 'handoff'; reason: string }
+  | { event: 'done' }
+  | { event: 'error'; message: string }
+  | { event: 'stored'; ok: boolean }
+
+/**
+ * Asks the agent to answer the latest customer message and reports its
+ * progress. Resolves when the server has stored the reply (or given up and
+ * passed the conversation to staff). A 409 means it was already answered.
+ */
+export async function streamAI(
+  ticketId: number,
+  onEvent: (e: AIEvent) => void,
+  signal?: AbortSignal
+): Promise<'stored' | 'failed' | 'skipped'> {
+  const headers = await getFreshAuthHeaders()
+  const res = await fetch(`/api/support/tickets/${ticketId}/ai`, {
+    method: 'POST',
+    headers,
+    signal,
+  })
+  if (res.status === 409 || res.status === 404) return 'skipped'
+  if (!res.ok || !res.body) return 'failed'
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  let outcome: 'stored' | 'failed' = 'failed'
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let cut: number
+    while ((cut = buf.indexOf('\n\n')) >= 0) {
+      const block = buf.slice(0, cut)
+      buf = buf.slice(cut + 2)
+      const event = /^event: (.*)$/m.exec(block)?.[1]
+      const data = /^data: (.*)$/m.exec(block)?.[1]
+      if (!event) continue
+      let payload: Record<string, unknown> = {}
+      try {
+        payload = data ? JSON.parse(data) : {}
+      } catch {
+        payload = {}
+      }
+      const e = { event, ...payload } as AIEvent
+      if (e.event === 'stored') outcome = e.ok ? 'stored' : 'failed'
+      onEvent(e)
+    }
+  }
+  return outcome
+}

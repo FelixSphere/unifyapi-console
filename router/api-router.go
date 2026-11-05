@@ -419,12 +419,19 @@ func SetApiRouter(router *gin.Engine) {
 		supportRoute := apiRouter.Group("/support")
 		{
 			supportRoute.GET("/unread", middleware.UserAuth(), controller.SupportUnread)
+			// The AI first responder: whether it is on, and the agent's
+			// read-only callbacks (authenticated by its own signed token).
+			supportRoute.GET("/ai", middleware.UserAuth(), controller.SupportAIStatus)
+			agent := supportRoute.Group("/agent", middleware.CriticalRateLimit())
+			agent.GET("/account", controller.SupportAgentAccount)
+			agent.GET("/request/:rid", controller.SupportAgentRequest)
 			mine := supportRoute.Group("/tickets", middleware.UserAuth())
 			mine.GET("", controller.ListMySupportTickets)
 			mine.POST("", controller.CreateSupportTicket)
 			mine.GET("/:id", controller.GetMySupportTicket)
 			mine.POST("/:id/messages", controller.AddMySupportMessage)
 			mine.POST("/:id/close", controller.CloseMySupportTicket)
+			mine.POST("/:id/ai", controller.AskSupportAI)
 
 			inbox := supportRoute.Group("/admin/tickets", middleware.AdminAuth())
 			inbox.GET("", controller.ListSupportTickets)

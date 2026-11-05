@@ -8,7 +8,7 @@ Fork changes are catalogued in BRANDING.md (AGPLv3 s.7(c) change marking).
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -22,11 +22,13 @@ import {
   closeMyTicket,
   createTicket,
   getInboxTicket,
+  getAIStatus,
   getMyTicket,
   listInbox,
   listMyTickets,
   replyInbox,
   setInboxStatus,
+  streamAI,
   type SupportConversation,
   type SupportStatus,
   type SupportTicket,
@@ -105,11 +107,13 @@ function Thread(props: {
     <ol className='flex flex-col gap-3'>
       {props.conversation.messages.map((m) => {
         const mine = props.staffView ? m.from_staff : !m.from_staff
-        const who = m.from_staff
-          ? t('Unify API support')
-          : props.staffView
-            ? (props.conversation.customer?.username ?? t('Customer'))
-            : t('You')
+        const who = m.from_ai
+          ? t('AI assistant')
+          : m.from_staff
+            ? t('Unify API support')
+            : props.staffView
+              ? (props.conversation.customer?.username ?? t('Customer'))
+              : t('You')
         return (
           <li
             key={m.id}
@@ -227,6 +231,74 @@ function NewQuestion(props: { onCreated: (t: SupportTicket) => void }) {
   )
 }
 
+const AI_TOOL_LABEL: Record<string, string> = {
+  get_my_account: 'Checking your account…',
+  get_request: 'Looking up that request…',
+  get_model_price: 'Looking up the price…',
+  escalate_to_human: 'Asking a teammate to join…',
+}
+
+// Ask the AI assistant to answer the customer's newest message, once per
+// message. Fresh only: an old unanswered message has already gone to staff.
+function useAIAnswer(
+  conversation: SupportConversation | undefined,
+  onStored: () => void
+) {
+  const enabled = useQuery({
+    queryKey: ['support', 'ai'],
+    queryFn: getAIStatus,
+    staleTime: 5 * 60_000,
+  }).data?.enabled
+  const asked = useRef<number | null>(null)
+  const [progress, setProgress] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+  const last = conversation?.messages[conversation.messages.length - 1]
+  const due =
+    enabled &&
+    last &&
+    !last.from_staff &&
+    Date.now() / 1000 - last.created_at < 120
+  useEffect(() => {
+    if (!due || !last || asked.current === last.id) return
+    asked.current = last.id
+    setFailed(false)
+    setProgress('AI assistant is thinking…')
+    void streamAI(last.ticket_id, (e) => {
+      if (e.event === 'tool')
+        setProgress(AI_TOOL_LABEL[e.name] ?? 'AI assistant is thinking…')
+    })
+      .then((outcome) => {
+        if (outcome === 'failed') setFailed(true)
+      })
+      .catch(() => setFailed(true))
+      .finally(() => {
+        setProgress(null)
+        onStored()
+      })
+  }, [due, last, onStored])
+  return { progress, failed }
+}
+
+function AIProgress(props: { progress: string | null; failed: boolean }) {
+  const { t } = useTranslation()
+  if (props.progress)
+    return (
+      <div className='border-border bg-card text-muted-foreground max-w-[85%] self-start rounded-lg border p-3 text-sm'>
+        <span className='text-muted-foreground mb-1 block text-xs'>
+          {t('AI assistant')}
+        </span>
+        <span className='animate-pulse'>{t(props.progress)}</span>
+      </div>
+    )
+  if (props.failed)
+    return (
+      <p className='text-muted-foreground text-sm'>
+        {t('A teammate will reply here soon.')}
+      </p>
+    )
+  return null
+}
+
 function CustomerConversation(props: { id: number; onBack: () => void }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -252,6 +324,10 @@ function CustomerConversation(props: { id: number; onBack: () => void }) {
     mutationFn: () => closeMyTicket(props.id),
     onSuccess: settle,
   })
+  const ai = useAIAnswer(q.data, () => {
+    void qc.invalidateQueries({ queryKey: key })
+    void qc.invalidateQueries({ queryKey: ['support', 'mine'], exact: true })
+  })
 
   if (q.isLoading)
     return <p className='text-muted-foreground'>{t('Loading…')}</p>
@@ -275,6 +351,7 @@ function CustomerConversation(props: { id: number; onBack: () => void }) {
         <StatusPill status={ticket.status} />
       </div>
       <Thread conversation={q.data} staffView={false} />
+      <AIProgress progress={ai.progress} failed={ai.failed} />
       <Composer
         placeholder={
           ticket.status === 'closed'

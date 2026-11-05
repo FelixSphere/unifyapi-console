@@ -56,6 +56,14 @@ export const SUPPORT_KEYS = [
   'Last activity',
   'Status',
   'user #{{id}}',
+  // The AI first responder.
+  'AI assistant',
+  'AI assistant is thinking…',
+  'Checking your account…',
+  'Looking up that request…',
+  'Looking up the price…',
+  'Asking a teammate to join…',
+  'A teammate will reply here soon.',
   // Server messages a customer can hit (controller/unifyapi_support.go).
   'could not save your message, please try again',
   'you have sent a lot of messages in the last hour; please wait a little',
@@ -117,6 +125,13 @@ const zhCN: Table = {
   'you have too many open conversations; add to one of them instead':
     '你未关闭的对话太多了，请在已有对话中继续留言',
   'conversation not found': '未找到该对话',
+  'AI assistant': 'AI 助手',
+  'AI assistant is thinking…': 'AI 助手正在思考…',
+  'Checking your account…': '正在查看你的账户…',
+  'Looking up that request…': '正在查询这个请求…',
+  'Looking up the price…': '正在查询价格…',
+  'Asking a teammate to join…': '正在请同事加入…',
+  'A teammate will reply here soon.': '同事会尽快在这里回复你。',
 }
 
 const zhTW: Table = {
@@ -170,6 +185,13 @@ const zhTW: Table = {
   'you have too many open conversations; add to one of them instead':
     '你未關閉的對話太多了，請在既有對話中繼續留言',
   'conversation not found': '找不到此對話',
+  'AI assistant': 'AI 助理',
+  'AI assistant is thinking…': 'AI 助理正在思考…',
+  'Checking your account…': '正在查看你的帳戶…',
+  'Looking up that request…': '正在查詢這個請求…',
+  'Looking up the price…': '正在查詢價格…',
+  'Asking a teammate to join…': '正在請同事加入…',
+  'A teammate will reply here soon.': '同事會儘快在這裡回覆你。',
 }
 
 const fr: Table = {
@@ -225,6 +247,14 @@ const fr: Table = {
   'you have too many open conversations; add to one of them instead':
     'Vous avez trop de conversations ouvertes ; ajoutez plutôt un message à l’une d’elles',
   'conversation not found': 'Conversation introuvable',
+  'AI assistant': 'Assistant IA',
+  'AI assistant is thinking…': 'L’assistant IA réfléchit…',
+  'Checking your account…': 'Vérification de votre compte…',
+  'Looking up that request…': 'Recherche de cette requête…',
+  'Looking up the price…': 'Recherche du prix…',
+  'Asking a teammate to join…': 'Un membre de l’équipe va être sollicité…',
+  'A teammate will reply here soon.':
+    'Un membre de l’équipe vous répondra ici bientôt.',
 }
 
 const ja: Table = {
@@ -279,6 +309,13 @@ const ja: Table = {
   'you have too many open conversations; add to one of them instead':
     '未解決の問い合わせが多すぎます。既存の問い合わせにメッセージを追加してください',
   'conversation not found': '問い合わせが見つかりません',
+  'AI assistant': 'AI アシスタント',
+  'AI assistant is thinking…': 'AI アシスタントが考えています…',
+  'Checking your account…': 'アカウントを確認しています…',
+  'Looking up that request…': 'リクエストを調べています…',
+  'Looking up the price…': '料金を調べています…',
+  'Asking a teammate to join…': '担当者に引き継いでいます…',
+  'A teammate will reply here soon.': '担当者がまもなくここで返信します。',
 }
 
 const ru: Table = {
@@ -334,6 +371,13 @@ const ru: Table = {
   'you have too many open conversations; add to one of them instead':
     'У вас слишком много открытых обращений; добавьте сообщение в одно из них',
   'conversation not found': 'Обращение не найдено',
+  'AI assistant': 'ИИ-ассистент',
+  'AI assistant is thinking…': 'ИИ-ассистент думает…',
+  'Checking your account…': 'Проверяем ваш аккаунт…',
+  'Looking up that request…': 'Ищем этот запрос…',
+  'Looking up the price…': 'Узнаём цену…',
+  'Asking a teammate to join…': 'Подключаем сотрудника…',
+  'A teammate will reply here soon.': 'Сотрудник скоро ответит здесь.',
 }
 
 const vi: Table = {
@@ -389,6 +433,13 @@ const vi: Table = {
   'you have too many open conversations; add to one of them instead':
     'Bạn có quá nhiều cuộc trò chuyện đang mở; hãy thêm tin nhắn vào một cuộc trò chuyện có sẵn',
   'conversation not found': 'Không tìm thấy cuộc trò chuyện',
+  'AI assistant': 'Trợ lý AI',
+  'AI assistant is thinking…': 'Trợ lý AI đang suy nghĩ…',
+  'Checking your account…': 'Đang kiểm tra tài khoản của bạn…',
+  'Looking up that request…': 'Đang tra cứu yêu cầu đó…',
+  'Looking up the price…': 'Đang tra cứu giá…',
+  'Asking a teammate to join…': 'Đang mời một nhân viên tham gia…',
+  'A teammate will reply here soon.': 'Nhân viên sẽ sớm trả lời bạn tại đây.',
 }
 
 // Language codes as the console's i18n config names them.
