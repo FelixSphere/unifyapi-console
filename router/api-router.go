@@ -230,6 +230,13 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/subscription/epay/notify", controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/return", controller.SubscriptionEpayReturn)
 		apiRouter.POST("/subscription/epay/return", anonymousRequestBodyLimit, controller.SubscriptionEpayReturn)
+		// UNIFYAPI-FORK: the platform log. RootAuth, not AdminAuth -- these rows
+		// carry other customers' source addresses. See controller/platform_event.go.
+		platformLogRoute := apiRouter.Group("/platform-log")
+		platformLogRoute.Use(middleware.RootAuth())
+		{
+			platformLogRoute.GET("/", controller.GetPlatformEvents)
+		}
 		optionRoute := apiRouter.Group("/option")
 		optionRoute.Use(middleware.RootAuth())
 		{
