@@ -187,8 +187,12 @@ func CreateSupportTicket(c *gin.Context) {
 		supportFail(c, http.StatusInternalServerError, "could not save your message, please try again")
 		return
 	}
-	if customer, err := model.GetUserById(userId, false); err == nil {
-		service.NotifyStaffOfSupportMessage(ticket, customer, body, true)
+	// With the AI first responder on, staff hear about this only if the agent
+	// hands it over, fails, or never runs (see service.StartSupportAgentSweep).
+	if !service.SupportAgentEnabled() {
+		if customer, err := model.GetUserById(userId, false); err == nil {
+			service.NotifyStaffOfSupportMessage(ticket, customer, body, true)
+		}
 	}
 	supportOK(c, ticket)
 }
@@ -248,8 +252,10 @@ func AddMySupportMessage(c *gin.Context) {
 		supportFail(c, http.StatusInternalServerError, "could not save your message, please try again")
 		return
 	}
-	if customer, err := model.GetUserById(ticket.UserId, false); err == nil {
-		service.NotifyStaffOfSupportMessage(ticket, customer, body, false)
+	if !service.SupportAgentEnabled() {
+		if customer, err := model.GetUserById(ticket.UserId, false); err == nil {
+			service.NotifyStaffOfSupportMessage(ticket, customer, body, false)
+		}
 	}
 	supportConversation(c, ticket)
 }
