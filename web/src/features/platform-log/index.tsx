@@ -23,7 +23,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 
-import { getPlatformEvents, type PlatformEvent } from './api'
+import { getPlatformEvents, type IPOwner, type PlatformEvent } from './api'
 
 const PAGE_SIZE = 50
 
@@ -44,6 +44,7 @@ function severityVariant(severity: string) {
 export function PlatformLog() {
   const { t } = useTranslation()
   const [events, setEvents] = useState<PlatformEvent[]>([])
+  const [ipOwners, setIpOwners] = useState<Record<string, IPOwner>>({})
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [source, setSource] = useState('')
@@ -75,11 +76,13 @@ export function PlatformLog() {
       .then((res) => {
         if (cancelled) return
         setEvents(res.items)
+        setIpOwners(res.ipOwners)
         setTotal(res.total)
       })
       .catch((e: unknown) => {
         if (cancelled) return
         setEvents([])
+        setIpOwners({})
         setError(e instanceof Error ? e.message : String(e))
       })
       .finally(() => {
@@ -154,6 +157,7 @@ export function PlatformLog() {
                 <TableHead>{t('Source')}</TableHead>
                 <TableHead>{t('What happened')}</TableHead>
                 <TableHead>{t('Client IP')}</TableHead>
+                <TableHead>{t('Seen used by')}</TableHead>
                 <TableHead>{t('Key prefix')}</TableHead>
                 <TableHead>{t('Path')}</TableHead>
                 <TableHead>{t('Status')}</TableHead>
@@ -162,7 +166,7 @@ export function PlatformLog() {
             <TableBody>
               {events.length === 0 && !loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className='text-muted-foreground'>
+                  <TableCell colSpan={8} className='text-muted-foreground'>
                     {t('Nothing recorded for this filter.')}
                   </TableCell>
                 </TableRow>
@@ -180,6 +184,19 @@ export function PlatformLog() {
                     <TableCell>{e.kind}</TableCell>
                     <TableCell className='font-mono text-xs'>
                       {e.client_ip}
+                    </TableCell>
+                    <TableCell className='text-xs'>
+                      {ipOwners[e.client_ip] ? (
+                        <span
+                          title={t(
+                            'This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.'
+                          )}
+                        >
+                          {ipOwners[e.client_ip].username}
+                        </span>
+                      ) : (
+                        <span className='text-muted-foreground'>—</span>
+                      )}
                     </TableCell>
                     <TableCell className='font-mono text-xs'>
                       {e.key_prefix}

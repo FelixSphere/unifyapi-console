@@ -38,8 +38,18 @@ export type PlatformEventFilters = {
   pageSize?: number
 }
 
+export type IPOwner = {
+  user_id: number
+  username: string
+  last_seen: number
+}
+
 type Envelope<T> = { success: boolean; message: string; data: T }
-type Page = { items: PlatformEvent[] | null; total: number }
+type Page = {
+  items: PlatformEvent[] | null
+  total: number
+  ip_owners: Record<string, IPOwner> | null
+}
 
 export async function getPlatformEvents(filters: PlatformEventFilters = {}) {
   const search = new URLSearchParams()
@@ -65,5 +75,9 @@ export async function getPlatformEvents(filters: PlatformEventFilters = {}) {
   }
   // An empty page serialises items as null rather than [], and every caller
   // here maps over it.
-  return { items: res.data.data.items ?? [], total: res.data.data.total }
+  return {
+    items: res.data.data.items ?? [],
+    total: res.data.data.total,
+    ipOwners: res.data.data.ip_owners ?? {},
+  }
 }

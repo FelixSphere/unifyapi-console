@@ -2,6 +2,8 @@ package model
 
 import (
 	"fmt"
+
+	"github.com/QuantumNous/new-api/common"
 	"strings"
 	"time"
 
@@ -202,10 +204,101 @@ func SearchPlatformEvents(q PlatformEventQuery) (events []PlatformEvent, total i
 	return events, total, err
 }
 
+// StartPlatformEventRetention is what makes the bound real. The function
+// below existed from the first commit and nothing called it, so the table the
+// commit message described as bounded was growing without limit. Found by
+// grepping for the caller rather than by trusting the comment.
+func StartPlatformEventRetention(keepDays int) {
+	if keepDays <= 0 {
+		keepDays = 30
+	}
+	go func() {
+		for {
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						common.SysLog(fmt.Sprintf("[platform-event] retention panicked: %v", r))
+					}
+				}()
+				if DB == nil {
+					return
+				}
+				cutoff := time.Now().AddDate(0, 0, -keepDays).Unix()
+				if n, err := DeletePlatformEventsBefore(cutoff); err != nil {
+					common.SysLog(fmt.Sprintf("[platform-event] retention failed: %v", err))
+				} else if n > 0 {
+					common.SysLog(fmt.Sprintf("[platform-event] retention removed %d rows older than %dd", n, keepDays))
+				}
+			}()
+			time.Sleep(6 * time.Hour)
+		}
+	}()
+}
+
 // DeletePlatformEventsBefore bounds the table. The sources it mirrors expire at
 // 30 days (the S3 buckets) and the host log is already 521MB unbounded, so this
 // one is not allowed to become the third place that grows forever.
 func DeletePlatformEventsBefore(cutoff int64) (int64, error) {
 	tx := DB.Where("created_at < ?", cutoff).Delete(&PlatformEvent{})
 	return tx.RowsAffected, tx.Error
+}
+
+// IPOwner is a CORRELATION, not a fact about the event. It says this address
+// has been seen used by this account, not that this request was theirs: a
+// shared VPN exit, an office NAT or a rotated address will all map several
+// parties onto one line. That distinction is the whole reason the 400 requests
+// from 185.196.0.16 on 27 and 30 October are strong evidence about Chin Hin
+// and not proof.
+type IPOwner struct {
+	UserId   int    `json:"user_id"`
+	Username string `json:"username"`
+	LastSeen int64  `json:"last_seen"`
+}
+
+// ResolveIPOwners maps addresses to whoever was last seen using them.
+//
+// It reads `logs`.ip, which is populated for web and admin actions -- login,
+// audit, top-up -- and NOT for relay traffic: measured 2026-11-05 over 60 days,
+// types 3 and 7 carry an address on every row while type 2 (76441 rows) and
+// type 5 (11038) carry none. So an address resolves only when that account has
+// signed in to the console from it. A customer who only ever calls the API will
+// not resolve, and an empty result means "not matched", never "not a customer".
+func ResolveIPOwners(ips []string) map[string]IPOwner {
+	out := map[string]IPOwner{}
+	if DB == nil || len(ips) == 0 {
+		return out
+	}
+	seen := map[string]bool{}
+	uniq := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		if ip == "" || seen[ip] {
+			continue
+		}
+		seen[ip] = true
+		uniq = append(uniq, ip)
+	}
+	if len(uniq) == 0 {
+		return out
+	}
+	var rows []struct {
+		Ip       string
+		UserId   int
+		Username string
+		LastSeen int64
+	}
+	// DISTINCT ON keeps the most recent row per address; without the ordering
+	// a user who used the address once a year ago could outrank today's.
+	err := DB.Raw(`
+		select distinct on (ip) ip, user_id, username, created_at as last_seen
+		from logs
+		where ip in ? and coalesce(ip,'') <> ''
+		order by ip, created_at desc`, uniq).Scan(&rows).Error
+	if err != nil {
+		common.SysLog(fmt.Sprintf("[platform-event] ip owner lookup failed: %v", err))
+		return out
+	}
+	for _, r := range rows {
+		out[r.Ip] = IPOwner{UserId: r.UserId, Username: r.Username, LastSeen: r.LastSeen}
+	}
+	return out
 }

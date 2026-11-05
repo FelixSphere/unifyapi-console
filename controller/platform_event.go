@@ -39,7 +39,25 @@ func GetPlatformEvents(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// Attach who each address has been seen used by. Returned as a separate
+	// map rather than folded into each row, because it is a property of the
+	// ADDRESS and not of the event -- a shared exit maps several parties onto
+	// one line, and a row that simply said "user: Chris" would read as proof
+	// when it is only a correlation.
+	ips := make([]string, 0, len(events))
+	for _, e := range events {
+		if e.ClientIP != "" {
+			ips = append(ips, e.ClientIP)
+		}
+	}
+
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(events)
-	common.ApiSuccess(c, pageInfo)
+	common.ApiSuccess(c, gin.H{
+		"page":      pageInfo.GetPage(),
+		"page_size": pageInfo.GetPageSize(),
+		"total":     total,
+		"items":     events,
+		"ip_owners": model.ResolveIPOwners(ips),
+	})
 }

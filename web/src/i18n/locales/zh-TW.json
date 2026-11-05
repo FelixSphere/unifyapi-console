@@ -5465,6 +5465,8 @@
     "What happened": "發生了什麼",
     "Nothing recorded for this filter.": "此篩選條件下沒有紀錄。",
     "{{total}} entries": "共 {{total}} 筆",
-    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "從未到達轉發層的請求,因此在使用日誌裡不會留下任何紀錄:失敗的 TLS 交握、被負載平衡器拒絕的連線,以及在鑑權階段被擋回的呼叫方。"
+    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "從未到達轉發層的請求,因此在使用日誌裡不會留下任何紀錄:失敗的 TLS 交握、被負載平衡器拒絕的連線,以及在鑑權階段被擋回的呼叫方。",
+    "Seen used by": "曾被誰使用",
+    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "這個位址曾被該帳號使用過。這不能證明本次請求就是他們發的:共享出口或辦公室網路會把多方對應到同一個位址上。"
   }
 }

@@ -5461,6 +5461,8 @@
     "What happened": "発生した内容",
     "Nothing recorded for this filter.": "この条件に該当する記録はありません。",
     "{{total}} entries": "全 {{total}} 件",
-    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "リレーに到達しなかったリクエスト。利用ログには一切残りません。失敗した TLS ハンドシェイク、ロードバランサーが拒否した接続、認証で弾かれた呼び出し元が含まれます。"
+    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "リレーに到達しなかったリクエスト。利用ログには一切残りません。失敗した TLS ハンドシェイク、ロードバランサーが拒否した接続、認証で弾かれた呼び出し元が含まれます。",
+    "Seen used by": "使用が確認された利用者",
+    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "このアドレスはこのアカウントが使用しているのを確認したことがあります。このリクエストが本人のものである証拠ではありません。共有の出口やオフィスのネットワークでは、複数の利用者が同じアドレスになります。"
   }
 }

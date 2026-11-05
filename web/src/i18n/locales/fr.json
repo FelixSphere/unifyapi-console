@@ -5461,6 +5461,8 @@
     "What happened": "Ce qui s'est passé",
     "Nothing recorded for this filter.": "Aucun enregistrement pour ce filtre.",
     "{{total}} entries": "{{total}} entrées",
-    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Requêtes qui n'ont jamais atteint le relais et ne laissent donc aucune ligne dans le journal d'utilisation : échecs de poignée de main TLS, connexions refusées par l'équilibreur de charge et appelants rejetés à l'authentification."
+    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Requêtes qui n'ont jamais atteint le relais et ne laissent donc aucune ligne dans le journal d'utilisation : échecs de poignée de main TLS, connexions refusées par l'équilibreur de charge et appelants rejetés à l'authentification.",
+    "Seen used by": "Déjà utilisée par",
+    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "Cette adresse a déjà été vue utilisée par ce compte. Ce n'est pas une preuve que cette requête venait de lui : une sortie partagée ou un réseau d'entreprise regroupe plusieurs parties sur une seule adresse."
   }
 }

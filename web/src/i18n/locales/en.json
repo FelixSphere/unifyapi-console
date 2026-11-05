@@ -5475,6 +5475,8 @@
     "What happened": "What happened",
     "Nothing recorded for this filter.": "Nothing recorded for this filter.",
     "{{total}} entries": "{{total}} entries",
-    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication."
+    "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.",
+    "Seen used by": "Seen used by",
+    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address."
   }
 }
