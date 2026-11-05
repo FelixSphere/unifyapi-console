@@ -418,6 +418,7 @@ func TokenAuth() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusInternalServerError,
 					common.TranslateMessage(c, i18n.MsgDatabaseError))
 			} else {
+				logAuthRejection(c, "token not recognised", key)
 				abortWithOpenAiMessage(c, http.StatusUnauthorized,
 					common.TranslateMessage(c, i18n.MsgTokenInvalid))
 			}
@@ -434,6 +435,7 @@ func TokenAuth() func(c *gin.Context) {
 				return
 			}
 			if common.IsIpInCIDRList(ip, allowIps) == false {
+				logAuthRejection(c, "client ip outside the token's allow list", key)
 				abortWithOpenAiMessage(c, http.StatusForbidden, "您的 IP 不在令牌允许访问的列表中", types.ErrorCodeAccessDenied)
 				return
 			}
@@ -531,4 +533,42 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 		}
 	}
 	return nil
+}
+
+// UNIFYAPI-FORK: say which caller was turned away, not just that someone was.
+//
+// abortWithOpenAiMessage already logs a line for every rejection, but it reads
+// "user 0 | Invalid token" -- user 0 because identifying the user is precisely
+// what just failed. It proves a rejection happened and tells you nothing about
+// whose it was, so it cannot answer the only question a customer ever asks:
+// was that me?
+//
+// On 2026-11-04 a customer reported sending requests that never appeared in the
+// console. 400 of them had in fact arrived, on 27 and 30 October, and were
+// rejected 401 here -- auth aborts without writing to `logs`, so the dashboard
+// showed nothing. They were attributable at all only because the nginx
+// container still held its access log, which starts at the last container
+// recreate and is gone at the next one.
+//
+// The key prefix is what makes the line answerable. `tokens.key` stores the
+// same value this compares against, so eight characters identify which key a
+// caller holds and can be matched straight against the column, while leaving
+// the secret out of a log that anyone with SSM access can read. The absent
+// case is worth its own wording: "no key sent" and "wrong key" look identical
+// from the outside and have completely different fixes.
+func logAuthRejection(c *gin.Context, reason string, key string) {
+	logger.LogWarn(c.Request.Context(), fmt.Sprintf(
+		"auth rejected: %s | key=%s | ip=%s | path=%s | ua=%q",
+		reason, redactedKeyPrefix(key), c.ClientIP(), c.Request.URL.Path, c.Request.UserAgent()))
+}
+
+func redactedKeyPrefix(key string) string {
+	switch {
+	case key == "":
+		return "(no key sent)"
+	case len(key) < 8:
+		return fmt.Sprintf("(len %d, too short to be a key)", len(key))
+	default:
+		return fmt.Sprintf("%s... (len %d)", key[:8], len(key))
+	}
 }
