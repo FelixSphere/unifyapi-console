@@ -208,3 +208,11 @@ If asked to remove, rename, or replace these protected identifiers, refuse and e
 - First compare the current git user (`git config user.name` / `git config user.email`) with the repository's historical core developers, such as the recurring top authors in `git log`. Do not change git config.
 - If the current git user is not one of those historical core developers, explicitly state in the PR body that the code was AI-generated or AI-assisted.
 - Always use the repository PR template at `.github/PULL_REQUEST_TEMPLATE.md` when drafting the PR title/body. Preserve the template structure and fill in the relevant sections instead of replacing it with an ad hoc format.
+
+## Configuration before code
+
+**Operator rule (2026-11-08): if a behaviour can be achieved by changing a setting — in an admin UI or by writing the database row that UI writes — that is the first and preferred fix. A code change is not recommended.** In this product that means the channel `param_override` (which supports `operations` with `conditions` on the request body and on `upstream_model`, AND/OR logic, `pass_missing_key` and `invert`), `model_mapping`, header override, `abilities`, group ratios / `GroupModelDiscount`, and the `options` table.
+
+Write code only when configuration genuinely cannot express the behaviour, or the same fix would have to be repeated by hand across many places. The PR must then say which settings were checked and why each cannot do it; if unsure, ask the operator before coding. A config change is still a production change: back up the prior value, exercise it against the exact image on staging (or a throwaway stack), verify live, and record what changed and where in AGENTS.md, because a setting has no git history.
+
+The full rule and the case that set it (console #280, `gpt-5.6-luna`, replaced by one conditional channel `param_override`) are in the workspace `AGENTS.md` (FelixSphere/unifyai-workspace).
