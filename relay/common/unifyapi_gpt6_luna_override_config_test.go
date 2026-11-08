@@ -9,7 +9,7 @@ import (
 )
 
 // gpt6LunaChannelOverride is the param_override on production channel 216
-// ("Flatkey OpenAI · gpt-6-luna") as of 2026-11-08 12:12Z. Three operations:
+// ("Flatkey OpenAI · gpt-6-luna") as of 2026-11-08 12:30Z. Four operations:
 //
 //  1. move max_tokens -> max_completion_tokens when only max_tokens is set
 //     (gpt-6-luna answers 400 "Unsupported parameter: 'max_tokens'"; the
@@ -18,13 +18,17 @@ import (
 //     max_completion_tokens wins;
 //  3. reasoning_effort "none" when a function tool is present at any position
 //     and the caller set no reasoning (gpt-6-luna otherwise answers 400
-//     "Function tools with reasoning_effort are not supported" on EVERY call).
+//     "Function tools with reasoning_effort are not supported" on EVERY call);
+//  4. the same for the legacy `functions` field.
+//
+// Operations 3 and 4 never apply on /v1/responses, which supports tools with
+// reasoning natively.
 //
 // Backups: agent_backup_luna6_override_20261108 (417, original),
 // agent_backup_luna6_override_20261108b (373), agent_backup_tools_pos_20261108
 // (755, before the any-position tool check). Production is also watched by
 // scripts/channel-config-drift.sh in the workspace repo.
-const gpt6LunaChannelOverride = `{"operations":[{"mode":"move","from":"max_tokens","to":"max_completion_tokens","logic":"AND","conditions":[{"path":"max_tokens","mode":"full","value":null,"invert":true},{"path":"max_completion_tokens","mode":"full","value":null,"pass_missing_key":true}]},{"mode":"delete","path":"max_tokens","logic":"AND","conditions":[{"path":"max_tokens","mode":"prefix","value":""}]},{"path":"reasoning_effort","mode":"set","value":"none","logic":"AND","conditions":[{"path":"upstream_model","mode":"full","value":"gpt-6-luna"},{"path":"tools.#(type==\"function\").type","mode":"full","value":"function"},{"path":"reasoning_effort","mode":"prefix","value":"","invert":true,"pass_missing_key":true},{"path":"reasoning","mode":"prefix","value":"","invert":true,"pass_missing_key":true}]}]}`
+const gpt6LunaChannelOverride = `{"operations":[{"mode":"move","from":"max_tokens","to":"max_completion_tokens","logic":"AND","conditions":[{"path":"max_tokens","mode":"full","value":null,"invert":true},{"path":"max_completion_tokens","mode":"full","value":null,"pass_missing_key":true}]},{"mode":"delete","path":"max_tokens","logic":"AND","conditions":[{"path":"max_tokens","mode":"prefix","value":""}]},{"path":"reasoning_effort","mode":"set","value":"none","logic":"AND","conditions":[{"path":"upstream_model","mode":"full","value":"gpt-6-luna"},{"path":"tools.#(type==\"function\").type","mode":"full","value":"function"},{"path":"reasoning_effort","mode":"prefix","value":"","invert":true,"pass_missing_key":true},{"path":"reasoning","mode":"prefix","value":"","invert":true,"pass_missing_key":true},{"path":"request_path","mode":"contains","value":"/v1/responses","invert":true}]},{"path":"reasoning_effort","mode":"set","value":"none","logic":"AND","conditions":[{"path":"upstream_model","mode":"full","value":"gpt-6-luna"},{"path":"functions.0.name","mode":"prefix","value":""},{"path":"reasoning_effort","mode":"prefix","value":"","invert":true,"pass_missing_key":true},{"path":"reasoning","mode":"prefix","value":"","invert":true,"pass_missing_key":true},{"path":"request_path","mode":"contains","value":"/v1/responses","invert":true}]}]}`
 
 func TestGPT6LunaChannelOverrideConfig(t *testing.T) {
 	var override map[string]interface{}
@@ -50,11 +54,14 @@ func TestGPT6LunaChannelOverrideConfig(t *testing.T) {
 		{"both caps, caller's max_completion_tokens wins", "gpt-6-luna", `{"max_tokens":900,"max_completion_tokens":20}`, "", "20"},
 		{"max_tokens null dropped, no error", "gpt-6-luna", `{"max_tokens":null}`, "", ""},
 		{"max_tokens 0 carried", "gpt-6-luna", `{"max_tokens":0}`, "", "0"},
+		{"legacy functions field", "gpt-6-luna", `{"functions":[{"name":"get_weather"}]}`, "none", ""},
+		{"legacy functions + explicit medium kept", "gpt-6-luna", `{"reasoning_effort":"medium","functions":[{"name":"get_weather"}]}`, "medium", ""},
+		{"legacy functions + max_tokens", "gpt-6-luna", `{"max_tokens":40,"functions":[{"name":"get_weather"}]}`, "none", "40"},
 		{"other model: no effort added", "gpt-6-astra", `{"max_tokens":30,"tools":[` + fn + `]}`, "", "30"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := map[string]interface{}{"model": tc.upstream, "upstream_model": tc.upstream}
+			ctx := map[string]interface{}{"model": tc.upstream, "upstream_model": tc.upstream, "request_path": "/v1/chat/completions"}
 			out, err := ApplyParamOverride([]byte(tc.body), override, ctx)
 			if err != nil {
 				t.Fatalf("ApplyParamOverride: %v (an operation error fails the whole request)", err)
@@ -75,5 +82,25 @@ func TestGPT6LunaChannelOverrideConfig(t *testing.T) {
 			check("max_completion_tokens", tc.mct)
 			check("max_tokens", "")
 		})
+	}
+}
+
+func TestGPT6LunaChannelOverrideConfigSkipsResponses(t *testing.T) {
+	var override map[string]interface{}
+	if err := commonpkg.Unmarshal([]byte(gpt6LunaChannelOverride), &override); err != nil {
+		t.Fatalf("override JSON does not parse: %v", err)
+	}
+	for _, body := range []string{
+		`{"tools":[{"type":"function","name":"get_weather"}]}`,
+		`{"functions":[{"name":"get_weather"}]}`,
+	} {
+		ctx := map[string]interface{}{"model": "gpt-6-luna", "upstream_model": "gpt-6-luna", "request_path": "/v1/responses"}
+		out, err := ApplyParamOverride([]byte(body), override, ctx)
+		if err != nil {
+			t.Fatalf("ApplyParamOverride: %v", err)
+		}
+		if got := gjson.GetBytes(out, "reasoning_effort"); got.Exists() {
+			t.Fatalf("reasoning_effort = %q injected on /v1/responses; body %s", got.String(), out)
+		}
 	}
 }
