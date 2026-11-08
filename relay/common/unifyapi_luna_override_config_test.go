@@ -10,7 +10,9 @@ import (
 
 // lunaToolsOverride is the param_override set on production channel 1
 // ("Flatkey OpenAI") on 2026-11-08 (backup table
-// agent_backup_luna_override_20261108). It replaces the Go fix from console
+// agent_backup_luna_override_20261108; the tool check was widened from
+// tools.0.type to any position at 12:12Z, backup
+// agent_backup_tools_pos_20261108). It replaces the Go fix from console
 // #280: gpt-5.6-luna intermittently reasons by default and then refuses
 // function tools with a 400, so when a request carries tools and the caller
 // set no reasoning, send reasoning_effort "none".
@@ -19,7 +21,7 @@ import (
 // the way the fix needs. If an upstream merge changes condition semantics
 // (pass_missing_key, invert, context lookup of upstream_model), it fails here
 // instead of silently in production.
-const lunaToolsOverride = `{"operations":[{"path":"reasoning_effort","mode":"set","value":"none","logic":"AND","conditions":[{"path":"upstream_model","mode":"full","value":"gpt-5.6-luna"},{"path":"tools.0.type","mode":"full","value":"function"},{"path":"reasoning_effort","mode":"prefix","value":"","invert":true,"pass_missing_key":true},{"path":"reasoning","mode":"prefix","value":"","invert":true,"pass_missing_key":true}]}]}`
+const lunaToolsOverride = `{"operations":[{"path":"reasoning_effort","mode":"set","value":"none","logic":"AND","conditions":[{"path":"upstream_model","mode":"full","value":"gpt-5.6-luna"},{"path":"tools.#(type==\"function\").type","mode":"full","value":"function"},{"path":"reasoning_effort","mode":"prefix","value":"","invert":true,"pass_missing_key":true},{"path":"reasoning","mode":"prefix","value":"","invert":true,"pass_missing_key":true}]}]}`
 
 const lunaTestTools = `"tools":[{"type":"function","function":{"name":"get_weather","parameters":{"type":"object"}}}]`
 
@@ -47,6 +49,10 @@ func TestLunaToolsOverrideConfig(t *testing.T) {
 			`{"model":"gpt-6-astra",` + lunaTestTools + `}`, ""},
 		{"gpt-4o, tools -> untouched", "gpt-4o",
 			`{"model":"gpt-4o",` + lunaTestTools + `}`, ""},
+		{"custom tool first, function second -> none", "gpt-5.6-luna",
+			`{"model":"gpt-5.6-luna","tools":[{"type":"custom","custom":{"name":"g"}},{"type":"function","function":{"name":"get_weather"}}]}`, "none"},
+		{"custom tool only -> untouched", "gpt-5.6-luna",
+			`{"model":"gpt-5.6-luna","tools":[{"type":"custom","custom":{"name":"g"}}]}`, ""},
 		{"alias mapped to luna upstream -> none", "gpt-5.6-luna",
 			`{"model":"my-alias",` + lunaTestTools + `}`, "none"},
 	}
