@@ -254,6 +254,9 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		if err := normalizeReasoningParams(info, request); err != nil {
 			return nil, err
 		}
+		// UNIFYAPI-FORK: tools + implicit reasoning -> "none" for models whose
+		// upstream refuses the pair. See tools_reasoning_default.go.
+		applyToolsReasoningDefault(info, request)
 	}
 	if info.ChannelType == constant.ChannelTypeOpenRouter {
 		if len(request.Usage) == 0 {
