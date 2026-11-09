@@ -12,6 +12,7 @@ import (
 	"time"
 
 	common2 "github.com/QuantumNous/new-api/common"
+	channelconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
@@ -516,7 +517,12 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	if info.IsStream && c.Request != nil {
 		clientCtx = c.Request.Context()
 	}
+	// UNIFYAPI-FORK: record how long the upstream took to return headers, on
+	// success and on failure alike. On failure this is the only record of how
+	// long we waited before giving up. See constant.ContextKeyUpstreamHeaderMs.
+	upstreamStart := time.Now()
 	resp, err := service.DoRelayRequest(client, req, clientCtx)
+	common2.SetContextKey(c, channelconstant.ContextKeyUpstreamHeaderMs, int(time.Since(upstreamStart).Milliseconds()))
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))

@@ -88,8 +88,13 @@ const (
 )
 
 type NewAPIError struct {
-	Err            error
-	RelayError     any
+	Err        error
+	RelayError any
+	// UNIFYAPI-FORK: the error text ErrOptionWithHideErrMsg replaced. Upstream
+	// new-api overwrites Err outright, so the cause of a hidden error was
+	// unrecoverable once constructed -- `upstream error: do request failed` was
+	// all that survived, in the log row and in the backend log alike.
+	hiddenErr      error
 	skipRetry      bool
 	recordErrorLog *bool
 	errorType      ErrorType
@@ -406,8 +411,36 @@ func ErrOptionWithHideErrMsg(replaceStr string) NewAPIErrorOptions {
 		if kitutil.Debug.Load() {
 			fmt.Printf("ErrOptionWithHideErrMsg: %s, origin error: %s", replaceStr, e.Err)
 		}
+		// UNIFYAPI-FORK: keep the cause so it can reach the admin-only side of
+		// the error log. The client still sees only replaceStr.
+		e.hiddenErr = e.Err
 		e.Err = errors.New(replaceStr)
 	}
+}
+
+// HiddenError returns the error text that ErrOptionWithHideErrMsg masked, run
+// through MaskSensitiveInfo, or "" when nothing was hidden.
+//
+// UNIFYAPI-FORK. For the admin-only side of a log row and for backend logs
+// only; never put it in a client-facing response, since hiding the text was the
+// point.
+//
+// What survives masking is the failure KIND -- `EOF`, `connection reset by
+// peer`, `i/o timeout`, `context canceled`, `http2: server sent GOAWAY` -- which
+// is exactly what was missing. The URL's host and path are replaced with `***`,
+// which costs nothing here: the same log row already carries channel_id and
+// channel_name, so the upstream is identifiable anyway.
+//
+// MaskSensitiveInfo masks URLs. It does NOT scrub a bare credential sitting in
+// free text, so if an upstream ever embeds one in an error string it would be
+// stored. Go's own transport errors carry the URL but not request headers, so
+// this is unlikely rather than impossible; it is a known limit of the masker,
+// not something this accessor fixes.
+func (e *NewAPIError) HiddenError() string {
+	if e == nil || e.hiddenErr == nil {
+		return ""
+	}
+	return kitutil.MaskSensitiveInfo(e.hiddenErr.Error())
 }
 
 func IsRecordErrorLog(e *NewAPIError) bool {
