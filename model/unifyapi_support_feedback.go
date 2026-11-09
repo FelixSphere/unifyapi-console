@@ -31,6 +31,8 @@ type SupportFeedbackMessage struct {
 
 // ListSupportFeedback reads immutable customer messages in cursor order.
 // Unlike opening the operator inbox, it never advances anyone's read marker.
+// IDs are allocation order, not commit order: a polling consumer must restart
+// complete sweeps and deduplicate IDs to reconcile transactions committed late.
 func ListSupportFeedback(after, limit int) ([]SupportFeedbackMessage, error) {
 	var messages []SupportFeedbackMessage
 	err := DB.Model(&SupportMessage{}).Select("id", "ticket_id", "body", "created_at").
