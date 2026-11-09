@@ -266,6 +266,13 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				info.SetFirstResponseTime()
 				info.ReceivedResponseCount++
 
+				// UNIFYAPI-FORK: an error delivered inside a well-formed stream used
+				// to be logged as a success. Recording it as a soft error touches the
+				// log row only -- see unifyapi_upstream_stream_error.go.
+				if msg := upstreamStreamError(data); msg != "" {
+					info.StreamStatus.RecordError(upstreamStreamErrorPrefix + msg)
+				}
+
 				select {
 				case dataChan <- data:
 				case <-ctx.Done():
