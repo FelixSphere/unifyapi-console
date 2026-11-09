@@ -122,6 +122,13 @@ func AddSupportMessage(ticketId, userId int, fromStaff bool, body string) (*Supp
 		status = SupportStatusAnswered
 	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		var ticket SupportTicket
+		if err := lockForUpdate(tx).First(&ticket, ticketId).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrSupportTicketNotFound
+			}
+			return err
+		}
 		if err := tx.Create(msg).Error; err != nil {
 			return err
 		}
