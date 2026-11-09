@@ -349,8 +349,31 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	return channel, nil
 }
 
+// clientGone reports whether the caller's request context is already done, i.e.
+// the client disconnected or the server is shutting down. UNIFYAPI-FORK.
+func clientGone(c *gin.Context) bool {
+	return c != nil && c.Request != nil && c.Request.Context().Err() != nil
+}
+
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
 	if openaiErr == nil {
+		return false
+	}
+	// UNIFYAPI-FORK: the caller is gone -- retrying cannot deliver anything.
+	//
+	// Measured on 2026-11-08: an end client with a 45-second request timeout
+	// hung up on requests that had not yet produced a first token. Our relay
+	// cancels the upstream when that happens (service.DoRelayRequest), the
+	// attempt fails, and we then burned two further attempts that each failed
+	// instantly on the already-cancelled context -- all three log rows landed in
+	// the same second. That is up to 3x the upstream calls for a response
+	// nobody is waiting for, and the upstream sees them as `context canceled`.
+	//
+	// This check sits ahead of IsChannelError because that returns true
+	// unconditionally. It can only ever turn a retry into no-retry, and only
+	// once the request context is done, so it cannot lose a response the caller
+	// could still have received.
+	if clientGone(c) {
 		return false
 	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
@@ -417,6 +440,18 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			adminInfo["multi_key_index"] = common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex)
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
+		// UNIFYAPI-FORK: the two things this log could not answer before.
+		// Both go under admin_info, which model.formatUserLogs strips for
+		// non-admin viewers -- the upstream text is masked but still ours only.
+		if hidden := err.HiddenError(); hidden != "" {
+			adminInfo["upstream_error"] = hidden
+		}
+		if ms := common.GetContextKeyInt(c, constant.ContextKeyUpstreamHeaderMs); ms > 0 {
+			adminInfo["upstream_header_ms"] = ms
+		}
+		if clientGone(c) {
+			adminInfo["client_gone"] = true
+		}
 		other["admin_info"] = adminInfo
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {

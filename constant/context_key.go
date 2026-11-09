@@ -78,4 +78,14 @@ const (
 	// fallback in authHelper (finishAdminAudit) skips its record to avoid
 	// duplicate entries.
 	ContextKeyAuditLogged ContextKey = "audit_logged"
+
+	// UNIFYAPI-FORK: milliseconds spent waiting for the upstream's response
+	// HEADERS, measured around the single client.Do call in
+	// relay/channel/api_request.go. On a streaming relay this is the upstream's
+	// time-to-first-token, because the upstreams we buy from withhold headers
+	// while the model reasons (measured 2026-11-09: 5.0-6.8s on the luna pool,
+	// 2.2-3.6s on the Anthropic pool, with the first body chunk 0.27-1.25s
+	// later). Nothing recorded this before, which is why a request that never
+	// produced a first token left no trace of how long it had actually waited.
+	ContextKeyUpstreamHeaderMs ContextKey = "upstream_header_ms"
 )
