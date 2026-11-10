@@ -49,7 +49,10 @@ const (
 	SupportStatusClosed   = "closed"
 )
 
-var ErrSupportTicketNotFound = errors.New("conversation not found")
+var (
+	ErrSupportTicketNotFound    = errors.New("conversation not found")
+	ErrSupportConversationStale = errors.New("conversation changed while reply was pending")
+)
 
 type SupportTicket struct {
 	Id        int    `json:"id"`
@@ -119,6 +122,13 @@ func AddSupportMessage(ticketId, userId int, fromStaff bool, body string) (*Supp
 		status = SupportStatusAnswered
 	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		var ticket SupportTicket
+		if err := lockForUpdate(tx).First(&ticket, ticketId).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrSupportTicketNotFound
+			}
+			return err
+		}
 		if err := tx.Create(msg).Error; err != nil {
 			return err
 		}
@@ -242,6 +252,26 @@ func AddSupportAIMessage(ticketId int, body string, handoff bool, handledMessage
 		status = SupportStatusOpen
 	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		var ticket SupportTicket
+		if err := lockForUpdate(tx).First(&ticket, ticketId).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrSupportTicketNotFound
+			}
+			return err
+		}
+		if ticket.Status != SupportStatusOpen {
+			return ErrSupportConversationStale
+		}
+
+		var latestMessageId int
+		if err := tx.Model(&SupportMessage{}).Where("ticket_id = ?", ticketId).
+			Select("COALESCE(MAX(id), 0)").Scan(&latestMessageId).Error; err != nil {
+			return err
+		}
+		if latestMessageId != handledMessageId {
+			return ErrSupportConversationStale
+		}
+
 		if err := tx.Create(msg).Error; err != nil {
 			return err
 		}
