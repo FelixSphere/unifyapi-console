@@ -49,6 +49,12 @@ type CatalogEntry struct {
 	CacheWriteUSD float64
 	Unverified    bool // no models.dev listing; needs a manual quote
 
+	// CacheWrite1hUSD is Anthropic's 1-hour cache write price. Only a model on
+	// a billing expression needs it: the ratio path derives the 1-hour rate
+	// from CacheWriteUSD (relay/helper/price.go), but an expression has no term
+	// for 1-hour writes unless one is generated, and would bill them at zero.
+	CacheWrite1hUSD float64
+
 	// FreeOutput marks a model whose vendor meters no output tokens at all, so
 	// OutputUSD of zero is the real price rather than a missing one. It exists
 	// because the catalog otherwise rejects a zero or below-input output price,
@@ -186,10 +192,11 @@ var unifyapiCatalog = []CatalogEntry{
 	// The undated alias Anthropic (and FlatKey) also serve; same price, same models.dev row.
 	{Model: "claude-haiku-4-5", Vendor: "anthropic", UpstreamModel: "claude-haiku-4-5-20251001", InputUSD: 1, OutputUSD: 5, CacheReadUSD: 0.1, CacheWriteUSD: 1.25},
 	// Haiku 5.5 is tiered by prompt length: prompts over 100K tokens cost 5x
-	// ($0.50 / $2.50, cache hit $0.05). The catalogue carries the base tier, as
-	// it does for every other tiered vendor; the long-prompt tier is not billed.
-	{Model: "claude-haiku-5-5", Vendor: "", InputUSD: 0.1, OutputUSD: 0.5, CacheReadUSD: 0.01, CacheWriteUSD: 0.125, Unverified: true,
-		QuoteSource: "https://platform.claude.com/docs/en/about-claude/pricing (prompts up to 100K tokens: $0.10 in / $0.50 out per 1M; 5m cache write $0.125; cache hit $0.01)", QuoteDate: "2026-10-13"},
+	// across the board. Until 2026-11-09 only the base tier was carried, so
+	// every long prompt billed at a fifth of Anthropic's price.
+	{Model: "claude-haiku-5-5", Vendor: "", InputUSD: 0.1, OutputUSD: 0.5, CacheReadUSD: 0.01, CacheWriteUSD: 0.125, CacheWrite1hUSD: 0.2, Unverified: true,
+		ContextTier: &ContextTier{ThresholdTokens: 100000, InputUSD: 0.5, OutputUSD: 2.5, CacheReadUSD: 0.05, CacheWriteUSD: 0.625, CacheWrite1hUSD: 1},
+		QuoteSource: "https://platform.claude.com/docs/en/about-claude/pricing (up to 100K tokens: $0.10 in / $0.125 5m write / $0.20 1h write / $0.01 hit / $0.50 out; over 100K: $0.50 / $0.625 / $1 / $0.05 / $2.50)", QuoteDate: "2026-11-08"},
 	// Sonnet 5.5 keeps Sonnet 5's $2 / $10 but, like Opus 5.5, prices cache
 	// hits at 0.05x input ($0.10), not the 0.1x of Sonnet 5 ($0.20).
 	{Model: "claude-sonnet-5-5", Vendor: "", InputUSD: 2, OutputUSD: 10, CacheReadUSD: 0.1, CacheWriteUSD: 2.5, Unverified: true,
@@ -408,7 +415,12 @@ var unifyapiCatalog = []CatalogEntry{
 	// rate for this model.
 	{Model: "qwen3.5-flash", Vendor: "", InputUSD: 0.1, OutputUSD: 0.4, CacheReadUSD: 0.05, CacheWriteUSD: 0, Unverified: true,
 		QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/model-pricing", QuoteDate: "2026-08-30"},
-	{Model: "qwen3.5-plus", Vendor: "alibaba", InputUSD: 0.4, OutputUSD: 2.4, CacheReadUSD: 0, CacheWriteUSD: 0},
+	// Alibaba supports only explicit context caching on qwen3.5-plus (no
+	// implicit cache in Singapore): a hit bills at 10% of input and creating
+	// the cache at 125%. models.dev carries no cache price for it, so the
+	// quote holds the cache rates until the feed catches up.
+	{Model: "qwen3.5-plus", Vendor: "alibaba", InputUSD: 0.4, OutputUSD: 2.4, CacheReadUSD: 0.04, CacheWriteUSD: 0.5,
+		QuoteSource: "https://www.alibabacloud.com/help/en/model-studio/context-cache (Singapore explicit cache: hit 10% / creation 125% of the $0.4 input)", QuoteDate: "2026-11-08"},
 	{Model: "qwen3.6-max-preview", Vendor: "alibaba", InputUSD: 1.3, OutputUSD: 7.8, CacheReadUSD: 0.13, CacheWriteUSD: 1.625},
 	{Model: "qwen3.6-plus", Vendor: "alibaba", InputUSD: 0.5, OutputUSD: 3, CacheReadUSD: 0.05, CacheWriteUSD: 0.625,
 		ContextTier: &ContextTier{ThresholdTokens: 256000, InputUSD: 2, OutputUSD: 6, CacheReadUSD: 0.2, CacheWriteUSD: 2.5}},

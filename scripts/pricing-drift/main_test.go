@@ -45,7 +45,7 @@ func loadFixture(t *testing.T) map[string]modelsDevProvider {
 // Pinned as an explicit list rather than blanket-allowed: overriding the feed is
 // how a typo becomes permanent, so adding one has to be a deliberate edit here
 // and not a side effect of editing the catalog.
-var feedStaleModels = []string{"deepseek-v4-flash", "deepseek-v4-pro"}
+var feedStaleModels = []string{"deepseek-v4-flash", "deepseek-v4-pro", "qwen3.5-plus"}
 
 // TestCatalogMatchesTheVerifiedSnapshot is the regression test that gives the
 // baseline its meaning: every official price in the catalog is exactly what the

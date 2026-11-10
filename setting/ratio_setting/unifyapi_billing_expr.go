@@ -47,6 +47,7 @@ type ContextTier struct {
 	OutputUSD       float64
 	CacheReadUSD    float64
 	CacheWriteUSD   float64
+	CacheWrite1hUSD float64
 }
 
 // NeedsBillingExpr reports whether the flat ratio maps can express this row.
@@ -72,14 +73,14 @@ func (e CatalogEntry) BillingExpr(discount float64) string {
 		discount = 1
 	}
 
-	base := e.tierExpr("standard", discount, e.InputUSD, e.OutputUSD, e.CacheReadUSD, e.CacheWriteUSD)
+	base := e.tierExpr("standard", discount, e.InputUSD, e.OutputUSD, e.CacheReadUSD, e.CacheWriteUSD, e.CacheWrite1hUSD)
 	if e.ContextTier == nil {
-		return e.tierExpr("base", discount, e.InputUSD, e.OutputUSD, e.CacheReadUSD, e.CacheWriteUSD)
+		return e.tierExpr("base", discount, e.InputUSD, e.OutputUSD, e.CacheReadUSD, e.CacheWriteUSD, e.CacheWrite1hUSD)
 	}
 
 	long := e.tierExpr("long_context", discount,
 		e.ContextTier.InputUSD, e.ContextTier.OutputUSD,
-		e.ContextTier.CacheReadUSD, e.ContextTier.CacheWriteUSD)
+		e.ContextTier.CacheReadUSD, e.ContextTier.CacheWriteUSD, e.ContextTier.CacheWrite1hUSD)
 
 	// `len`, not `p`: len is the full input length regardless of which
 	// sub-categories the expression prices separately, so a cache hit cannot
@@ -90,7 +91,7 @@ func (e CatalogEntry) BillingExpr(discount float64) string {
 }
 
 // tierExpr renders one tier's cost expression.
-func (e CatalogEntry) tierExpr(name string, discount, input, output, cacheRead, cacheWrite float64) string {
+func (e CatalogEntry) tierExpr(name string, discount, input, output, cacheRead, cacheWrite, cacheWrite1h float64) string {
 	terms := []string{
 		"p * " + price(input*discount),
 		"c * " + price(output*discount),
@@ -100,6 +101,9 @@ func (e CatalogEntry) tierExpr(name string, discount, input, output, cacheRead, 
 	}
 	if cacheWrite > 0 {
 		terms = append(terms, "cc * "+price(cacheWrite*discount))
+	}
+	if cacheWrite1h > 0 {
+		terms = append(terms, "cc1h * "+price(cacheWrite1h*discount))
 	}
 	// Audio input is listed last so the flat part of the expression reads the
 	// same whether or not a model has one.

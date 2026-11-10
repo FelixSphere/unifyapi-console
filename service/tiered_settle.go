@@ -30,8 +30,16 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 	cc1h := float64(0)
 
 	if usage.UsageSemantic == "anthropic" {
+		total := cc5m
 		cc1h = float64(usage.ClaudeCacheCreation1hTokens)
 		cc5m = float64(usage.ClaudeCacheCreation5mTokens)
+		// UNIFYAPI-FORK: an upstream that reports cache_creation_input_tokens
+		// without the 5m/1h split would otherwise leave those tokens out of the
+		// expression -- written to the cache, billed at nothing. The ratio path
+		// bills the unsplit remainder at the base creation rate, so does this.
+		if unsplit := total - cc5m - cc1h; unsplit > 0 {
+			cc5m += unsplit
+		}
 	}
 
 	img := float64(usage.PromptTokensDetails.ImageTokens)
