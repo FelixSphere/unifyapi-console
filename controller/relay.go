@@ -212,6 +212,13 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.RetryIndex = 0
 	relayInfo.LastError = nil
 
+	// UNIFYAPI-FORK: tell the distributor how this request went for its
+	// affinity key. Registered last so it reads newAPIError before the refund
+	// defer above rewrites it.
+	defer func() {
+		service.SetChannelAffinityOutcome(c, affinityOutcome(c, relayInfo, newAPIError))
+	}()
+
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)

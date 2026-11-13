@@ -34,6 +34,12 @@ type ChannelAffinitySetting struct {
 	MaxEntries            int                   `json:"max_entries"`
 	DefaultTTLSeconds     int                   `json:"default_ttl_seconds"`
 	Rules                 []ChannelAffinityRule `json:"rules"`
+
+	// UNIFYAPI-FORK: after this many consecutive failed requests on one
+	// affinity key, the key is moved to another channel. 0 keeps a key on its
+	// channel until the entry expires, which is what upstream does. See
+	// service/unifyapi_channel_affinity_failover.go.
+	FailoverAfterFailures int `json:"failover_after_failures"`
 }
 
 // Keep Codex CLI passthrough aligned with upstream. Codex uses lower-case
@@ -115,6 +121,7 @@ var channelAffinitySetting = ChannelAffinitySetting{
 	KeepOnChannelDisabled: false,
 	MaxEntries:            100_000,
 	DefaultTTLSeconds:     3600,
+	FailoverAfterFailures: 2,
 	Rules: []ChannelAffinityRule{
 		{
 			Name:       "codex cli trace",

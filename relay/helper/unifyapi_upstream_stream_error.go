@@ -33,11 +33,14 @@ import (
 // # Why this cannot change a response
 //
 // It calls StreamResult-equivalent soft-error recording only. StreamStatus
-// soft errors are read in exactly two places: the stream_status.status field of
-// the log row, and the choice between LogInfo and LogError when the stream
-// ends. They do not reach Done()'s terminal frame (which keys off EndReason via
-// truncatedStreamEndReasons), the data forwarded to the client, or billing. So
-// a false positive costs a mislabelled log row, never a broken response.
+// soft errors are read in three places: the stream_status.status field of the
+// log row, the choice between LogInfo and LogError when the stream ends, and
+// controller.affinityOutcome, which counts such a request against the channel
+// its affinity key is pinned to. They do not reach Done()'s terminal frame
+// (which keys off EndReason via truncatedStreamEndReasons), the data forwarded
+// to the client, or billing. So a false positive costs a mislabelled log row,
+// never a broken response; several in a row on one affinity key would also move
+// that key to another channel (service/unifyapi_channel_affinity_failover.go).
 
 // upstreamStreamErrorProbe is the cheap gate. A chunk that does not contain the
 // substring cannot be any of the shapes below, and the overwhelming majority of

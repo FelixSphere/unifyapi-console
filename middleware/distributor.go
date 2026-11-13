@@ -34,6 +34,9 @@ type ModelRequest struct {
 func Distribute() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		var channel *model.Channel
+		// UNIFYAPI-FORK: the group the channel was selected from, kept for
+		// service.SettleChannelAffinity after the request.
+		var affinityGroup string
 		channelId, ok := common.GetContextKey(c, constant.ContextKeyTokenSpecificChannelId)
 		modelRequest, shouldSelectChannel, err := getModelRequest(c)
 		if err != nil {
@@ -238,13 +241,17 @@ func Distribute() func(c *gin.Context) {
 					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
 					return
 				}
+				affinityGroup = selectGroup
 			}
 		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
 		c.Next()
-		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
-			service.RecordChannelAffinity(c, channel.Id)
+		// UNIFYAPI-FORK: upstream refreshed the affinity entry here after any
+		// response below 400. A stream that failed after its 200 refreshed it
+		// too, so a key never left a channel that kept failing it.
+		if channel != nil {
+			service.SettleChannelAffinity(c, channel.Id, affinityGroup)
 		}
 	}
 }
