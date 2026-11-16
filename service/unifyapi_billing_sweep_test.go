@@ -236,10 +236,10 @@ func TestPinnedDollarsForTheModelsThatCarryTheTraffic(t *testing.T) {
 		"gpt-5-mini":        0.25 + 2,    // OpenAI $0.25 / $2
 		"deepseek-v4-flash": 0.44 + 1.32, // DeepSeek peak tier, 2026-08-16 increase
 		"deepseek-v4-pro":   1.32 + 3.96,
-		"deepseek-flash":    0.3 + 1.2,         // DeepSeek V4.1 Flash, peak tier, page read 2026-09-17
-		"jev-1.13":          0.042 + 0,         // TypeSafe Jev: input only; a decision model meters no output
-		"glm-5.3":           1.19516 + 4.18306, // Zhipu, models.dev zhipuai feed read 2026-10-30 (was $1.40/$4.40)
-		"kimi-k3":           3 + 15,            // Moonshot $3 / $15
+		"deepseek-flash":    0.3 + 1.2, // DeepSeek V4.1 Flash, peak tier, page read 2026-09-17
+		"jev-1.13":          0.042 + 0, // TypeSafe Jev: input only; a decision model meters no output
+		"glm-5.3":           1.4 + 4.4, // Z.AI international list, docs.z.ai read 2026-11-15 (mainland $1.19516/$4.18306 until then)
+		"kimi-k3":           3 + 15,    // Moonshot $3 / $15
 	}
 	for model, want := range pinned {
 		t.Run(model, func(t *testing.T) {

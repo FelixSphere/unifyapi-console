@@ -20,7 +20,7 @@ func TestIsFirstPartyListing(t *testing.T) {
 		want            bool
 	}{
 		// Vendors the compiled catalog already sources prices from.
-		{"zhipuai", "glm-5.3", true},
+		{"zai", "glm-5.3", true},
 		{"minimax", "MiniMax-M3", true},
 		{"deepseek", "deepseek-v4-pro", true},
 		{"anthropic", "claude-opus-4-8", true},
@@ -32,6 +32,8 @@ func TestIsFirstPartyListing(t *testing.T) {
 		// The trap the live smoke test found: a \$0 subscription listing whose
 		// id merely starts with a real vendor name.
 		{"zhipuai-coding-plan", "glm-5.3", false},
+		// The mainland list. GLM is priced off Z.AI international since 2026-11-15.
+		{"zhipuai", "glm-5.3", false},
 		{"minimax-cn-coding-plan", "MiniMax-M3", false},
 		{"alibaba-token-plan", "deepseek-v4-pro", false},
 	}

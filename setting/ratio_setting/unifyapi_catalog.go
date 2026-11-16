@@ -309,36 +309,29 @@ var unifyapiCatalog = []CatalogEntry{
 		QuoteSource: "https://platform.moonshot.ai/docs/pricing (live models.dev moonshotai/kimi-k3.1-pro, read 2026-10-30; newer than the checked-in fixture)", QuoteDate: "2026-10-30"},
 
 	// ---- 智谱 ----
-	{Model: "glm-4.7", Vendor: "zhipuai", InputUSD: 0.44819, OutputUSD: 2.09153, CacheReadUSD: 0.08964, CacheWriteUSD: 0,
-		ContextTier: &ContextTier{ThresholdTokens: 32000, InputUSD: 0.59758, OutputUSD: 2.39032, CacheReadUSD: 0.11952}},
-	{Model: "glm-5", Vendor: "zhipuai", InputUSD: 0.59758, OutputUSD: 2.68911, CacheReadUSD: 0.1494, CacheWriteUSD: 0,
-		ContextTier: &ContextTier{ThresholdTokens: 32000, InputUSD: 0.89637, OutputUSD: 3.28669, CacheReadUSD: 0.22409}},
-	// glm-5-turbo is CHINA-ONLY. Zhipu's international list (docs.z.ai, which is
-	// what models.dev mirrors) does not carry it, so there is no official USD
-	// price to copy. Zhipu's own CNY list, read 2026-08-30, is tiered by input
-	// length:
-	//
-	//	input < 32K   in CNY 5   out CNY 22   cache CNY 1.2
-	//	input >= 32K  in CNY 7   out CNY 26   cache CNY 1.8
-	//
-	// The figures below are the EXPENSIVE tier at roughly 6.9 CNY/USD. They used
-	// to be the cheap one, and the note here already said why that was a
-	// problem: a single USD number cannot express a tier, so every request over
-	// 32K input cost 40% more than we charged for it. Measured against the live
-	// supplier ratio the whole model was under water -- our list was 62% of what
-	// the supplier bills, so it lost money even at list price, on both tiers.
-	//
-	// Pricing the higher tier is the only single number that is never below
-	// cost: CNY 7 / 26 / 1.8 at 6.9 CNY/USD. A request under 32K is now sold
-	// slightly above its own cost, which is the safe direction of the gap.
-	{Model: "glm-5-turbo", Vendor: "", InputUSD: 1.015, OutputUSD: 3.77, CacheReadUSD: 0.261, CacheWriteUSD: 0, Unverified: true},
-	{Model: "glm-5.1", Vendor: "zhipuai", InputUSD: 0.89637, OutputUSD: 3.58548, CacheReadUSD: 0.19421, CacheWriteUSD: 0,
-		ContextTier: &ContextTier{ThresholdTokens: 32000, InputUSD: 1.19516, OutputUSD: 4.18306, CacheReadUSD: 0.29879}},
-	{Model: "glm-5.2", Vendor: "zhipuai", InputUSD: 1.19516, OutputUSD: 4.18306, CacheReadUSD: 0.29879, CacheWriteUSD: 0},
-	// Same price as 5.1 and 5.2, confirmed on Zhipu's own international list
-	// (docs.z.ai) and by models.dev's zhipuai provider. Cached-input storage is
-	// "limited-time free", hence CacheWriteUSD 0.
-	{Model: "glm-5.3", Vendor: "zhipuai", InputUSD: 1.19516, OutputUSD: 4.18306, CacheReadUSD: 0.29879, CacheWriteUSD: 0},
+	// Priced off Z.AI's INTERNATIONAL list (docs.z.ai/guides/overview/pricing,
+	// api.z.ai; models.dev provider "zai"), read 2026-11-15. Operator decision
+	// the same day: UnifyAI is an international company and sells at the
+	// international price, never at the mainland one. These rows previously used
+	// models.dev "zhipuai", which is open.bigmodel.cn -- the mainland CNY list,
+	// converted and tiered at 32K input -- and that is 15-40% below what our
+	// supplier bills: FlatKey charges 0.70 of the Z.AI international list
+	// (measured on its usage meter 2026-11-15: glm-5 and glm-5.1 to the token),
+	// so glm-5 and glm-5.1 were sold below cost at the default group ratio.
+	// The international list has no context tier, so none is modelled here.
+	// Cached-input storage is "limited-time free", hence CacheWriteUSD 0.
+	{Model: "glm-4.7", Vendor: "zai", InputUSD: 0.6, OutputUSD: 2.2, CacheReadUSD: 0.11, CacheWriteUSD: 0},
+	{Model: "glm-5", Vendor: "zai", InputUSD: 1, OutputUSD: 3.2, CacheReadUSD: 0.2, CacheWriteUSD: 0},
+	// glm-5-turbo is not on docs.z.ai's pricing page, so it stays Unverified
+	// (the drift report keeps printing it). Z.AI's API does serve it, and both
+	// models.dev "zai" and OpenRouter's z-ai listing quote $1.20 / $4.00 /
+	// $0.24, read 2026-11-15; FlatKey's list is the same. It used to carry the
+	// mainland CNY 7 / 26 / 1.8 tier at 6.9 CNY/USD.
+	{Model: "glm-5-turbo", Vendor: "", InputUSD: 1.2, OutputUSD: 4, CacheReadUSD: 0.24, CacheWriteUSD: 0, Unverified: true,
+		QuoteSource: "https://models.dev provider zai (api.z.ai) + openrouter.ai/z-ai/glm-5-turbo; not on docs.z.ai's pricing page", QuoteDate: "2026-11-15"},
+	{Model: "glm-5.1", Vendor: "zai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
+	{Model: "glm-5.2", Vendor: "zai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
+	{Model: "glm-5.3", Vendor: "zai", InputUSD: 1.4, OutputUSD: 4.4, CacheReadUSD: 0.26, CacheWriteUSD: 0},
 
 	// ---- Google ----
 	{Model: "gemini-2.5-flash", Vendor: "google", InputUSD: 0.3, OutputUSD: 2.5, CacheReadUSD: 0.03, CacheWriteUSD: 0, AudioInputUSD: 1.0},
