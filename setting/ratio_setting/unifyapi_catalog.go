@@ -461,8 +461,15 @@ var unifyapiCatalog = []CatalogEntry{
 	// price is carried here deliberately: which tier a request lands in is the
 	// vendor's clock, not something we can know when quoting a customer, so
 	// pricing off-peak would sell below cost for part of every weekday.
-	{Model: "deepseek-v4-flash", Vendor: "deepseek", InputUSD: 0.44, OutputUSD: 1.32, CacheReadUSD: 0.014, CacheWriteUSD: 0,
-		QuoteSource: "https://api-docs.deepseek.com/quick_start/pricing (peak tier)", QuoteDate: "2026-08-30"},
+	// deepseek-v4-flash is a LEGACY name. DeepSeek's page, read 2026-11-16:
+	// "The legacy names deepseek-v4-flash and deepseek-v4-flash-vision-exp are
+	// still accepted, but the corresponding models have been retired, their
+	// requests are served by the DeepSeek-V4.1-Flash-1017 model and billed at
+	// the Flash price." So it sells at the deepseek-flash peak price; the old
+	// V4 Flash price ($0.44 / $1.32 / $0.014) was 47% / 10% above the vendor's
+	// own charge for this id. Operator decision 2026-11-16.
+	{Model: "deepseek-v4-flash", Vendor: "deepseek", InputUSD: 0.3, OutputUSD: 1.2, CacheReadUSD: 0.006, CacheWriteUSD: 0,
+		QuoteSource: "https://api-docs.deepseek.com/quick_start/pricing (peak tier; legacy id billed at the deepseek-flash price)", QuoteDate: "2026-11-16"},
 	{Model: "deepseek-v4-pro", Vendor: "deepseek", InputUSD: 1.32, OutputUSD: 3.96, CacheReadUSD: 0.044, CacheWriteUSD: 0,
 		QuoteSource: "https://api-docs.deepseek.com/quick_start/pricing (peak tier)", QuoteDate: "2026-08-30"},
 	// DeepSeek-V4.1-Flash, released 2026-09-10. The id the vendor exposes is
@@ -473,9 +480,9 @@ var unifyapiCatalog = []CatalogEntry{
 	// does not list it yet; once the feed carries deepseek/deepseek-flash, set
 	// Vendor "deepseek" and drop the flag. The price was read off the vendor's
 	// own page on QuoteDate. The
-	// vendor also retired V4 Flash the same day and temporarily routes the
-	// `deepseek-v4-flash` id to V4.1 Flash; that entry's price is left alone
-	// here because repricing it is a customer-visible change.
+	// vendor also retired V4 Flash the same day and routes the
+	// `deepseek-v4-flash` id to V4.1 Flash; since 2026-11-16 that entry sells at
+	// this price too.
 	{Model: "deepseek-flash", Vendor: "", InputUSD: 0.3, OutputUSD: 1.2, CacheReadUSD: 0.006, CacheWriteUSD: 0, Unverified: true,
 		QuoteSource: "https://api-docs.deepseek.com/quick_start/pricing (peak tier; DeepSeek-V4.1-Flash)", QuoteDate: "2026-09-17"},
 
