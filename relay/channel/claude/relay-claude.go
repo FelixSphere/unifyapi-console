@@ -23,13 +23,20 @@ func stopReasonClaude2OpenAI(reason string) string {
 	return relayconvert.StopReasonClaudeToOpenAI(reason)
 }
 
-func maybeMarkClaudeRefusal(c *gin.Context, stopReason string) {
+func maybeMarkClaudeRefusal[T string | []byte](c *gin.Context, stopReason string, raw T) {
 	if c == nil {
 		return
 	}
-	if strings.EqualFold(stopReason, "refusal") {
-		common.SetContextKey(c, constant.ContextKeyAdminRejectReason, "claude_stop_reason=refusal")
+	if !strings.EqualFold(stopReason, "refusal") {
+		return
 	}
+	reason := claudeRefusalRejectReasonFor(string(raw))
+	// A stream can name the refusal on more than one event; one that carries
+	// no stop_details must not erase a category already recorded.
+	if reason == claudeRefusalRejectReason && strings.HasPrefix(common.GetContextKeyString(c, constant.ContextKeyAdminRejectReason), claudeRefusalRejectReason) {
+		return
+	}
+	common.SetContextKey(c, constant.ContextKeyAdminRejectReason, reason)
 }
 
 func StreamResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.ChatCompletionsStreamResponse {
@@ -94,10 +101,10 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		return types.WithClaudeError(*claudeError, http.StatusInternalServerError)
 	}
 	if claudeResponse.StopReason != "" {
-		maybeMarkClaudeRefusal(c, claudeResponse.StopReason)
+		maybeMarkClaudeRefusal(c, claudeResponse.StopReason, data)
 	}
 	if claudeResponse.Delta != nil && claudeResponse.Delta.StopReason != nil {
-		maybeMarkClaudeRefusal(c, *claudeResponse.Delta.StopReason)
+		maybeMarkClaudeRefusal(c, *claudeResponse.Delta.StopReason, data)
 	}
 	if info.RelayFormat == types.RelayFormatClaude {
 		FormatClaudeResponseInfo(&claudeResponse, nil, claudeInfo)
@@ -233,7 +240,7 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
 		return types.WithClaudeError(*claudeError, http.StatusInternalServerError)
 	}
-	maybeMarkClaudeRefusal(c, claudeResponse.StopReason)
+	maybeMarkClaudeRefusal(c, claudeResponse.StopReason, data)
 	if claudeInfo.Usage == nil {
 		claudeInfo.Usage = &dto.Usage{}
 	}
