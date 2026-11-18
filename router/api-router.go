@@ -392,6 +392,16 @@ func SetApiRouter(router *gin.Engine) {
 			}
 		}
 
+		// UNIFYAPI-FORK: new-model announcement email. RootAuth -- Send mails
+		// every customer. See controller/unifyapi_model_launch_email.go.
+		modelLaunchRoute := apiRouter.Group("/model-launch")
+		modelLaunchRoute.Use(middleware.RootAuth())
+		{
+			modelLaunchRoute.GET("/", controller.GetModelLaunchState)
+			modelLaunchRoute.POST("/preview", controller.PreviewModelLaunch)
+			modelLaunchRoute.POST("/send", controller.SendModelLaunch)
+		}
+
 		// UNIFYAPI-BRAND: operator-facing tenant reporting. AdminAuth is applied
 		// on the group, before any handler, because these responses expose every
 		// customer's balance and spend. See controller/tenant.go.

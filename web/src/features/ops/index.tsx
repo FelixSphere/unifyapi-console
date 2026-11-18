@@ -18,6 +18,7 @@ import {
 } from './api'
 import { CreditPools } from './credit-pools'
 import { compact, day, daysUntil, money, when } from './format'
+import { ModelLaunch } from './model-launch'
 import { TenantDetail } from './tenant-detail'
 
 // Global operations monitoring. Upstream has no equivalent -- its admin surfaces
@@ -231,6 +232,8 @@ export function OpsDashboard() {
       </div>
 
       <CreditPools />
+
+      <ModelLaunch />
 
       {error ? (
         <div className='border-destructive/40 bg-destructive/5 text-destructive mb-4 rounded-lg border p-4 text-sm'>

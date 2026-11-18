@@ -133,6 +133,9 @@ func main() {
 	if err := model.MigrateRetentionEmail(); err != nil {
 		common.SysError("weekly update: migrate failed: " + err.Error())
 	}
+	if err := model.MigrateModelLaunchEmail(); err != nil {
+		common.SysError("model launch email: migrate failed: " + err.Error())
+	}
 	// UNIFYAPI-FORK: weekly customer email; off unless UNIFYAPI_RETENTION_EMAIL=on.
 	service.StartRetentionEmailWorker()
 	// UNIFYAPI-FORK: emails staff about support messages the AI agent did not
