@@ -132,7 +132,56 @@ Pricing code decides what a customer is invoiced and what we owe a vendor. A def
 - **Tests must be able to fail.** A pricing test that derives its expected value from the same table it is testing proves nothing — a sweep built that way passed with `gpt-4o` mutated from $2.50 to $0.25. Pin hand-typed vendor dollar figures for the models carrying traffic (`TestPinnedDollarsForTheModelsThatCarryTheTraffic`), and check that the assertion actually breaks when you mutate the value it guards.
 - **Before changing anything under `setting/ratio_setting/`, `pkg/billingexpr/`, or the billing path in `service/`, read `docs/HOW-PRICING-WORKS.md`.** It gives the full derivation and names which test guards each step.
 
-**Existing tests are not yours to change.** Operator rule, 2026-09-22: do not modify or delete a test that already exists. Adding tests is always welcome; changing one needs the operator's personal approval — not a reviewer's, not another agent's. Ask first, stating (1) why the test must change, as distinct from why it is inconvenient, (2) what it will assert afterwards that it does not assert today, and (3) what regression the change could let through — name the defect class the current assertion catches and say whether the new one still catches it. Then wait; a red build does not authorise editing the assertion. Renames, reformatting, moving a test between files, and tidying a test you are not otherwise touching all count as changes. A test can genuinely be wrong — the rule is that you do not get to decide that unilaterally, because the agent who wants it changed is always the agent it is blocking. Two cases from this repository show why: a pricing sweep that derived its expectations from the table under test passed with `gpt-4o` mutated from $2.50 to $0.25, and the `.tsx` string-grep tests could not catch `SectionPageLayout` silently dropping non-slot children, which killed the supplier "Submit credits" button. If the behaviour changed on purpose, the test is encoding the old contract and replacing it is a product decision, not a cleanup — exactly the case that needs approval. **How the operator approves**, any one of these, posted on the PR _after_ the commit it approves: a comment whose entire body is `LGTM` (the short form, added 2026-09-25); an approving review; or a comment containing `APPROVED-TEST-CHANGE <head sha>`. `LGTM` must be the whole comment — "LGTM once CI is green" does not count — and an `LGTM` posted before the commit does not count either, because pushing clears an approval by design. If you use the SHA form, read the SHA from `gh pr view <n> --json headRefOid`; an invented one is rejected, which is the gate working rather than failing. `.github/workflows/test-guard.yml` enforces this. Asking for the approval, and saying which test changed and why, is your job — not the operator's to remember that a PR is waiting. One wrinkle: a comment does not re-trigger the check — the `pull_request` event does not fire on one — so after the operator comments, re-run the job (`gh run rerun --failed <run id>`), which is also your job rather than theirs.
+### Existing tests: change them carefully, approve them yourself
+
+**Operator rule, revised 2026-11-18** (verbatim: "告诉所有智能体，以后不需要我的LGTM了，除非是非常非常没有把握，高风险的PR，所有都是这样"):
+a PR **no longer needs the operator's `LGTM`**, and that includes changing an
+existing test. You decide and approve it yourself. You still ask the operator
+and wait only when you are **genuinely unsure, or the change is high-risk**.
+That applies in every UnifyAI repository. It replaces the 2026-09-22 rule that
+every test change needed the operator's personal approval.
+
+What has not changed:
+
+- **Say it in the PR.** Name every existing test you changed and give the three
+  answers: (1) why it must change, as distinct from why it is inconvenient;
+  (2) what it asserts afterwards that it does not today; (3) what regression it
+  could let through, i.e. the defect class the old assertion catches and
+  whether the new one still catches it. Keep test edits in their own commit.
+- **A failing test is evidence, not an obstacle.** Find out why it fails before
+  touching it. Updating an expected value to a behaviour the operator decided
+  (a new price, a renamed vendor) is routine. Loosening an assertion until a
+  red build turns green is not: that is how a pricing sweep once passed with
+  `gpt-4o` mutated from $2.50 to $0.25.
+
+**Still ask the operator first** in either of these cases:
+
+- **You cannot say with confidence that the change is right.**
+- **It deletes a test, or loosens an assertion, guarding something expensive:**
+  billing, prices or money movement; auth, permissions, credentials or other
+  security boundaries; irreversible data deletion; production data; or the
+  licence attribution.
+
+Updating an expected value to a behaviour the operator has already decided is
+not high-risk, even in a billing test.
+
+When you do ask, post the three answers and wait for the operator's `LGTM`, an
+approving review, or their `APPROVED-TEST-CHANGE` comment.
+
+**How to approve your own test change.** The CI gate (`.github/workflows/test-guard.yml`)
+still runs and still blocks until a test change is approved; it is now the
+record of which test changed and who decided. Approve it yourself with a PR
+comment, posted after the head commit:
+
+    APPROVED-TEST-CHANGE <head sha> -- agent self-approval (operator rule 2026-11-18): <one line on why this is safe>
+
+Read the SHA from `gh pr view <n> --json headRefOid`; an invented one is
+rejected. A comment does not re-trigger the check by itself everywhere, so if
+it stays red, re-run it with `gh run rerun --failed <run id>`.
+
+**Never post a bare `LGTM` yourself.** Agents and the operator share one GitHub
+account, so that word stays the operator's. The record has to show who
+decided.
 
 **Backend test quality:** Backend tests must protect real behavior, API contracts, billing/accounting invariants, data compatibility, or regression paths.
 
