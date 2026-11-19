@@ -432,6 +432,7 @@ func SetApiRouter(router *gin.Engine) {
 			mine.POST("/:id/messages", controller.AddMySupportMessage)
 			mine.POST("/:id/close", controller.CloseMySupportTicket)
 			mine.POST("/:id/ai", controller.AskSupportAI)
+			mine.POST("/:id/handoff", controller.HandOffMySupportTicket)
 
 			inbox := supportRoute.Group("/admin/tickets", middleware.AdminAuth())
 			inbox.GET("", controller.ListSupportTickets)

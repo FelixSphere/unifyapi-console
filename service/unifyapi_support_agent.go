@@ -173,7 +173,7 @@ func AskSupportAgent(ctx context.Context, customerId, ticketId int, turns []Supp
 	if err != nil {
 		return nil, err
 	}
-	body, _ := json.Marshal(map[string]any{"messages": turns})
+	body, _ := json.Marshal(supportAgentRequestBody(customerId, ticketId, turns))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, supportAgentURL()+"/api/support-agent", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -229,6 +229,24 @@ func AskSupportAgent(ctx context.Context, customerId, ticketId int, turns []Supp
 		return nil, errors.New("support agent returned no answer")
 	}
 	return result, nil
+}
+
+// supportAgentRequestBody is what the agent is sent. "messages" is the
+// original contract; the rest lets the agent file the conversation against
+// the right customer in its CRM without a callback. The token's sub and cid
+// claims remain the authority on who the customer is; these fields are for
+// display and matching, and an agent that does not know them ignores them.
+func supportAgentRequestBody(customerId, ticketId int, turns []SupportAgentTurn) map[string]any {
+	body := map[string]any{
+		"messages":    turns,
+		"ticket_id":   ticketId,
+		"customer_id": customerId,
+	}
+	if customer, err := model.GetUserById(customerId, false); err == nil && customer != nil {
+		body["username"] = customer.Username
+		body["email"] = customer.Email
+	}
+	return body
 }
 
 // StartSupportAgentSweep emails staff about customer messages that nobody has
