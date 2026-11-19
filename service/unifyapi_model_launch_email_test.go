@@ -193,3 +193,30 @@ func TestCandidatesAreModelsTheWeeklyUpdateHasNotToldAnyone(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, got, "an announced model is no longer a candidate")
 }
+
+// Found on staging during the v0.1.182 release: with SMTP failing, the send
+// recorded 0 sent / 1 failed and the model could never be announced again.
+func TestAFailedAnnouncementCanBeSentAgain(t *testing.T) {
+	smtp := setupModelLaunchTest(t)
+	enableModel(t, "deepseek-v4-flash")
+	addRetentionUser(t, "cust", "cust@example.com", common.RoleCommonUser, common.UserStatusEnabled, 0, 0)
+
+	goodPort := common.SMTPPort
+	common.SMTPPort = 1 // nothing listens: every send fails
+	failed, err := StartModelLaunchEmail([]string{"deepseek-v4-flash"}, "", 1)
+	require.NoError(t, err)
+	done := waitForLaunch(t, failed.Id)
+	require.Equal(t, 0, done.Sent)
+	require.Equal(t, 1, done.Failed)
+	require.Empty(t, smtp.sent())
+
+	common.SMTPPort = goodPort // mail is back
+	retry, err := StartModelLaunchEmail([]string{"deepseek-v4-flash"}, "", 1)
+	require.NoError(t, err, "nobody was told, so the model is not announced yet")
+	done = waitForLaunch(t, retry.Id)
+	require.Equal(t, 1, done.Sent)
+	require.Equal(t, []string{"cust@example.com"}, keys(smtp.sent()))
+
+	_, err = StartModelLaunchEmail([]string{"deepseek-v4-flash"}, "", 1)
+	require.ErrorContains(t, err, "already announced", "once delivered, it is announced")
+}
