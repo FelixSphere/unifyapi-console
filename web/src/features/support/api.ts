@@ -90,6 +90,14 @@ export const closeMyTicket = (id: number) =>
     api.post<Envelope<SupportConversation>>(`/api/support/tickets/${id}/close`)
   )
 
+// "Talk to a human": the conversation goes to Needs reply and staff are emailed.
+export const handoffMyTicket = (id: number) =>
+  call(
+    api.post<Envelope<SupportConversation>>(
+      `/api/support/tickets/${id}/handoff`
+    )
+  )
+
 export const listInbox = (status: SupportStatus | '') =>
   call(
     api.get<Envelope<SupportTicketRow[]>>(

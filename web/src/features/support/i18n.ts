@@ -64,6 +64,19 @@ export const SUPPORT_KEYS = [
   'Looking up the price…',
   'Asking a teammate to join…',
   'A teammate will reply here soon.',
+  // The floating chat (./widget.tsx).
+  'Open support chat',
+  'Close support chat',
+  'Our AI assistant answers first. You can ask for a person at any time.',
+  'We will reply here and by email.',
+  'How can we help? Ask anything about your account, keys, models or billing.',
+  'Conversation ended. Your next message starts a new one.',
+  'You asked to talk to a person. A teammate will reply here and by email.',
+  'Your message',
+  'Type your message…',
+  'Talk to a human',
+  'End conversation',
+  'See all conversations',
   // Server messages a customer can hit (controller/unifyapi_support.go).
   'could not save your message, please try again',
   'you have sent a lot of messages in the last hour; please wait a little',
@@ -132,6 +145,22 @@ const zhCN: Table = {
   'Looking up the price…': '正在查询价格…',
   'Asking a teammate to join…': '正在请同事加入…',
   'A teammate will reply here soon.': '同事会尽快在这里回复你。',
+  'Open support chat': '打开客服聊天',
+  'Close support chat': '关闭客服聊天',
+  'Our AI assistant answers first. You can ask for a person at any time.':
+    'AI 助手会先回复你，你也可以随时转人工。',
+  'We will reply here and by email.': '我们会在这里回复，并同时发邮件通知你。',
+  'How can we help? Ask anything about your account, keys, models or billing.':
+    '有什么可以帮你？账户、密钥、模型或账单问题都可以问。',
+  'Conversation ended. Your next message starts a new one.':
+    '对话已结束。你的下一条消息会开始新的对话。',
+  'You asked to talk to a person. A teammate will reply here and by email.':
+    '你已申请转人工，客服同事会在这里回复，并发邮件通知你。',
+  'Your message': '你的消息',
+  'Type your message…': '输入消息…',
+  'Talk to a human': '转人工',
+  'End conversation': '结束对话',
+  'See all conversations': '查看全部对话',
 }
 
 const zhTW: Table = {
@@ -192,6 +221,23 @@ const zhTW: Table = {
   'Looking up the price…': '正在查詢價格…',
   'Asking a teammate to join…': '正在請同事加入…',
   'A teammate will reply here soon.': '同事會儘快在這裡回覆你。',
+  'Open support chat': '開啟客服聊天',
+  'Close support chat': '關閉客服聊天',
+  'Our AI assistant answers first. You can ask for a person at any time.':
+    'AI 助理會先回覆你，你也可以隨時轉真人客服。',
+  'We will reply here and by email.':
+    '我們會在這裡回覆，並同時寄送電子郵件通知你。',
+  'How can we help? Ask anything about your account, keys, models or billing.':
+    '有什麼可以幫你？帳戶、金鑰、模型或帳單問題都可以問。',
+  'Conversation ended. Your next message starts a new one.':
+    '對話已結束。你的下一則訊息會開始新的對話。',
+  'You asked to talk to a person. A teammate will reply here and by email.':
+    '你已要求轉真人客服，客服同事會在這裡回覆，並寄送電子郵件通知你。',
+  'Your message': '你的訊息',
+  'Type your message…': '輸入訊息…',
+  'Talk to a human': '轉真人客服',
+  'End conversation': '結束對話',
+  'See all conversations': '查看全部對話',
 }
 
 const fr: Table = {
@@ -255,6 +301,22 @@ const fr: Table = {
   'Asking a teammate to join…': 'Un membre de l’équipe va être sollicité…',
   'A teammate will reply here soon.':
     'Un membre de l’équipe vous répondra ici bientôt.',
+  'Open support chat': 'Ouvrir le chat du support',
+  'Close support chat': 'Fermer le chat du support',
+  'Our AI assistant answers first. You can ask for a person at any time.':
+    'Notre assistant IA répond en premier. Vous pouvez demander une personne à tout moment.',
+  'We will reply here and by email.': 'Nous répondrons ici et par e-mail.',
+  'How can we help? Ask anything about your account, keys, models or billing.':
+    'Comment pouvons-nous vous aider ? Posez vos questions sur votre compte, vos clés, les modèles ou la facturation.',
+  'Conversation ended. Your next message starts a new one.':
+    'Conversation terminée. Votre prochain message en ouvrira une nouvelle.',
+  'You asked to talk to a person. A teammate will reply here and by email.':
+    'Vous avez demandé à parler à une personne. Un membre de l’équipe vous répondra ici et par e-mail.',
+  'Your message': 'Votre message',
+  'Type your message…': 'Écrivez votre message…',
+  'Talk to a human': 'Parler à une personne',
+  'End conversation': 'Terminer la conversation',
+  'See all conversations': 'Voir toutes les conversations',
 }
 
 const ja: Table = {
@@ -316,6 +378,23 @@ const ja: Table = {
   'Looking up the price…': '料金を調べています…',
   'Asking a teammate to join…': '担当者に引き継いでいます…',
   'A teammate will reply here soon.': '担当者がまもなくここで返信します。',
+  'Open support chat': 'サポートチャットを開く',
+  'Close support chat': 'サポートチャットを閉じる',
+  'Our AI assistant answers first. You can ask for a person at any time.':
+    'まず AI アシスタントが回答します。いつでも担当者に切り替えられます。',
+  'We will reply here and by email.':
+    'こちらで回答し、メールでもお知らせします。',
+  'How can we help? Ask anything about your account, keys, models or billing.':
+    'どのようなご用件でしょうか？アカウント、キー、モデル、請求について何でもお尋ねください。',
+  'Conversation ended. Your next message starts a new one.':
+    '問い合わせを終了しました。次のメッセージで新しい問い合わせが始まります。',
+  'You asked to talk to a person. A teammate will reply here and by email.':
+    '担当者への切り替えを依頼しました。担当者がここで返信し、メールでもお知らせします。',
+  'Your message': 'メッセージ',
+  'Type your message…': 'メッセージを入力…',
+  'Talk to a human': '担当者と話す',
+  'End conversation': '問い合わせを終了',
+  'See all conversations': 'すべての問い合わせを見る',
 }
 
 const ru: Table = {
@@ -378,6 +457,22 @@ const ru: Table = {
   'Looking up the price…': 'Узнаём цену…',
   'Asking a teammate to join…': 'Подключаем сотрудника…',
   'A teammate will reply here soon.': 'Сотрудник скоро ответит здесь.',
+  'Open support chat': 'Открыть чат поддержки',
+  'Close support chat': 'Закрыть чат поддержки',
+  'Our AI assistant answers first. You can ask for a person at any time.':
+    'Сначала отвечает ИИ-ассистент. Вы можете в любой момент попросить сотрудника.',
+  'We will reply here and by email.': 'Мы ответим здесь и по почте.',
+  'How can we help? Ask anything about your account, keys, models or billing.':
+    'Чем можем помочь? Спрашивайте об аккаунте, ключах, моделях или оплате.',
+  'Conversation ended. Your next message starts a new one.':
+    'Обращение завершено. Следующее сообщение начнёт новое.',
+  'You asked to talk to a person. A teammate will reply here and by email.':
+    'Вы попросили связать вас с сотрудником. Он ответит здесь и по почте.',
+  'Your message': 'Ваше сообщение',
+  'Type your message…': 'Введите сообщение…',
+  'Talk to a human': 'Связаться с сотрудником',
+  'End conversation': 'Завершить обращение',
+  'See all conversations': 'Все обращения',
 }
 
 const vi: Table = {
@@ -440,6 +535,23 @@ const vi: Table = {
   'Looking up the price…': 'Đang tra cứu giá…',
   'Asking a teammate to join…': 'Đang mời một nhân viên tham gia…',
   'A teammate will reply here soon.': 'Nhân viên sẽ sớm trả lời bạn tại đây.',
+  'Open support chat': 'Mở trò chuyện hỗ trợ',
+  'Close support chat': 'Đóng trò chuyện hỗ trợ',
+  'Our AI assistant answers first. You can ask for a person at any time.':
+    'Trợ lý AI sẽ trả lời trước. Bạn có thể yêu cầu gặp nhân viên bất cứ lúc nào.',
+  'We will reply here and by email.':
+    'Chúng tôi sẽ trả lời tại đây và qua email.',
+  'How can we help? Ask anything about your account, keys, models or billing.':
+    'Chúng tôi có thể giúp gì? Hỏi bất cứ điều gì về tài khoản, khóa, mô hình hoặc thanh toán.',
+  'Conversation ended. Your next message starts a new one.':
+    'Cuộc trò chuyện đã kết thúc. Tin nhắn tiếp theo sẽ bắt đầu cuộc trò chuyện mới.',
+  'You asked to talk to a person. A teammate will reply here and by email.':
+    'Bạn đã yêu cầu gặp nhân viên. Nhân viên sẽ trả lời tại đây và qua email.',
+  'Your message': 'Tin nhắn của bạn',
+  'Type your message…': 'Nhập tin nhắn…',
+  'Talk to a human': 'Gặp nhân viên',
+  'End conversation': 'Kết thúc trò chuyện',
+  'See all conversations': 'Xem tất cả cuộc trò chuyện',
 }
 
 // Language codes as the console's i18n config names them.
