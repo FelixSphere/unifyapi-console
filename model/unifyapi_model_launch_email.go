@@ -102,10 +102,16 @@ func ListModelLaunchEmails(limit int) ([]ModelLaunchEmail, error) {
 	return rows, err
 }
 
-// AnnouncedModels is every model any earlier launch email has named.
+// AnnouncedModels is every model an earlier launch email actually told
+// someone about: a launch counts only if at least one of its sends has no
+// error. A launch whose every send failed (SMTP down when Send was pressed)
+// or that had no recipients told nobody, so its models can be announced
+// again. Claims are written before each send with an empty error, so a
+// launch still in flight counts from its first claim.
 func AnnouncedModels() (map[string]bool, error) {
 	var rows []ModelLaunchEmail
-	if err := DB.Select("models").Find(&rows).Error; err != nil {
+	delivered := DB.Model(&ModelLaunchEmailSend{}).Select("launch_id").Where("error = ? OR error IS NULL", "")
+	if err := DB.Select("models").Where("id IN (?)", delivered).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	seen := map[string]bool{}
