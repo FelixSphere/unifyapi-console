@@ -42,6 +42,14 @@ package service
 //
 // The token is minted exactly like the one on the agent call, so the agent
 // verifies both with the same code.
+//
+// The agent answers 200 when applied, 202 when it has no CRM configured, 401
+// or 403 on an auth problem, and 502 when its CRM write failed (its handling
+// is idempotent, so a retry is safe). A network error, a timeout or any 5xx
+// is retried -- up to supportEventAttempts in all, after 2 s and then 10 s --
+// with a freshly minted token each time (the receiver burns every jti) and
+// the original "at". Any 2xx, and any 4xx, ends it. Only the final failure
+// is logged.
 
 import (
 	"bytes"
@@ -62,7 +70,13 @@ const (
 	SupportEventHandoff    = "handoff"
 
 	supportEventTimeout = 5 * time.Second
+	// Three attempts of at most 5 s plus 2 s + 10 s of waiting: under 30 s.
+	supportEventAttempts = 3
 )
+
+// supportEventBackoff is the wait before attempt 2 and attempt 3. A variable
+// so tests need not wait 12 s.
+var supportEventBackoff = []time.Duration{2 * time.Second, 10 * time.Second}
 
 // SupportAgentEvent is the JSON body of one event.
 type SupportAgentEvent struct {
@@ -106,9 +120,9 @@ func NotifySupportAgentEvents(ticket *model.SupportTicket, eventTypes []string, 
 	url := supportAgentURL() + "/api/support-agent/events"
 	go func() {
 		for _, ev := range evs {
-			err := deliverSupportAgentEvent(url, customerId, ev)
+			attempts, err := deliverSupportAgentEventWithRetry(url, customerId, ev)
 			if err != nil {
-				logger.LogWarn(context.Background(), fmt.Sprintf("support event %s for #%d not delivered: %s", ev.Type, ev.TicketId, err.Error()))
+				logger.LogWarn(context.Background(), fmt.Sprintf("support event %s for #%d not delivered after %d attempt(s): %s", ev.Type, ev.TicketId, attempts, err.Error()))
 			}
 			if hook := supportEventSent; hook != nil {
 				hook(ev, err)
@@ -117,17 +131,39 @@ func NotifySupportAgentEvents(ticket *model.SupportTicket, eventTypes []string, 
 	}()
 }
 
-func deliverSupportAgentEvent(url string, customerId int, ev SupportAgentEvent) error {
+// deliverSupportAgentEventWithRetry sends one event, retrying what the agent
+// says is worth retrying. It returns how many attempts were made.
+func deliverSupportAgentEventWithRetry(url string, customerId int, ev SupportAgentEvent) (int, error) {
+	var err error
+	for attempt := 1; attempt <= supportEventAttempts; attempt++ {
+		if attempt > 1 {
+			if i := attempt - 2; i < len(supportEventBackoff) {
+				time.Sleep(supportEventBackoff[i])
+			}
+		}
+		var retry bool
+		retry, err = deliverSupportAgentEvent(url, customerId, ev)
+		if err == nil || !retry {
+			return attempt, err
+		}
+	}
+	return supportEventAttempts, err
+}
+
+// deliverSupportAgentEvent makes one attempt with a freshly minted token. The
+// bool says whether a failure is worth retrying: a network error, a timeout
+// or a 5xx. A 4xx (auth, bad request) will not get better by asking again.
+func deliverSupportAgentEvent(url string, customerId int, ev SupportAgentEvent) (bool, error) {
 	token, err := mintSupportAgentToken(customerId, ev.TicketId)
 	if err != nil {
-		return fmt.Errorf("mint token: %w", err)
+		return false, fmt.Errorf("mint token: %w", err)
 	}
 	payload, _ := json.Marshal(ev)
 	ctx, cancel := context.WithTimeout(context.Background(), supportEventTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
-		return err
+		return false, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
@@ -135,11 +171,15 @@ func deliverSupportAgentEvent(url string, customerId int, ev SupportAgentEvent) 
 	if err != nil {
 		// The error text of a failed request names the URL, never the
 		// headers, so the token cannot leak into the log.
-		return err
+		return true, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	switch {
+	case resp.StatusCode >= 200 && resp.StatusCode < 300:
+		return false, nil // 200 applied; 202 accepted without a CRM -- both final
+	case resp.StatusCode >= 500:
+		return true, fmt.Errorf("HTTP %d", resp.StatusCode)
+	default:
+		return false, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	return nil
 }

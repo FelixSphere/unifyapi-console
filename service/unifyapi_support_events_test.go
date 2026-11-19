@@ -110,6 +110,7 @@ func TestASlowAgentNeverBlocksTheCaller(t *testing.T) {
 	t.Cleanup(func() { supportEventClient = prev })
 	sent := captureEvents(t)
 	log := captureLog(t)
+	fastSupportRetries(t)
 
 	start := time.Now()
 	NotifySupportAgentEvent(eventTicket, SupportEventStaffReply, "secret reply text")
@@ -139,6 +140,7 @@ func TestAnUnreachableOrRefusingAgentIsOnlyAWarning(t *testing.T) {
 	t.Setenv("SUPPORT_AGENT_SECRET", eventsTestSecret)
 	sent := captureEvents(t)
 	log := captureLog(t)
+	fastSupportRetries(t)
 	NotifySupportAgentEvents(eventTicket, []string{SupportEventReopened, SupportEventHandoff}, "")
 	for i := 0; i < 2; i++ {
 		select {
@@ -148,5 +150,5 @@ func TestAnUnreachableOrRefusingAgentIsOnlyAWarning(t *testing.T) {
 			t.Fatal("delivery never finished")
 		}
 	}
-	require.Contains(t, log.String(), "support event handoff for #42 not delivered: HTTP 500")
+	require.Contains(t, log.String(), "support event handoff for #42 not delivered after 3 attempt(s): HTTP 500")
 }
