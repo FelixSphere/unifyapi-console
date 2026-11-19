@@ -101,6 +101,7 @@ func chatCompletionsViaResponses(c *gin.Context, info *relaycommon.RelayInfo, ad
 	if !ok {
 		return nil, types.NewError(fmt.Errorf("expected OpenAI responses request, got %T", result.Value), types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 	}
+	keepConvertedSystemPromptCacheable(responsesReq) // UNIFYAPI-FORK
 
 	savedRelayMode := info.RelayMode
 	savedRequestURLPath := info.RequestURLPath

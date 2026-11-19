@@ -13,6 +13,10 @@ type ChatCompletionsToResponsesPolicy struct {
 	ChannelIDs    []int    `json:"channel_ids,omitempty"`
 	ChannelTypes  []int    `json:"channel_types,omitempty"`
 	ModelPatterns []string `json:"model_patterns,omitempty"`
+	// UNIFYAPI-FORK: both default to false, which is upstream's behaviour.
+	// See service/unifyapi_chat_responses_policy.go.
+	OnlyWithTools       bool `json:"only_with_tools,omitempty"`
+	InstructionsAsInput bool `json:"instructions_as_input,omitempty"`
 }
 
 func (p ChatCompletionsToResponsesPolicy) IsChannelEnabled(channelID int, channelType int) bool {
