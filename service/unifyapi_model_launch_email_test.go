@@ -187,8 +187,15 @@ func TestCandidatesAreModelsTheWeeklyUpdateHasNotToldAnyone(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"deepseek-v4-flash"}, got)
 
-	_, err = model.CreateModelLaunchEmail([]string{"deepseek-v4-flash"}, "", 1)
+	launch, err := model.CreateModelLaunchEmail([]string{"deepseek-v4-flash"}, "", 1)
 	require.NoError(t, err)
+	got, err = ModelLaunchCandidates()
+	require.NoError(t, err)
+	require.Equal(t, []string{"deepseek-v4-flash"}, got, "a launch that reached nobody announced nothing")
+
+	claimed, err := model.ClaimModelLaunchSend(launch.Id, 42)
+	require.NoError(t, err)
+	require.True(t, claimed)
 	got, err = ModelLaunchCandidates()
 	require.NoError(t, err)
 	require.Empty(t, got, "an announced model is no longer a candidate")
