@@ -266,3 +266,66 @@ export async function getMyPromotionalCredits() {
   if (!res.data.success) throw new Error(res.data.message)
   return res.data.data
 }
+
+export type ModelLaunchPrice = {
+  model: string
+  input_usd: number
+  output_usd: number
+  cache_read_usd: number
+  per_call_usd: number
+  price_unit: string
+  long_context_above: number
+}
+
+export type ModelLaunchRecord = {
+  id: number
+  models: string
+  note: string
+  created_by: number
+  created_at: number
+  recipients: number
+  sent: number
+  failed: number
+  finished_at: number
+}
+
+export type ModelLaunchState = {
+  enabled: boolean
+  candidates: string[]
+  models: string[]
+  recipients: number
+  launches: ModelLaunchRecord[]
+}
+
+export type ModelLaunchPreview = {
+  prices: ModelLaunchPrice[]
+  subject: string
+  html: string
+  text: string
+  recipients: number
+  enabled: boolean
+}
+
+export async function getModelLaunchState() {
+  const res = await api.get<Envelope<ModelLaunchState>>('/api/model-launch/')
+  if (!res.data.success) throw new Error(res.data.message)
+  return res.data.data
+}
+
+export async function previewModelLaunch(models: string[], note: string) {
+  const res = await api.post<Envelope<ModelLaunchPreview>>(
+    '/api/model-launch/preview',
+    { models, note }
+  )
+  if (!res.data.success) throw new Error(res.data.message)
+  return res.data.data
+}
+
+export async function sendModelLaunch(models: string[], note: string) {
+  const res = await api.post<Envelope<ModelLaunchRecord>>(
+    '/api/model-launch/send',
+    { models, note }
+  )
+  if (!res.data.success) throw new Error(res.data.message)
+  return res.data.data
+}

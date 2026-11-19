@@ -84,13 +84,13 @@ func RetentionUnsubscribePage(c *gin.Context) {
 	if model.IsRetentionEmailUnsubscribed(userId) {
 		renderUnsubscribe(c, http.StatusOK, unsubscribeView{
 			Title: "You are unsubscribed",
-			Body:  "You will not get the weekly update. Account emails such as password resets still arrive.",
+			Body:  "You will not get product updates (the weekly update and new-model announcements). Account emails such as password resets still arrive.",
 		})
 		return
 	}
 	renderUnsubscribe(c, http.StatusOK, unsubscribeView{
-		Title:   "Unsubscribe from the weekly update?",
-		Body:    "You will stop getting the weekly update. Account emails such as password resets still arrive.",
+		Title:   "Unsubscribe from product updates?",
+		Body:    "You will stop getting product updates (the weekly update and new-model announcements). Account emails such as password resets still arrive.",
 		Confirm: true,
 	})
 }
@@ -110,6 +110,6 @@ func RetentionUnsubscribe(c *gin.Context) {
 	}
 	renderUnsubscribe(c, http.StatusOK, unsubscribeView{
 		Title: "You are unsubscribed",
-		Body:  "You will not get the weekly update. Account emails such as password resets still arrive.",
+		Body:  "You will not get product updates (the weekly update and new-model announcements). Account emails such as password resets still arrive.",
 	})
 }
