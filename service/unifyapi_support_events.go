@@ -154,7 +154,7 @@ func deliverSupportAgentEventWithRetry(url string, customerId int, ev SupportAge
 // bool says whether a failure is worth retrying: a network error, a timeout
 // or a 5xx. A 4xx (auth, bad request) will not get better by asking again.
 func deliverSupportAgentEvent(url string, customerId int, ev SupportAgentEvent) (bool, error) {
-	token, err := mintSupportAgentToken(customerId, ev.TicketId)
+	token, err := mintSupportAgentToken(customerId, ev.TicketId, 0)
 	if err != nil {
 		return false, fmt.Errorf("mint token: %w", err)
 	}

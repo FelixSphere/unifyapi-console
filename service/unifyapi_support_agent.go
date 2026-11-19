@@ -70,7 +70,11 @@ func SupportAgentEnabled() bool {
 	return supportAgentURL() != "" && len(supportAgentSecret()) >= 32
 }
 
-func mintSupportAgentToken(customerId, ticketId int) (string, error) {
+// role is the conversation owner's console role (1 customer, 10 staff, 100
+// root). The agent gives staff and the super administrator's word more weight
+// (operator 2026-11-19) and takes who is speaking only from this signed claim,
+// never from the chat. 0 leaves it out; events need none.
+func mintSupportAgentToken(customerId, ticketId, role int) (string, error) {
 	now := time.Now()
 	claims := jwt.MapClaims{
 		"iss": supportAgentIssOurs,
@@ -80,6 +84,9 @@ func mintSupportAgentToken(customerId, ticketId int) (string, error) {
 		"jti": uuid.NewString(),
 		"iat": now.Unix(),
 		"exp": now.Add(60 * time.Second).Unix(),
+	}
+	if role > 0 {
+		claims["role"] = role
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(supportAgentSecret()))
 }
@@ -169,11 +176,19 @@ type SupportAgentResult struct {
 // ctx should NOT be the customer's request context: the answer is stored
 // even if the customer closes the page mid-stream.
 func AskSupportAgent(ctx context.Context, customerId, ticketId int, turns []SupportAgentTurn, onEvent func(event string, data json.RawMessage)) (*SupportAgentResult, error) {
-	token, err := mintSupportAgentToken(customerId, ticketId)
+	customer, err := model.GetUserById(customerId, false)
+	if err != nil {
+		customer = nil
+	}
+	role := 0
+	if customer != nil {
+		role = customer.Role
+	}
+	token, err := mintSupportAgentToken(customerId, ticketId, role)
 	if err != nil {
 		return nil, err
 	}
-	body, _ := json.Marshal(supportAgentRequestBody(customerId, ticketId, turns))
+	body, _ := json.Marshal(supportAgentRequestBody(customerId, ticketId, turns, customer))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, supportAgentURL()+"/api/support-agent", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -236,13 +251,13 @@ func AskSupportAgent(ctx context.Context, customerId, ticketId int, turns []Supp
 // the right customer in its CRM without a callback. The token's sub and cid
 // claims remain the authority on who the customer is; these fields are for
 // display and matching, and an agent that does not know them ignores them.
-func supportAgentRequestBody(customerId, ticketId int, turns []SupportAgentTurn) map[string]any {
+func supportAgentRequestBody(customerId, ticketId int, turns []SupportAgentTurn, customer *model.User) map[string]any {
 	body := map[string]any{
 		"messages":    turns,
 		"ticket_id":   ticketId,
 		"customer_id": customerId,
 	}
-	if customer, err := model.GetUserById(customerId, false); err == nil && customer != nil {
+	if customer != nil {
 		body["username"] = customer.Username
 		body["email"] = customer.Email
 	}
