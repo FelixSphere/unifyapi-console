@@ -257,6 +257,11 @@ func AddMySupportMessage(c *gin.Context) {
 			service.NotifyStaffOfSupportMessage(ticket, customer, body, false)
 		}
 	}
+	// The message itself reaches the agent through the AI call; the reopen
+	// is a state change it would not otherwise see.
+	if ticket.Status == model.SupportStatusClosed {
+		service.NotifySupportAgentEvent(ticket, service.SupportEventReopened, "")
+	}
 	supportConversation(c, ticket)
 }
 
@@ -268,6 +273,9 @@ func CloseMySupportTicket(c *gin.Context) {
 	if err := model.SetSupportTicketStatus(ticket.Id, model.SupportStatusClosed); err != nil {
 		supportFail(c, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if ticket.Status != model.SupportStatusClosed {
+		service.NotifySupportAgentEvent(ticket, service.SupportEventClosed, "")
 	}
 	supportConversation(c, ticket)
 }
@@ -330,6 +338,12 @@ func ReplySupportTicket(c *gin.Context) {
 	if customer, err := model.GetUserById(ticket.UserId, false); err == nil {
 		service.NotifyCustomerOfSupportReply(ticket, customer, body)
 	}
+	// A staff reply to a closed conversation reopens it (it becomes "answered").
+	events := []string{service.SupportEventStaffReply}
+	if ticket.Status == model.SupportStatusClosed {
+		events = []string{service.SupportEventReopened, service.SupportEventStaffReply}
+	}
+	service.NotifySupportAgentEvents(ticket, events, body)
 	GetSupportTicket(c)
 }
 
@@ -352,6 +366,12 @@ func SetSupportTicketStatus(c *gin.Context) {
 	if err := model.SetSupportTicketStatus(ticket.Id, req.Status); err != nil {
 		supportFail(c, http.StatusInternalServerError, err.Error())
 		return
+	}
+	switch {
+	case ticket.Status != model.SupportStatusClosed && req.Status == model.SupportStatusClosed:
+		service.NotifySupportAgentEvent(ticket, service.SupportEventClosed, "")
+	case ticket.Status == model.SupportStatusClosed && req.Status != model.SupportStatusClosed:
+		service.NotifySupportAgentEvent(ticket, service.SupportEventReopened, "")
 	}
 	GetSupportTicket(c)
 }
