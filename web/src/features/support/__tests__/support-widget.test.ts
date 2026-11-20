@@ -26,7 +26,9 @@ import {
   messageForAI,
   pickConversation,
   shouldPoll,
+  initialOpen,
   showWidget,
+  WIDGET_AUTO_OPEN_MIN_WIDTH,
   WIDGET_POLL_MS,
   widgetMode,
 } from '../widget-logic'
@@ -87,16 +89,29 @@ describe('deriveSubject', () => {
 })
 
 describe('showWidget', () => {
-  test('customers see it on every page but /support', () => {
-    expect(showWidget(1, '/dashboard/overview', true)).toBe(true)
-    expect(showWidget(1, '/support', false)).toBe(false)
-    expect(showWidget(1, '/support', true)).toBe(false)
-    expect(showWidget(1, '/support/', true)).toBe(false)
-    expect(showWidget(1, '/supported-models', true)).toBe(true)
+  test('everyone signed in sees it on every page but /support', () => {
+    expect(showWidget('/dashboard/overview', true)).toBe(true)
+    expect(showWidget('/support', false)).toBe(false)
+    expect(showWidget('/support', true)).toBe(false)
+    expect(showWidget('/support/', true)).toBe(false)
+    expect(showWidget('/supported-models', true)).toBe(true)
   })
-  test('staff never see it; they use the inbox', () => {
-    expect(showWidget(10, '/dashboard/overview', true)).toBe(false)
-    expect(showWidget(100, '/keys', true)).toBe(false)
+  test('signed out, nobody sees it', () => {
+    expect(showWidget('/dashboard/overview', false)).toBe(false)
+  })
+})
+
+describe('initialOpen', () => {
+  test('starts open on a wide screen that never closed it', () => {
+    expect(initialOpen(false, WIDGET_AUTO_OPEN_MIN_WIDTH)).toBe(true)
+    expect(initialOpen(false, 1440)).toBe(true)
+  })
+  test('stays closed once this browser closed it', () => {
+    expect(initialOpen(true, 1440)).toBe(false)
+  })
+  test('starts as the tab where the panel would cover the page', () => {
+    expect(initialOpen(false, WIDGET_AUTO_OPEN_MIN_WIDTH - 1)).toBe(false)
+    expect(initialOpen(false, 375)).toBe(false)
   })
 })
 

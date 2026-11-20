@@ -36,7 +36,9 @@ import {
   messageForAI,
   pickConversation,
   shouldPoll,
+  initialOpen,
   showWidget,
+  WIDGET_CLOSED_KEY,
   WIDGET_POLL_MS,
   widgetMode,
 } from './widget-logic'
@@ -421,10 +423,40 @@ function ChatPanel(props: { onClose: () => void }) {
 // the next/last-page controls at every width (seen at 375px and on desktop).
 // Flush to the edge it overlaps only the page's own right padding, and it
 // stays clear of the attribution bar under the content.
+// Storage can be missing or throw (private windows, blocked site data); the
+// chat then simply starts open, which is the default anyway.
+function readClosed(): boolean {
+  try {
+    return window.localStorage.getItem(WIDGET_CLOSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeClosed(closed: boolean) {
+  try {
+    if (closed) {
+      window.localStorage.setItem(WIDGET_CLOSED_KEY, '1')
+    } else {
+      window.localStorage.removeItem(WIDGET_CLOSED_KEY)
+    }
+  } catch {
+    // remembered for this page only
+  }
+}
+
 function Launcher() {
   const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(() =>
+    typeof window === 'undefined'
+      ? false
+      : initialOpen(readClosed(), window.innerWidth)
+  )
   const badge = unreadBadge(useSupportUnread().data?.count)
+  const close = () => {
+    setOpen(false)
+    writeClosed(true)
+  }
   useEffect(() => {
     if (!open) {
       return
@@ -432,13 +464,14 @@ function Launcher() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setOpen(false)
+        writeClosed(true)
       }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [open])
   if (open) {
-    return <ChatPanel onClose={() => setOpen(false)} />
+    return <ChatPanel onClose={close} />
   }
   return (
     <button
@@ -447,7 +480,10 @@ function Launcher() {
       title={t('Open support chat')}
       aria-expanded={false}
       className='bg-primary text-primary-foreground focus-visible:ring-ring fixed right-0 bottom-[30%] z-40 flex h-12 w-8 items-center justify-center rounded-l-lg shadow-md transition-[width] hover:w-10 focus-visible:ring-2 focus-visible:outline-none'
-      onClick={() => setOpen(true)}
+      onClick={() => {
+        setOpen(true)
+        writeClosed(false)
+      }}
     >
       <MessageCircle className='size-4' />
       {badge ? (
@@ -459,10 +495,10 @@ function Launcher() {
   )
 }
 
-/** The floating support chat. Renders nothing for staff and on /support. */
+/** The floating support chat, for everyone signed in; nothing on /support. */
 export function SupportWidget() {
   const user = useAuthStore((s) => s.auth.user)
   const pathname = useRouterState({ select: (s) => s.location.pathname })
-  if (!showWidget(user?.role, pathname, !!user)) return null
+  if (!showWidget(pathname, !!user)) return null
   return <Launcher />
 }
