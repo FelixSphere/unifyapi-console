@@ -138,6 +138,9 @@ func main() {
 	}
 	// UNIFYAPI-FORK: weekly customer email; off unless UNIFYAPI_RETENTION_EMAIL=on.
 	service.StartRetentionEmailWorker()
+	// UNIFYAPI-FORK: sends new-model announcements queued by the catalogue
+	// automation; same switch as the weekly email.
+	service.StartModelLaunchQueueWorker()
 	// UNIFYAPI-FORK: emails staff about support messages the AI agent did not
 	// handle; off unless SUPPORT_AGENT_URL and SUPPORT_AGENT_SECRET are set.
 	service.StartSupportAgentSweep()

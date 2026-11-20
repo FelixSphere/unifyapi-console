@@ -55,6 +55,14 @@ type ModelLaunchEmail struct {
 	Sent       int    `json:"sent"`
 	Failed     int    `json:"failed"`
 	FinishedAt int64  `json:"finished_at" gorm:"bigint"`
+	// Queued marks a launch written straight into this table (the catalogue
+	// automation inserts the row over SQL; operator decision 2026-11-19:
+	// "上架邮件也改成自动发"). The queue worker sends it once it is
+	// ModelLaunchQueueDelay old; deleting the row before then cancels it.
+	Queued bool `json:"queued" gorm:"default:false"`
+	// Error is why a queued launch was refused (model disabled, unpriced,
+	// already announced). Empty for launches that were sent.
+	Error string `json:"error" gorm:"type:varchar(255)"`
 }
 
 type ModelLaunchEmailSend struct {
@@ -93,6 +101,31 @@ func CreateModelLaunchEmail(models []string, note string, createdBy int) (*Model
 func FinishModelLaunchEmail(id, recipients, sent, failed int) error {
 	return DB.Model(&ModelLaunchEmail{}).Where("id = ?", id).Updates(map[string]any{
 		"recipients": recipients, "sent": sent, "failed": failed, "finished_at": time.Now().Unix(),
+	}).Error
+}
+
+// DueQueuedModelLaunches is every queued launch created at or before cutoff,
+// oldest first.
+func DueQueuedModelLaunches(cutoff int64) ([]ModelLaunchEmail, error) {
+	var rows []ModelLaunchEmail
+	err := DB.Where("queued = ? AND finished_at = ? AND created_at <= ?", true, 0, cutoff).Order("id").Find(&rows).Error
+	return rows, err
+}
+
+// TakeQueuedModelLaunch clears the queued mark and reports whether this
+// caller was the one that cleared it, so two workers cannot send one launch.
+func TakeQueuedModelLaunch(id int) (bool, error) {
+	res := DB.Model(&ModelLaunchEmail{}).Where("id = ? AND queued = ?", id, true).Update("queued", false)
+	return res.RowsAffected == 1, res.Error
+}
+
+// RefuseModelLaunch closes a launch that will not be sent, with the reason.
+func RefuseModelLaunch(id int, reason string) error {
+	if len(reason) > 255 {
+		reason = reason[:255]
+	}
+	return DB.Model(&ModelLaunchEmail{}).Where("id = ?", id).Updates(map[string]any{
+		"queued": false, "error": reason, "finished_at": time.Now().Unix(),
 	}).Error
 }
 

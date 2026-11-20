@@ -287,6 +287,8 @@ export type ModelLaunchRecord = {
   sent: number
   failed: number
   finished_at: number
+  queued: boolean
+  error: string
 }
 
 export type ModelLaunchState = {

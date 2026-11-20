@@ -227,3 +227,85 @@ func TestAFailedAnnouncementCanBeSentAgain(t *testing.T) {
 	_, err = StartModelLaunchEmail([]string{"deepseek-v4-flash"}, "", 1)
 	require.ErrorContains(t, err, "already announced", "once delivered, it is announced")
 }
+
+// The catalogue automation queues a launch by inserting the row; the worker
+// sends it once the cancel window has passed (operator decision 2026-11-19).
+func queueLaunch(t *testing.T, models string, age time.Duration) model.ModelLaunchEmail {
+	t.Helper()
+	l := model.ModelLaunchEmail{Models: models, Queued: true, CreatedAt: time.Now().Add(-age).Unix()}
+	require.NoError(t, model.DB.Create(&l).Error)
+	return l
+}
+
+func TestAQueuedLaunchIsSentAfterTheCancelWindow(t *testing.T) {
+	smtp := setupModelLaunchTest(t)
+	enableModel(t, "deepseek-v4-flash")
+	addRetentionUser(t, "cust", "cust@example.com", common.RoleCommonUser, common.UserStatusEnabled, 0, 0)
+
+	fresh := queueLaunch(t, "deepseek-v4-flash", time.Minute) // younger than the window
+	RunQueuedModelLaunches()
+	require.Empty(t, smtp.sent(), "inside the cancel window nothing is sent")
+	var row model.ModelLaunchEmail
+	require.NoError(t, model.DB.First(&row, fresh.Id).Error)
+	require.True(t, row.Queued)
+
+	require.NoError(t, model.DB.Model(&row).Update("created_at", time.Now().Add(-ModelLaunchQueueDelay-time.Second).Unix()).Error)
+	RunQueuedModelLaunches()
+	require.Equal(t, []string{"cust@example.com"}, keys(smtp.sent()))
+	require.NoError(t, model.DB.First(&row, fresh.Id).Error)
+	require.False(t, row.Queued)
+	require.Equal(t, 1, row.Sent)
+	require.NotZero(t, row.FinishedAt)
+
+	smtp.mu.Lock()
+	smtp.mail = map[string]string{}
+	smtp.mu.Unlock()
+	RunQueuedModelLaunches() // a later tick
+	require.Empty(t, smtp.sent(), "a sent launch is not sent again")
+}
+
+func TestADeletedQueuedLaunchIsNeverSent(t *testing.T) {
+	smtp := setupModelLaunchTest(t)
+	enableModel(t, "deepseek-v4-flash")
+	addRetentionUser(t, "cust", "cust@example.com", common.RoleCommonUser, common.UserStatusEnabled, 0, 0)
+
+	l := queueLaunch(t, "deepseek-v4-flash", time.Minute)
+	require.NoError(t, model.DB.Delete(&model.ModelLaunchEmail{}, l.Id).Error) // the cancel
+	RunQueuedModelLaunches()
+	require.Empty(t, smtp.sent())
+}
+
+func TestAQueuedLaunchIsValidatedLikeAnOperatorSend(t *testing.T) {
+	smtp := setupModelLaunchTest(t)
+	enableModel(t, "unpriced-model")
+	require.NoError(t, model.DB.Create(&model.Ability{Group: "default", Model: "deepseek-v3", ChannelId: 1, Enabled: false}).Error)
+	addRetentionUser(t, "cust", "cust@example.com", common.RoleCommonUser, common.UserStatusEnabled, 0, 0)
+
+	unpriced := queueLaunch(t, "unpriced-model", time.Hour)
+	delisted := queueLaunch(t, "deepseek-v3", time.Hour)
+	RunQueuedModelLaunches()
+
+	require.Empty(t, smtp.sent(), "neither may be advertised")
+	var row model.ModelLaunchEmail
+	require.NoError(t, model.DB.First(&row, unpriced.Id).Error)
+	require.Contains(t, row.Error, "no price")
+	require.False(t, row.Queued)
+	require.NotZero(t, row.FinishedAt)
+	var second model.ModelLaunchEmail
+	require.NoError(t, model.DB.First(&second, delisted.Id).Error)
+	require.Contains(t, second.Error, "not enabled")
+}
+
+func TestQueuedLaunchesWaitWhileTheSwitchIsOff(t *testing.T) {
+	smtp := setupModelLaunchTest(t)
+	t.Setenv(retentionEmailEnv, "") // staging
+	enableModel(t, "deepseek-v4-flash")
+	addRetentionUser(t, "cust", "cust@example.com", common.RoleCommonUser, common.UserStatusEnabled, 0, 0)
+
+	l := queueLaunch(t, "deepseek-v4-flash", time.Hour)
+	RunQueuedModelLaunches()
+	require.Empty(t, smtp.sent())
+	var row model.ModelLaunchEmail
+	require.NoError(t, model.DB.First(&row, l.Id).Error)
+	require.True(t, row.Queued, "left untouched, not refused")
+}
