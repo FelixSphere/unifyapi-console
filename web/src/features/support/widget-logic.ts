@@ -14,8 +14,14 @@ import type { SupportConversation, SupportMessage, SupportTicket } from './api'
 /** How often an open, visible chat re-reads its conversation for replies. */
 export const WIDGET_POLL_MS = 10_000
 
-/** Staff role; mirrors ROLE.ADMIN in lib/roles (kept here so tests need no i18n). */
-const STAFF_ROLE = 10
+/**
+ * Narrowest viewport on which the chat starts open. Below it the open panel
+ * covers the whole page, so it starts as the edge tab instead.
+ */
+export const WIDGET_AUTO_OPEN_MIN_WIDTH = 768
+
+/** localStorage key set when someone closes the chat in this browser. */
+export const WIDGET_CLOSED_KEY = 'unifyapi.support-widget.closed'
 
 /** A subject is short in the widget: the inbox row and the email Subject. */
 export const WIDGET_SUBJECT_MAX = 60
@@ -47,15 +53,26 @@ export function deriveSubject(body: string): string {
     .trimEnd()}…`
 }
 
-/** The widget is for customers, and not on the page that already is support. */
-export function showWidget(
-  role: number | undefined,
-  pathname: string,
-  signedIn: boolean
-): boolean {
+/**
+ * Everyone signed in gets the chat, staff included (operator 2026-11-19: staff
+ * need it too, as a different party), except on the page that already is
+ * support.
+ */
+export function showWidget(pathname: string, signedIn: boolean): boolean {
   if (!signedIn) return false
-  if ((role ?? 0) >= STAFF_ROLE) return false
   return !(pathname === '/support' || pathname.startsWith('/support/'))
+}
+
+/**
+ * The chat starts open (operator 2026-11-19) unless this browser closed it
+ * before, so closing it is not undone by the next page, and only where the
+ * open panel leaves the page usable.
+ */
+export function initialOpen(
+  closedBefore: boolean,
+  viewportWidth: number
+): boolean {
+  return !closedBefore && viewportWidth >= WIDGET_AUTO_OPEN_MIN_WIDTH
 }
 
 /** Poll only while someone can see the replies arrive. */
