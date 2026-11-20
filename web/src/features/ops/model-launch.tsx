@@ -14,12 +14,20 @@ import {
   previewModelLaunch,
   sendModelLaunch,
   type ModelLaunchPreview,
+  type ModelLaunchRecord,
 } from './api'
 import { when } from './format'
 
 // The new-model announcement email. Nothing is mailed until the operator has
 // seen the rendered email and pressed Send; the server re-checks every model
 // (enabled, priced, not announced before) on both calls.
+
+function launchStatus(l: ModelLaunchRecord) {
+  if (l.error) return `refused: ${l.error}`
+  if (l.queued) return 'queued (sends 15 min after it was created)'
+  if (!l.finished_at) return 'sending…'
+  return `${l.sent} / ${l.failed}`
+}
 
 export function ModelLaunch() {
   const qc = useQueryClient()
@@ -206,7 +214,7 @@ export function ModelLaunch() {
                     {l.models.split('\n').join(', ')}
                   </td>
                   <td className='px-4 py-2 text-right text-xs'>
-                    {l.finished_at ? `${l.sent} / ${l.failed}` : 'sending…'}
+                    {launchStatus(l)}
                   </td>
                 </tr>
               ))}

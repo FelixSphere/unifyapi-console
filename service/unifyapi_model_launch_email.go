@@ -379,6 +379,72 @@ func StartModelLaunchEmail(models []string, note string, actorId int) (*model.Mo
 	return launch, nil
 }
 
+// ModelLaunchQueueDelay is how long a queued launch waits before it is sent.
+// It is the cancel window: deleting the row inside it stops the email.
+var ModelLaunchQueueDelay = 15 * time.Minute
+
+// StartModelLaunchQueueWorker sends launches queued by the catalogue
+// automation. A no-op unless announcement email is enabled here (production
+// only) and this is the master node.
+func StartModelLaunchQueueWorker() {
+	if !RetentionEmailEnabled() || !common.IsMasterNode {
+		return
+	}
+	common.SysLog("model launch email: queue worker enabled")
+	go func() {
+		time.Sleep(2 * time.Minute) // let the boot finish and options load
+		for {
+			RunQueuedModelLaunches()
+			time.Sleep(time.Minute)
+		}
+	}()
+}
+
+// RunQueuedModelLaunches sends every queued launch that is old enough. Each
+// is re-validated at send time exactly as an operator's Send is: a model that
+// was disabled, lost its price, or was announced meanwhile is refused and the
+// reason recorded on the row.
+func RunQueuedModelLaunches() {
+	if !ModelLaunchEmailEnabled() {
+		return
+	}
+	due, err := model.DueQueuedModelLaunches(time.Now().Add(-ModelLaunchQueueDelay).Unix())
+	if err != nil {
+		common.SysError("model launch email: queue: " + err.Error())
+		return
+	}
+	for i := range due {
+		l := &due[i]
+		modelLaunchMu.Lock()
+		busy := modelLaunchRunning
+		if !busy {
+			modelLaunchRunning = true
+		}
+		modelLaunchMu.Unlock()
+		if busy {
+			return // an operator's send is in flight; next tick
+		}
+		func() {
+			defer func() {
+				modelLaunchMu.Lock()
+				modelLaunchRunning = false
+				modelLaunchMu.Unlock()
+			}()
+			taken, err := model.TakeQueuedModelLaunch(l.Id)
+			if err != nil || !taken {
+				return
+			}
+			prices, err := validateModelLaunch(l.ModelList(), l.Note)
+			if err != nil {
+				common.SysLog(fmt.Sprintf("model launch email %d: queued launch refused: %s", l.Id, err.Error()))
+				_ = model.RefuseModelLaunch(l.Id, err.Error())
+				return
+			}
+			runModelLaunchEmail(l.Id, prices, strings.TrimSpace(l.Note))
+		}()
+	}
+}
+
 func runModelLaunchEmail(launchId int, prices []ModelLaunchPrice, note string) {
 	users, err := model.ModelLaunchRecipients(launchId)
 	if err != nil {
