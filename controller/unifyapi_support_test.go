@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -48,6 +49,8 @@ type supportHarness struct {
 	mailed   []string // "purpose->receiver"
 }
 
+var supportHarnessSeq atomic.Int64
+
 // The real routes sit behind UserAuth/AdminAuth; here a header names the
 // caller, which is what those middlewares leave in the context.
 func setupSupportTest(t *testing.T) *supportHarness {
@@ -65,8 +68,14 @@ func setupSupportTest(t *testing.T) *supportHarness {
 	require.NoError(t, model.MigrateSupport())
 
 	h := &supportHarness{}
+	// Support mail goes out on a background pool and no test waits for all of
+	// it, so mail from an earlier test can still be sent while this one runs,
+	// into this test's recorder. Each harness's users get their own domain and
+	// only mail to it is recorded -- as name@example.com, so assertions read
+	// the same in every test.
+	domain := "@h" + strconv.FormatInt(supportHarnessSeq.Add(1), 10) + ".example.com"
 	mk := func(name string, role int) *model.User {
-		u := &model.User{Username: name, DisplayName: name, Email: name + "@example.com", Role: role,
+		u := &model.User{Username: name, DisplayName: name, Email: name + domain, Role: role,
 			Status: common.UserStatusEnabled, AffCode: "aff-" + name, Password: "x"}
 		require.NoError(t, db.Create(u).Error)
 		return u
@@ -82,8 +91,12 @@ func setupSupportTest(t *testing.T) *supportHarness {
 	prevPort := common.SMTPPort
 	common.SMTPPort = 1 // nothing listens; the attempt is still recorded
 	common.SetEmailDeliveryRecorder(func(receiver, purpose string, _ error) {
+		local, ok := strings.CutSuffix(receiver, domain)
+		if !ok {
+			return
+		}
 		h.mu.Lock()
-		h.mailed = append(h.mailed, purpose+"->"+receiver)
+		h.mailed = append(h.mailed, purpose+"->"+local+"@example.com")
 		h.mu.Unlock()
 	})
 	t.Cleanup(func() {
@@ -204,7 +217,7 @@ func TestTheInboxFiltersByStatusAndNamesTheCustomer(t *testing.T) {
 	require.Len(t, rows, 1)
 	require.Equal(t, "B", rows[0].(map[string]any)["subject"])
 	require.Equal(t, "cust", rows[0].(map[string]any)["username"])
-	require.Equal(t, "cust@example.com", rows[0].(map[string]any)["email"])
+	require.Equal(t, h.customer.Email, rows[0].(map[string]any)["email"])
 
 	_, out = h.do(t, h.staff, http.MethodGet, "/api/support/admin/tickets", nil)
 	require.Len(t, out["data"], 2)

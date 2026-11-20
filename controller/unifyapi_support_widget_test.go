@@ -247,7 +247,7 @@ func TestTheAICallNamesTheTicketAndTheCustomer(t *testing.T) {
 	require.Equal(t, float64(id), body["ticket_id"])
 	require.Equal(t, float64(h.customer.Id), body["customer_id"])
 	require.Equal(t, "cust", body["username"])
-	require.Equal(t, "cust@example.com", body["email"])
+	require.Equal(t, h.customer.Email, body["email"])
 	require.NotEmpty(t, body["messages"], "the original field is still sent")
 }
 
