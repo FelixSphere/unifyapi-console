@@ -229,37 +229,48 @@ func validateModelLaunch(models []string, note string) ([]ModelLaunchPrice, erro
 }
 
 // BuildModelLaunchEmail renders the announcement for one recipient (userId
-// 0 = a preview, whose unsubscribe link is not real).
-func BuildModelLaunchEmail(prices []ModelLaunchPrice, note string, userId int) common.EmailMessage {
+// 0 = a preview, whose unsubscribe link is not real). group is the
+// recipient's customer group: each card quotes what THAT customer pays per
+// 1M tokens -- list price x their per-model ratio, or their group ratio --
+// next to Anthropic's/the vendor's list, so a marked-up model (CVP editions,
+// Mythos) is never announced at a price nobody is charged.
+func BuildModelLaunchEmail(prices []ModelLaunchPrice, note string, userId int, group string) common.EmailMessage {
 	names := make([]string, len(prices))
 	for i, p := range prices {
 		names[i] = p.Model
 	}
+	if group == "" {
+		group = "default"
+	}
 	console := strings.TrimRight(system_setting.ServerAddress, "/")
 	intro := strings.TrimSpace(note)
 	if intro == "" {
-		intro = "Now available on Unify API. Call it with any OpenAI SDK at the base URL below; your account discount applies."
+		intro = "Now available on Unify API. Call it with any OpenAI SDK at the base URL below."
 		if len(prices) > 1 {
-			intro = "Now available on Unify API. Call them with any OpenAI SDK at the base URL below; your account discount applies."
+			intro = "Now available on Unify API. Call them with any OpenAI SDK at the base URL below."
 		}
+	}
+	title := joinNames(names)
+	if len(prices) > 2 {
+		title = fmt.Sprintf("%d new models on Unify API", len(prices))
 	}
 	msg := common.EmailMessage{
 		Subject:      "New on Unify API: " + joinNames(names),
-		Preheader:    "List prices and how to call it.",
-		Eyebrow:      "New models",
-		Headline:     "Now available: " + joinNames(names),
+		Preheader:    "Your price per 1M tokens and how to call it.",
+		Hero:         &common.EmailHero{Kicker: "New on Unify API", Title: title, Line: launchHeroLine(prices)},
 		Intro:        intro,
 		CTALabel:     "See pricing",
 		CTAURL:       console + "/pricing",
 		FooterReason: "You get product updates because you have a Unify API account.",
 	}
-	if len(prices) == 1 {
-		msg.Eyebrow = "New model"
-	} else {
-		msg.Preheader = "List prices and how to call them."
+	if len(prices) > 1 {
+		msg.Preheader = "Your price per 1M tokens and how to call them."
 	}
+	tags := launchModelTags()
 	for _, p := range prices {
-		msg.Details = append(msg.Details, common.EmailDetail{Label: p.Model, Value: launchPriceLine(p)})
+		ratio := launchCustomerRatio(group, p.Model)
+		card := common.EmailCard{Title: p.Model, Tag: tags(p.Model), Rows: launchPriceRows(p, ratio)}
+		msg.Cards = append(msg.Cards, card)
 	}
 	msg.Details = append(msg.Details, common.EmailDetail{Label: "Base URL", Value: RetentionAPIBase})
 	if userId > 0 {
@@ -268,6 +279,96 @@ func BuildModelLaunchEmail(prices []ModelLaunchPrice, note string, userId int) c
 		msg.UnsubscribeURL = console + "/api/email/unsubscribe?u=0&t=preview"
 	}
 	return msg
+}
+
+// launchHeroLine names what the batch has in common, from the models' own tags.
+func launchHeroLine(prices []ModelLaunchPrice) string {
+	tags := launchModelTags()
+	cvp, mythos := false, false
+	for _, p := range prices {
+		t := strings.ToLower(tags(p.Model))
+		cvp = cvp || strings.Contains(t, "cvp")
+		mythos = mythos || strings.Contains(t, "mythos")
+	}
+	switch {
+	case mythos && cvp:
+		return "Claude Mythos and CVP editions of Claude, for verified defensive security work."
+	case cvp:
+		return "CVP editions of Claude, for verified defensive security work."
+	default:
+		return "One OpenAI-compatible endpoint, one bill."
+	}
+}
+
+// launchCustomerRatio is what a customer in group pays as a multiple of list
+// price for model: a per-model ratio when the group has one, else the group's.
+func launchCustomerRatio(group, modelName string) float64 {
+	if r, ok := ratio_setting.GetGroupModelDiscount(group, modelName); ok {
+		return r
+	}
+	return ratio_setting.GetGroupRatio(group)
+}
+
+func launchPriceRows(p ModelLaunchPrice, ratio float64) []common.EmailDetail {
+	if p.PerCallUSD > 0 {
+		unit := "request"
+		if p.PriceUnit != "" {
+			unit = p.PriceUnit
+		}
+		rows := []common.EmailDetail{{Label: "Your price", Value: launchUSD(p.PerCallUSD*ratio) + " per " + unit}}
+		if math.Abs(ratio-1) > 1e-9 {
+			rows = append(rows, common.EmailDetail{Label: "List price", Value: launchUSD(p.PerCallUSD) + " per " + unit})
+		}
+		return rows
+	}
+	your := launchUSD(p.InputUSD*ratio) + " input · " + launchUSD(p.OutputUSD*ratio) + " output"
+	rows := []common.EmailDetail{{Label: "Your price / 1M tokens", Value: your}}
+	if p.CacheReadUSD > 0 && p.CacheReadUSD != p.InputUSD {
+		rows = append(rows, common.EmailDetail{Label: "Cached input / 1M", Value: launchUSD(p.CacheReadUSD * ratio)})
+	}
+	if math.Abs(ratio-1) > 1e-9 {
+		rows = append(rows, common.EmailDetail{Label: "List price / 1M", Value: launchUSD(p.InputUSD) + " input · " + launchUSD(p.OutputUSD) + " output"})
+	}
+	if p.LongContextAbove > 0 {
+		rows = append(rows, common.EmailDetail{Label: "Long prompts", Value: "over " + tokensShort(p.LongContextAbove) + " tokens bill at a higher tier"})
+	}
+	return rows
+}
+
+// launchModelTags reads the model-meta table (the tags Model Square shows),
+// honouring its exact / prefix / suffix / contains rules, and returns a
+// lookup that renders a model's tags as "CVP · MYTHOS"-style chip text.
+func launchModelTags() func(string) string {
+	var rows []model.Model
+	_ = model.DB.Where("status = ?", 1).Find(&rows).Error
+	return func(name string) string {
+		for _, rule := range []int{model.NameRuleExact, model.NameRuleSuffix, model.NameRulePrefix, model.NameRuleContains} {
+			for _, r := range rows {
+				if r.NameRule != rule || strings.TrimSpace(r.Tags) == "" {
+					continue
+				}
+				hit := false
+				switch rule {
+				case model.NameRuleExact:
+					hit = name == r.ModelName
+				case model.NameRuleSuffix:
+					hit = strings.HasSuffix(name, r.ModelName)
+				case model.NameRulePrefix:
+					hit = strings.HasPrefix(name, r.ModelName)
+				case model.NameRuleContains:
+					hit = strings.Contains(name, r.ModelName)
+				}
+				if hit {
+					parts := strings.Split(r.Tags, ",")
+					for i := range parts {
+						parts[i] = strings.TrimSpace(parts[i])
+					}
+					return strings.Join(parts, " · ")
+				}
+			}
+		}
+		return ""
+	}
 }
 
 func joinNames(names []string) string {
@@ -331,7 +432,7 @@ func PreviewModelLaunchEmail(models []string, note string) (*ModelLaunchPreview,
 	if err != nil {
 		return nil, err
 	}
-	msg := BuildModelLaunchEmail(prices, note, 0)
+	msg := BuildModelLaunchEmail(prices, note, 0, "default")
 	html, text, err := common.RenderEmail(UnifyAPIEmailBrand(), msg)
 	if err != nil {
 		return nil, err
@@ -459,7 +560,7 @@ func runModelLaunchEmail(launchId int, prices []ModelLaunchPrice, note string) {
 		if err != nil || !claimed {
 			continue
 		}
-		if err := SendBrandedEmail(modelLaunchPurpose, u.Email, BuildModelLaunchEmail(prices, note, u.Id)); err != nil {
+		if err := SendBrandedEmail(modelLaunchPurpose, u.Email, BuildModelLaunchEmail(prices, note, u.Id, u.Group)); err != nil {
 			failed++
 			model.RecordModelLaunchSendError(launchId, u.Id, err)
 			common.SysError(fmt.Sprintf("model launch email %d: user %d: %s", launchId, u.Id, err.Error()))

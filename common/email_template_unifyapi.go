@@ -60,6 +60,23 @@ type EmailDetail struct {
 	Value string
 }
 
+// EmailHero is an optional dark band under the header: a short kicker and one
+// line. Used by announcement mail, never by account mail.
+type EmailHero struct {
+	Kicker string // mono, uppercase
+	Title  string
+	Line   string
+}
+
+// EmailCard is one product card (a model in an announcement). Tag renders as
+// a small ink chip; Rows are key/value lines inside the card.
+type EmailCard struct {
+	Title string
+	Tag   string
+	Body  string
+	Rows  []EmailDetail
+}
+
 // EmailMessage is the per-message half. Exactly one of CTAURL and Code may be
 // set; Intro is plain text, IntroHTML is operator-authored HTML that is
 // trusted as written (notification bodies carry <br/> and links).
@@ -79,6 +96,13 @@ type EmailMessage struct {
 	// UnsubscribeURL is set only on mail a customer can opt out of (the weekly
 	// update). It renders as a footer link and goes out as List-Unsubscribe.
 	UnsubscribeURL string
+	// Hero and Cards are for announcement mail. Both are optional and absent
+	// from every account email, which therefore renders exactly as before.
+	// Cards rise in one after another where the client runs CSS animation
+	// (Apple Mail, iOS Mail): the same "rise" motion as the UnifyAI RSI app.
+	// Clients that strip it (Gmail, Outlook) show them static.
+	Hero  *EmailHero
+	Cards []EmailCard
 }
 
 // html/template drops HTML comments, and Outlook's conditional comments are
@@ -123,14 +147,37 @@ func RenderEmail(brand EmailBrand, msg EmailMessage) (htmlBody string, textBody 
 func renderEmailText(brand EmailBrand, msg EmailMessage) string {
 	var b strings.Builder
 	b.WriteString(brand.ProductName + "\n\n")
+	if msg.Hero != nil {
+		b.WriteString(strings.ToUpper(msg.Hero.Kicker) + "\n" + msg.Hero.Title + "\n")
+		if msg.Hero.Line != "" {
+			b.WriteString(msg.Hero.Line + "\n")
+		}
+		b.WriteString("\n")
+	}
 	if msg.Eyebrow != "" {
 		b.WriteString(strings.ToUpper(msg.Eyebrow) + "\n")
 	}
-	b.WriteString(msg.Headline + "\n\n")
+	if msg.Headline != "" {
+		b.WriteString(msg.Headline + "\n\n")
+	}
 	if msg.IntroHTML != "" {
 		b.WriteString(htmlToText(string(msg.IntroHTML)) + "\n\n")
 	} else if msg.Intro != "" {
 		b.WriteString(msg.Intro + "\n\n")
+	}
+	for _, c := range msg.Cards {
+		line := c.Title
+		if c.Tag != "" {
+			line += "  [" + c.Tag + "]"
+		}
+		b.WriteString(line + "\n")
+		if c.Body != "" {
+			b.WriteString("  " + c.Body + "\n")
+		}
+		for _, r := range c.Rows {
+			b.WriteString("  " + r.Label + ": " + r.Value + "\n")
+		}
+		b.WriteString("\n")
 	}
 	if msg.Code != "" {
 		b.WriteString(msg.Code + "\n\n")
@@ -245,7 +292,10 @@ func unsubscribeHeaders(url string) string {
 	return "List-Unsubscribe: <" + url + ">\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n"
 }
 
-var unifyaiEmailTemplate = template.Must(template.New("unifyai-email").Parse(`<!doctype html>
+// riseDelay staggers the cards the way the RSI app staggers its steps.
+func riseDelay(i int) string { return fmt.Sprintf("%.2fs", 0.18+0.11*float64(i)) }
+
+var unifyaiEmailTemplate = template.Must(template.New("unifyai-email").Funcs(template.FuncMap{"riseDelay": riseDelay}).Parse(`<!doctype html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 <head>
 <meta charset="utf-8">
@@ -260,9 +310,14 @@ var unifyaiEmailTemplate = template.Must(template.New("unifyai-email").Parse(`<!
 <style>
   body { margin: 0; padding: 0; background: #FAFAF7; }
   a { color: #0E0E0E; }
+  /* The UnifyAI RSI app's "rise": fade up 10px, ease-out-expo, staggered. */
+  @keyframes u-rise { from { opacity: 0; transform: translateY(10px); } }
+  .u-rise { animation: u-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+  @media (prefers-reduced-motion: reduce) { .u-rise { animation: none !important; } }
   @media (max-width: 620px) {
     .u-card { width: 100% !important; }
     .u-pad { padding-left: 24px !important; padding-right: 24px !important; }
+    .u-hero { padding-left: 24px !important; padding-right: 24px !important; }
     .u-h1 { font-size: 24px !important; line-height: 30px !important; }
   }
 </style>
@@ -283,12 +338,34 @@ var unifyaiEmailTemplate = template.Must(template.New("unifyai-email").Parse(`<!
       </tr></table>
     </td></tr>
 
-    <tr><td class="u-pad" style="padding:36px 40px 8px;">
-      <div style="font-family:'IBM Plex Mono',Menlo,Consolas,monospace; font-size:12px; letter-spacing:1.6px; text-transform:uppercase; color:#6B6B66;">{{.Msg.Eyebrow}}</div>
-      <h1 class="u-h1" style="margin:10px 0 0; font-family:'Space Grotesk',Helvetica,Arial,sans-serif; font-weight:700; font-size:28px; line-height:34px; letter-spacing:-0.4px; color:#0E0E0E;">{{.Msg.Headline}}</h1>
-      {{if .Msg.IntroHTML}}<p style="margin:16px 0 0; font-family:'Instrument Sans',Helvetica,Arial,sans-serif; font-size:16px; line-height:26px; color:#3A3A37;">{{.Msg.IntroHTML}}</p>{{else if .Msg.Intro}}<p style="margin:16px 0 0; font-family:'Instrument Sans',Helvetica,Arial,sans-serif; font-size:16px; line-height:26px; color:#3A3A37;">{{.Msg.Intro}}</p>{{end}}
+{{with .Msg.Hero}}
+    <tr><td style="padding:0;">
+      <div class="u-rise u-hero" style="background:#0E0E0E; padding:34px 40px 32px;">
+        <div style="font-family:'IBM Plex Mono',Menlo,Consolas,monospace; font-size:12px; letter-spacing:2px; text-transform:uppercase; color:#A8A8A2;">{{.Kicker}}</div>
+        <div class="u-h1" style="margin-top:12px; font-family:'Space Grotesk',Helvetica,Arial,sans-serif; font-weight:700; font-size:32px; line-height:38px; letter-spacing:-0.6px; color:#FAFAF7;">{{.Title}}</div>
+        {{if .Line}}<div style="margin-top:12px; font-family:'Instrument Sans',Helvetica,Arial,sans-serif; font-size:16px; line-height:25px; color:#D6D6D0;">{{.Line}}</div>{{end}}
+      </div>
     </td></tr>
-{{if .Msg.CTAURL}}
+{{end}}
+    <tr><td class="u-pad" style="padding:36px 40px 8px;">
+      {{if .Msg.Eyebrow}}<div style="font-family:'IBM Plex Mono',Menlo,Consolas,monospace; font-size:12px; letter-spacing:1.6px; text-transform:uppercase; color:#6B6B66;">{{.Msg.Eyebrow}}</div>{{end}}
+      {{if .Msg.Headline}}<h1 class="u-h1" style="margin:10px 0 16px; font-family:'Space Grotesk',Helvetica,Arial,sans-serif; font-weight:700; font-size:28px; line-height:34px; letter-spacing:-0.4px; color:#0E0E0E;">{{.Msg.Headline}}</h1>{{end}}
+      {{if .Msg.IntroHTML}}<p style="margin:0; font-family:'Instrument Sans',Helvetica,Arial,sans-serif; font-size:16px; line-height:26px; color:#3A3A37;">{{.Msg.IntroHTML}}</p>{{else if .Msg.Intro}}<p style="margin:0; font-family:'Instrument Sans',Helvetica,Arial,sans-serif; font-size:16px; line-height:26px; color:#3A3A37;">{{.Msg.Intro}}</p>{{end}}
+    </td></tr>
+{{if .Msg.Cards}}
+    <tr><td class="u-pad" style="padding:24px 40px 0;">
+{{range $i, $c := .Msg.Cards}}      <div class="u-rise" style="animation-delay:{{riseDelay $i}}; border:1px solid #E3E3DE; border-radius:8px; padding:18px 20px; margin-top:{{if $i}}12px{{else}}0{{end}}; background:#FFFFFF;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+          <td style="font-family:'IBM Plex Mono',Menlo,Consolas,monospace; font-weight:500; font-size:16px; color:#0E0E0E;">{{$c.Title}}</td>
+          {{if $c.Tag}}<td align="right" style="white-space:nowrap;"><span style="display:inline-block; background:#0E0E0E; color:#FAFAF7; border-radius:4px; padding:3px 8px; font-family:'IBM Plex Mono',Menlo,Consolas,monospace; font-size:11px; letter-spacing:1.2px; text-transform:uppercase;">{{$c.Tag}}</span></td>{{end}}
+        </tr></table>
+        {{if $c.Body}}<div style="margin-top:8px; font-family:'Instrument Sans',Helvetica,Arial,sans-serif; font-size:14px; line-height:21px; color:#3A3A37;">{{$c.Body}}</div>{{end}}
+        {{if $c.Rows}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:10px;">
+{{range $c.Rows}}          <tr><td style="padding:4px 0; font-family:'Instrument Sans',Helvetica,Arial,sans-serif; font-size:13px; color:#6B6B66;">{{.Label}}</td><td align="right" style="padding:4px 0; font-family:'IBM Plex Mono',Menlo,Consolas,monospace; font-size:13px; color:#0E0E0E;">{{.Value}}</td></tr>
+{{end}}        </table>{{end}}
+      </div>
+{{end}}    </td></tr>
+{{end}}{{if .Msg.CTAURL}}
     <tr><td class="u-pad" style="padding:28px 40px 4px;">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
         <td style="border-radius:6px; background:#F5A623;">
