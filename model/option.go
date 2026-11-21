@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -232,6 +233,7 @@ func InitOptionMap() {
 
 func loadOptionsFromDatabase() {
 	options, _ := AllOption()
+	orderOptionsForLoad(options)
 	for _, option := range options {
 		value := option.Value
 		// UNIFYAPI-FORK: a customer price naming a model that has since been
@@ -264,6 +266,39 @@ func loadOptionsFromDatabase() {
 			common.SysLog("failed to update option map: " + err.Error())
 		}
 	}
+}
+
+// optionLoadRank orders the rows whose meaning depends on another row.
+//
+// UNIFYAPI-FORK: AllOption has no ORDER BY, so rows arrive in whatever order
+// the table stores them, and an UPDATE moves a row. Two pairs depend on order:
+//   - GroupModelDiscount is sanitised against the priced models, which include
+//     ExtraModelPricing. Loaded first, it drops every per-model ratio for a
+//     model priced only by an extra (Mythos, Fable 5-1/5-2, the CVP ids), and
+//     those models sell at the plain group ratio until the next sync, up to
+//     60 s after every boot -- for a model listed above cost that is a sale
+//     below cost. Reproduced on staging 2026-11-11 with claude-fable-5.2.
+//   - billing_setting.billing_mode is resolved against the loaded expressions,
+//     so loaded before billing_setting.billing_expr it drops every hand-written
+//     mode and those models answer "not priced" until the next sync
+//     (reproduced on staging 2026-11-18 with gpt-6.2).
+//
+// Lower rank loads first; everything else keeps rank 1 and its stored order.
+func optionLoadRank(key string) int {
+	switch key {
+	case "ExtraModelPricing", "billing_setting.billing_expr":
+		return 0
+	case "GroupModelDiscount", "billing_setting.billing_mode":
+		return 2
+	default:
+		return 1
+	}
+}
+
+func orderOptionsForLoad(options []*Option) {
+	sort.SliceStable(options, func(i, j int) bool {
+		return optionLoadRank(options[i].Key) < optionLoadRank(options[j].Key)
+	})
 }
 
 func SyncOptions(frequency int) {
