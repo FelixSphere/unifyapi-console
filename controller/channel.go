@@ -93,9 +93,13 @@ func buildChannelListQuery(group string, statusFilter int, typeFilter int) *gorm
 }
 
 func GetChannelOps(c *gin.Context) {
-	common.ApiSuccess(c, gin.H{
-		"retry_times": common.RetryTimes,
-	})
+	data := gin.H{"retry_times": common.RetryTimes}
+	if c.GetInt("role") == common.RoleRootUser {
+		if accountsURL := sub2apiAccountsURL(); accountsURL != "" {
+			data["sub2api_accounts_url"] = accountsURL
+		}
+	}
+	common.ApiSuccess(c, data)
 }
 
 func GetAllChannels(c *gin.Context) {
