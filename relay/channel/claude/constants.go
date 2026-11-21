@@ -44,6 +44,17 @@ var ModelList = []string{
 	"claude-opus-4-8-low",
 	"claude-opus-4-8-thinking",
 	"claude-opus-5-5",
+	// UNIFYAPI-FORK: the 5.x generation, so the channel editor offers them
+	// (operator 2026-11-21: "Fable，Mythos等等，都不在上面"). Mythos is for
+	// verified organisations only; listing it here grants nothing.
+	"claude-opus-5",
+	"claude-sonnet-5",
+	"claude-fable-5",
+	"claude-fable-5-1",
+	"claude-fable-5-2",
+	"claude-mythos-5",
+	"claude-mythos-5-1",
+	"claude-mythos-5-2",
 }
 
 var ChannelName = "claude"
