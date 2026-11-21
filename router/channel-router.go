@@ -24,7 +24,10 @@ func registerChannelRoutes(apiRouter *gin.RouterGroup) {
 		middleware.RootAuth(),
 		middleware.CriticalRateLimit(),
 		middleware.DisableCache(),
-		middleware.SecureVerificationRequired(),
+		// UNIFYAPI-BRAND: no second factor to reveal a channel key (operator
+		// decision 2026-11-20). Still root only, and still a signed-in
+		// dashboard session rather than an API access token.
+		middleware.ChannelKeySessionRequired(),
 		controller.GetChannelKey,
 	)
 

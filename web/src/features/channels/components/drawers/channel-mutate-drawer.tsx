@@ -3054,11 +3054,6 @@ export function ChannelMutateDrawer({
                                               <p className='text-sm font-medium'>
                                                 {t('Current key')}
                                               </p>
-                                              <p className='text-muted-foreground text-xs'>
-                                                {t(
-                                                  'Verification required to reveal the saved key.'
-                                                )}
-                                              </p>
                                             </div>
                                             <div className='flex items-center gap-2'>
                                               <Button
