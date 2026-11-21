@@ -128,6 +128,21 @@ export function awaitingHuman(messages: SupportMessage[]): boolean {
 }
 
 /**
+ * The conversation is a person's and the customer is the one waiting: show
+ * that we are still here. True while the newest message is not a person's
+ * reply -- the customer's own, the handoff request, or the AI saying it handed
+ * over. A conversation that has no message yet has nobody waiting.
+ */
+export function waitingForPerson(
+  mode: WidgetMode,
+  messages: SupportMessage[]
+): boolean {
+  const last = messages[messages.length - 1]
+  if (mode !== 'staff' || !last) return false
+  return !(last.from_staff && !last.from_ai)
+}
+
+/**
  * The customer message the AI should answer now, if any. Same rule as the
  * Support page (useAIAnswer in ./index.tsx): the newest message is the
  * customer's and is fresh -- an older unanswered one has already gone to staff

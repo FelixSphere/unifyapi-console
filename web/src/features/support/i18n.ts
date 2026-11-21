@@ -64,6 +64,7 @@ export const SUPPORT_KEYS = [
   'Looking up the price…',
   'Asking a teammate to join…',
   'A teammate will reply here soon.',
+  'Waiting for a teammate to reply…',
   // The floating chat (./widget.tsx).
   'Open support chat',
   'Close support chat',
@@ -88,6 +89,7 @@ type Key = (typeof SUPPORT_KEYS)[number]
 type Table = Record<Key, string>
 
 const zhCN: Table = {
+  'Waiting for a teammate to reply…': '正在等待客服同事回复…',
   Support: '客服支持',
   'Support inbox': '客服收件箱',
   'Questions, problems or feedback — write to us here.':
@@ -164,6 +166,7 @@ const zhCN: Table = {
 }
 
 const zhTW: Table = {
+  'Waiting for a teammate to reply…': '正在等待客服同事回覆…',
   Support: '客服支援',
   'Support inbox': '客服收件匣',
   'Questions, problems or feedback — write to us here.':
@@ -241,6 +244,7 @@ const zhTW: Table = {
 }
 
 const fr: Table = {
+  'Waiting for a teammate to reply…': 'En attente de la réponse d’un membre de l’équipe…',
   Support: 'Support',
   'Support inbox': 'Boîte de réception du support',
   'Questions, problems or feedback — write to us here.':
@@ -320,6 +324,7 @@ const fr: Table = {
 }
 
 const ja: Table = {
+  'Waiting for a teammate to reply…': '担当者からの返信をお待ちください…',
   Support: 'サポート',
   'Support inbox': 'サポート受信箱',
   'Questions, problems or feedback — write to us here.':
@@ -398,6 +403,7 @@ const ja: Table = {
 }
 
 const ru: Table = {
+  'Waiting for a teammate to reply…': 'Ожидаем ответа сотрудника…',
   Support: 'Поддержка',
   'Support inbox': 'Входящие поддержки',
   'Questions, problems or feedback — write to us here.':
@@ -476,6 +482,7 @@ const ru: Table = {
 }
 
 const vi: Table = {
+  'Waiting for a teammate to reply…': 'Đang chờ nhân viên trả lời…',
   Support: 'Hỗ trợ',
   'Support inbox': 'Hộp thư hỗ trợ',
   'Questions, problems or feedback — write to us here.':

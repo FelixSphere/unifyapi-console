@@ -36,6 +36,7 @@ import {
   messageForAI,
   pickConversation,
   shouldPoll,
+  waitingForPerson,
   initialOpen,
   showWidget,
   WIDGET_CLOSED_KEY,
@@ -343,6 +344,16 @@ function ChatPanel(props: { onClose: () => void }) {
           )
         )}
         <AIStatus {...ai} />
+        {waitingForPerson(mode, messages) && !ai.answer && !ai.progress ? (
+          <li
+            role='status'
+            className='border-border bg-card text-muted-foreground self-start rounded-lg border px-3 py-2 text-sm'
+          >
+            <span className='animate-pulse'>
+              {t('Waiting for a teammate to reply…')}
+            </span>
+          </li>
+        ) : null}
       </ol>
 
       <div className='border-border flex flex-col gap-2 border-t px-3 py-2'>
