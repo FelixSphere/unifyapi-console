@@ -244,7 +244,8 @@ const zhTW: Table = {
 }
 
 const fr: Table = {
-  'Waiting for a teammate to reply…': 'En attente de la réponse d’un membre de l’équipe…',
+  'Waiting for a teammate to reply…':
+    'En attente de la réponse d’un membre de l’équipe…',
   Support: 'Support',
   'Support inbox': 'Boîte de réception du support',
   'Questions, problems or feedback — write to us here.':
