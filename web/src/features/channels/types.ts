@@ -181,6 +181,7 @@ export interface ChannelOpsResponse {
   message?: string
   data?: {
     retry_times: number
+    sub2api_accounts_url?: string
   }
 }
 
