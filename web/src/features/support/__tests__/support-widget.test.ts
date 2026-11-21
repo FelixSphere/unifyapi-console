@@ -21,6 +21,7 @@ import { SUPPORT_KEYS } from '../i18n'
 import {
   awaitingHuman,
   canHandOff,
+  waitingForPerson,
   deriveSubject,
   HANDOFF_BODY,
   messageForAI,
@@ -186,6 +187,15 @@ describe('mode and the AI assistant', () => {
 })
 
 const repo = join(import.meta.dir, '..', '..', '..', '..', '..')
+
+test('the customer sees we are still here while a person has not replied', () => {
+  expect(waitingForPerson('staff', [customer(), ai(), handoff()])).toBe(true)
+  expect(waitingForPerson('staff', [handoff(), customer('hello?')])).toBe(true)
+  expect(waitingForPerson('staff', [customer()])).toBe(true) // no AI on this host
+  expect(waitingForPerson('staff', [handoff(), staff()])).toBe(false)
+  expect(waitingForPerson('ai', [customer()])).toBe(false) // the AI has its own status
+  expect(waitingForPerson('staff', [])).toBe(false)
+})
 
 test('the handoff marker matches the Go source word for word', () => {
   const go = readFileSync(
