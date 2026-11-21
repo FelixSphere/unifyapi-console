@@ -116,6 +116,12 @@ func IsCustomerOwnedGroup(group string) bool {
 	if group == "" {
 		return false
 	}
+	// A BYOK group is one customer's by construction, whether or not that
+	// customer was provisioned through the partnership registry, and this
+	// answer needs no database read (unifyapi_byok_group.go).
+	if IsBYOKGroup(group) {
+		return true
+	}
 	set, known := CustomerOwnedGroups()
 	if !known {
 		return true
