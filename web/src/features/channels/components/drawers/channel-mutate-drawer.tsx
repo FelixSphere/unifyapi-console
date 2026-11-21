@@ -3095,9 +3095,7 @@ export function ChannelMutateDrawer({
                                           <Input
                                             readOnly
                                             value={channelKey ?? ''}
-                                            placeholder={t(
-                                              'Hidden — verify to reveal'
-                                            )}
+                                            placeholder='••••••••••••'
                                             className='font-mono'
                                           />
                                         </div>
