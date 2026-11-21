@@ -70,8 +70,19 @@ func routingPricingGroups() []string {
 
 // routingGroups is the set of groups this channel serves: its own list first,
 // in the operator's order, then every pricing group it does not already name.
+//
+// BYOK is the one exception, in both directions (unifyapi_byok_group.go). A
+// channel that names a BYOK group holds that customer's own provider key, so
+// it serves the BYOK groups it names and nothing else: no pricing group is
+// added, and an ordinary group listed beside it by mistake is dropped rather
+// than given the customer's key. And a BYOK group is never added to a channel
+// that does not name it, so that customer cannot be served from our supply at
+// a platform-fee price.
 func (channel *Channel) routingGroups(pricingGroups []string) []string {
 	own := channel.GetGroups()
+	if byok := byokGroupsOf(own); len(byok) > 0 {
+		return byok
+	}
 	groups := make([]string, 0, len(own)+len(pricingGroups))
 	seen := make(map[string]struct{}, len(own)+len(pricingGroups))
 	for _, group := range own {
@@ -85,6 +96,9 @@ func (channel *Channel) routingGroups(pricingGroups []string) []string {
 		groups = append(groups, group)
 	}
 	for _, group := range pricingGroups {
+		if IsBYOKGroup(group) {
+			continue
+		}
 		if _, dup := seen[group]; dup {
 			continue
 		}
