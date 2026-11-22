@@ -25,7 +25,11 @@ import { cn } from '@/lib/utils'
 
 import { CHANNEL_STATUS } from '../constants'
 import { usePricingGroups } from '../hooks/use-pricing-groups'
-import { isTagAggregateRow, splitChannelGroups } from '../lib'
+import {
+  isTagAggregateRow,
+  parseExcludedGroups,
+  splitChannelGroups,
+} from '../lib'
 import type { Channel } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
 import { useChannels } from './channels-provider'
@@ -71,7 +75,8 @@ function ChannelCardComponent({
   const pricingGroups = usePricingGroups()
   const { own, inherited } = splitChannelGroups(
     row.original.group ?? '',
-    pricingGroups
+    pricingGroups,
+    parseExcludedGroups(row.original.settings)
   )
   const groups = [...own, ...inherited]
 
