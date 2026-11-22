@@ -11,6 +11,7 @@ package model
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -184,6 +185,32 @@ func TestTheBackfillLeavesAnAccessTierUnpooled(t *testing.T) {
 	assert.NotEqual(t, walletOf(t, steven.Id).TenantId, walletOf(t, daniel.Id).TenantId)
 	assert.Equal(t, 77_965_000, balanceOf(t, steven.Id))
 	assert.Equal(t, 2_500_000, balanceOf(t, daniel.Id))
+}
+
+// A login from before wallets existed holds its balance on its own row. Given
+// a wallet of its own, it must still see that balance: the row stops being
+// what it is billed from the moment it has a wallet.
+func TestALoginWithNoWalletYetTakesItsBalanceIntoItsOwnWallet(t *testing.T) {
+	for origin, destination := range map[string]string{"default": "Vip User", "Vip User": "default", "Gold": "Vip User"} {
+		t.Run(origin+" to "+destination, func(t *testing.T) {
+			setupCustomerWalletSpec(t)
+			seedAccessTiers(t, `["Vip User","Gold"]`)
+			legacy := &User{
+				Username: "legacy", Password: "password123", DisplayName: "legacy", Role: common.RoleCommonUser,
+				Status: common.UserStatusEnabled, Group: origin, Quota: 77_965_000, AffCode: "legacy",
+			}
+			require.NoError(t, DB.Create(legacy).Error)
+			require.Zero(t, walletOf(t, legacy.Id).TenantId, "precondition: the login has no wallet")
+			require.Equal(t, 77_965_000, balanceOf(t, legacy.Id))
+			before := totalCredit(t)
+
+			adminMoves(t, legacy, destination)
+
+			assert.NotZero(t, walletOf(t, legacy.Id).TenantId, "the move gives it a wallet of its own")
+			assert.Equal(t, 77_965_000, balanceOf(t, legacy.Id), "holding what it had")
+			assert.Equal(t, before, totalCredit(t), "counted once, not twice")
+		})
+	}
 }
 
 // A list that cannot be read is not an empty list. Treating it as one would

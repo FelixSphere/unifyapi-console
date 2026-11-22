@@ -179,8 +179,24 @@ func reattachWalletTx(tx *gorm.DB, user User, group string) error {
 		name = user.Username
 	}
 	solo := &Tenant{Name: name, Slug: slugFromName(user.Username), Status: TenantStatusEnabled, OwnerId: user.Id, Group: group}
+	placed := map[string]any{}
+	// UNIFYAPI-FORK: a login that never had a wallet holds its balance on its
+	// own row, and once it has a wallet that row is no longer what it is
+	// billed from. The balance goes into the new wallet, as it does when a
+	// login is first given one (EnsureTenantForUserTx) or joins a customer
+	// (JoinCustomerPoolTx). A login leaving a shared wallet has nothing on its
+	// row and starts empty.
+	if user.TenantId == 0 {
+		var held User
+		if err := lockForUpdate(tx).Select("quota").First(&held, user.Id).Error; err != nil {
+			return err
+		}
+		solo.Quota = held.Quota
+		placed["quota"] = 0
+	}
 	if err := CreateTenantWithTx(tx, solo); err != nil {
 		return err
 	}
-	return tx.Model(&User{}).Where("id = ?", user.Id).Update("tenant_id", solo.Id).Error
+	placed["tenant_id"] = solo.Id
+	return tx.Model(&User{}).Where("id = ?", user.Id).Updates(placed).Error
 }
