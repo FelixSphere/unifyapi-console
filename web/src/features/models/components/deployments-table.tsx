@@ -196,6 +196,8 @@ export function DeploymentsTable() {
     data: deployments,
     columns,
     totalCount,
+    // UNIFYAPI-BRAND: the View column choice is remembered, as on Channels.
+    columnVisibilityStorageKey: 'deployments:column-visibility',
     columnFilters,
     pagination,
     globalFilter,

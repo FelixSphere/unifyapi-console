@@ -175,6 +175,8 @@ export function UsersTable() {
     columns,
     enableRowSelection: true,
     columnFilters,
+    // UNIFYAPI-BRAND: the View column choice is remembered, as on Channels.
+    columnVisibilityStorageKey: 'users:column-visibility',
     globalFilter,
     pagination,
     sorting,

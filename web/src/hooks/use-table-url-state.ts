@@ -23,6 +23,12 @@ import type {
 } from '@tanstack/react-table'
 import { useEffect, useMemo, useState } from 'react'
 
+// UNIFYAPI-BRAND: tables remember the filter chips a viewer last set.
+import {
+  recallTableFilters,
+  rememberTableFilters,
+} from '@/brand/remembered-table-filters'
+
 type SearchRecord = Record<string, unknown>
 
 // Page size persists globally under the established storage key (raw number
@@ -127,8 +133,9 @@ export function useTableUrlState(
   // Build initial column filters from the current search params
   const initialColumnFilters: ColumnFiltersState = useMemo(() => {
     const collected: ColumnFiltersState = []
+    const source = recallTableFilters(search, columnFiltersCfg)
     for (const cfg of columnFiltersCfg) {
-      const raw = (search as SearchRecord)[cfg.searchKey]
+      const raw = source[cfg.searchKey]
       const deserialize = cfg.deserialize ?? ((v: unknown) => v)
       if (cfg.type === 'string') {
         const value = (deserialize(raw) as string) ?? ''
@@ -227,6 +234,7 @@ export function useTableUrlState(
         patch[cfg.searchKey] = value.length > 0 ? serialize(value) : undefined
       }
     }
+    rememberTableFilters(patch, columnFiltersCfg)
 
     navigate({
       search: (prev) => ({

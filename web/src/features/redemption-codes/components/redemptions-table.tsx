@@ -134,6 +134,8 @@ export function RedemptionsTable() {
     columns,
     enableRowSelection: true,
     columnFilters,
+    // UNIFYAPI-BRAND: the View column choice is remembered, as on Channels.
+    columnVisibilityStorageKey: 'redemptions:column-visibility',
     globalFilter,
     pagination,
     globalFilterFn: (row, _columnId, filterValue) => {
