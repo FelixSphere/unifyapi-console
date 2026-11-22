@@ -417,3 +417,22 @@ Group Pricing cannot drop a marked group), `model/partnership_program.go` (a
 program cannot use a marked group), `controller/audit.go`,
 `router/api-router.go`, and in `web/` `group-ratio-visual-editor.tsx`,
 `api.ts`, `types.ts` and `usage-logs/lib/format.ts`.
+
+### Channel hard rate limit (unreleased)
+
+A channel's `rate_limit_rpm` / `rate_limit_tpm` (`model/channel_rate_limit.go`)
+is load balancing: a channel over its limit is still used when no other
+candidate at its priority can serve. `model/unifyapi_channel_hard_rate_limit.go`
+adds the channel setting `hard_rate_limit` (in `channels.settings`, off by
+default) which makes the same two numbers a cap: a full channel is not chosen
+by selection, affinity, a channel-pinned key or a retry, and when nothing else
+can serve the caller gets 429 with `Retry-After`
+(`middleware/unifyapi_channel_hard_rate_limit.go`). Requests are counted
+exactly at admission; tokens after the fact. Touch points, all marked
+`UNIFYAPI-FORK`: `model/channel_cache.go` (full hard channels are not
+candidates), `model/channel_rate_limit.go` (in-process token count),
+`service/channel_select.go` (admit, then reselect), `middleware/distributor.go`
+(affinity, pinned key, the 429), `controller/relay.go` (retry and task paths),
+`relaykit/dto/channel_settings.go`, and in `web/` `channel-form.ts`,
+`constants.ts` and `channel-mutate-drawer.tsx` (the "Enforce as a hard cap"
+switch).

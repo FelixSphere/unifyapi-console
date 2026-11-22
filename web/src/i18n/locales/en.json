@@ -5509,6 +5509,8 @@
     "Logins in default already keep their own wallets": "Logins in default already keep their own wallets",
     "Save the group before marking it as an access tier": "Save the group before marking it as an access tier",
     "Marked pricing group {{group}} as an access tier": "Marked pricing group {{group}} as an access tier",
-    "Removed the access tier mark from pricing group {{group}}": "Removed the access tier mark from pricing group {{group}}"
+    "Removed the access tier mark from pricing group {{group}}": "Removed the access tier mark from pricing group {{group}}",
+    "Enforce as a hard cap": "Enforce as a hard cap",
+    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve."
   }
 }

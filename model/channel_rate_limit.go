@@ -181,6 +181,8 @@ func RecordChannelRequest(ctx context.Context, channelId int) {
 // not knowable before the upstream answers -- so a channel can overshoot its
 // token budget by at most one request. That is inherent, not an oversight.
 func RecordChannelTokens(ctx context.Context, channelId int, tokens int) {
+	// UNIFYAPI-FORK: see unifyapi_channel_hard_rate_limit.go.
+	recordHardChannelTokensLocal(channelId, tokens)
 	if !common.RedisEnabled || tokens <= 0 {
 		return
 	}

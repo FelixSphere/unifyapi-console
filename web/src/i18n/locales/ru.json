@@ -5495,6 +5495,8 @@
     "Logins in default already keep their own wallets": "У учётных записей в default и так свои кошельки",
     "Save the group before marking it as an access tier": "Сохраните группу, прежде чем отмечать её как уровень доступа",
     "Marked pricing group {{group}} as an access tier": "Тарифная группа {{group}} отмечена как уровень доступа",
-    "Removed the access tier mark from pricing group {{group}}": "С тарифной группы {{group}} снята отметка уровня доступа"
+    "Removed the access tier mark from pricing group {{group}}": "С тарифной группы {{group}} снята отметка уровня доступа",
+    "Enforce as a hard cap": "Применять как жёсткий предел",
+    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "Отклонять запросы сверх лимита. Пока канал превышает число запросов или токенов в минуту, трафик уходит на другой канал, если он может обслужить запрос; иначе вызывающая сторона получает 429 с Retry-After. Если выключено, лимит только распределяет трафик, и канал всё равно используется, когда больше некому обслужить."
   }
 }

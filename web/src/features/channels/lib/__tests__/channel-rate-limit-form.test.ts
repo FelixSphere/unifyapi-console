@@ -10,6 +10,7 @@ import { describe, expect, test } from 'bun:test'
 
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
+  parseHardRateLimit,
   transformChannelToFormDefaults,
   transformFormDataToCreatePayload,
   transformFormDataToUpdatePayload,
@@ -82,5 +83,52 @@ describe('channel rate limit fields survive the form round trip', () => {
     } as never)
     expect(defaults.rate_limit_rpm).toBe(0)
     expect(defaults.rate_limit_tpm).toBe(0)
+  })
+})
+
+// UNIFYAPI-FORK: the hard cap lives in the settings JSON, beside whatever the
+// channel already keeps there.
+describe('the hard cap switch round trips through settings', () => {
+  const settingsOf = (values: ChannelFormValues) =>
+    JSON.parse(transformFormDataToUpdatePayload(values, 42).settings ?? '{}')
+
+  test('it is off by default and writes nothing', () => {
+    expect(CHANNEL_FORM_DEFAULT_VALUES.hard_rate_limit).toBe(false)
+    expect('hard_rate_limit' in settingsOf(form())).toBe(false)
+  })
+
+  test('turning it on reaches the create and the update payload', () => {
+    const on = form({ rate_limit_rpm: 100, hard_rate_limit: true })
+    expect(settingsOf(on).hard_rate_limit).toBe(true)
+    const { channel } = transformFormDataToCreatePayload(on)
+    expect(JSON.parse(channel.settings ?? '{}').hard_rate_limit).toBe(true)
+  })
+
+  test('turning it off removes the key and keeps the other settings', () => {
+    const settings = settingsOf(
+      form({
+        settings: '{"hard_rate_limit":true,"excluded_groups":["a"]}',
+        excluded_groups: ['a'],
+        hard_rate_limit: false,
+      })
+    )
+    expect('hard_rate_limit' in settings).toBe(false)
+    expect(settings.excluded_groups).toEqual(['a'])
+  })
+
+  test('an existing channel opens with the switch as stored', () => {
+    expect(parseHardRateLimit('{"hard_rate_limit":true}')).toBe(true)
+    expect(parseHardRateLimit('{"hard_rate_limit":"yes"}')).toBe(false)
+    expect(parseHardRateLimit('{"excluded_groups":["a"]}')).toBe(false)
+    expect(parseHardRateLimit('not json')).toBe(false)
+    expect(parseHardRateLimit(null)).toBe(false)
+    const opened = transformChannelToFormDefaults({
+      id: 1,
+      name: 'c',
+      type: 1,
+      settings: '{"hard_rate_limit":true}',
+      channel_info: {},
+    } as Parameters<typeof transformChannelToFormDefaults>[0])
+    expect(opened.hard_rate_limit).toBe(true)
   })
 })

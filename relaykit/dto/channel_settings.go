@@ -95,6 +95,10 @@ type ChannelOtherSettings struct {
 	// pricing group otherwise routes through every channel, so without this
 	// list there is no way to keep one customer off a given channel.
 	ExcludedGroups []string `json:"excluded_groups,omitempty"`
+	// HardRateLimit makes the channel's RPM/TPM a cap: a request that does not
+	// fit is sent to another channel or refused with 429, never sent anyway.
+	// Without it the limit only steers traffic to less busy channels.
+	HardRateLimit bool `json:"hard_rate_limit,omitempty"`
 }
 
 func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {

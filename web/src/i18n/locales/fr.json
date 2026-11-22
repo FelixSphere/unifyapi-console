@@ -5495,6 +5495,8 @@
     "Logins in default already keep their own wallets": "Les comptes de default gardent déjà chacun leur propre portefeuille",
     "Save the group before marking it as an access tier": "Enregistrez le groupe avant de le marquer comme niveau d'accès",
     "Marked pricing group {{group}} as an access tier": "Groupe tarifaire {{group}} marqué comme niveau d'accès",
-    "Removed the access tier mark from pricing group {{group}}": "Marque de niveau d'accès retirée du groupe tarifaire {{group}}"
+    "Removed the access tier mark from pricing group {{group}}": "Marque de niveau d'accès retirée du groupe tarifaire {{group}}",
+    "Enforce as a hard cap": "Appliquer comme plafond strict",
+    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "Refuse les requêtes au-delà de la limite. Tant que le canal dépasse son nombre de requêtes ou de jetons par minute, le trafic passe par un autre canal s'il en existe un capable de le servir ; sinon l'appelant reçoit 429 avec Retry-After. Désactivé, la limite ne fait qu'orienter le trafic et le canal reste utilisé si aucun autre ne peut servir."
   }
 }

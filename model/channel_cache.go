@@ -141,6 +141,13 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 		return nil, nil
 	}
 
+	// UNIFYAPI-FORK: a hard-limited channel that is full is not a candidate at
+	// all, unlike the soft limit below. When that leaves nothing, say so rather
+	// than "no channel": the model is served, it is just full this minute.
+	if channels = dropHardRateLimitedChannelIds(channels); len(channels) == 0 {
+		return nil, ErrChannelHardRateLimited
+	}
+
 	if len(channels) == 1 {
 		if channel, ok := channelsIDM[channels[0]]; ok {
 			return channel, nil

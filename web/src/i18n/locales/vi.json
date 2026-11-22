@@ -5495,6 +5495,8 @@
     "Logins in default already keep their own wallets": "Các tài khoản đăng nhập trong default vốn đã giữ ví riêng",
     "Save the group before marking it as an access tier": "Hãy lưu nhóm trước khi đánh dấu là cấp truy cập",
     "Marked pricing group {{group}} as an access tier": "Đã đánh dấu nhóm giá {{group}} là cấp truy cập",
-    "Removed the access tier mark from pricing group {{group}}": "Đã bỏ đánh dấu cấp truy cập của nhóm giá {{group}}"
+    "Removed the access tier mark from pricing group {{group}}": "Đã bỏ đánh dấu cấp truy cập của nhóm giá {{group}}",
+    "Enforce as a hard cap": "Áp dụng như giới hạn cứng",
+    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "Từ chối các yêu cầu vượt giới hạn. Khi kênh vượt số yêu cầu hoặc số token mỗi phút, lưu lượng chuyển sang kênh khác nếu có kênh phục vụ được; nếu không, bên gọi nhận 429 kèm Retry-After. Khi tắt, giới hạn chỉ dùng để điều hướng lưu lượng và kênh vẫn được dùng nếu không còn kênh nào khác."
   }
 }

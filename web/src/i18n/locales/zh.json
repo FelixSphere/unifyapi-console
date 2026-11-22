@@ -5513,6 +5513,8 @@
     "Logins in default already keep their own wallets": "default 分组中的登录账号本来就各自保留自己的钱包",
     "Save the group before marking it as an access tier": "请先保存该分组，再将其标记为访问等级",
     "Marked pricing group {{group}} as an access tier": "已将定价分组 {{group}} 标记为访问等级",
-    "Removed the access tier mark from pricing group {{group}}": "已取消定价分组 {{group}} 的访问等级标记"
+    "Removed the access tier mark from pricing group {{group}}": "已取消定价分组 {{group}} 的访问等级标记",
+    "Enforce as a hard cap": "作为硬上限执行",
+    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "拒绝超出限制的请求。渠道超过每分钟请求数或令牌数时，流量会转到其他可用渠道；没有其他渠道时，调用方会收到 429 和 Retry-After。关闭时，限制只用于分流，没有其他渠道可用时仍会使用该渠道。"
   }
 }

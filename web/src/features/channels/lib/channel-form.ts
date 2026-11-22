@@ -216,6 +216,8 @@ export const channelFormSchema = z
     // UNIFYAPI-BRAND: 0 clears the limit, so min is 0 rather than 1.
     rate_limit_rpm: z.number().min(0).optional(),
     rate_limit_tpm: z.number().min(0).optional(),
+    // UNIFYAPI-FORK: stored in settings JSON as hard_rate_limit.
+    hard_rate_limit: z.boolean().optional(),
     test_model: z.string().optional(),
     auto_ban: z.number().optional(),
     status: z.number(),
@@ -418,6 +420,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   weight: 0,
   rate_limit_rpm: 0,
   rate_limit_tpm: 0,
+  hard_rate_limit: false,
   test_model: '',
   auto_ban: 1,
   status: CHANNEL_STATUS.ENABLED,
@@ -575,6 +578,7 @@ export function transformChannelToFormDefaults(
     weight: channel.weight || 0,
     rate_limit_rpm: channel.rate_limit_rpm || 0,
     rate_limit_tpm: channel.rate_limit_tpm || 0,
+    hard_rate_limit: parseHardRateLimit(channel.settings),
     test_model: channel.test_model || '',
     auto_ban: channel.auto_ban ?? 1,
     status: channel.status,
@@ -642,6 +646,19 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
   return JSON.stringify(settingObj)
 }
 
+// UNIFYAPI-FORK: whether the channel's RPM/TPM is a cap rather than a
+// routing preference. Anything but a literal true is off.
+export function parseHardRateLimit(
+  settings: string | null | undefined
+): boolean {
+  if (!settings) return false
+  try {
+    return JSON.parse(settings)?.hard_rate_limit === true
+  } catch {
+    return false
+  }
+}
+
 /**
  * Build the settings JSON string (for type-specific config like vertex_key_type)
  */
@@ -663,6 +680,14 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.excluded_groups = excludedGroups
   } else if ('excluded_groups' in settingsObj) {
     delete settingsObj.excluded_groups
+  }
+
+  // UNIFYAPI-FORK: written only when on, so a channel that never used it
+  // keeps the settings it had.
+  if (formData.hard_rate_limit) {
+    settingsObj.hard_rate_limit = true
+  } else if ('hard_rate_limit' in settingsObj) {
+    delete settingsObj.hard_rate_limit
   }
 
   // Add vertex_key_type for Vertex AI channels (type 41)

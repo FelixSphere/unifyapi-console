@@ -3862,6 +3862,30 @@ export function ChannelMutateDrawer({
                               />
                             </div>
 
+                            {/* UNIFYAPI-FORK: makes the two limits above a cap */}
+                            <FormField
+                              control={form.control}
+                              name='hard_rate_limit'
+                              render={({ field }) => (
+                                <FormItem className='flex items-center justify-between gap-4'>
+                                  <div className='space-y-0.5'>
+                                    <FormLabel>
+                                      {t('Enforce as a hard cap')}
+                                    </FormLabel>
+                                    <FormDescription>
+                                      {t(FIELD_DESCRIPTIONS.HARD_RATE_LIMIT)}
+                                    </FormDescription>
+                                  </div>
+                                  <FormControl>
+                                    <Switch
+                                      checked={field.value === true}
+                                      onCheckedChange={field.onChange}
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+
                             <FormField
                               control={form.control}
                               name='test_model'

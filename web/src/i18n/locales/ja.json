@@ -5495,6 +5495,8 @@
     "Logins in default already keep their own wallets": "default のログインはもともとそれぞれ自分のウォレットを保持しています",
     "Save the group before marking it as an access tier": "アクセス階層として設定する前にグループを保存してください",
     "Marked pricing group {{group}} as an access tier": "料金グループ {{group}} をアクセス階層として設定しました",
-    "Removed the access tier mark from pricing group {{group}}": "料金グループ {{group}} のアクセス階層の設定を解除しました"
+    "Removed the access tier mark from pricing group {{group}}": "料金グループ {{group}} のアクセス階層の設定を解除しました",
+    "Enforce as a hard cap": "ハード上限として適用",
+    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "上限を超えたリクエストを拒否します。チャネルが1分あたりのリクエスト数またはトークン数を超えている間、トラフィックは対応可能な別のチャネルに回され、なければ呼び出し元に 429 と Retry-After を返します。オフの場合、上限は振り分けにのみ使われ、他に対応できるチャネルがなければこのチャネルが使われます。"
   }
 }
