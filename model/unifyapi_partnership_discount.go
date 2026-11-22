@@ -186,8 +186,15 @@ func programCustomerGroups(programId int) ([]string, error) {
 // read-modify-write happens under the same integrity lock the admin path uses,
 // the overwritten value is snapshotted for audit, and the in-memory setting is
 // published only after the row commits.
+//
+// What is published is the form of the row a reload would load, and whether
+// that form can be loaded is settled before the row is written. The stored
+// customer price table may still name a delisted model: the loader drops such
+// an entry, but publishing the merged row as it stood was refused for it, after
+// the commit. The caller was told the discount had failed while the row held
+// it, and the next sync started billing it. Found on staging 2026-11-22.
 func mutatePricingOption(key, actor, reason string, mutate func(map[string]any) bool) error {
-	var merged, previous string
+	var merged, previous, loadable string
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		return withPartnershipGroupIntegrityLock(tx, func(tx *gorm.DB) error {
 			var option Option
@@ -208,7 +215,14 @@ func mutatePricingOption(key, actor, reason string, mutate func(map[string]any) 
 			if err != nil {
 				return err
 			}
-			previous, merged = option.Value, string(encoded)
+			value, ok := storedOptionValueForMemory(key, string(encoded))
+			if !ok {
+				return fmt.Errorf("%s cannot be loaded after the change, so it was not saved", key)
+			}
+			if err := validateOptionValueWithDB(tx, key, value); err != nil {
+				return err
+			}
+			previous, merged, loadable = option.Value, string(encoded), value
 			return saveOptionValue(tx, key, merged)
 		})
 	})
@@ -216,7 +230,7 @@ func mutatePricingOption(key, actor, reason string, mutate func(map[string]any) 
 		return err
 	}
 	RecordPricingConfigChange(key, previous, merged, actor, reason)
-	return updateOptionMap(key, merged)
+	return updateOptionMap(key, loadable)
 }
 
 // ReapplyProgramDiscounts fills in the rows a program's discount is missing,

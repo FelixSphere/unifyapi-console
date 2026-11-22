@@ -308,6 +308,14 @@ func validateOptionValueWithDB(db *gorm.DB, key string, value string) error {
 	if key == AccessTierGroupsOptionKey {
 		return fmt.Errorf("%s is not saved as an option: mark or un-mark a group as an access tier in Group Pricing", key)
 	}
+	// UNIFYAPI-FORK: refuse a customer price table before it is stored. The
+	// same check runs when the table is published into memory, which is after
+	// the write: a refusal from there left the refused table in the row, where
+	// the next sync loaded it. Found on staging 2026-11-22 -- "拒绝保存" for a
+	// price that started billing a minute later.
+	if key == "GroupModelDiscount" {
+		return ratio_setting.CheckGroupModelDiscount(value)
+	}
 	if key == "GroupRatio" {
 		var values map[string]float64
 		if err := common.Unmarshal([]byte(value), &values); err != nil {

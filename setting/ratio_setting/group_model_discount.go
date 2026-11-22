@@ -53,12 +53,25 @@ func GetGroupModelDiscountCopy() map[string]map[string]float64 {
 }
 
 func UpdateGroupModelDiscountByJSONString(jsonStr string) error {
+	if err := CheckGroupModelDiscount(jsonStr); err != nil {
+		return err
+	}
+	return types.LoadFromJsonString(groupModelDiscountMap, jsonStr)
+}
+
+// CheckGroupModelDiscount is the refusal a save of this table gets, without
+// loading it.
+//
+// It is separate so the option store can ask BEFORE it writes the row. Asked
+// only on the way into memory, a refused table was already stored: the caller
+// was told the save had failed, and the next sync loaded it anyway (minus any
+// entry SanitizeGroupModelDiscountJSON drops). One function serves both
+// callers so the check that guards the row cannot drift from the check that
+// guards the live table.
+func CheckGroupModelDiscount(jsonStr string) error {
 	var incoming map[string]map[string]float64
 	if err := common.Unmarshal([]byte(jsonStr), &incoming); err != nil {
 		return err
-	}
-	if incoming == nil {
-		incoming = map[string]map[string]float64{}
 	}
 	if problems := ValidateGroupModelDiscounts(incoming); len(problems) > 0 {
 		messages := make([]string, 0, len(problems))
@@ -67,7 +80,7 @@ func UpdateGroupModelDiscountByJSONString(jsonStr string) error {
 		}
 		return fmt.Errorf("拒绝保存客户模型价格：%s", strings.Join(messages, "; "))
 	}
-	return types.LoadFromJsonString(groupModelDiscountMap, jsonStr)
+	return nil
 }
 
 func ValidateGroupModelDiscounts(discounts map[string]map[string]float64) []error {
