@@ -5480,6 +5480,21 @@
     "This group name is reserved": "Ce nom de groupe est réservé",
     "A group name cannot contain a comma": "Un nom de groupe ne peut pas contenir de virgule",
     "A group with this name already exists": "Un groupe portant ce nom existe déjà",
-    "Renamed pricing group {{from}} to {{to}}": "Groupe tarifaire {{from}} renommé en {{to}}"
+    "Renamed pricing group {{from}} to {{to}}": "Groupe tarifaire {{from}} renommé en {{to}}",
+    "Access tier": "Niveau d'accès",
+    "Access tier: members keep their own wallets": "Niveau d'accès : chaque membre garde son propre portefeuille",
+    "Mark as an access tier": "Marquer comme niveau d'accès",
+    "Remove the access tier mark": "Retirer la marque de niveau d'accès",
+    "Mark as access tier": "Marquer comme niveau d'accès",
+    "Remove mark": "Retirer la marque",
+    "Logins in {{name}} will each keep their own wallet, as logins in default do. Moving a login in or out of the group moves no balance. Prices and channel access do not change. Nothing is moved now: if logins in the group already share a wallet, this is refused and says which.": "Les comptes de {{name}} garderont chacun leur propre portefeuille, comme ceux de default. Faire entrer ou sortir un compte du groupe ne déplace aucun solde. Les prix et l'accès aux canaux ne changent pas. Rien n'est déplacé maintenant : si des comptes du groupe partagent déjà un portefeuille, l'opération est refusée et indique lesquels.",
+    "{{name}} becomes a customer group again: logins placed in it share one wallet. This is refused while the group still has logins.": "{{name}} redevient un groupe client : les comptes qui y sont placés partagent un seul portefeuille. L'opération est refusée tant que le groupe contient des comptes.",
+    "{{name}} is now an access tier": "{{name}} est maintenant un niveau d'accès",
+    "{{name}} is no longer an access tier": "{{name}} n'est plus un niveau d'accès",
+    "Failed to change the access tier mark": "Échec de la modification de la marque de niveau d'accès",
+    "Logins in default already keep their own wallets": "Les comptes de default gardent déjà chacun leur propre portefeuille",
+    "Save the group before marking it as an access tier": "Enregistrez le groupe avant de le marquer comme niveau d'accès",
+    "Marked pricing group {{group}} as an access tier": "Groupe tarifaire {{group}} marqué comme niveau d'accès",
+    "Removed the access tier mark from pricing group {{group}}": "Marque de niveau d'accès retirée du groupe tarifaire {{group}}"
   }
 }

@@ -5480,6 +5480,21 @@
     "This group name is reserved": "このグループ名は予約されています",
     "A group name cannot contain a comma": "グループ名にカンマは使用できません",
     "A group with this name already exists": "同じ名前のグループがすでに存在します",
-    "Renamed pricing group {{from}} to {{to}}": "料金グループ {{from}} を {{to}} に名前変更しました"
+    "Renamed pricing group {{from}} to {{to}}": "料金グループ {{from}} を {{to}} に名前変更しました",
+    "Access tier": "アクセス階層",
+    "Access tier: members keep their own wallets": "アクセス階層：メンバーはそれぞれ自分のウォレットを保持します",
+    "Mark as an access tier": "アクセス階層として設定",
+    "Remove the access tier mark": "アクセス階層の設定を解除",
+    "Mark as access tier": "アクセス階層に設定",
+    "Remove mark": "設定を解除",
+    "Logins in {{name}} will each keep their own wallet, as logins in default do. Moving a login in or out of the group moves no balance. Prices and channel access do not change. Nothing is moved now: if logins in the group already share a wallet, this is refused and says which.": "{{name}} のログインは、default のログインと同様に、それぞれ自分のウォレットを保持します。ログインをこのグループに出し入れしても残高は移動しません。料金とチャネルへのアクセスは変わりません。今は何も移動しません：グループ内のログインがすでにウォレットを共有している場合、この操作は拒否され、該当するログインが表示されます。",
+    "{{name}} becomes a customer group again: logins placed in it share one wallet. This is refused while the group still has logins.": "{{name}} は再び顧客グループになり、そこに入れたログインは 1 つのウォレットを共有します。グループにログインが残っている間、この操作は拒否されます。",
+    "{{name}} is now an access tier": "{{name}} はアクセス階層になりました",
+    "{{name}} is no longer an access tier": "{{name}} はアクセス階層ではなくなりました",
+    "Failed to change the access tier mark": "アクセス階層の設定を変更できませんでした",
+    "Logins in default already keep their own wallets": "default のログインはもともとそれぞれ自分のウォレットを保持しています",
+    "Save the group before marking it as an access tier": "アクセス階層として設定する前にグループを保存してください",
+    "Marked pricing group {{group}} as an access tier": "料金グループ {{group}} をアクセス階層として設定しました",
+    "Removed the access tier mark from pricing group {{group}}": "料金グループ {{group}} のアクセス階層の設定を解除しました"
   }
 }

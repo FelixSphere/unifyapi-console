@@ -616,6 +616,15 @@ func validatePartnershipProgramGroup(tx *gorm.DB, group string) error {
 	if _, ok := groups[group]; !ok {
 		return fmt.Errorf("group %q does not exist in Group Pricing", group)
 	}
+	// UNIFYAPI-FORK: a program's team shares one wallet; an access tier's
+	// logins each keep their own. See unifyapi_access_tier_group.go.
+	tier, err := isAccessTierGroupTx(tx, group)
+	if err != nil {
+		return err
+	}
+	if tier {
+		return fmt.Errorf("group %q is an access tier, whose logins keep separate wallets; a partnership group shares one. Remove the access tier mark or use another group", group)
+	}
 	return nil
 }
 

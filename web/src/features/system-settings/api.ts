@@ -21,10 +21,12 @@ import { downloadAuthenticatedFile } from '@/lib/authenticated-download'
 import { printAuthenticatedDocument } from '@/lib/print-authenticated-document'
 
 import type {
+  AccessTierGroupsResponse,
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
   RenamePricingGroupResponse,
+  SetAccessTierGroupResponse,
   SystemOptionsResponse,
   SystemTaskListResponse,
   SystemTaskResponse,
@@ -175,6 +177,32 @@ export async function renamePricingGroup(from: string, to: string) {
     '/api/pricing/group/rename',
     { from, to },
     // The dialog shows the refusal itself, next to the name that caused it.
+    { skipBusinessError: true }
+  )
+  return res.data
+}
+
+/*
+ * UNIFYAPI-FORK: access tiers. A pricing group is a customer with one wallet;
+ * a group marked as an access tier is not, and each of its logins keeps a
+ * wallet of its own. See model/unifyapi_access_tier_group.go.
+ */
+export async function getAccessTierGroups() {
+  const res = await api.get<AccessTierGroupsResponse>(
+    '/api/pricing/group/access-tier'
+  )
+  return res.data
+}
+
+export async function setPricingGroupAccessTier(
+  group: string,
+  accessTier: boolean
+) {
+  const res = await api.post<SetAccessTierGroupResponse>(
+    '/api/pricing/group/access-tier',
+    { group, access_tier: accessTier },
+    // The dialog shows the refusal itself: it names the wallet and the logins
+    // in the way, which is longer than a toast holds.
     { skipBusinessError: true }
   )
   return res.data

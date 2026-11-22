@@ -94,6 +94,9 @@ var groupNamedOptions = []struct {
 	{key: "GroupModelDiscount", shape: groupKeyedOption},
 	{key: "GroupGroupRatio", shape: groupNestedOption},
 	{key: "AutoGroups", shape: groupListOption},
+	// A renamed tier stays a tier: left on the old name, its logins would be
+	// pooled the next time one of them changed group.
+	{key: AccessTierGroupsOptionKey, shape: groupListOption},
 	{key: "ModelRequestRateLimitGroup", shape: groupKeyedOption},
 	{key: "ModelRequestTokenLimitGroup", shape: groupKeyedOption},
 	{key: "group_ratio_setting.group_special_usable_group", shape: groupSpecialUsableOption},
@@ -871,6 +874,7 @@ type pricingGroupUsage struct {
 	walletTenant  int
 	walletBalance int
 	channels      []int
+	accessTier    bool
 }
 
 func (usage pricingGroupUsage) describe() []string {
@@ -890,6 +894,11 @@ func (usage pricingGroupUsage) describe() []string {
 			ids[i] = fmt.Sprint(id)
 		}
 		parts = append(parts, "the blocked customer groups of channel(s) "+strings.Join(ids, ", "))
+	}
+	if usage.accessTier {
+		// Left in the list, the mark would apply to whatever group is next
+		// given this name.
+		parts = append(parts, "its access tier mark (remove the mark in Group Pricing)")
 	}
 	return parts
 }
@@ -937,8 +946,15 @@ func protectPricingGroupsInUse(db *gorm.DB, kept map[string]struct{}) error {
 	if err != nil {
 		return err
 	}
+	tiers, err := accessTierGroupsTx(db)
+	if err != nil {
+		return err
+	}
 	for _, group := range removed {
 		usage := pricingGroupUsage{channels: excluding[group]}
+		for _, tier := range tiers {
+			usage.accessTier = usage.accessTier || tier == group
+		}
 		if db.Migrator().HasTable(&User{}) {
 			if err := db.Model(&User{}).Where(map[string]any{"group": group}).Count(&usage.logins).Error; err != nil {
 				return err

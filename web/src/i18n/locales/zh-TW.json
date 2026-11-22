@@ -5484,6 +5484,21 @@
     "This group name is reserved": "此分組名稱為系統保留名稱",
     "A group name cannot contain a comma": "分組名稱不能包含逗號",
     "A group with this name already exists": "已存在同名分組",
-    "Renamed pricing group {{from}} to {{to}}": "將定價分組 {{from}} 重新命名為 {{to}}"
+    "Renamed pricing group {{from}} to {{to}}": "將定價分組 {{from}} 重新命名為 {{to}}",
+    "Access tier": "存取等級",
+    "Access tier: members keep their own wallets": "存取等級：成員各自保留自己的錢包",
+    "Mark as an access tier": "標記為存取等級",
+    "Remove the access tier mark": "取消存取等級標記",
+    "Mark as access tier": "標記為存取等級",
+    "Remove mark": "取消標記",
+    "Logins in {{name}} will each keep their own wallet, as logins in default do. Moving a login in or out of the group moves no balance. Prices and channel access do not change. Nothing is moved now: if logins in the group already share a wallet, this is refused and says which.": "{{name}} 中的登入帳號將各自保留自己的錢包，與 default 分組相同。把帳號移入或移出該分組不會移動任何餘額。價格和渠道存取權限不變。現在不會移動任何東西：如果該分組中已有帳號共用一個錢包，操作會被拒絕並說明是哪些帳號。",
+    "{{name}} becomes a customer group again: logins placed in it share one wallet. This is refused while the group still has logins.": "{{name}} 將重新成為客戶分組：放入其中的登入帳號共用一個錢包。該分組仍有登入帳號時，此操作會被拒絕。",
+    "{{name}} is now an access tier": "{{name}} 已成為存取等級",
+    "{{name}} is no longer an access tier": "{{name}} 不再是存取等級",
+    "Failed to change the access tier mark": "修改存取等級標記失敗",
+    "Logins in default already keep their own wallets": "default 分組中的登入帳號本來就各自保留自己的錢包",
+    "Save the group before marking it as an access tier": "請先儲存該分組，再將其標記為存取等級",
+    "Marked pricing group {{group}} as an access tier": "已將定價分組 {{group}} 標記為存取等級",
+    "Removed the access tier mark from pricing group {{group}}": "已取消定價分組 {{group}} 的存取等級標記"
   }
 }

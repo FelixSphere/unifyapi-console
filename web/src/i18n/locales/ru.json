@@ -5480,6 +5480,21 @@
     "This group name is reserved": "Это название группы зарезервировано",
     "A group name cannot contain a comma": "Название группы не может содержать запятую",
     "A group with this name already exists": "Группа с таким названием уже существует",
-    "Renamed pricing group {{from}} to {{to}}": "Тарифная группа {{from}} переименована в {{to}}"
+    "Renamed pricing group {{from}} to {{to}}": "Тарифная группа {{from}} переименована в {{to}}",
+    "Access tier": "Уровень доступа",
+    "Access tier: members keep their own wallets": "Уровень доступа: у каждого участника свой кошелёк",
+    "Mark as an access tier": "Отметить как уровень доступа",
+    "Remove the access tier mark": "Снять отметку уровня доступа",
+    "Mark as access tier": "Отметить уровнем доступа",
+    "Remove mark": "Снять отметку",
+    "Logins in {{name}} will each keep their own wallet, as logins in default do. Moving a login in or out of the group moves no balance. Prices and channel access do not change. Nothing is moved now: if logins in the group already share a wallet, this is refused and says which.": "У каждой учётной записи в {{name}} останется свой кошелёк, как у учётных записей в default. Перемещение учётной записи в группу или из неё не перемещает баланс. Цены и доступ к каналам не меняются. Сейчас ничего не перемещается: если учётные записи группы уже делят один кошелёк, операция будет отклонена с указанием, какие именно.",
+    "{{name}} becomes a customer group again: logins placed in it share one wallet. This is refused while the group still has logins.": "{{name}} снова становится клиентской группой: помещённые в неё учётные записи делят один кошелёк. Операция отклоняется, пока в группе есть учётные записи.",
+    "{{name}} is now an access tier": "{{name}} теперь уровень доступа",
+    "{{name}} is no longer an access tier": "{{name}} больше не уровень доступа",
+    "Failed to change the access tier mark": "Не удалось изменить отметку уровня доступа",
+    "Logins in default already keep their own wallets": "У учётных записей в default и так свои кошельки",
+    "Save the group before marking it as an access tier": "Сохраните группу, прежде чем отмечать её как уровень доступа",
+    "Marked pricing group {{group}} as an access tier": "Тарифная группа {{group}} отмечена как уровень доступа",
+    "Removed the access tier mark from pricing group {{group}}": "С тарифной группы {{group}} снята отметка уровня доступа"
   }
 }

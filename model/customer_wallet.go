@@ -33,7 +33,9 @@ import (
 // one group, one customer, one wallet. Every login in the group draws on that
 // wallet and every login's top-up lands in it. `default` is not a customer --
 // its logins are strangers to each other, so each keeps a wallet of its own --
-// and neither is a partnership program's catch-all group, for the same reason.
+// and neither is a partnership program's catch-all group, for the same reason,
+// nor a group the operator marked as an access tier
+// (unifyapi_access_tier_group.go).
 //
 // tenants.group cannot serve as this registry: every solo tenant minted before
 // pooling mirrors its owner's group, so "the tenant for group X" became
@@ -48,6 +50,15 @@ type CustomerWallet struct {
 // isCustomerGroupTx says whether logins in group share one wallet.
 func isCustomerGroupTx(tx *gorm.DB, group string) (bool, error) {
 	if group == "" || group == DefaultUserGroup {
+		return false, nil
+	}
+	// UNIFYAPI-FORK: an access tier's logins are strangers to each other, as
+	// the logins of `default` are. See unifyapi_access_tier_group.go.
+	tier, err := isAccessTierGroupTx(tx, group)
+	if err != nil {
+		return false, err
+	}
+	if tier {
 		return false, nil
 	}
 	var catchAll int64
@@ -168,8 +179,24 @@ func reattachWalletTx(tx *gorm.DB, user User, group string) error {
 		name = user.Username
 	}
 	solo := &Tenant{Name: name, Slug: slugFromName(user.Username), Status: TenantStatusEnabled, OwnerId: user.Id, Group: group}
+	placed := map[string]any{}
+	// UNIFYAPI-FORK: a login that never had a wallet holds its balance on its
+	// own row, and once it has a wallet that row is no longer what it is
+	// billed from. The balance goes into the new wallet, as it does when a
+	// login is first given one (EnsureTenantForUserTx) or joins a customer
+	// (JoinCustomerPoolTx). A login leaving a shared wallet has nothing on its
+	// row and starts empty.
+	if user.TenantId == 0 {
+		var held User
+		if err := lockForUpdate(tx).Select("quota").First(&held, user.Id).Error; err != nil {
+			return err
+		}
+		solo.Quota = held.Quota
+		placed["quota"] = 0
+	}
 	if err := CreateTenantWithTx(tx, solo); err != nil {
 		return err
 	}
-	return tx.Model(&User{}).Where("id = ?", user.Id).Update("tenant_id", solo.Id).Error
+	placed["tenant_id"] = solo.Id
+	return tx.Model(&User{}).Where("id = ?", user.Id).Updates(placed).Error
 }

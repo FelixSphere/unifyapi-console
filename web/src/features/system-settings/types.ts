@@ -576,6 +576,28 @@ export type RenamePricingGroupResponse = {
   }
 }
 
+/*
+ * UNIFYAPI-FORK: the pricing groups marked as access tiers, whose logins keep
+ * their own wallets. See model/unifyapi_access_tier_group.go.
+ */
+export type AccessTierGroupsResponse = {
+  success: boolean
+  message?: string
+  data?: { groups?: string[] }
+}
+
+export type SetAccessTierGroupResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    group: string
+    access_tier: boolean
+    changed: boolean
+    released_wallet_tenant?: number
+    groups: string[]
+  }
+}
+
 /* UNIFYAPI-FORK: per-channel upstream cost types. */
 export type ChannelCostRow = {
   id: number
