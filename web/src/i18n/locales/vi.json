@@ -5480,6 +5480,21 @@
     "This group name is reserved": "Tên nhóm này được dành riêng",
     "A group name cannot contain a comma": "Tên nhóm không được chứa dấu phẩy",
     "A group with this name already exists": "Đã tồn tại nhóm có tên này",
-    "Renamed pricing group {{from}} to {{to}}": "Đã đổi tên nhóm giá {{from}} thành {{to}}"
+    "Renamed pricing group {{from}} to {{to}}": "Đã đổi tên nhóm giá {{from}} thành {{to}}",
+    "Access tier": "Cấp truy cập",
+    "Access tier: members keep their own wallets": "Cấp truy cập: mỗi thành viên giữ ví riêng",
+    "Mark as an access tier": "Đánh dấu là cấp truy cập",
+    "Remove the access tier mark": "Bỏ đánh dấu cấp truy cập",
+    "Mark as access tier": "Đánh dấu cấp truy cập",
+    "Remove mark": "Bỏ đánh dấu",
+    "Logins in {{name}} will each keep their own wallet, as logins in default do. Moving a login in or out of the group moves no balance. Prices and channel access do not change. Nothing is moved now: if logins in the group already share a wallet, this is refused and says which.": "Mỗi tài khoản đăng nhập trong {{name}} sẽ giữ ví riêng, giống như các tài khoản trong default. Chuyển một tài khoản vào hoặc ra khỏi nhóm không chuyển số dư nào. Giá và quyền truy cập kênh không thay đổi. Hiện không có gì bị chuyển: nếu các tài khoản trong nhóm đang dùng chung một ví, thao tác sẽ bị từ chối và cho biết đó là những tài khoản nào.",
+    "{{name}} becomes a customer group again: logins placed in it share one wallet. This is refused while the group still has logins.": "{{name}} trở lại là nhóm khách hàng: các tài khoản đăng nhập được đặt vào đó dùng chung một ví. Thao tác bị từ chối khi nhóm vẫn còn tài khoản đăng nhập.",
+    "{{name}} is now an access tier": "{{name}} hiện là cấp truy cập",
+    "{{name}} is no longer an access tier": "{{name}} không còn là cấp truy cập",
+    "Failed to change the access tier mark": "Không thể thay đổi đánh dấu cấp truy cập",
+    "Logins in default already keep their own wallets": "Các tài khoản đăng nhập trong default vốn đã giữ ví riêng",
+    "Save the group before marking it as an access tier": "Hãy lưu nhóm trước khi đánh dấu là cấp truy cập",
+    "Marked pricing group {{group}} as an access tier": "Đã đánh dấu nhóm giá {{group}} là cấp truy cập",
+    "Removed the access tier mark from pricing group {{group}}": "Đã bỏ đánh dấu cấp truy cập của nhóm giá {{group}}"
   }
 }

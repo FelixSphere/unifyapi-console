@@ -33,7 +33,9 @@ import (
 // one group, one customer, one wallet. Every login in the group draws on that
 // wallet and every login's top-up lands in it. `default` is not a customer --
 // its logins are strangers to each other, so each keeps a wallet of its own --
-// and neither is a partnership program's catch-all group, for the same reason.
+// and neither is a partnership program's catch-all group, for the same reason,
+// nor a group the operator marked as an access tier
+// (unifyapi_access_tier_group.go).
 //
 // tenants.group cannot serve as this registry: every solo tenant minted before
 // pooling mirrors its owner's group, so "the tenant for group X" became
@@ -48,6 +50,15 @@ type CustomerWallet struct {
 // isCustomerGroupTx says whether logins in group share one wallet.
 func isCustomerGroupTx(tx *gorm.DB, group string) (bool, error) {
 	if group == "" || group == DefaultUserGroup {
+		return false, nil
+	}
+	// UNIFYAPI-FORK: an access tier's logins are strangers to each other, as
+	// the logins of `default` are. See unifyapi_access_tier_group.go.
+	tier, err := isAccessTierGroupTx(tx, group)
+	if err != nil {
+		return false, err
+	}
+	if tier {
 		return false, nil
 	}
 	var catchAll int64

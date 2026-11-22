@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
   GripVertical,
@@ -67,7 +68,16 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 
+import { getAccessTierGroups } from '../api'
 import { safeJsonParse } from '../utils/json-parser'
+import {
+  GroupAccessTierDialog,
+  type AccessTierChange,
+} from './group-access-tier-dialog'
+import {
+  ACCESS_TIER_GROUPS_QUERY_KEY,
+  accessTierBlocker,
+} from './group-access-tier-logic'
 import { GroupModelPricingEditor } from './group-model-pricing-editor'
 import { GroupRenameDialog } from './group-rename-dialog'
 
@@ -445,6 +455,15 @@ function GroupPricingTable({
 }: GroupPricingTableProps) {
   const { t } = useTranslation()
   const [renaming, setRenaming] = useState<string | null>(null)
+  // UNIFYAPI-FORK: which groups are access tiers is stored by the server, not
+  // by this form, so it is read on its own and changed one group at a time.
+  const [tierChange, setTierChange] = useState<AccessTierChange | null>(null)
+  const accessTiers = useQuery({
+    queryKey: ACCESS_TIER_GROUPS_QUERY_KEY,
+    queryFn: getAccessTierGroups,
+  })
+  const tierGroups = accessTiers.data?.data?.groups ?? NO_SAVED_GROUPS
+  const tiersLoaded = accessTiers.data?.success === true
   const savedNamesKey = JSON.stringify(savedGroupNames)
   const savedNames = useMemo<readonly string[]>(
     () => JSON.parse(savedNamesKey),
@@ -683,6 +702,46 @@ function GroupPricingTable({
                   ),
               },
               {
+                // UNIFYAPI-FORK: a group whose logins keep their own wallets.
+                id: 'access-tier',
+                header: (
+                  <span
+                    title={t('Access tier: members keep their own wallets')}
+                  >
+                    {t('Access tier')}
+                  </span>
+                ),
+                className: 'w-28 text-center',
+                cell: (row) => {
+                  const blocker = accessTierBlocker(row)
+                  const marked = tierGroups.includes(row.name)
+                  return (
+                    <div
+                      className='flex justify-center'
+                      title={
+                        blocker
+                          ? t(blocker)
+                          : t('Access tier: members keep their own wallets')
+                      }
+                    >
+                      <Checkbox
+                        checked={marked}
+                        disabled={blocker !== null || !tiersLoaded}
+                        onCheckedChange={(checked) =>
+                          setTierChange({
+                            group: row.name,
+                            accessTier: checked === true,
+                          })
+                        }
+                        aria-label={t(
+                          'Access tier: members keep their own wallets'
+                        )}
+                      />
+                    </div>
+                  )
+                },
+              },
+              {
                 id: 'actions',
                 header: t('Actions'),
                 className: 'text-right',
@@ -741,6 +800,10 @@ function GroupPricingTable({
             group={renaming}
             existingNames={rows.map((row) => row.name.trim())}
             onClose={() => setRenaming(null)}
+          />
+          <GroupAccessTierDialog
+            change={tierChange}
+            onClose={() => setTierChange(null)}
           />
         </div>
       </CardContent>
