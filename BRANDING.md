@@ -397,6 +397,27 @@ shared helper for how a stored option is loaded into memory),
 `ratio-settings-card.tsx` (which also stops a save at the first setting the
 server refuses), `api.ts`, `types.ts` and `usage-logs/lib/format.ts`.
 
+### Access tier groups (unreleased)
+
+A pricing group is a customer with one wallet (`model/customer_wallet.go`). A
+group that only grants something, such as access to a model, is not: its
+members are strangers. `model/unifyapi_access_tier_group.go` adds the option
+`AccessTierGroups` (a JSON list of group names, empty by default) and
+`SetPricingGroupAccessTier`, which marks or un-marks one group and refuses when
+logins of the group already share a wallet; a login in a marked group keeps a
+wallet of its own, as a `default` login does.
+`controller/unifyapi_access_tier_group.go` serves it at
+`GET` and `POST /api/pricing/group/access-tier` (root only). In the web console
+`group-access-tier-dialog.tsx` and `group-access-tier-logic.ts` are new, and
+Group Pricing has an "Access tier" box per saved group. Touch points, all
+marked `UNIFYAPI-FORK`: `model/customer_wallet.go` (`isCustomerGroupTx` answers
+no for a marked group), `model/option.go` (the list is not saved as a plain
+option), `model/unifyapi_pricing_group_rename.go` (a rename renames the mark;
+Group Pricing cannot drop a marked group), `model/partnership_program.go` (a
+program cannot use a marked group), `controller/audit.go`,
+`router/api-router.go`, and in `web/` `group-ratio-visual-editor.tsx`,
+`api.ts`, `types.ts` and `usage-logs/lib/format.ts`.
+
 ### Refused customer price saves (unreleased)
 
 A `GroupModelDiscount` save the server refuses is now refused before the row
