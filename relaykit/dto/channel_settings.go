@@ -91,6 +91,10 @@ type ChannelOtherSettings struct {
 	// configuration rather than something the adaptor can know. Empty means
 	// the vendor's own /v1/systemone.
 	SystemOnePath string `json:"system_one_path,omitempty"`
+	// ExcludedGroups are customer groups this channel must not serve. Every
+	// pricing group otherwise routes through every channel, so without this
+	// list there is no way to keep one customer off a given channel.
+	ExcludedGroups []string `json:"excluded_groups,omitempty"`
 }
 
 func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {

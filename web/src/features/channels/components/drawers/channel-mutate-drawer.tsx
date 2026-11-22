@@ -277,6 +277,7 @@ const SENSITIVE_FORM_FIELDS = [
   'header_override',
   'settings',
   'setting',
+  'excluded_groups',
   'advanced_custom',
   'is_enterprise_account',
   'vertex_key_type',
@@ -918,10 +919,26 @@ export function ChannelMutateDrawer({
 
   // Every pricing group not picked above still has access; see
   // lib/channel-groups.ts.
+  const currentExcludedGroups = form.watch('excluded_groups')
   const inheritedGroups = useMemo(
-    () => splitChannelGroups(currentGroups || [], groupsData?.data).inherited,
-    [groupsData, currentGroups]
+    () =>
+      splitChannelGroups(
+        currentGroups || [],
+        groupsData?.data,
+        currentExcludedGroups
+      ).inherited,
+    [groupsData, currentGroups, currentExcludedGroups]
   )
+  const excludableGroupOptions = useMemo(() => {
+    const own = new Set(currentGroups || [])
+    const excludable = new Set([
+      ...(groupsData?.data ?? []),
+      ...(currentExcludedGroups ?? []),
+    ])
+    return [...excludable]
+      .filter((group) => !own.has(group))
+      .map((group) => ({ value: group, label: group }))
+  }, [groupsData, currentGroups, currentExcludedGroups])
 
   // Parse current models as array
   const currentModelsArray = useMemo(
@@ -3623,7 +3640,33 @@ export function ChannelMutateDrawer({
                                       <MultiSelect
                                         options={groupOptions}
                                         selected={field.value}
-                                        onChange={field.onChange}
+                                        onChange={(groups) => {
+                                          field.onChange(groups)
+                                          // Picking a blocked group as the
+                                          // channel's own unblocks it. The
+                                          // block list is a sensitive field,
+                                          // so only for an admin who may
+                                          // change it; otherwise the block
+                                          // stands, as it does on the server.
+                                          if (sensitiveLocked) return
+                                          const excluded =
+                                            form.getValues('excluded_groups') ??
+                                            []
+                                          if (
+                                            excluded.some((group) =>
+                                              groups.includes(group)
+                                            )
+                                          ) {
+                                            form.setValue(
+                                              'excluded_groups',
+                                              excluded.filter(
+                                                (group) =>
+                                                  !groups.includes(group)
+                                              ),
+                                              { shouldDirty: true }
+                                            )
+                                          }
+                                        }}
                                         placeholder={t(
                                           FIELD_PLACEHOLDERS.GROUP
                                         )}
@@ -3643,6 +3686,40 @@ export function ChannelMutateDrawer({
                                       )}
                                     </p>
                                   )}
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name='excluded_groups'
+                              render={({ field }) => (
+                                <FormItem className='mt-4 space-y-3'>
+                                  <div className='space-y-1'>
+                                    <FormLabel>
+                                      {t('Blocked customer groups')}
+                                    </FormLabel>
+                                    <FormDescription>
+                                      {t(
+                                        'Requests from these customer groups never use this channel.'
+                                      )}
+                                    </FormDescription>
+                                  </div>
+                                  <FormControl>
+                                    {isLoadingGroups ? (
+                                      <Skeleton className='h-10 w-full' />
+                                    ) : (
+                                      <MultiSelect
+                                        options={excludableGroupOptions}
+                                        selected={field.value ?? []}
+                                        onChange={field.onChange}
+                                        disabled={sensitiveLocked}
+                                        placeholder={t(
+                                          'Select customer groups to block'
+                                        )}
+                                      />
+                                    )}
+                                  </FormControl>
                                   <FormMessage />
                                 </FormItem>
                               )}

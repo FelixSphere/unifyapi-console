@@ -33,6 +33,7 @@ import {
   stringifyAdvancedCustomConfig,
   validateAdvancedCustomConfig,
 } from './advanced-custom'
+import { parseExcludedGroups } from './channel-groups'
 
 // ============================================================================
 // Form Validation Schema
@@ -202,6 +203,7 @@ export const channelFormSchema = z
     openai_organization: z.string().optional(),
     models: z.string().min(1, ERROR_MESSAGES.REQUIRED_MODELS),
     group: z.array(z.string()).min(1, ERROR_MESSAGES.REQUIRED_GROUP),
+    excluded_groups: z.array(z.string()).optional(), // stored in settings JSON
     model_mapping: z
       .string()
       .optional()
@@ -410,6 +412,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   openai_organization: '',
   models: '',
   group: ['default'],
+  excluded_groups: [],
   model_mapping: '',
   priority: 0,
   weight: 0,
@@ -566,6 +569,7 @@ export function transformChannelToFormDefaults(
     openai_organization: channel.openai_organization || '',
     models: channel.models || '',
     group: parseGroups(channel.group || 'default'),
+    excluded_groups: parseExcludedGroups(channel.settings),
     model_mapping: channel.model_mapping || '',
     priority: channel.priority || 0,
     weight: channel.weight || 0,
@@ -652,6 +656,13 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
       // eslint-disable-next-line no-console
       console.error('Failed to parse existing settings:', error)
     }
+  }
+
+  const excludedGroups = formData.excluded_groups ?? []
+  if (excludedGroups.length > 0) {
+    settingsObj.excluded_groups = excludedGroups
+  } else if ('excluded_groups' in settingsObj) {
+    delete settingsObj.excluded_groups
   }
 
   // Add vertex_key_type for Vertex AI channels (type 41)

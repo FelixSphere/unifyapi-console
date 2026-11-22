@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
@@ -40,6 +41,12 @@ import (
 // (idempotent, insert-only), and the channel cache is rebuilt. Removing a
 // group leaves stale rows behind; they are inert because no user carries that
 // group any more.
+//
+// The one way to keep a customer off a channel is the channel's own
+// excluded_groups setting: a group listed there is served by that channel
+// under no circumstances, whether it would have come from the union or from
+// the channel's own list. Saving the channel rewrites its ability rows, which
+// is what removes the rows the excluded group already had.
 
 // maxRoutingGroupLength mirrors abilities.group varchar(64). A longer pricing
 // group is skipped, with a log line, rather than turning every channel save
@@ -68,6 +75,26 @@ func routingPricingGroups() []string {
 	return groups
 }
 
+// excludedGroups is the channel's excluded_groups setting. It is read here
+// rather than through GetOtherSettings because that rewrites the channel row
+// when the JSON does not parse, and routing must never write.
+func (channel *Channel) excludedGroups() []string {
+	if channel.OtherSettings == "" {
+		return nil
+	}
+	settings := dto.ChannelOtherSettings{}
+	if err := common.UnmarshalJsonStr(channel.OtherSettings, &settings); err != nil {
+		return nil
+	}
+	excluded := make([]string, 0, len(settings.ExcludedGroups))
+	for _, group := range settings.ExcludedGroups {
+		if group = strings.TrimSpace(group); group != "" {
+			excluded = append(excluded, group)
+		}
+	}
+	return excluded
+}
+
 // routingGroups is the set of groups this channel serves: its own list first,
 // in the operator's order, then every pricing group it does not already name.
 //
@@ -85,6 +112,10 @@ func (channel *Channel) routingGroups(pricingGroups []string) []string {
 	}
 	groups := make([]string, 0, len(own)+len(pricingGroups))
 	seen := make(map[string]struct{}, len(own)+len(pricingGroups))
+	// Seeding seen with the excluded groups keeps them out of both loops.
+	for _, group := range channel.excludedGroups() {
+		seen[group] = struct{}{}
+	}
 	for _, group := range own {
 		if group == "" {
 			continue
