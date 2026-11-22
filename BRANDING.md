@@ -406,5 +406,10 @@ table it had stored and the next options sync loaded it.
 `setting/ratio_setting/group_model_discount.go` exposes the refusal as
 `CheckGroupModelDiscount`; the upstream touch point, marked `UNIFYAPI-FORK`, is
 `validateOptionValueWithDB` in `model/option.go`, which covers the single and
-the bulk save. New test files: `model/unifyapi_refused_customer_price_save_test.go`
-and `controller/unifyapi_refused_customer_price_save_test.go`.
+the bulk save. A Partnership Program discount had the same fault by another
+route: `mutatePricingOption` in `model/unifyapi_partnership_discount.go`
+committed the merged row and then published it unsanitised. It now publishes
+the form a reload would load and checks that form before the write. New test
+files: `model/unifyapi_refused_customer_price_save_test.go`,
+`model/unifyapi_program_discount_over_stale_prices_test.go` and
+`controller/unifyapi_refused_customer_price_save_test.go`.

@@ -72,7 +72,13 @@ func setupStoredCustomerPrices(t *testing.T, stored string) *int {
 
 	require.NoError(t, DB.Create(&Option{Key: "GroupModelDiscount", Value: stored}).Error)
 	loadOptionsFromDatabase()
+	return countOptionWrites(t)
+}
 
+// countOptionWrites counts every statement that writes the options table from
+// here on, on the test's own database handle.
+func countOptionWrites(t *testing.T) *int {
+	t.Helper()
 	writes := 0
 	countOptionWrite := func(tx *gorm.DB) {
 		if tx.Statement.Table == "options" {
