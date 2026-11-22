@@ -396,3 +396,15 @@ shared helper for how a stored option is loaded into memory),
 `group-ratio-visual-editor.tsx`, `group-ratio-form.tsx`,
 `ratio-settings-card.tsx` (which also stops a save at the first setting the
 server refuses), `api.ts`, `types.ts` and `usage-logs/lib/format.ts`.
+
+### Refused customer price saves (unreleased)
+
+A `GroupModelDiscount` save the server refuses is now refused before the row
+is written. The check used to run only when the table was published into
+memory, after the write, so `PUT /api/option/` answered `success:false` for a
+table it had stored and the next options sync loaded it.
+`setting/ratio_setting/group_model_discount.go` exposes the refusal as
+`CheckGroupModelDiscount`; the upstream touch point, marked `UNIFYAPI-FORK`, is
+`validateOptionValueWithDB` in `model/option.go`, which covers the single and
+the bulk save. New test files: `model/unifyapi_refused_customer_price_save_test.go`
+and `controller/unifyapi_refused_customer_price_save_test.go`.
