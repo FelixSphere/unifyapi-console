@@ -563,6 +563,19 @@ export type UpdateGroupModelPricingResponse = {
   errors?: string[]
 }
 
+/* UNIFYAPI-FORK: the result of renaming a pricing group. */
+export type RenamePricingGroupResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    from: string
+    to: string
+    options: string[]
+    rows: Record<string, number>
+    warnings?: string[]
+  }
+}
+
 /* UNIFYAPI-FORK: per-channel upstream cost types. */
 export type ChannelCostRow = {
   id: number

@@ -378,3 +378,21 @@ a Redis-or-memory outbox replayed by a worker, exactly once via the additive
 all marked `UNIFYAPI-FORK`: `main.go` (start worker, shutdown flush),
 `model/main.go` (migration, pool ceiling), `model/user.go` and `model/log.go`
 (retried calls), `service/billing_session.go` (park on refusal).
+
+### Pricing group rename (unreleased)
+
+A pricing group has no id: its name is what logins, API keys, the wallet,
+per-model prices and channel rules store. `model/unifyapi_pricing_group_rename.go`
+adds `RenamePricingGroup`, which moves every reference in one transaction
+without re-homing a wallet, and `protectPricingGroupsInUse`, which refuses a
+Group Pricing save that drops a group something still depends on.
+`controller/unifyapi_pricing_group_rename.go` serves it at
+`POST /api/pricing/group/rename` (root only). In the web console
+`group-rename-dialog.tsx` and `group-rename-logic.ts` are new; a saved group's
+name is read-only in the table and is changed through the dialog. Upstream
+touch points, all marked `UNIFYAPI-FORK`: `model/option.go` (the guard, and one
+shared helper for how a stored option is loaded into memory),
+`controller/audit.go`, `router/api-router.go`, and in `web/`
+`group-ratio-visual-editor.tsx`, `group-ratio-form.tsx`,
+`ratio-settings-card.tsx` (which also stops a save at the first setting the
+server refuses), `api.ts`, `types.ts` and `usage-logs/lib/format.ts`.

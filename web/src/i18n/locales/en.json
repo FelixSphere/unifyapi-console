@@ -5480,6 +5480,20 @@
     "{{total}} entries": "{{total}} entries",
     "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.",
     "Seen used by": "Seen used by",
-    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address."
+    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.",
+    "Rename group": "Rename group",
+    "Renames {{name}} everywhere it is used: logins, API keys, the wallet, per-model prices and channel rules. No balance moves and no key changes.": "Renames {{name}} everywhere it is used: logins, API keys, the wallet, per-model prices and channel rules. No balance moves and no key changes.",
+    "Renaming...": "Renaming...",
+    "New group name": "New group name",
+    "Failed to rename group": "Failed to rename group",
+    "Group renamed to {{name}}": "Group renamed to {{name}}",
+    "Use Rename to change the name of a saved group": "Use Rename to change the name of a saved group",
+    "Save or discard your other changes before renaming a group": "Save or discard your other changes before renaming a group",
+    "Enter the new group name": "Enter the new group name",
+    "The new name is the same as the current one": "The new name is the same as the current one",
+    "This group name is reserved": "This group name is reserved",
+    "A group name cannot contain a comma": "A group name cannot contain a comma",
+    "A group with this name already exists": "A group with this name already exists",
+    "Renamed pricing group {{from}} to {{to}}": "Renamed pricing group {{from}} to {{to}}"
   }
 }

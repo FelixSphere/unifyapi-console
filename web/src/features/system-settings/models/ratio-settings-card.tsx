@@ -244,6 +244,12 @@ export function RatioSettingsCard({
     ),
   })
   const modelSchema = useMemo(() => createModelSchema(t), [t])
+  // UNIFYAPI-FORK: the stored group settings as state, so the table can tell a
+  // saved group from a typed one and knows when the form has drifted from it.
+  const [savedGroupValues, setSavedGroupValues] = useState(
+    groupNormalizedDefaults.current
+  )
+
   const groupSchema = useMemo(() => createGroupSchema(t), [t])
 
   const modelForm = useForm<ModelFormValues>({
@@ -339,6 +345,8 @@ export function RatioSettingsCard({
       ),
     }
 
+    setSavedGroupValues(groupNormalizedDefaults.current)
+
     groupForm.reset({
       ...stableGroupDefaults,
       GroupRatio: formatJsonForTextarea(stableGroupDefaults.GroupRatio),
@@ -428,12 +436,23 @@ export function RatioSettingsCard({
         (key) => normalized[key] !== groupNormalizedDefaults.current[key]
       )
 
+      // UNIFYAPI-FORK: stop at the first setting the server refuses. A refusal
+      // is a 200 with success=false, so the loop used to carry on, saving the
+      // top-up and selectable maps for a table whose prices had been refused
+      // and then recording the whole form as saved.
+      const stored = { ...groupNormalizedDefaults.current }
       for (const key of updates) {
         const apiKey = apiKeyMap[key] || key
-        await updateOption.mutateAsync({ key: apiKey, value: normalized[key] })
+        const result = await updateOption.mutateAsync({
+          key: apiKey,
+          value: normalized[key],
+        })
+        if (!result.success) break
+        Object.assign(stored, { [key]: normalized[key] })
       }
 
-      groupNormalizedDefaults.current = normalized
+      groupNormalizedDefaults.current = stored
+      setSavedGroupValues(stored)
       await queryClient.invalidateQueries({
         queryKey: ['group-model-pricing'],
       })
@@ -501,6 +520,7 @@ export function RatioSettingsCard({
           form={groupForm}
           onSave={saveGroupRatios}
           isSaving={updateOption.isPending}
+          savedValues={savedGroupValues}
         />
       )
     }

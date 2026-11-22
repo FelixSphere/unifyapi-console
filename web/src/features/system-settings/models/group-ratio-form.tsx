@@ -56,6 +56,7 @@ import { SettingsPageActionsPortal } from '../components/settings-page-context'
 import { safeJsonParse } from '../utils/json-parser'
 import { safeNumberFieldProps } from '../utils/numeric-field'
 import { GroupRatioVisualEditor } from './group-ratio-visual-editor'
+import { hasUnsavedGroupChanges, savedGroupNames } from './group-rename-logic'
 import { GroupSpecialUsableRulesEditor } from './group-special-usable-editor'
 
 type GroupFormValues = {
@@ -73,12 +74,17 @@ type GroupRatioFormProps = {
   form: UseFormReturn<GroupFormValues>
   onSave: (values: GroupFormValues) => Promise<void>
   isSaving: boolean
+  // UNIFYAPI-FORK: what is stored, as last loaded or saved. It tells the table
+  // which groups already exist (their names are renamed by the server, not
+  // typed over) and whether the form holds anything a reload would discard.
+  savedValues?: GroupFormValues
 }
 
 export const GroupRatioForm = memo(function GroupRatioForm({
   form,
   onSave,
   isSaving,
+  savedValues,
 }: GroupRatioFormProps) {
   const { t } = useTranslation()
   const [editMode, setEditMode] = useState<'visual' | 'json'>('visual')
@@ -122,6 +128,16 @@ export const GroupRatioForm = memo(function GroupRatioForm({
       ]),
     ]
   }, [watchedGroupRatio, watchedUserUsableGroups, watchedTopupGroupRatio])
+
+  const savedGroupRatio = savedValues?.GroupRatio
+  const storedGroupNames = useMemo(
+    () =>
+      savedGroupRatio === undefined ? [] : savedGroupNames(savedGroupRatio),
+    [savedGroupRatio]
+  )
+  const hasUnsavedChanges =
+    savedValues !== undefined &&
+    hasUnsavedGroupChanges(form.watch(), savedValues)
 
   return (
     <div className='space-y-6'>
@@ -194,6 +210,8 @@ export const GroupRatioForm = memo(function GroupRatioForm({
                 />
               }
               groupSpecialUsableGroup={form.watch('GroupSpecialUsableGroup')}
+              savedGroupNames={storedGroupNames}
+              hasUnsavedChanges={hasUnsavedChanges}
               onChange={(field, value) =>
                 handleFieldChange(field as keyof GroupFormValues, value)
               }

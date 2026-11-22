@@ -29,6 +29,8 @@ var auditContentTemplates = map[string]string{
 	"user.passkey_delete":   "Deleted a passkey",
 	"user.reset_passkey":    "Reset the user passkey",
 	"option.update":         "Updated system setting ${key}",
+	// UNIFYAPI-FORK: one group renamed everywhere it is referenced.
+	"pricing.group_rename": "Renamed pricing group ${from} to ${to}",
 
 	"channel.create":             "Created channel ${name} (type ${type}, count ${count})",
 	"channel.update":             "Updated channel ${name} (ID: ${id})",

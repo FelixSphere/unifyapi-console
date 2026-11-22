@@ -5466,6 +5466,20 @@
     "{{total}} entries": "{{total}} entrées",
     "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Requêtes qui n'ont jamais atteint le relais et ne laissent donc aucune ligne dans le journal d'utilisation : échecs de poignée de main TLS, connexions refusées par l'équilibreur de charge et appelants rejetés à l'authentification.",
     "Seen used by": "Déjà utilisée par",
-    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "Cette adresse a déjà été vue utilisée par ce compte. Ce n'est pas une preuve que cette requête venait de lui : une sortie partagée ou un réseau d'entreprise regroupe plusieurs parties sur une seule adresse."
+    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "Cette adresse a déjà été vue utilisée par ce compte. Ce n'est pas une preuve que cette requête venait de lui : une sortie partagée ou un réseau d'entreprise regroupe plusieurs parties sur une seule adresse.",
+    "Rename group": "Renommer le groupe",
+    "Renames {{name}} everywhere it is used: logins, API keys, the wallet, per-model prices and channel rules. No balance moves and no key changes.": "Renomme {{name}} partout où il est utilisé : comptes, clés API, portefeuille, prix par modèle et règles de canal. Aucun solde ne bouge et aucune clé ne change.",
+    "Renaming...": "Renommage...",
+    "New group name": "Nouveau nom du groupe",
+    "Failed to rename group": "Échec du renommage du groupe",
+    "Group renamed to {{name}}": "Groupe renommé en {{name}}",
+    "Use Rename to change the name of a saved group": "Utilisez Renommer pour changer le nom d'un groupe enregistré",
+    "Save or discard your other changes before renaming a group": "Enregistrez ou annulez vos autres modifications avant de renommer un groupe",
+    "Enter the new group name": "Saisissez le nouveau nom du groupe",
+    "The new name is the same as the current one": "Le nouveau nom est identique au nom actuel",
+    "This group name is reserved": "Ce nom de groupe est réservé",
+    "A group name cannot contain a comma": "Un nom de groupe ne peut pas contenir de virgule",
+    "A group with this name already exists": "Un groupe portant ce nom existe déjà",
+    "Renamed pricing group {{from}} to {{to}}": "Groupe tarifaire {{from}} renommé en {{to}}"
   }
 }

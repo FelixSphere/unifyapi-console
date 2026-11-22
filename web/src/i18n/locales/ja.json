@@ -5466,6 +5466,20 @@
     "{{total}} entries": "全 {{total}} 件",
     "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "リレーに到達しなかったリクエスト。利用ログには一切残りません。失敗した TLS ハンドシェイク、ロードバランサーが拒否した接続、認証で弾かれた呼び出し元が含まれます。",
     "Seen used by": "使用が確認された利用者",
-    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "このアドレスはこのアカウントが使用しているのを確認したことがあります。このリクエストが本人のものである証拠ではありません。共有の出口やオフィスのネットワークでは、複数の利用者が同じアドレスになります。"
+    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "このアドレスはこのアカウントが使用しているのを確認したことがあります。このリクエストが本人のものである証拠ではありません。共有の出口やオフィスのネットワークでは、複数の利用者が同じアドレスになります。",
+    "Rename group": "グループ名を変更",
+    "Renames {{name}} everywhere it is used: logins, API keys, the wallet, per-model prices and channel rules. No balance moves and no key changes.": "{{name}} を、使われているすべての場所で新しい名前に変更します：ログイン、API キー、ウォレット、モデル別料金、チャネルルール。残高は移動せず、キーも変わりません。",
+    "Renaming...": "名前を変更中...",
+    "New group name": "新しいグループ名",
+    "Failed to rename group": "グループ名の変更に失敗しました",
+    "Group renamed to {{name}}": "グループ名を {{name}} に変更しました",
+    "Use Rename to change the name of a saved group": "保存済みグループの名前は「名前変更」で変更してください",
+    "Save or discard your other changes before renaming a group": "グループ名を変更する前に、他の変更を保存するか破棄してください",
+    "Enter the new group name": "新しいグループ名を入力してください",
+    "The new name is the same as the current one": "新しい名前が現在の名前と同じです",
+    "This group name is reserved": "このグループ名は予約されています",
+    "A group name cannot contain a comma": "グループ名にカンマは使用できません",
+    "A group with this name already exists": "同じ名前のグループがすでに存在します",
+    "Renamed pricing group {{from}} to {{to}}": "料金グループ {{from}} を {{to}} に名前変更しました"
   }
 }
