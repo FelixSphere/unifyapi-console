@@ -344,6 +344,8 @@ func SetApiRouter(router *gin.Engine) {
 			pricingAdminRoute.PUT("/discount", controller.UpdatePricingDiscount)
 			pricingAdminRoute.GET("/group_model", controller.GetGroupModelPricing)
 			pricingAdminRoute.PUT("/group_model", controller.UpdateGroupModelPricing)
+			// UNIFYAPI-FORK: a rename moves every reference to the group.
+			pricingAdminRoute.POST("/group/rename", controller.RenamePricingGroup)
 			// UNIFYAPI-FORK: admin-added prices for models the catalog does not carry.
 			pricingAdminRoute.GET("/extra_models", controller.GetExtraModels)
 			pricingAdminRoute.PUT("/extra_models", controller.UpdateExtraModels)

@@ -5470,6 +5470,20 @@
     "{{total}} entries": "共 {{total}} 筆",
     "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "從未到達轉發層的請求,因此在使用日誌裡不會留下任何紀錄:失敗的 TLS 交握、被負載平衡器拒絕的連線,以及在鑑權階段被擋回的呼叫方。",
     "Seen used by": "曾被誰使用",
-    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "這個位址曾被該帳號使用過。這不能證明本次請求就是他們發的:共享出口或辦公室網路會把多方對應到同一個位址上。"
+    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "這個位址曾被該帳號使用過。這不能證明本次請求就是他們發的:共享出口或辦公室網路會把多方對應到同一個位址上。",
+    "Rename group": "重新命名分組",
+    "Renames {{name}} everywhere it is used: logins, API keys, the wallet, per-model prices and channel rules. No balance moves and no key changes.": "將在所有引用處把 {{name}} 改為新名稱：登入帳號、API 金鑰、錢包、按模型定價和渠道規則。餘額不會變動，金鑰也不會改變。",
+    "Renaming...": "正在重新命名...",
+    "New group name": "新的分組名稱",
+    "Failed to rename group": "重新命名分組失敗",
+    "Group renamed to {{name}}": "分組已重新命名為 {{name}}",
+    "Use Rename to change the name of a saved group": "已儲存的分組請使用「重新命名」修改名稱",
+    "Save or discard your other changes before renaming a group": "請先儲存或放棄其他變更，再重新命名分組",
+    "Enter the new group name": "請輸入新的分組名稱",
+    "The new name is the same as the current one": "新名稱與目前名稱相同",
+    "This group name is reserved": "此分組名稱為系統保留名稱",
+    "A group name cannot contain a comma": "分組名稱不能包含逗號",
+    "A group with this name already exists": "已存在同名分組",
+    "Renamed pricing group {{from}} to {{to}}": "將定價分組 {{from}} 重新命名為 {{to}}"
   }
 }

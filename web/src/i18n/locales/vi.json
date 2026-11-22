@@ -5466,6 +5466,20 @@
     "{{total}} entries": "{{total}} mục",
     "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Các yêu cầu chưa từng đến lớp chuyển tiếp nên không để lại dòng nào trong nhật ký sử dụng: bắt tay TLS thất bại, kết nối bị bộ cân bằng tải từ chối, và bên gọi bị chặn ở bước xác thực.",
     "Seen used by": "Đã thấy được dùng bởi",
-    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "Địa chỉ này đã từng được tài khoản này sử dụng. Đây không phải bằng chứng rằng yêu cầu này là của họ: một cổng ra dùng chung hoặc mạng văn phòng gộp nhiều bên vào cùng một địa chỉ."
+    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "Địa chỉ này đã từng được tài khoản này sử dụng. Đây không phải bằng chứng rằng yêu cầu này là của họ: một cổng ra dùng chung hoặc mạng văn phòng gộp nhiều bên vào cùng một địa chỉ.",
+    "Rename group": "Đổi tên nhóm",
+    "Renames {{name}} everywhere it is used: logins, API keys, the wallet, per-model prices and channel rules. No balance moves and no key changes.": "Đổi tên {{name}} ở mọi nơi đang dùng: tài khoản đăng nhập, khóa API, ví, giá theo mô hình và quy tắc kênh. Không số dư nào bị chuyển và không khóa nào thay đổi.",
+    "Renaming...": "Đang đổi tên...",
+    "New group name": "Tên nhóm mới",
+    "Failed to rename group": "Đổi tên nhóm thất bại",
+    "Group renamed to {{name}}": "Đã đổi tên nhóm thành {{name}}",
+    "Use Rename to change the name of a saved group": "Dùng Đổi tên để thay đổi tên của nhóm đã lưu",
+    "Save or discard your other changes before renaming a group": "Hãy lưu hoặc hủy các thay đổi khác trước khi đổi tên nhóm",
+    "Enter the new group name": "Nhập tên nhóm mới",
+    "The new name is the same as the current one": "Tên mới trùng với tên hiện tại",
+    "This group name is reserved": "Tên nhóm này được dành riêng",
+    "A group name cannot contain a comma": "Tên nhóm không được chứa dấu phẩy",
+    "A group with this name already exists": "Đã tồn tại nhóm có tên này",
+    "Renamed pricing group {{from}} to {{to}}": "Đã đổi tên nhóm giá {{from}} thành {{to}}"
   }
 }

@@ -5466,6 +5466,20 @@
     "{{total}} entries": "Записей: {{total}}",
     "Requests that never reached the relay, so they leave no row in the usage log: TLS handshakes that failed, connections the load balancer refused, and callers turned away at authentication.": "Запросы, не дошедшие до ретрансляции, поэтому в журнале использования их нет: неудавшиеся рукопожатия TLS, соединения, отклонённые балансировщиком нагрузки, и вызывающие стороны, отклонённые при аутентификации.",
     "Seen used by": "Замечен у",
-    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "Этот адрес ранее использовался этой учётной записью. Это не доказывает, что запрос принадлежал ей: общий выход или офисная сеть сводят несколько сторон к одному адресу."
+    "This address has been seen used by this account. It is not proof that this request was theirs: a shared exit or an office network maps several parties onto one address.": "Этот адрес ранее использовался этой учётной записью. Это не доказывает, что запрос принадлежал ей: общий выход или офисная сеть сводят несколько сторон к одному адресу.",
+    "Rename group": "Переименовать группу",
+    "Renames {{name}} everywhere it is used: logins, API keys, the wallet, per-model prices and channel rules. No balance moves and no key changes.": "Переименовывает {{name}} везде, где она используется: учётные записи, API-ключи, кошелёк, цены по моделям и правила каналов. Баланс не перемещается, ключи не меняются.",
+    "Renaming...": "Переименование...",
+    "New group name": "Новое название группы",
+    "Failed to rename group": "Не удалось переименовать группу",
+    "Group renamed to {{name}}": "Группа переименована в {{name}}",
+    "Use Rename to change the name of a saved group": "Чтобы изменить название сохранённой группы, используйте «Переименовать»",
+    "Save or discard your other changes before renaming a group": "Сохраните или отмените остальные изменения перед переименованием группы",
+    "Enter the new group name": "Введите новое название группы",
+    "The new name is the same as the current one": "Новое название совпадает с текущим",
+    "This group name is reserved": "Это название группы зарезервировано",
+    "A group name cannot contain a comma": "Название группы не может содержать запятую",
+    "A group with this name already exists": "Группа с таким названием уже существует",
+    "Renamed pricing group {{from}} to {{to}}": "Тарифная группа {{from}} переименована в {{to}}"
   }
 }

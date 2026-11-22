@@ -24,6 +24,7 @@ import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
+  RenamePricingGroupResponse,
   SystemOptionsResponse,
   SystemTaskListResponse,
   SystemTaskResponse,
@@ -160,6 +161,21 @@ export async function updateGroupModelPricing(
   const res = await api.put<UpdateGroupModelPricingResponse>(
     '/api/pricing/group_model',
     { group, discounts }
+  )
+  return res.data
+}
+
+/*
+ * UNIFYAPI-FORK: rename a pricing group everywhere it is referenced -- logins,
+ * API keys, the wallet, per-model prices, channel lists and exclusions -- in
+ * one transaction. See model/unifyapi_pricing_group_rename.go.
+ */
+export async function renamePricingGroup(from: string, to: string) {
+  const res = await api.post<RenamePricingGroupResponse>(
+    '/api/pricing/group/rename',
+    { from, to },
+    // The dialog shows the refusal itself, next to the name that caused it.
+    { skipBusinessError: true }
   )
   return res.data
 }

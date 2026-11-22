@@ -246,24 +246,36 @@ func loadOptionsFromDatabase() {
 		// Saving such a row is still refused (UpdateGroupModelDiscountByJSONString
 		// validates); what changes is that READING the table no longer throws
 		// the good rows away with the stale one.
-		if option.Key == "GroupModelDiscount" {
-			cleaned, dropped, err := ratio_setting.SanitizeGroupModelDiscountJSON(value)
-			if err != nil {
-				common.SysLog("customer model prices: unreadable, leaving the loaded table alone: " + err.Error())
-				continue
-			}
-			if len(dropped) > 0 {
-				common.SysLog(fmt.Sprintf(
-					"customer model prices: ignoring %d entr(ies) naming delisted models: %s",
-					len(dropped), strings.Join(dropped, ", ")))
-			}
-			value = cleaned
+		value, ok := storedOptionValueForMemory(option.Key, value)
+		if !ok {
+			continue
 		}
 		err := updateOptionMap(option.Key, value)
 		if err != nil {
 			common.SysLog("failed to update option map: " + err.Error())
 		}
 	}
+}
+
+// UNIFYAPI-FORK: storedOptionValueForMemory is the form of a stored option
+// that may be published into memory, and false when it must be left out.
+// Shared by the reload above and by a pricing group rename, which publishes
+// the values it has just written without waiting for the next sync.
+func storedOptionValueForMemory(key, value string) (string, bool) {
+	if key != "GroupModelDiscount" {
+		return value, true
+	}
+	cleaned, dropped, err := ratio_setting.SanitizeGroupModelDiscountJSON(value)
+	if err != nil {
+		common.SysLog("customer model prices: unreadable, leaving the loaded table alone: " + err.Error())
+		return "", false
+	}
+	if len(dropped) > 0 {
+		common.SysLog(fmt.Sprintf(
+			"customer model prices: ignoring %d entr(ies) naming delisted models: %s",
+			len(dropped), strings.Join(dropped, ", ")))
+	}
+	return cleaned, true
 }
 
 func SyncOptions(frequency int) {
@@ -299,10 +311,17 @@ func validateOptionValueWithDB(db *gorm.DB, key string, value string) error {
 		for group := range values {
 			groups[group] = struct{}{}
 		}
-		if db == nil || !db.Migrator().HasTable(&PartnershipProgram{}) {
+		if db == nil {
 			return nil
 		}
-		return validateActivePartnershipGroups(db, groups)
+		if db.Migrator().HasTable(&PartnershipProgram{}) {
+			if err := validateActivePartnershipGroups(db, groups); err != nil {
+				return err
+			}
+		}
+		// UNIFYAPI-FORK: a group that logins, keys, a balance or a channel
+		// exclusion still depend on cannot be dropped from Group Pricing.
+		return protectPricingGroupsInUse(db, groups)
 	}
 	return nil
 }
