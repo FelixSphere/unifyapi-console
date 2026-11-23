@@ -73,6 +73,17 @@ export function getDisplayGroupRatio(
   model: PricingModel,
   selectedGroup?: string
 ): number {
+  // An explicit public markup is the quoted model price, independent of the
+  // broader group estimate. The discount presentation only handles reductions.
+  const publicStandardRatio = model.default_group_model_ratio
+  if (
+    typeof publicStandardRatio === 'number' &&
+    Number.isFinite(publicStandardRatio) &&
+    publicStandardRatio > 1
+  ) {
+    return publicStandardRatio
+  }
+
   const modelEnableGroups = Array.isArray(model.enable_groups)
     ? model.enable_groups
     : []
