@@ -17,6 +17,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -288,4 +289,20 @@ func TestAReplyToThatIsNotOneBareAddressIsDropped(t *testing.T) {
 		assert.False(t, common.IsBareEmailAddress(v), v)
 	}
 	assert.True(t, common.IsBareEmailAddress("support@unifyapi.ai"))
+}
+
+// {{docs_url}} reads general_setting.docs_link, which defaults to upstream's
+// docs.newapi.pro until seed-branding.sql runs and has drifted back to it once
+// in production. A customer email must never link another product's docs.
+func TestDocsURLNeverPointsAtUpstreamDocs(t *testing.T) {
+	general := operation_setting.GetGeneralSetting()
+	prev := general.DocsLink
+	t.Cleanup(func() { general.DocsLink = prev })
+
+	for _, link := range []string{"", "  ", "https://docs.newapi.pro", "https://DOCS.NEWAPI.PRO/guide"} {
+		general.DocsLink = link
+		assert.Equal(t, "https://www.unifyapi.ai/docs", adminEmailDocsURL(), "docs_link %q", link)
+	}
+	general.DocsLink = "https://www.unifyapi.ai/docs/quickstart"
+	assert.Equal(t, "https://www.unifyapi.ai/docs/quickstart", adminEmailDocsURL())
 }

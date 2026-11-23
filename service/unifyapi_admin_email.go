@@ -95,16 +95,30 @@ func adminEmailVars(u *model.User) map[string]string {
 	if display == "" {
 		display = u.Username
 	}
-	docs := strings.TrimSpace(operation_setting.GetGeneralSetting().DocsLink)
 	return map[string]string{
 		"username":     u.Username,
 		"display_name": display,
 		"email":        u.Email,
 		"group":        u.Group,
 		"console_url":  strings.TrimRight(system_setting.ServerAddress, "/"),
-		"docs_url":     docs,
+		"docs_url":     adminEmailDocsURL(),
 		"api_base_url": RetentionAPIBase,
 	}
+}
+
+// adminEmailFallbackDocs is seed-branding.sql's general_setting.docs_link.
+const adminEmailFallbackDocs = "https://www.unifyapi.ai/docs"
+
+// adminEmailDocsURL is the docs link a customer email carries. The option
+// defaults to upstream's docs.newapi.pro until seed-branding.sql runs, and it
+// has drifted back to that once in production; an email must never send a
+// customer to another product's documentation, so that value is replaced.
+func adminEmailDocsURL() string {
+	docs := strings.TrimSpace(operation_setting.GetGeneralSetting().DocsLink)
+	if docs == "" || strings.Contains(strings.ToLower(docs), "newapi.pro") {
+		return adminEmailFallbackDocs
+	}
+	return docs
 }
 
 // substituteAdminEmailVars replaces every {{name}}; an unknown name is an
