@@ -346,6 +346,9 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	if errors.Is(err, model.ErrChannelHardRateLimited) {
 		return nil, middleware.ChannelHardRateLimitedError(c, info.OriginModelName)
 	}
+	if errors.Is(err, model.ErrChannelUserRateLimited) {
+		return nil, middleware.ChannelUserRateLimitedError(c, info.OriginModelName)
+	}
 	if err != nil {
 		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}

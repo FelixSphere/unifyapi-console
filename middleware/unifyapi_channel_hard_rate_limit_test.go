@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -59,6 +60,7 @@ type limitedChannel struct {
 	priority int64
 	rpm      int
 	hard     bool
+	settings string
 }
 
 func createLimitedChannel(t *testing.T, db *gorm.DB, modelName string, spec limitedChannel) {
@@ -75,9 +77,17 @@ func createLimitedChannel(t *testing.T, db *gorm.DB, modelName string, spec limi
 	if spec.hard {
 		channel.OtherSettings = `{"hard_rate_limit":true}`
 	}
+	if spec.settings != "" {
+		channel.OtherSettings = spec.settings
+	}
 	require.NoError(t, db.Create(channel).Error)
 	require.NoError(t, db.Create(&model.Ability{Group: spec.group, Model: modelName, ChannelId: spec.id, Enabled: true, Priority: &spec.priority, Weight: weight}).Error)
 }
+
+// relayed counts requests that got past Distribute, which is where a request
+// starts to cost anything: pre-consume, the upstream call and the consume log
+// are all behind it.
+var relayed atomic.Int64
 
 type distributed struct {
 	status     int
@@ -95,19 +105,27 @@ func distribute(t *testing.T, path, modelName string, pinnedChannel int) distrib
 
 func distributeWithSession(t *testing.T, path, modelName string, pinnedChannel int, session string) distributed {
 	t.Helper()
+	return distributeAs(t, 77, "GenAI", path, modelName, pinnedChannel, session)
+}
+
+// distributeAs is one request by the given user with a key in the given
+// token group ("auto" for a key that walks the Auto groups).
+func distributeAs(t *testing.T, userId int, tokenGroup, path, modelName string, pinnedChannel int, session string) distributed {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {
-		c.Set("id", 77)
+		c.Set("id", userId)
 		common.SetContextKey(c, constant.ContextKeyUserGroup, "GenAI")
-		common.SetContextKey(c, constant.ContextKeyUsingGroup, "GenAI")
-		common.SetContextKey(c, constant.ContextKeyTokenGroup, "GenAI")
+		common.SetContextKey(c, constant.ContextKeyUsingGroup, effectiveUsingGroup("GenAI", tokenGroup))
+		common.SetContextKey(c, constant.ContextKeyTokenGroup, tokenGroup)
 		if pinnedChannel > 0 {
 			common.SetContextKey(c, constant.ContextKeyTokenSpecificChannelId, strconv.Itoa(pinnedChannel))
 		}
 	})
 	engine.Use(Distribute())
 	engine.POST(path, func(c *gin.Context) {
+		relayed.Add(1)
 		c.JSON(http.StatusOK, gin.H{"served_by": common.GetContextKeyInt(c, constant.ContextKeyChannelId)})
 	})
 

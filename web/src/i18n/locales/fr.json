@@ -5497,6 +5497,13 @@
     "Marked pricing group {{group}} as an access tier": "Groupe tarifaire {{group}} marqué comme niveau d'accès",
     "Removed the access tier mark from pricing group {{group}}": "Marque de niveau d'accès retirée du groupe tarifaire {{group}}",
     "Enforce as a hard cap": "Appliquer comme plafond strict",
-    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "Refuse les requêtes au-delà de la limite. Tant que le canal dépasse son nombre de requêtes ou de jetons par minute, le trafic passe par un autre canal s'il en existe un capable de le servir ; sinon l'appelant reçoit 429 avec Retry-After. Désactivé, la limite ne fait qu'orienter le trafic et le canal reste utilisé si aucun autre ne peut servir."
+    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "Refuse les requêtes au-delà de la limite. Tant que le canal dépasse son nombre de requêtes ou de jetons par minute, le trafic passe par un autre canal s'il en existe un capable de le servir ; sinon l'appelant reçoit 429 avec Retry-After. Désactivé, la limite ne fait qu'orienter le trafic et le canal reste utilisé si aucun autre ne peut servir.",
+    "Per-user requests per minute": "Requêtes par minute par utilisateur",
+    "Per-user tokens per minute": "Jetons par minute par utilisateur",
+    "Per-user requests per day": "Requêtes par jour par utilisateur",
+    "Per-user tokens per day": "Jetons par jour par utilisateur",
+    "Per-user limit bucket": "Groupe de limite par utilisateur",
+    "What one user may send through this channel. 0 means unlimited. A user over a limit is routed to other channels that serve the model; if none can, they get 429 with Retry-After. Daily limits are per UTC day and reset at 00:00 UTC.": "Ce qu'un utilisateur peut envoyer par ce canal. 0 signifie illimité. Un utilisateur au-delà d'une limite est dirigé vers les autres canaux qui servent le modèle ; si aucun ne le peut, il reçoit 429 avec Retry-After. Les limites quotidiennes portent sur un jour UTC et sont remises à zéro à 00:00 UTC.",
+    "Channels with the same bucket name share one per-user count. Leave empty to count this channel by itself.": "Les canaux portant le même nom de groupe partagent un seul compteur par utilisateur. Laisser vide pour compter ce canal séparément."
   }
 }

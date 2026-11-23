@@ -81,29 +81,34 @@ func (p *RetryParam) ResetRetryNextTry() {
 //	Retry=3: GroupB, priority1 (startRetryIndex=2, priorityRetry=1)
 //	         分组B, 优先级1
 func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
-	// UNIFYAPI-FORK: a hard-limited channel is admitted exactly, against its
-	// counter, after it is chosen. One that turns out to be full is closed for
-	// the rest of the window and selection runs again without it, so traffic
-	// moves to whatever else can serve and is refused only when nothing can.
-	for attempt := 0; ; attempt++ {
+	// UNIFYAPI-FORK: the chosen channel is admitted exactly, against its
+	// counters, after it is chosen. One that refuses -- a hard-limited channel
+	// that is full, or one this user has used up their allowance on -- is left
+	// out and selection runs again, so traffic moves to whatever else can
+	// serve and is refused only when nothing can.
+	refused := model.ErrChannelHardRateLimited
+	for attempt := 0; attempt <= model.MaxHardLimitReselects; attempt++ {
 		channel, selectGroup, err := selectRandomSatisfiedChannel(param)
 		if err != nil || channel == nil {
 			return channel, selectGroup, err
 		}
-		if !channel.HardRateLimit() {
-			// UNIFYAPI-BRAND: count the request against the chosen channel's
-			// RPM window. Only on the success path -- a channel we did not end
-			// up using should not be charged for a request it never received.
-			model.RecordChannelRequest(param.Ctx, channel.Id)
+		switch AdmitSelectedChannel(param.Ctx, channel) {
+		case ChannelAdmitted:
+			if !channel.HardRateLimit() {
+				// UNIFYAPI-BRAND: count the request against the chosen
+				// channel's RPM window. Only on the success path -- a channel
+				// we did not end up using should not be charged for a request
+				// it never received.
+				model.RecordChannelRequest(param.Ctx, channel.Id)
+			}
 			return channel, selectGroup, nil
-		}
-		if model.AdmitChannelRequest(param.Ctx, channel) {
-			return channel, selectGroup, nil
-		}
-		if attempt >= model.MaxHardLimitReselects {
-			return nil, selectGroup, model.ErrChannelHardRateLimited
+		case ChannelUserLimited:
+			refused = model.ErrChannelUserRateLimited
+		default:
+			refused = model.ErrChannelHardRateLimited
 		}
 	}
+	return nil, param.TokenGroup, refused
 }
 
 func selectRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
@@ -114,7 +119,8 @@ func selectRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, er
 
 	var channel *model.Channel
 	var err error
-	hardLimited := false
+	hardLimited, userLimited := false, false
+	excluded := UserLimitedChannels(param.Ctx)
 	selectGroup := param.TokenGroup
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
 
@@ -148,9 +154,12 @@ func selectRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, er
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
 			var groupErr error
-			channel, groupErr = model.GetRandomSatisfiedChannel(autoGroup, param.ModelName, priorityRetry, param.RequestPath)
+			channel, groupErr = model.GetRandomSatisfiedChannelExcluding(autoGroup, param.ModelName, priorityRetry, param.RequestPath, excluded)
 			if errors.Is(groupErr, model.ErrChannelHardRateLimited) {
 				hardLimited = true
+			}
+			if errors.Is(groupErr, model.ErrChannelUserRateLimited) {
+				userLimited = true
 			}
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
@@ -189,7 +198,7 @@ func selectRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, er
 			break
 		}
 	} else {
-		channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry(), param.RequestPath)
+		channel, err = model.GetRandomSatisfiedChannelExcluding(param.TokenGroup, param.ModelName, param.GetRetry(), param.RequestPath, excluded)
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}
@@ -198,6 +207,9 @@ func selectRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, er
 		// UNIFYAPI-FORK: a later auto group having no channel at all must not
 		// turn "full this minute" into "no available channel".
 		return nil, selectGroup, model.ErrChannelHardRateLimited
+	}
+	if channel == nil && userLimited {
+		return nil, selectGroup, model.ErrChannelUserRateLimited
 	}
 	return channel, selectGroup, nil
 }

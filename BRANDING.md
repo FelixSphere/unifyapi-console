@@ -436,3 +436,23 @@ candidates), `model/channel_rate_limit.go` (in-process token count),
 `relaykit/dto/channel_settings.go`, and in `web/` `channel-form.ts`,
 `constants.ts` and `channel-mutate-drawer.tsx` (the "Enforce as a hard cap"
 switch).
+
+### Per-user limit on a channel (unreleased)
+
+`model/unifyapi_channel_user_rate_limit.go` adds two channel settings in
+`channels.settings`, both absent by default: `user_rate_limit` (`rpm`, `tpm`,
+`daily_requests`, `daily_tokens`; a zero or missing field is unlimited) and
+`user_limit_bucket`. They cap what one user may send through the channel,
+counted per user and channel -- or per user and bucket, for channels that name
+the same one -- and never per token group. Minute windows are clock minutes
+and daily windows are UTC days. A user who is over is not routed to the
+channel; when no other channel can serve, the caller gets 429 with
+`Retry-After` and the error code `user_rate_limit_exceeded`.
+`service/unifyapi_channel_admission.go` is the one place a chosen channel is
+admitted against this and against the hard channel limit. Touch points, all
+marked `UNIFYAPI-FORK`: `model/channel_cache.go`
+(`GetRandomSatisfiedChannelExcluding`), `model/channel.go` (a malformed limit
+is refused on save), `model/log.go` (tokens), `service/channel_select.go`,
+`middleware/distributor.go`, `controller/relay.go`,
+`relaykit/dto/channel_settings.go`, and in `web/` `channel-form.ts`,
+`constants.ts` and `channel-mutate-drawer.tsx`.

@@ -59,14 +59,21 @@ func Distribute() func(c *gin.Context) {
 				return
 			}
 			// UNIFYAPI-FORK: a key pinned to a channel has nowhere else to go,
-			// so a full hard-limited channel refuses it here.
-			if shouldSelectChannel && !model.AdmitChannelRequest(c, channel) {
+			// so a channel that is full, or that this user has used up their
+			// allowance on, refuses it here.
+			if shouldSelectChannel {
 				pinnedModel := ""
 				if modelRequest != nil {
 					pinnedModel = modelRequest.Model
 				}
-				abortChannelHardRateLimited(c, pinnedModel)
-				return
+				switch service.AdmitSelectedChannel(c, channel) {
+				case service.ChannelHardLimited:
+					abortChannelHardRateLimited(c, pinnedModel)
+					return
+				case service.ChannelUserLimited:
+					abortChannelUserRateLimited(c, pinnedModel)
+					return
+				}
 			}
 		} else {
 			// Select a channel for the user
@@ -145,14 +152,14 @@ func Distribute() func(c *gin.Context) {
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, routing); found {
 					affinityUsable := false
 					preferred, err := model.CacheGetChannel(preferredChannelID)
-					// UNIFYAPI-FORK: affinity does not outrank a hard limit. A
-					// full channel is passed over for this request only; the
-					// affinity entry stays, the channel is fine next minute.
+					// UNIFYAPI-FORK: affinity does not outrank a hard limit or
+					// the user's own allowance. The channel is passed over for
+					// this request only; the affinity entry is not cleared.
 					preferredUsable := err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
 						channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model)
 					affinityHardLimited := preferredUsable &&
 						affinityServesRequest(c, routing, usingGroup, modelRequest.Model, preferred.Id) &&
-						!model.AdmitChannelRequest(c, preferred)
+						service.AdmitSelectedChannel(c, preferred) != service.ChannelAdmitted
 					if preferredUsable && !affinityHardLimited {
 						if routing == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
@@ -216,6 +223,10 @@ func Distribute() func(c *gin.Context) {
 
 				if errors.Is(err, model.ErrChannelHardRateLimited) {
 					abortChannelHardRateLimited(c, modelRequest.Model)
+					return
+				}
+				if errors.Is(err, model.ErrChannelUserRateLimited) {
+					abortChannelUserRateLimited(c, modelRequest.Model)
 					return
 				}
 				if err != nil {

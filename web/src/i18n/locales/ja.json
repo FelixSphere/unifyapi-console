@@ -5497,6 +5497,13 @@
     "Marked pricing group {{group}} as an access tier": "料金グループ {{group}} をアクセス階層として設定しました",
     "Removed the access tier mark from pricing group {{group}}": "料金グループ {{group}} のアクセス階層の設定を解除しました",
     "Enforce as a hard cap": "ハード上限として適用",
-    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "上限を超えたリクエストを拒否します。チャネルが1分あたりのリクエスト数またはトークン数を超えている間、トラフィックは対応可能な別のチャネルに回され、なければ呼び出し元に 429 と Retry-After を返します。オフの場合、上限は振り分けにのみ使われ、他に対応できるチャネルがなければこのチャネルが使われます。"
+    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "上限を超えたリクエストを拒否します。チャネルが1分あたりのリクエスト数またはトークン数を超えている間、トラフィックは対応可能な別のチャネルに回され、なければ呼び出し元に 429 と Retry-After を返します。オフの場合、上限は振り分けにのみ使われ、他に対応できるチャネルがなければこのチャネルが使われます。",
+    "Per-user requests per minute": "ユーザーごとの1分あたりリクエスト数",
+    "Per-user tokens per minute": "ユーザーごとの1分あたりトークン数",
+    "Per-user requests per day": "ユーザーごとの1日あたりリクエスト数",
+    "Per-user tokens per day": "ユーザーごとの1日あたりトークン数",
+    "Per-user limit bucket": "ユーザー別上限のバケット",
+    "What one user may send through this channel. 0 means unlimited. A user over a limit is routed to other channels that serve the model; if none can, they get 429 with Retry-After. Daily limits are per UTC day and reset at 00:00 UTC.": "1人のユーザーがこのチャネル経由で送信できる量です。0 は無制限です。上限を超えたユーザーは、そのモデルを提供する他のチャネルに回され、なければ 429 と Retry-After を受け取ります。1日あたりの上限は UTC の1日単位で、UTC 00:00 にリセットされます。",
+    "Channels with the same bucket name share one per-user count. Leave empty to count this channel by itself.": "同じバケット名のチャネルは、ユーザーごとのカウントを共有します。空欄の場合、このチャネル単独でカウントします。"
   }
 }

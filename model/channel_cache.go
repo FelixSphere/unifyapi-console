@@ -120,6 +120,13 @@ func SyncChannelCache(frequency int) {
 }
 
 func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+	return GetRandomSatisfiedChannelExcluding(group, model, retry, requestPath, nil)
+}
+
+// GetRandomSatisfiedChannelExcluding is GetRandomSatisfiedChannel without the
+// channels this request's user has used up their allowance on. UNIFYAPI-FORK:
+// see unifyapi_channel_user_rate_limit.go.
+func GetRandomSatisfiedChannelExcluding(group string, model string, retry int, requestPath string, userLimited map[int]struct{}) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
 		return GetChannel(group, model, retry, requestPath)
@@ -146,6 +153,12 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 	// than "no channel": the model is served, it is just full this minute.
 	if channels = dropHardRateLimitedChannelIds(channels); len(channels) == 0 {
 		return nil, ErrChannelHardRateLimited
+	}
+	// UNIFYAPI-FORK: nor is a channel this user is over their own limit on.
+	// Both are removed before priorities are worked out, so the request goes
+	// to the best priority that can still take it without needing a retry.
+	if channels = dropChannelIds(channels, userLimited); len(channels) == 0 {
+		return nil, ErrChannelUserRateLimited
 	}
 
 	if len(channels) == 1 {

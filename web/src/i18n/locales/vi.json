@@ -5497,6 +5497,13 @@
     "Marked pricing group {{group}} as an access tier": "Đã đánh dấu nhóm giá {{group}} là cấp truy cập",
     "Removed the access tier mark from pricing group {{group}}": "Đã bỏ đánh dấu cấp truy cập của nhóm giá {{group}}",
     "Enforce as a hard cap": "Áp dụng như giới hạn cứng",
-    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "Từ chối các yêu cầu vượt giới hạn. Khi kênh vượt số yêu cầu hoặc số token mỗi phút, lưu lượng chuyển sang kênh khác nếu có kênh phục vụ được; nếu không, bên gọi nhận 429 kèm Retry-After. Khi tắt, giới hạn chỉ dùng để điều hướng lưu lượng và kênh vẫn được dùng nếu không còn kênh nào khác."
+    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "Từ chối các yêu cầu vượt giới hạn. Khi kênh vượt số yêu cầu hoặc số token mỗi phút, lưu lượng chuyển sang kênh khác nếu có kênh phục vụ được; nếu không, bên gọi nhận 429 kèm Retry-After. Khi tắt, giới hạn chỉ dùng để điều hướng lưu lượng và kênh vẫn được dùng nếu không còn kênh nào khác.",
+    "Per-user requests per minute": "Yêu cầu mỗi phút cho mỗi người dùng",
+    "Per-user tokens per minute": "Token mỗi phút cho mỗi người dùng",
+    "Per-user requests per day": "Yêu cầu mỗi ngày cho mỗi người dùng",
+    "Per-user tokens per day": "Token mỗi ngày cho mỗi người dùng",
+    "Per-user limit bucket": "Nhóm giới hạn theo người dùng",
+    "What one user may send through this channel. 0 means unlimited. A user over a limit is routed to other channels that serve the model; if none can, they get 429 with Retry-After. Daily limits are per UTC day and reset at 00:00 UTC.": "Lượng mà một người dùng có thể gửi qua kênh này. 0 nghĩa là không giới hạn. Người dùng vượt giới hạn được chuyển sang các kênh khác phục vụ mô hình; nếu không có kênh nào, họ nhận 429 kèm Retry-After. Giới hạn theo ngày tính theo ngày UTC và đặt lại lúc 00:00 UTC.",
+    "Channels with the same bucket name share one per-user count. Leave empty to count this channel by itself.": "Các kênh có cùng tên nhóm dùng chung một bộ đếm cho mỗi người dùng. Để trống để kênh này đếm riêng."
   }
 }

@@ -99,6 +99,55 @@ type ChannelOtherSettings struct {
 	// fit is sent to another channel or refused with 429, never sent anyway.
 	// Without it the limit only steers traffic to less busy channels.
 	HardRateLimit bool `json:"hard_rate_limit,omitempty"`
+	// UserRateLimit caps what ONE user may send through this channel, so a
+	// single customer cannot put a volume on our provider key that the
+	// provider would read as abuse. Absent means no per-user limit.
+	UserRateLimit *ChannelUserRateLimit `json:"user_rate_limit,omitempty"`
+	// UserLimitBucket makes channels share one per-user count: channels with
+	// the same non-empty bucket are one allowance. Empty means the channel
+	// counts by itself.
+	UserLimitBucket string `json:"user_limit_bucket,omitempty"`
+}
+
+// ChannelUserRateLimit is a per-user allowance on a channel. Zero or absent
+// means that dimension is unlimited. The minute windows are fixed clock
+// minutes and the daily windows are fixed UTC days, 00:00 to 00:00.
+type ChannelUserRateLimit struct {
+	RPM           int64 `json:"rpm,omitempty"`
+	TPM           int64 `json:"tpm,omitempty"`
+	DailyRequests int64 `json:"daily_requests,omitempty"`
+	DailyTokens   int64 `json:"daily_tokens,omitempty"`
+}
+
+// MaxUserLimitBucketLength keeps the bucket usable as part of a counter key.
+const MaxUserLimitBucketLength = 64
+
+func (l *ChannelUserRateLimit) Limited() bool {
+	return l != nil && (l.RPM > 0 || l.TPM > 0 || l.DailyRequests > 0 || l.DailyTokens > 0)
+}
+
+func (l *ChannelUserRateLimit) Validate() error {
+	if l == nil {
+		return nil
+	}
+	for name, value := range map[string]int64{"rpm": l.RPM, "tpm": l.TPM, "daily_requests": l.DailyRequests, "daily_tokens": l.DailyTokens} {
+		if value < 0 {
+			return fmt.Errorf("user_rate_limit.%s must not be negative", name)
+		}
+	}
+	return nil
+}
+
+func ValidateUserLimitBucket(bucket string) error {
+	if len(bucket) > MaxUserLimitBucketLength {
+		return fmt.Errorf("user_limit_bucket must be at most %d characters", MaxUserLimitBucketLength)
+	}
+	for _, r := range bucket {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.') {
+			return fmt.Errorf("user_limit_bucket may only contain letters, digits, '-', '_' and '.'")
+		}
+	}
+	return nil
 }
 
 func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {

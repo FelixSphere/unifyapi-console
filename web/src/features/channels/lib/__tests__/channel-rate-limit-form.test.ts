@@ -11,6 +11,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
   parseHardRateLimit,
+  parseUserRateLimit,
   transformChannelToFormDefaults,
   transformFormDataToCreatePayload,
   transformFormDataToUpdatePayload,
@@ -130,5 +131,64 @@ describe('the hard cap switch round trips through settings', () => {
       channel_info: {},
     } as Parameters<typeof transformChannelToFormDefaults>[0])
     expect(opened.hard_rate_limit).toBe(true)
+  })
+})
+
+// UNIFYAPI-FORK: the per-user limit is one object in the settings JSON.
+describe('the per-user limit round trips through settings', () => {
+  const settingsOf = (values: ChannelFormValues) =>
+    JSON.parse(transformFormDataToUpdatePayload(values, 42).settings ?? '{}')
+
+  test('it is off by default and writes nothing', () => {
+    const settings = settingsOf(form())
+    expect('user_rate_limit' in settings).toBe(false)
+    expect('user_limit_bucket' in settings).toBe(false)
+  })
+
+  test('only the dimensions that are set are written', () => {
+    const settings = settingsOf(
+      form({
+        user_limit_rpm: 20,
+        user_limit_daily_tokens: 20_000_000,
+        user_limit_bucket: ' mythos-direct ',
+      })
+    )
+    expect(settings.user_rate_limit).toEqual({
+      rpm: 20,
+      daily_tokens: 20_000_000,
+    })
+    expect(settings.user_limit_bucket).toBe('mythos-direct')
+  })
+
+  test('clearing every dimension removes the limit and the bucket', () => {
+    const settings = settingsOf(
+      form({
+        settings:
+          '{"user_rate_limit":{"rpm":20},"user_limit_bucket":"m","hard_rate_limit":true}',
+        hard_rate_limit: true,
+      })
+    )
+    expect('user_rate_limit' in settings).toBe(false)
+    expect('user_limit_bucket' in settings).toBe(false)
+    expect(settings.hard_rate_limit).toBe(true)
+  })
+
+  test('an existing channel opens with its limit', () => {
+    expect(
+      parseUserRateLimit(
+        '{"user_rate_limit":{"rpm":20,"tpm":400000,"daily_requests":2000,"daily_tokens":20000000},"user_limit_bucket":"mythos-direct"}'
+      )
+    ).toEqual({
+      user_limit_rpm: 20,
+      user_limit_tpm: 400000,
+      user_limit_daily_requests: 2000,
+      user_limit_daily_tokens: 20000000,
+      user_limit_bucket: 'mythos-direct',
+    })
+    expect(
+      parseUserRateLimit('{"user_rate_limit":{"rpm":-1}}').user_limit_rpm
+    ).toBe(0)
+    expect(parseUserRateLimit('not json').user_limit_rpm).toBe(0)
+    expect(parseUserRateLimit(null).user_limit_bucket).toBe('')
   })
 })

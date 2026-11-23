@@ -5497,6 +5497,13 @@
     "Marked pricing group {{group}} as an access tier": "Тарифная группа {{group}} отмечена как уровень доступа",
     "Removed the access tier mark from pricing group {{group}}": "С тарифной группы {{group}} снята отметка уровня доступа",
     "Enforce as a hard cap": "Применять как жёсткий предел",
-    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "Отклонять запросы сверх лимита. Пока канал превышает число запросов или токенов в минуту, трафик уходит на другой канал, если он может обслужить запрос; иначе вызывающая сторона получает 429 с Retry-After. Если выключено, лимит только распределяет трафик, и канал всё равно используется, когда больше некому обслужить."
+    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "Отклонять запросы сверх лимита. Пока канал превышает число запросов или токенов в минуту, трафик уходит на другой канал, если он может обслужить запрос; иначе вызывающая сторона получает 429 с Retry-After. Если выключено, лимит только распределяет трафик, и канал всё равно используется, когда больше некому обслужить.",
+    "Per-user requests per minute": "Запросов в минуту на пользователя",
+    "Per-user tokens per minute": "Токенов в минуту на пользователя",
+    "Per-user requests per day": "Запросов в день на пользователя",
+    "Per-user tokens per day": "Токенов в день на пользователя",
+    "Per-user limit bucket": "Группа лимита на пользователя",
+    "What one user may send through this channel. 0 means unlimited. A user over a limit is routed to other channels that serve the model; if none can, they get 429 with Retry-After. Daily limits are per UTC day and reset at 00:00 UTC.": "Сколько один пользователь может отправить через этот канал. 0 означает без ограничений. Пользователь, превысивший лимит, направляется на другие каналы, обслуживающие модель; если таких нет, он получает 429 с Retry-After. Суточные лимиты считаются за сутки по UTC и сбрасываются в 00:00 UTC.",
+    "Channels with the same bucket name share one per-user count. Leave empty to count this channel by itself.": "Каналы с одинаковым названием группы ведут общий счётчик на пользователя. Оставьте пустым, чтобы считать этот канал отдельно."
   }
 }

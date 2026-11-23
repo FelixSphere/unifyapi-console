@@ -5501,6 +5501,13 @@
     "Marked pricing group {{group}} as an access tier": "已將定價分組 {{group}} 標記為存取等級",
     "Removed the access tier mark from pricing group {{group}}": "已取消定價分組 {{group}} 的存取等級標記",
     "Enforce as a hard cap": "作為硬上限執行",
-    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "拒絕超出限制的請求。渠道超過每分鐘請求數或權杖數時，流量會轉到其他可用渠道；沒有其他渠道時，呼叫方會收到 429 和 Retry-After。關閉時，限制只用於分流，沒有其他渠道可用時仍會使用該渠道。"
+    "Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.": "拒絕超出限制的請求。渠道超過每分鐘請求數或權杖數時，流量會轉到其他可用渠道；沒有其他渠道時，呼叫方會收到 429 和 Retry-After。關閉時，限制只用於分流，沒有其他渠道可用時仍會使用該渠道。",
+    "Per-user requests per minute": "每使用者每分鐘請求數",
+    "Per-user tokens per minute": "每使用者每分鐘權杖數",
+    "Per-user requests per day": "每使用者每日請求數",
+    "Per-user tokens per day": "每使用者每日權杖數",
+    "Per-user limit bucket": "每使用者限額分組",
+    "What one user may send through this channel. 0 means unlimited. A user over a limit is routed to other channels that serve the model; if none can, they get 429 with Retry-After. Daily limits are per UTC day and reset at 00:00 UTC.": "單一使用者可透過此渠道傳送的用量。0 表示不限制。超出限制的使用者會被路由到提供該模型的其他渠道；沒有其他渠道時，會收到 429 和 Retry-After。每日限額按 UTC 自然日計算，在 UTC 00:00 重設。",
+    "Channels with the same bucket name share one per-user count. Leave empty to count this channel by itself.": "分組名稱相同的渠道共用同一份每使用者計數。留空則此渠道單獨計數。"
   }
 }

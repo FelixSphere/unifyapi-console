@@ -218,6 +218,17 @@ export const channelFormSchema = z
     rate_limit_tpm: z.number().min(0).optional(),
     // UNIFYAPI-FORK: stored in settings JSON as hard_rate_limit.
     hard_rate_limit: z.boolean().optional(),
+    // UNIFYAPI-FORK: stored in settings JSON as user_rate_limit and
+    // user_limit_bucket. 0 means unlimited.
+    user_limit_rpm: z.number().int().min(0).optional(),
+    user_limit_tpm: z.number().int().min(0).optional(),
+    user_limit_daily_requests: z.number().int().min(0).optional(),
+    user_limit_daily_tokens: z.number().int().min(0).optional(),
+    user_limit_bucket: z
+      .string()
+      .max(64)
+      .regex(/^[A-Za-z0-9._-]*$/)
+      .optional(),
     test_model: z.string().optional(),
     auto_ban: z.number().optional(),
     status: z.number(),
@@ -421,6 +432,11 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   rate_limit_rpm: 0,
   rate_limit_tpm: 0,
   hard_rate_limit: false,
+  user_limit_rpm: 0,
+  user_limit_tpm: 0,
+  user_limit_daily_requests: 0,
+  user_limit_daily_tokens: 0,
+  user_limit_bucket: '',
   test_model: '',
   auto_ban: 1,
   status: CHANNEL_STATUS.ENABLED,
@@ -579,6 +595,7 @@ export function transformChannelToFormDefaults(
     rate_limit_rpm: channel.rate_limit_rpm || 0,
     rate_limit_tpm: channel.rate_limit_tpm || 0,
     hard_rate_limit: parseHardRateLimit(channel.settings),
+    ...parseUserRateLimit(channel.settings),
     test_model: channel.test_model || '',
     auto_ban: channel.auto_ban ?? 1,
     status: channel.status,
@@ -659,6 +676,38 @@ export function parseHardRateLimit(
   }
 }
 
+// UNIFYAPI-FORK: what one user may send through the channel, as form fields.
+export function parseUserRateLimit(settings: string | null | undefined) {
+  const out = {
+    user_limit_rpm: 0,
+    user_limit_tpm: 0,
+    user_limit_daily_requests: 0,
+    user_limit_daily_tokens: 0,
+    user_limit_bucket: '',
+  }
+  if (!settings) return out
+  try {
+    const parsed = JSON.parse(settings)
+    const limit = parsed?.user_rate_limit
+    const count = (value: unknown) =>
+      typeof value === 'number' && Number.isInteger(value) && value > 0
+        ? value
+        : 0
+    if (limit && typeof limit === 'object') {
+      out.user_limit_rpm = count(limit.rpm)
+      out.user_limit_tpm = count(limit.tpm)
+      out.user_limit_daily_requests = count(limit.daily_requests)
+      out.user_limit_daily_tokens = count(limit.daily_tokens)
+    }
+    if (typeof parsed?.user_limit_bucket === 'string') {
+      out.user_limit_bucket = parsed.user_limit_bucket
+    }
+  } catch {
+    return out
+  }
+  return out
+}
+
 /**
  * Build the settings JSON string (for type-specific config like vertex_key_type)
  */
@@ -688,6 +737,32 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.hard_rate_limit = true
   } else if ('hard_rate_limit' in settingsObj) {
     delete settingsObj.hard_rate_limit
+  }
+
+  // UNIFYAPI-FORK: only the dimensions that are set are written, and the
+  // object is dropped when none is, so "off" is the absence of the key.
+  const userLimit: Record<string, number> = {}
+  const userLimitFields = {
+    rpm: formData.user_limit_rpm,
+    tpm: formData.user_limit_tpm,
+    daily_requests: formData.user_limit_daily_requests,
+    daily_tokens: formData.user_limit_daily_tokens,
+  }
+  for (const [dimension, value] of Object.entries(userLimitFields)) {
+    if (value) {
+      userLimit[dimension] = value
+    }
+  }
+  if (Object.keys(userLimit).length > 0) {
+    settingsObj.user_rate_limit = userLimit
+  } else if ('user_rate_limit' in settingsObj) {
+    delete settingsObj.user_rate_limit
+  }
+  const userLimitBucket = (formData.user_limit_bucket ?? '').trim()
+  if (userLimitBucket) {
+    settingsObj.user_limit_bucket = userLimitBucket
+  } else if ('user_limit_bucket' in settingsObj) {
+    delete settingsObj.user_limit_bucket
   }
 
   // Add vertex_key_type for Vertex AI channels (type 41)
