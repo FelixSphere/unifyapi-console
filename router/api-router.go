@@ -407,6 +407,9 @@ func SetApiRouter(router *gin.Engine) {
 			modelLaunchRoute.POST("/send", controller.SendModelLaunch)
 		}
 
+		// UNIFYAPI-FORK: email to customers from the Users page; AdminAuth.
+		registerAdminEmailRoutes(apiRouter)
+
 		// UNIFYAPI-BRAND: operator-facing tenant reporting. AdminAuth is applied
 		// on the group, before any handler, because these responses expose every
 		// customer's balance and spend. See controller/tenant.go.
