@@ -16,16 +16,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Plus } from 'lucide-react'
+import { Mail, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 
+// UNIFYAPI-FORK: "Email templates" opens the admin-email template manager.
+import { useAdminEmail } from '../admin-email/compose-context'
 import { useUsers } from './users-provider'
 
 export function UsersPrimaryButtons() {
   const { t } = useTranslation()
   const { setOpen, setCurrentRow } = useUsers()
+  const adminEmail = useAdminEmail()
 
   const handleCreate = () => {
     setCurrentRow(null)
@@ -34,6 +37,12 @@ export function UsersPrimaryButtons() {
 
   return (
     <div className='flex gap-2'>
+      {adminEmail && (
+        <Button size='sm' variant='outline' onClick={adminEmail.openTemplates}>
+          <Mail className='h-4 w-4' />
+          {t('Email templates')}
+        </Button>
+      )}
       <Button size='sm' onClick={handleCreate}>
         <Plus className='h-4 w-4' />
         {t('Add User')}

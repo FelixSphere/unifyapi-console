@@ -38,6 +38,7 @@ import (
 	"html"
 	"html/template"
 	"mime/multipart"
+	"net/mail"
 	"net/textproto"
 	"regexp"
 	"strings"
@@ -96,6 +97,10 @@ type EmailMessage struct {
 	// UnsubscribeURL is set only on mail a customer can opt out of (the weekly
 	// update). It renders as a footer link and goes out as List-Unsubscribe.
 	UnsubscribeURL string
+	// ReplyTo is a bare address sent as the Reply-To header (UNIFYAPI-FORK:
+	// admin email to customers). Empty, or anything that is not exactly one
+	// bare address, sends no Reply-To.
+	ReplyTo string
 	// Hero and Cards are for announcement mail. Both are optional and absent
 	// from every account email, which therefore renders exactly as before.
 	// Cards rise in one after another where the client runs CSS animation
@@ -275,7 +280,7 @@ func SendBrandedEmail(purpose string, receiver string, brand EmailBrand, msg Ema
 	if err != nil {
 		return err
 	}
-	err = sendEmailWithHeaders(msg.Subject, receiver, contentType, body, unsubscribeHeaders(msg.UnsubscribeURL))
+	err = sendEmailWithHeaders(msg.Subject, receiver, contentType, body, unsubscribeHeaders(msg.UnsubscribeURL)+replyToHeader(msg.ReplyTo))
 	if recorder := emailDeliveryRecorder.Load(); recorder != nil {
 		(*recorder)(receiver, purpose, err)
 	}
@@ -290,6 +295,28 @@ func unsubscribeHeaders(url string) string {
 		return ""
 	}
 	return "List-Unsubscribe: <" + url + ">\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n"
+}
+
+// replyToHeader is a Reply-To line for one bare address, or nothing. A value
+// with a display name, several addresses, or CR/LF is refused rather than
+// repaired, so a setting can never add a header of its own.
+func replyToHeader(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if !IsBareEmailAddress(addr) {
+		return ""
+	}
+	return "Reply-To: " + addr + "\r\n"
+}
+
+// IsBareEmailAddress says whether s is exactly one address with no display
+// name, angle brackets, separators or line breaks: the only shape safe to put
+// in a header or hand to the SMTP envelope as one recipient.
+func IsBareEmailAddress(s string) bool {
+	if s == "" || len(s) > 254 || strings.ContainsAny(s, "\r\n;,<>\" ") {
+		return false
+	}
+	parsed, err := mail.ParseAddress(s)
+	return err == nil && parsed.Name == "" && parsed.Address == s
 }
 
 // riseDelay staggers the cards the way the RSI app staggers its steps.

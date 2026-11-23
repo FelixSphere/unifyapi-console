@@ -136,6 +136,10 @@ func main() {
 	if err := model.MigrateModelLaunchEmail(); err != nil {
 		common.SysError("model launch email: migrate failed: " + err.Error())
 	}
+	if err := model.MigrateAdminEmail(); err != nil {
+		common.SysError("admin email: migrate failed: " + err.Error())
+	}
+	service.SweepInterruptedAdminEmail()
 	// UNIFYAPI-FORK: weekly customer email; off unless UNIFYAPI_RETENTION_EMAIL=on.
 	service.StartRetentionEmailWorker()
 	// UNIFYAPI-FORK: sends new-model announcements queued by the catalogue

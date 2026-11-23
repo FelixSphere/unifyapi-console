@@ -20,6 +20,8 @@ import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 
+// UNIFYAPI-FORK: admin email to customers (features/users/admin-email).
+import { AdminEmailProvider } from './admin-email/provider'
 import { UsersDeleteDialog } from './components/users-delete-dialog'
 import { UsersMutateDrawer } from './components/users-mutate-drawer'
 import { UsersPrimaryButtons } from './components/users-primary-buttons'
@@ -55,7 +57,10 @@ function UsersContent() {
 export function Users() {
   return (
     <UsersProvider>
-      <UsersContent />
+      {/* UNIFYAPI-FORK: admin email dialogs, opened from the table. */}
+      <AdminEmailProvider>
+        <UsersContent />
+      </AdminEmailProvider>
     </UsersProvider>
   )
 }

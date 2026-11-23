@@ -456,3 +456,26 @@ is refused on save), `model/log.go` (tokens), `service/channel_select.go`,
 `middleware/distributor.go`, `controller/relay.go`,
 `relaykit/dto/channel_settings.go`, and in `web/` `channel-form.ts`,
 `constants.ts` and `channel-mutate-drawer.tsx`.
+
+### Admin email to customers (unreleased)
+
+Admins can email one customer, or many at once, from the Users page: the
+username opens a "Send email" dialog, the bulk bar has "Send email" for the
+selected rows, and "Email templates" manages reusable messages. Two tables,
+ours: `admin_email_templates` (two built-ins, Welcome and Claude Mythos access,
+seeded once each; soft delete keeps a deleted built-in deleted) and
+`admin_email_sends` (one row per recipient per send, skipped ones included).
+Messages use the shared branded layout (`SendBrandedEmail`), are queued in
+memory and delivered by one worker at 4 per second, and carry the
+`admin_email.reply_to` option as Reply-To when it is set. A bulk send skips
+disabled accounts and users on the shared product-email opt-out
+(`retention_email_unsubscribes`) and carries the unsubscribe link and
+`List-Unsubscribe`; a message to one user is personal and does neither.
+Backend in `model/`, `service/`, `controller/`, `router/` and
+`setting/system_setting/` `unifyapi_admin_email*.go`; routes under
+`/api/admin-email` (admin; the Reply-To setting is root). Touch points, all
+marked `UNIFYAPI-FORK`: `main.go` (migration, boot sweep of interrupted rows),
+`router/api-router.go`, `common/email_template_unifyapi.go` (Reply-To header),
+and in `web/` `features/users/index.tsx`, `users-columns.tsx`,
+`data-table-bulk-actions.tsx` and `users-primary-buttons.tsx`; the dialogs are
+new files in `features/users/admin-email/`.
