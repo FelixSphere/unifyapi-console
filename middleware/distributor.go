@@ -58,6 +58,23 @@ func Distribute() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorChannelDisabled))
 				return
 			}
+			// UNIFYAPI-FORK: a key pinned to a channel has nowhere else to go,
+			// so a channel that is full, or that this user has used up their
+			// allowance on, refuses it here.
+			if shouldSelectChannel {
+				pinnedModel := ""
+				if modelRequest != nil {
+					pinnedModel = modelRequest.Model
+				}
+				switch service.AdmitSelectedChannel(c, channel) {
+				case service.ChannelHardLimited:
+					abortChannelHardRateLimited(c, pinnedModel)
+					return
+				case service.ChannelUserLimited:
+					abortChannelUserRateLimited(c, pinnedModel)
+					return
+				}
+			}
 		} else {
 			// Select a channel for the user
 			// check token model mapping
@@ -135,8 +152,15 @@ func Distribute() func(c *gin.Context) {
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, routing); found {
 					affinityUsable := false
 					preferred, err := model.CacheGetChannel(preferredChannelID)
-					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
-						channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model) {
+					// UNIFYAPI-FORK: affinity does not outrank a hard limit or
+					// the user's own allowance. The channel is passed over for
+					// this request only; the affinity entry is not cleared.
+					preferredUsable := err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
+						channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model)
+					affinityHardLimited := preferredUsable &&
+						affinityServesRequest(c, routing, usingGroup, modelRequest.Model, preferred.Id) &&
+						service.AdmitSelectedChannel(c, preferred) != service.ChannelAdmitted
+					if preferredUsable && !affinityHardLimited {
 						if routing == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 							autoGroups := service.GetRequestAutoGroups(c, userGroup)
@@ -157,7 +181,7 @@ func Distribute() func(c *gin.Context) {
 							service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
 						}
 					}
-					if !affinityUsable && !service.ShouldKeepChannelAffinityOnChannelDisabled() {
+					if !affinityUsable && !affinityHardLimited && !service.ShouldKeepChannelAffinityOnChannelDisabled() {
 						service.ClearCurrentChannelAffinityCache(c)
 					}
 				}
@@ -197,6 +221,14 @@ func Distribute() func(c *gin.Context) {
 					})
 				}
 
+				if errors.Is(err, model.ErrChannelHardRateLimited) {
+					abortChannelHardRateLimited(c, modelRequest.Model)
+					return
+				}
+				if errors.Is(err, model.ErrChannelUserRateLimited) {
+					abortChannelUserRateLimited(c, modelRequest.Model)
+					return
+				}
 				if err != nil {
 					// UNIFYAPI-FORK: a name we do not serve is the caller's
 					// mistake, not our outage. Answering 503 made SDKs retry a
@@ -254,6 +286,21 @@ func Distribute() func(c *gin.Context) {
 			service.SettleChannelAffinity(c, channel.Id, affinityGroup)
 		}
 	}
+}
+
+// affinityServesRequest reports whether the affinity channel would actually
+// be used for this request, so that only a request it would serve is counted
+// against its hard limit. UNIFYAPI-FORK.
+func affinityServesRequest(c *gin.Context, routing string, usingGroup string, modelName string, channelId int) bool {
+	if routing != "auto" {
+		return model.IsChannelEnabledForGroupModel(usingGroup, modelName, channelId)
+	}
+	for _, g := range service.GetRequestAutoGroups(c, common.GetContextKeyString(c, constant.ContextKeyUserGroup)) {
+		if model.IsChannelEnabledForGroupModel(g, modelName, channelId) {
+			return true
+		}
+	}
+	return false
 }
 
 // channelSupportsRequestPath reports whether a channel can serve the request path.

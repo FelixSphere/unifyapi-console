@@ -378,6 +378,12 @@ export const FIELD_DESCRIPTIONS = {
     'Max requests per minute this channel may send upstream. 0 means unlimited. While over the limit the channel is skipped during selection, so traffic goes elsewhere instead of returning 429.',
   RATE_LIMIT_TPM:
     'Max tokens per minute for this channel. 0 means unlimited. Counted after each request completes, so the limit can be exceeded by one request.',
+  HARD_RATE_LIMIT:
+    'Refuse requests over the limit. While the channel is over its requests or tokens per minute, traffic goes to another channel if one can serve it; otherwise the caller gets 429 with Retry-After. When off, the limit only steers traffic and the channel is still used if nothing else can serve.',
+  USER_RATE_LIMIT:
+    'What one user may send through this channel. 0 means unlimited. A user over a limit is routed to other channels that serve the model; if none can, they get 429 with Retry-After. Daily limits are per UTC day and reset at 00:00 UTC.',
+  USER_LIMIT_BUCKET:
+    'Channels with the same bucket name share one per-user count. Leave empty to count this channel by itself.',
   TEST_MODEL: 'Model to use when testing channel connectivity',
   AUTO_BAN: 'Automatically disable channel on repeated failures',
   STATUS_CODE_MAPPING: 'Map response status codes (JSON format)',

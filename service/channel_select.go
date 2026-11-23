@@ -81,6 +81,37 @@ func (p *RetryParam) ResetRetryNextTry() {
 //	Retry=3: GroupB, priority1 (startRetryIndex=2, priorityRetry=1)
 //	         分组B, 优先级1
 func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
+	// UNIFYAPI-FORK: the chosen channel is admitted exactly, against its
+	// counters, after it is chosen. One that refuses -- a hard-limited channel
+	// that is full, or one this user has used up their allowance on -- is left
+	// out and selection runs again, so traffic moves to whatever else can
+	// serve and is refused only when nothing can.
+	refused := model.ErrChannelHardRateLimited
+	for attempt := 0; attempt <= model.MaxHardLimitReselects; attempt++ {
+		channel, selectGroup, err := selectRandomSatisfiedChannel(param)
+		if err != nil || channel == nil {
+			return channel, selectGroup, err
+		}
+		switch AdmitSelectedChannel(param.Ctx, channel) {
+		case ChannelAdmitted:
+			if !channel.HardRateLimit() {
+				// UNIFYAPI-BRAND: count the request against the chosen
+				// channel's RPM window. Only on the success path -- a channel
+				// we did not end up using should not be charged for a request
+				// it never received.
+				model.RecordChannelRequest(param.Ctx, channel.Id)
+			}
+			return channel, selectGroup, nil
+		case ChannelUserLimited:
+			refused = model.ErrChannelUserRateLimited
+		default:
+			refused = model.ErrChannelHardRateLimited
+		}
+	}
+	return nil, param.TokenGroup, refused
+}
+
+func selectRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
 	// UNIFYAPI-BRAND: refresh the channel-saturation snapshot before selecting.
 	// A no-op unless it is due, and deliberately here -- outside
 	// channelSyncLock -- so the selection path itself never touches Redis.
@@ -88,6 +119,8 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 
 	var channel *model.Channel
 	var err error
+	hardLimited, userLimited := false, false
+	excluded := UserLimitedChannels(param.Ctx)
 	selectGroup := param.TokenGroup
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
 
@@ -120,7 +153,14 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, _ = model.GetRandomSatisfiedChannel(autoGroup, param.ModelName, priorityRetry, param.RequestPath)
+			var groupErr error
+			channel, groupErr = model.GetRandomSatisfiedChannelExcluding(autoGroup, param.ModelName, priorityRetry, param.RequestPath, excluded)
+			if errors.Is(groupErr, model.ErrChannelHardRateLimited) {
+				hardLimited = true
+			}
+			if errors.Is(groupErr, model.ErrChannelUserRateLimited) {
+				userLimited = true
+			}
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
 				// 当前分组没有该模型的可用渠道，尝试下一个分组
@@ -158,16 +198,18 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			break
 		}
 	} else {
-		channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry(), param.RequestPath)
+		channel, err = model.GetRandomSatisfiedChannelExcluding(param.TokenGroup, param.ModelName, param.GetRetry(), param.RequestPath, excluded)
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}
 	}
-	// UNIFYAPI-BRAND: count the request against the chosen channel's RPM window.
-	// Only on the success path -- a channel we did not end up using should not
-	// be charged for a request it never received.
-	if channel != nil {
-		model.RecordChannelRequest(param.Ctx, channel.Id)
+	if channel == nil && hardLimited {
+		// UNIFYAPI-FORK: a later auto group having no channel at all must not
+		// turn "full this minute" into "no available channel".
+		return nil, selectGroup, model.ErrChannelHardRateLimited
+	}
+	if channel == nil && userLimited {
+		return nil, selectGroup, model.ErrChannelUserRateLimited
 	}
 	return channel, selectGroup, nil
 }
