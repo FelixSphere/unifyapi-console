@@ -12,6 +12,15 @@ import (
 )
 
 func GetUserUsableGroups(userGroup string) map[string]string {
+	// UNIFYAPI-FORK: a BYOK login uses its own provider key, and the promise
+	// that comes with it is that its requests go nowhere else. Its usable
+	// groups are therefore its own group and whatever an operator granted it
+	// explicitly with "+:" -- not the general list, which would let a token
+	// set to `auto`, or to one of our groups, send that customer's requests
+	// through our suppliers (model/unifyapi_byok_group.go).
+	if model.IsBYOKGroup(userGroup) {
+		return GetUserBillableGroups(userGroup)
+	}
 	groupsCopy := setting.GetUserUsableGroupsCopy()
 	// A provisioned customer's group is that customer's identity: the name is
 	// the customer's name and the ratio is their commercial terms. It must

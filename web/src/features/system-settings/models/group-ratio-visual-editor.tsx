@@ -16,7 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { AlertTriangle, GripVertical, Info, Plus, Trash2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import {
+  AlertTriangle,
+  GripVertical,
+  Info,
+  Pencil,
+  Plus,
+  Trash2,
+} from 'lucide-react'
 import {
   useState,
   useMemo,
@@ -60,8 +68,18 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 
+import { getAccessTierGroups } from '../api'
 import { safeJsonParse } from '../utils/json-parser'
+import {
+  GroupAccessTierDialog,
+  type AccessTierChange,
+} from './group-access-tier-dialog'
+import {
+  ACCESS_TIER_GROUPS_QUERY_KEY,
+  accessTierBlocker,
+} from './group-access-tier-logic'
 import { GroupModelPricingEditor } from './group-model-pricing-editor'
+import { GroupRenameDialog } from './group-rename-dialog'
 
 type GroupRatioVisualEditorProps = {
   groupRatio: string
@@ -70,11 +88,20 @@ type GroupRatioVisualEditorProps = {
   autoGroups: string
   maxTokenAutoGroupsField: ReactNode
   groupSpecialUsableGroup: string
+  // UNIFYAPI-FORK: the groups the stored Group Pricing has, and whether the
+  // form differs from what is stored. A stored group is renamed by the server
+  // (see group-rename-logic.ts), not by typing over its name.
+  savedGroupNames?: readonly string[]
+  hasUnsavedChanges?: boolean
   onChange: (field: string, value: string) => void
 }
 
 type GroupPricingRow = {
   _id: string
+  // UNIFYAPI-FORK: a row the operator added and has not saved. Only a draft's
+  // name is a free-text field; it says so on the row rather than by comparing
+  // names, because a draft may be typed to match a name that already exists.
+  draft: boolean
   name: string
   ratio: string
   topupRatio: string
@@ -119,7 +146,8 @@ function parseUsableMap(value: string): Record<string, string> {
 function buildGroupPricingRows(
   groupRatio: string,
   userUsableGroups: string,
-  topupGroupRatio: string
+  topupGroupRatio: string,
+  savedGroupNames: readonly string[]
 ): GroupPricingRow[] {
   const ratioMap = parseRatioMap(groupRatio)
   const usableMap = parseUsableMap(userUsableGroups)
@@ -132,6 +160,7 @@ function buildGroupPricingRows(
 
   return [...names].map((name) => ({
     _id: createGroupPricingId(),
+    draft: !savedGroupNames.includes(name),
     name,
     ratio: String(normalizeRatio(ratioMap[name])),
     topupRatio: Object.hasOwn(topupMap, name) ? String(topupMap[name]) : '',
@@ -242,6 +271,8 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   autoGroups,
   maxTokenAutoGroupsField,
   groupSpecialUsableGroup,
+  savedGroupNames,
+  hasUnsavedChanges = false,
   onChange,
 }: GroupRatioVisualEditorProps) {
   const { t } = useTranslation()
@@ -313,6 +344,8 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
         groupRatio={groupRatio}
         userUsableGroups={userUsableGroups}
         topupGroupRatio={topupGroupRatio}
+        savedGroupNames={savedGroupNames}
+        hasUnsavedChanges={hasUnsavedChanges}
         onChange={onChange}
         onShowDetail={setDetailGroup}
       />
@@ -403,21 +436,61 @@ type GroupPricingTableProps = {
   groupRatio: string
   userUsableGroups: string
   topupGroupRatio: string
+  savedGroupNames?: readonly string[]
+  hasUnsavedChanges: boolean
   onChange: (field: string, value: string) => void
   onShowDetail: (name: string) => void
 }
+
+const NO_SAVED_GROUPS: readonly string[] = []
 
 function GroupPricingTable({
   groupRatio,
   userUsableGroups,
   topupGroupRatio,
+  savedGroupNames = NO_SAVED_GROUPS,
+  hasUnsavedChanges,
   onChange,
   onShowDetail,
 }: GroupPricingTableProps) {
   const { t } = useTranslation()
-  const [rows, setRows] = useState<GroupPricingRow[]>(() =>
-    buildGroupPricingRows(groupRatio, userUsableGroups, topupGroupRatio)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  // UNIFYAPI-FORK: which groups are access tiers is stored by the server, not
+  // by this form, so it is read on its own and changed one group at a time.
+  const [tierChange, setTierChange] = useState<AccessTierChange | null>(null)
+  const accessTiers = useQuery({
+    queryKey: ACCESS_TIER_GROUPS_QUERY_KEY,
+    queryFn: getAccessTierGroups,
+  })
+  const tierGroups = accessTiers.data?.data?.groups ?? NO_SAVED_GROUPS
+  const tiersLoaded = accessTiers.data?.success === true
+  const savedNamesKey = JSON.stringify(savedGroupNames)
+  const savedNames = useMemo<readonly string[]>(
+    () => JSON.parse(savedNamesKey),
+    [savedNamesKey]
   )
+  const [rows, setRows] = useState<GroupPricingRow[]>(() =>
+    buildGroupPricingRows(
+      groupRatio,
+      userUsableGroups,
+      topupGroupRatio,
+      savedNames
+    )
+  )
+
+  // UNIFYAPI-FORK: once a save stores a row it stops being a draft, even when
+  // the form's values did not change and the rows were therefore not rebuilt.
+  useEffect(() => {
+    setRows((currentRows) =>
+      currentRows.some((row) => row.draft && savedNames.includes(row.name))
+        ? currentRows.map((row) =>
+            row.draft && savedNames.includes(row.name)
+              ? { ...row, draft: false }
+              : row
+          )
+        : currentRows
+    )
+  }, [savedNames])
 
   useEffect(() => {
     const incomingSignature = sourceGroupPricingSignature(
@@ -432,9 +505,13 @@ function GroupPricingTable({
       return buildGroupPricingRows(
         groupRatio,
         userUsableGroups,
-        topupGroupRatio
+        topupGroupRatio,
+        savedNames
       )
     })
+    // savedNames is read, not watched: a save that changes nothing in the form
+    // must not rebuild the rows. The effect above settles the draft flags.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupRatio, userUsableGroups, topupGroupRatio])
 
   const emitRows = useCallback(
@@ -473,10 +550,14 @@ function GroupPricingTable({
       ...rows,
       {
         _id: createGroupPricingId(),
+        draft: true,
         name,
         ratio: '1',
         topupRatio: '',
-        selectable: true,
+        // UNIFYAPI-FORK: a new group is a customer's own price list. Ticking
+        // "User selectable" publishes it to every login as a group they may
+        // put a key in, so that is a choice and not the default.
+        selectable: false,
         description: '',
       },
     ])
@@ -531,15 +612,26 @@ function GroupPricingTable({
                 id: 'group',
                 header: t('Group name'),
                 className: 'min-w-40',
-                cell: (row) => (
-                  <Input
-                    value={row.name}
-                    onChange={(event) =>
-                      updateRow(row._id, 'name', event.target.value)
-                    }
-                    aria-invalid={duplicateNames.includes(row.name.trim())}
-                  />
-                ),
+                cell: (row) =>
+                  row.draft ? (
+                    <Input
+                      value={row.name}
+                      onChange={(event) =>
+                        updateRow(row._id, 'name', event.target.value)
+                      }
+                      aria-invalid={duplicateNames.includes(row.name.trim())}
+                    />
+                  ) : (
+                    <Input
+                      value={row.name}
+                      readOnly
+                      className='bg-muted/40'
+                      title={t(
+                        'Use Rename to change the name of a saved group'
+                      )}
+                      aria-invalid={duplicateNames.includes(row.name.trim())}
+                    />
+                  ),
               },
               {
                 id: 'ratio',
@@ -610,6 +702,46 @@ function GroupPricingTable({
                   ),
               },
               {
+                // UNIFYAPI-FORK: a group whose logins keep their own wallets.
+                id: 'access-tier',
+                header: (
+                  <span
+                    title={t('Access tier: members keep their own wallets')}
+                  >
+                    {t('Access tier')}
+                  </span>
+                ),
+                className: 'w-28 text-center',
+                cell: (row) => {
+                  const blocker = accessTierBlocker(row)
+                  const marked = tierGroups.includes(row.name)
+                  return (
+                    <div
+                      className='flex justify-center'
+                      title={
+                        blocker
+                          ? t(blocker)
+                          : t('Access tier: members keep their own wallets')
+                      }
+                    >
+                      <Checkbox
+                        checked={marked}
+                        disabled={blocker !== null || !tiersLoaded}
+                        onCheckedChange={(checked) =>
+                          setTierChange({
+                            group: row.name,
+                            accessTier: checked === true,
+                          })
+                        }
+                        aria-label={t(
+                          'Access tier: members keep their own wallets'
+                        )}
+                      />
+                    </div>
+                  )
+                },
+              },
+              {
                 id: 'actions',
                 header: t('Actions'),
                 className: 'text-right',
@@ -625,6 +757,24 @@ function GroupPricingTable({
                     >
                       <Info className='h-4 w-4' />
                     </Button>
+                    {!row.draft && (
+                      <Button
+                        variant='ghost'
+                        size='sm'
+                        onClick={() => setRenaming(row.name)}
+                        disabled={hasUnsavedChanges}
+                        title={
+                          hasUnsavedChanges
+                            ? t(
+                                'Save or discard your other changes before renaming a group'
+                              )
+                            : t('Rename group')
+                        }
+                        aria-label={t('Rename group')}
+                      >
+                        <Pencil className='h-4 w-4' />
+                      </Button>
+                    )}
                     <Button
                       variant='ghost'
                       size='sm'
@@ -646,6 +796,15 @@ function GroupPricingTable({
               })}
             </p>
           )}
+          <GroupRenameDialog
+            group={renaming}
+            existingNames={rows.map((row) => row.name.trim())}
+            onClose={() => setRenaming(null)}
+          />
+          <GroupAccessTierDialog
+            change={tierChange}
+            onClose={() => setTierChange(null)}
+          />
         </div>
       </CardContent>
     </Card>

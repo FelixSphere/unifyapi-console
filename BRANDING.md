@@ -88,6 +88,8 @@ finds the whole delta without consulting git history.
 | `web/src/main.tsx` | import `useAuthStore`; call `watchHubSpotChat(window, router, useAuthStore)` | The router is created here, so this is the one place that sees every route, public and logged-in, next to the auth store that says who is looking. The logic (no inject before the first resolve, sync on each resolved path change, reload on sign-in) lives in our own `brand/hubspot-chat.ts`; this file only carries the import and the one call. |
 | `web/src/main.tsx` | render `<CookieNotice router={router} auth={useAuthStore} />` beside `<RouterProvider>` | Mounted once, next to the router it reads the path from, so it covers every route; it shows only where `shouldShowHubSpotChat()` is true for the auth store's visitor (signed out only). The logic lives in our own `brand/cookie-notice.tsx` and `brand/cookie-consent.ts`; this file only carries the import and the one element. |
 | `web/src/main.tsx` | `<ThemeProvider defaultTheme='light'>` | Required, not cosmetic. CSS cannot reach the JS consumers of `resolvedTheme` — VChart (`lib/use-chart-theme.ts`, the three dashboard chart components) and Sonner. Without it, charts and toasts render dark on a paper-white page. |
+| `web/src/hooks/use-table-url-state.ts` | import `recallTableFilters` / `rememberTableFilters`; read the column filters through the first, call the second where a filter change is written to the URL | The one hook every list table (Users, Keys, Models, Deployments, Redemption Codes, Channels, Usage Logs) reads its filters from, so three lines here cover them all. The logic lives in our own `brand/remembered-table-filters.ts`; a table's faceted filter chips are remembered per signed-in user and page, the URL still wins, and a filter with its own `deserialize` (Channels status, Usage Logs type) is left alone. Operator, 2026-11-22. |
+| `…/users/components/users-table.tsx`, `…/models/components/models-table.tsx`, `…/models/components/deployments-table.tsx`, `…/redemption-codes/components/redemptions-table.tsx` | pass `columnVisibilityStorageKey` to `useDataTable` | Upstream's own option, already used by Channels, Keys and Usage Logs: the View column choice is remembered on these four tables too. One added line each. |
 | `…/layout/components/authenticated-layout.tsx` | mount `<UpstreamAttribution />`; `<AppHeader showConfigDrawer={false} />`; mount `<SupportWidget />` (the floating support chat, `features/support/widget.tsx`, fixed-position and outside `SidebarInset`, so it never sits in or over the attribution bar) | The config drawer is simultaneously the dark-mode switch and the theme-preset/font/radius picker. Disabling it pins the brand and guarantees `data-theme-preset` is never written to `<body>` — which matters because the preset bridge selector in `theme-presets.css` has specificity (0,4,0) and would out-rank our `:root`. |
 | `…/layout/components/public-layout.tsx` | mount `<UpstreamAttribution />`; default `showThemeSwitch` to `false` | One line covers all nine early returns across `features/home` and `features/about`, plus `/pricing`, `/rankings`, and the legal pages. `public-header.tsx` defaults the switch on. |
 | `…/layout/components/footer.tsx` | `export` `ProjectAttribution` | One word, so our bar reuses upstream's notice verbatim instead of duplicating it. |
@@ -116,6 +118,8 @@ finds the whole delta without consulting git history.
   loads, so never to a signed-in user and not before auth has answered. Unlike FelixSphere,
   Reject queues HubSpot's `doNotTrack` (Accept opts back in).
   Links to https://www.unifyapi.ai/privacy. Its four strings are in all seven locales.
+- `web/src/brand/remembered-table-filters.ts` — remembers a table's filter chips in `localStorage`
+  (`unifyapi:table-filters:<user id>:<path>`), read and written by `hooks/use-table-url-state.ts`.
 - `web/scripts/check-brand-invariants.mjs` — the licence/brand guard.
 - `.github/workflows/fork-ci.yml` — fork-owned CI.
 - `BRANDING.md` — this file.
@@ -374,3 +378,104 @@ a Redis-or-memory outbox replayed by a worker, exactly once via the additive
 all marked `UNIFYAPI-FORK`: `main.go` (start worker, shutdown flush),
 `model/main.go` (migration, pool ceiling), `model/user.go` and `model/log.go`
 (retried calls), `service/billing_session.go` (park on refusal).
+
+### Pricing group rename (unreleased)
+
+A pricing group has no id: its name is what logins, API keys, the wallet,
+per-model prices and channel rules store. `model/unifyapi_pricing_group_rename.go`
+adds `RenamePricingGroup`, which moves every reference in one transaction
+without re-homing a wallet, and `protectPricingGroupsInUse`, which refuses a
+Group Pricing save that drops a group something still depends on.
+`controller/unifyapi_pricing_group_rename.go` serves it at
+`POST /api/pricing/group/rename` (root only). In the web console
+`group-rename-dialog.tsx` and `group-rename-logic.ts` are new; a saved group's
+name is read-only in the table and is changed through the dialog. Upstream
+touch points, all marked `UNIFYAPI-FORK`: `model/option.go` (the guard, and one
+shared helper for how a stored option is loaded into memory),
+`controller/audit.go`, `router/api-router.go`, and in `web/`
+`group-ratio-visual-editor.tsx`, `group-ratio-form.tsx`,
+`ratio-settings-card.tsx` (which also stops a save at the first setting the
+server refuses), `api.ts`, `types.ts` and `usage-logs/lib/format.ts`.
+
+### Access tier groups (unreleased)
+
+A pricing group is a customer with one wallet (`model/customer_wallet.go`). A
+group that only grants something, such as access to a model, is not: its
+members are strangers. `model/unifyapi_access_tier_group.go` adds the option
+`AccessTierGroups` (a JSON list of group names, empty by default) and
+`SetPricingGroupAccessTier`, which marks or un-marks one group and refuses when
+logins of the group already share a wallet; a login in a marked group keeps a
+wallet of its own, as a `default` login does.
+`controller/unifyapi_access_tier_group.go` serves it at
+`GET` and `POST /api/pricing/group/access-tier` (root only). In the web console
+`group-access-tier-dialog.tsx` and `group-access-tier-logic.ts` are new, and
+Group Pricing has an "Access tier" box per saved group. Touch points, all
+marked `UNIFYAPI-FORK`: `model/customer_wallet.go` (`isCustomerGroupTx` answers
+no for a marked group), `model/option.go` (the list is not saved as a plain
+option), `model/unifyapi_pricing_group_rename.go` (a rename renames the mark;
+Group Pricing cannot drop a marked group), `model/partnership_program.go` (a
+program cannot use a marked group), `controller/audit.go`,
+`router/api-router.go`, and in `web/` `group-ratio-visual-editor.tsx`,
+`api.ts`, `types.ts` and `usage-logs/lib/format.ts`.
+
+### Channel hard rate limit (unreleased)
+
+A channel's `rate_limit_rpm` / `rate_limit_tpm` (`model/channel_rate_limit.go`)
+is load balancing: a channel over its limit is still used when no other
+candidate at its priority can serve. `model/unifyapi_channel_hard_rate_limit.go`
+adds the channel setting `hard_rate_limit` (in `channels.settings`, off by
+default) which makes the same two numbers a cap: a full channel is not chosen
+by selection, affinity, a channel-pinned key or a retry, and when nothing else
+can serve the caller gets 429 with `Retry-After`
+(`middleware/unifyapi_channel_hard_rate_limit.go`). Requests are counted
+exactly at admission; tokens after the fact. Touch points, all marked
+`UNIFYAPI-FORK`: `model/channel_cache.go` (full hard channels are not
+candidates), `model/channel_rate_limit.go` (in-process token count),
+`service/channel_select.go` (admit, then reselect), `middleware/distributor.go`
+(affinity, pinned key, the 429), `controller/relay.go` (retry and task paths),
+`relaykit/dto/channel_settings.go`, and in `web/` `channel-form.ts`,
+`constants.ts` and `channel-mutate-drawer.tsx` (the "Enforce as a hard cap"
+switch).
+
+### Per-user limit on a channel (unreleased)
+
+`model/unifyapi_channel_user_rate_limit.go` adds two channel settings in
+`channels.settings`, both absent by default: `user_rate_limit` (`rpm`, `tpm`,
+`daily_requests`, `daily_tokens`; a zero or missing field is unlimited) and
+`user_limit_bucket`. They cap what one user may send through the channel,
+counted per user and channel -- or per user and bucket, for channels that name
+the same one -- and never per token group. Minute windows are clock minutes
+and daily windows are UTC days. A user who is over is not routed to the
+channel; when no other channel can serve, the caller gets 429 with
+`Retry-After` and the error code `user_rate_limit_exceeded`.
+`service/unifyapi_channel_admission.go` is the one place a chosen channel is
+admitted against this and against the hard channel limit. Touch points, all
+marked `UNIFYAPI-FORK`: `model/channel_cache.go`
+(`GetRandomSatisfiedChannelExcluding`), `model/channel.go` (a malformed limit
+is refused on save), `model/log.go` (tokens), `service/channel_select.go`,
+`middleware/distributor.go`, `controller/relay.go`,
+`relaykit/dto/channel_settings.go`, and in `web/` `channel-form.ts`,
+`constants.ts` and `channel-mutate-drawer.tsx`.
+
+### Admin email to customers (unreleased)
+
+Admins can email one customer, or many at once, from the Users page: the
+username opens a "Send email" dialog, the bulk bar has "Send email" for the
+selected rows, and "Email templates" manages reusable messages. Two tables,
+ours: `admin_email_templates` (two built-ins, Welcome and Claude Mythos access,
+seeded once each; soft delete keeps a deleted built-in deleted) and
+`admin_email_sends` (one row per recipient per send, skipped ones included).
+Messages use the shared branded layout (`SendBrandedEmail`), are queued in
+memory and delivered by one worker at 4 per second, and carry the
+`admin_email.reply_to` option as Reply-To when it is set. A bulk send skips
+disabled accounts and users on the shared product-email opt-out
+(`retention_email_unsubscribes`) and carries the unsubscribe link and
+`List-Unsubscribe`; a message to one user is personal and does neither.
+Backend in `model/`, `service/`, `controller/`, `router/` and
+`setting/system_setting/` `unifyapi_admin_email*.go`; routes under
+`/api/admin-email` (admin; the Reply-To setting is root). Touch points, all
+marked `UNIFYAPI-FORK`: `main.go` (migration, boot sweep of interrupted rows),
+`router/api-router.go`, `common/email_template_unifyapi.go` (Reply-To header),
+and in `web/` `features/users/index.tsx`, `users-columns.tsx`,
+`data-table-bulk-actions.tsx` and `users-primary-buttons.tsx`; the dialogs are
+new files in `features/users/admin-email/`.

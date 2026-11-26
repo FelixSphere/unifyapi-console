@@ -277,6 +277,7 @@ const SENSITIVE_FORM_FIELDS = [
   'header_override',
   'settings',
   'setting',
+  'excluded_groups',
   'advanced_custom',
   'is_enterprise_account',
   'vertex_key_type',
@@ -918,10 +919,26 @@ export function ChannelMutateDrawer({
 
   // Every pricing group not picked above still has access; see
   // lib/channel-groups.ts.
+  const currentExcludedGroups = form.watch('excluded_groups')
   const inheritedGroups = useMemo(
-    () => splitChannelGroups(currentGroups || [], groupsData?.data).inherited,
-    [groupsData, currentGroups]
+    () =>
+      splitChannelGroups(
+        currentGroups || [],
+        groupsData?.data,
+        currentExcludedGroups
+      ).inherited,
+    [groupsData, currentGroups, currentExcludedGroups]
   )
+  const excludableGroupOptions = useMemo(() => {
+    const own = new Set(currentGroups || [])
+    const excludable = new Set([
+      ...(groupsData?.data ?? []),
+      ...(currentExcludedGroups ?? []),
+    ])
+    return [...excludable]
+      .filter((group) => !own.has(group))
+      .map((group) => ({ value: group, label: group }))
+  }, [groupsData, currentGroups, currentExcludedGroups])
 
   // Parse current models as array
   const currentModelsArray = useMemo(
@@ -3054,11 +3071,6 @@ export function ChannelMutateDrawer({
                                               <p className='text-sm font-medium'>
                                                 {t('Current key')}
                                               </p>
-                                              <p className='text-muted-foreground text-xs'>
-                                                {t(
-                                                  'Verification required to reveal the saved key.'
-                                                )}
-                                              </p>
                                             </div>
                                             <div className='flex items-center gap-2'>
                                               <Button
@@ -3100,9 +3112,7 @@ export function ChannelMutateDrawer({
                                           <Input
                                             readOnly
                                             value={channelKey ?? ''}
-                                            placeholder={t(
-                                              'Hidden — verify to reveal'
-                                            )}
+                                            placeholder='••••••••••••'
                                             className='font-mono'
                                           />
                                         </div>
@@ -3630,7 +3640,33 @@ export function ChannelMutateDrawer({
                                       <MultiSelect
                                         options={groupOptions}
                                         selected={field.value}
-                                        onChange={field.onChange}
+                                        onChange={(groups) => {
+                                          field.onChange(groups)
+                                          // Picking a blocked group as the
+                                          // channel's own unblocks it. The
+                                          // block list is a sensitive field,
+                                          // so only for an admin who may
+                                          // change it; otherwise the block
+                                          // stands, as it does on the server.
+                                          if (sensitiveLocked) return
+                                          const excluded =
+                                            form.getValues('excluded_groups') ??
+                                            []
+                                          if (
+                                            excluded.some((group) =>
+                                              groups.includes(group)
+                                            )
+                                          ) {
+                                            form.setValue(
+                                              'excluded_groups',
+                                              excluded.filter(
+                                                (group) =>
+                                                  !groups.includes(group)
+                                              ),
+                                              { shouldDirty: true }
+                                            )
+                                          }
+                                        }}
                                         placeholder={t(
                                           FIELD_PLACEHOLDERS.GROUP
                                         )}
@@ -3650,6 +3686,40 @@ export function ChannelMutateDrawer({
                                       )}
                                     </p>
                                   )}
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name='excluded_groups'
+                              render={({ field }) => (
+                                <FormItem className='mt-4 space-y-3'>
+                                  <div className='space-y-1'>
+                                    <FormLabel>
+                                      {t('Blocked customer groups')}
+                                    </FormLabel>
+                                    <FormDescription>
+                                      {t(
+                                        'Requests from these customer groups never use this channel.'
+                                      )}
+                                    </FormDescription>
+                                  </div>
+                                  <FormControl>
+                                    {isLoadingGroups ? (
+                                      <Skeleton className='h-10 w-full' />
+                                    ) : (
+                                      <MultiSelect
+                                        options={excludableGroupOptions}
+                                        selected={field.value ?? []}
+                                        onChange={field.onChange}
+                                        disabled={sensitiveLocked}
+                                        placeholder={t(
+                                          'Select customer groups to block'
+                                        )}
+                                      />
+                                    )}
+                                  </FormControl>
                                   <FormMessage />
                                 </FormItem>
                               )}
@@ -3785,6 +3855,161 @@ export function ChannelMutateDrawer({
                                     </FormControl>
                                     <FormDescription>
                                       {t(FIELD_DESCRIPTIONS.RATE_LIMIT_TPM)}
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            </div>
+
+                            {/* UNIFYAPI-FORK: makes the two limits above a cap */}
+                            <FormField
+                              control={form.control}
+                              name='hard_rate_limit'
+                              render={({ field }) => (
+                                <FormItem className='flex items-center justify-between gap-4'>
+                                  <div className='space-y-0.5'>
+                                    <FormLabel>
+                                      {t('Enforce as a hard cap')}
+                                    </FormLabel>
+                                    <FormDescription>
+                                      {t(FIELD_DESCRIPTIONS.HARD_RATE_LIMIT)}
+                                    </FormDescription>
+                                  </div>
+                                  <FormControl>
+                                    <Switch
+                                      checked={field.value === true}
+                                      onCheckedChange={field.onChange}
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+
+                            {/* UNIFYAPI-FORK: what one user may send through this channel */}
+                            <div className='flex flex-col gap-2'>
+                              <FormDescription>
+                                {t(FIELD_DESCRIPTIONS.USER_RATE_LIMIT)}
+                              </FormDescription>
+                              <div className='grid gap-4 sm:grid-cols-2'>
+                                <FormField
+                                  control={form.control}
+                                  name='user_limit_rpm'
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>
+                                        {t('Per-user requests per minute')}
+                                      </FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type='number'
+                                          min={0}
+                                          step={1}
+                                          placeholder='0'
+                                          {...field}
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              Number(e.target.value)
+                                            )
+                                          }
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                                <FormField
+                                  control={form.control}
+                                  name='user_limit_tpm'
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>
+                                        {t('Per-user tokens per minute')}
+                                      </FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type='number'
+                                          min={0}
+                                          step={1}
+                                          placeholder='0'
+                                          {...field}
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              Number(e.target.value)
+                                            )
+                                          }
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                                <FormField
+                                  control={form.control}
+                                  name='user_limit_daily_requests'
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>
+                                        {t('Per-user requests per day')}
+                                      </FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type='number'
+                                          min={0}
+                                          step={1}
+                                          placeholder='0'
+                                          {...field}
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              Number(e.target.value)
+                                            )
+                                          }
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                                <FormField
+                                  control={form.control}
+                                  name='user_limit_daily_tokens'
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>
+                                        {t('Per-user tokens per day')}
+                                      </FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type='number'
+                                          min={0}
+                                          step={1}
+                                          placeholder='0'
+                                          {...field}
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              Number(e.target.value)
+                                            )
+                                          }
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              </div>
+                              <FormField
+                                control={form.control}
+                                name='user_limit_bucket'
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>
+                                      {t('Per-user limit bucket')}
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Input {...field} />
+                                    </FormControl>
+                                    <FormDescription>
+                                      {t(FIELD_DESCRIPTIONS.USER_LIMIT_BUCKET)}
                                     </FormDescription>
                                     <FormMessage />
                                   </FormItem>

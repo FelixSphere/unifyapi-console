@@ -20,15 +20,35 @@ export type ChannelGroupSplit = {
   inherited: string[]
 }
 
+// The one exception is the channel's `excluded_groups` setting: a customer
+// group listed there is not served by that channel at all, so it is shown
+// neither as own nor as inherited.
+export function parseExcludedGroups(
+  settings: string | null | undefined
+): string[] {
+  if (!settings) return []
+  try {
+    const excluded = JSON.parse(settings)?.excluded_groups
+    if (!Array.isArray(excluded)) return []
+    return excluded
+      .filter((group): group is string => typeof group === 'string')
+      .map((group) => group.trim())
+      .filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
 export function splitChannelGroups(
   explicit: string | string[] | null | undefined,
-  pricingGroups: readonly string[] | null | undefined
+  pricingGroups: readonly string[] | null | undefined,
+  excluded: readonly string[] = []
 ): ChannelGroupSplit {
   const rawOwn = Array.isArray(explicit)
     ? explicit
     : parseGroupsList(explicit ?? '')
   const own: string[] = []
-  const seen = new Set<string>()
+  const seen = new Set<string>(excluded.map((group) => group.trim()))
   for (const group of rawOwn) {
     const trimmed = group.trim()
     if (!trimmed || seen.has(trimmed)) continue
@@ -43,8 +63,13 @@ export function splitChannelGroups(
 
 export function effectiveChannelGroups(
   explicit: string | string[] | null | undefined,
-  pricingGroups: readonly string[] | null | undefined
+  pricingGroups: readonly string[] | null | undefined,
+  excluded: readonly string[] = []
 ): string[] {
-  const { own, inherited } = splitChannelGroups(explicit, pricingGroups)
+  const { own, inherited } = splitChannelGroups(
+    explicit,
+    pricingGroups,
+    excluded
+  )
   return [...own, ...inherited]
 }

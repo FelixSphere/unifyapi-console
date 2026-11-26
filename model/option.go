@@ -246,24 +246,36 @@ func loadOptionsFromDatabase() {
 		// Saving such a row is still refused (UpdateGroupModelDiscountByJSONString
 		// validates); what changes is that READING the table no longer throws
 		// the good rows away with the stale one.
-		if option.Key == "GroupModelDiscount" {
-			cleaned, dropped, err := ratio_setting.SanitizeGroupModelDiscountJSON(value)
-			if err != nil {
-				common.SysLog("customer model prices: unreadable, leaving the loaded table alone: " + err.Error())
-				continue
-			}
-			if len(dropped) > 0 {
-				common.SysLog(fmt.Sprintf(
-					"customer model prices: ignoring %d entr(ies) naming delisted models: %s",
-					len(dropped), strings.Join(dropped, ", ")))
-			}
-			value = cleaned
+		value, ok := storedOptionValueForMemory(option.Key, value)
+		if !ok {
+			continue
 		}
 		err := updateOptionMap(option.Key, value)
 		if err != nil {
 			common.SysLog("failed to update option map: " + err.Error())
 		}
 	}
+}
+
+// UNIFYAPI-FORK: storedOptionValueForMemory is the form of a stored option
+// that may be published into memory, and false when it must be left out.
+// Shared by the reload above and by a pricing group rename, which publishes
+// the values it has just written without waiting for the next sync.
+func storedOptionValueForMemory(key, value string) (string, bool) {
+	if key != "GroupModelDiscount" {
+		return value, true
+	}
+	cleaned, dropped, err := ratio_setting.SanitizeGroupModelDiscountJSON(value)
+	if err != nil {
+		common.SysLog("customer model prices: unreadable, leaving the loaded table alone: " + err.Error())
+		return "", false
+	}
+	if len(dropped) > 0 {
+		common.SysLog(fmt.Sprintf(
+			"customer model prices: ignoring %d entr(ies) naming delisted models: %s",
+			len(dropped), strings.Join(dropped, ", ")))
+	}
+	return cleaned, true
 }
 
 func SyncOptions(frequency int) {
@@ -290,6 +302,12 @@ func validateOptionValueWithDB(db *gorm.DB, key string, value string) error {
 			return fmt.Errorf("RegisterIPDailyLimit must be a non-negative integer, got %q", value)
 		}
 	}
+	// UNIFYAPI-FORK: the access tier list is changed one group at a time, by
+	// the operation that checks what the change would do to wallets. A plain
+	// option save would skip that. See unifyapi_access_tier_group.go.
+	if key == AccessTierGroupsOptionKey {
+		return fmt.Errorf("%s is not saved as an option: mark or un-mark a group as an access tier in Group Pricing", key)
+	}
 	if key == "GroupRatio" {
 		var values map[string]float64
 		if err := common.Unmarshal([]byte(value), &values); err != nil {
@@ -299,10 +317,17 @@ func validateOptionValueWithDB(db *gorm.DB, key string, value string) error {
 		for group := range values {
 			groups[group] = struct{}{}
 		}
-		if db == nil || !db.Migrator().HasTable(&PartnershipProgram{}) {
+		if db == nil {
 			return nil
 		}
-		return validateActivePartnershipGroups(db, groups)
+		if db.Migrator().HasTable(&PartnershipProgram{}) {
+			if err := validateActivePartnershipGroups(db, groups); err != nil {
+				return err
+			}
+		}
+		// UNIFYAPI-FORK: a group that logins, keys, a balance or a channel
+		// exclusion still depend on cannot be dropped from Group Pricing.
+		return protectPricingGroupsInUse(db, groups)
 	}
 	return nil
 }

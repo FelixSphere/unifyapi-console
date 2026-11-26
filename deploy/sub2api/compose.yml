@@ -1,0 +1,69 @@
+# Private account pool. Set secrets in a mode-0600 .env before starting.
+services:
+  sub2api:
+    image: ghcr.io/wei-shaw/sub2api:0.2.24@sha256:c1acdd4cd1c328e6df20e513944d72fff641d4ae8c07d207458156c97c74784a
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    ports:
+      - "127.0.0.1:${SUB2API_ADMIN_PORT:-18480}:8080"
+    environment:
+      AUTO_SETUP: "true"
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+      SERVER_MODE: release
+      SERVER_TRUSTED_PROXIES: ${SUB2API_TRUSTED_PROXIES:-}
+      SECURITY_TRUST_FORWARDED_IP_FOR_API_KEY_ACL: "false"
+      ADMIN_EMAIL: ${SUB2API_ADMIN_EMAIL:?set SUB2API_ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${SUB2API_ADMIN_PASSWORD:?set SUB2API_ADMIN_PASSWORD}
+      DATABASE_HOST: database
+      DATABASE_USER: sub2api
+      DATABASE_PASSWORD: ${SUB2API_DB_PASSWORD:?set SUB2API_DB_PASSWORD}
+      DATABASE_DBNAME: sub2api
+      DATABASE_SSLMODE: disable
+      REDIS_HOST: redis
+      JWT_SECRET: ${SUB2API_JWT_SECRET:?set SUB2API_JWT_SECRET}
+      TOTP_ENCRYPTION_KEY: ${SUB2API_TOTP_KEY:?set SUB2API_TOTP_KEY}
+      GEMINI_OAUTH_CLIENT_ID: ${GEMINI_OAUTH_CLIENT_ID:-}
+      GEMINI_OAUTH_CLIENT_SECRET: ${GEMINI_OAUTH_CLIENT_SECRET:-}
+      GEMINI_CLI_OAUTH_CLIENT_SECRET: ${GEMINI_CLI_OAUTH_CLIENT_SECRET:-}
+      ANTIGRAVITY_OAUTH_CLIENT_SECRET: ${ANTIGRAVITY_OAUTH_CLIENT_SECRET:-}
+      SECURITY_URL_ALLOWLIST_ENABLED: ${SUB2API_URL_ALLOWLIST_ENABLED:-true}
+      SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS: ${SUB2API_UPSTREAM_HOSTS:-}
+      SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP: ${SUB2API_ALLOW_TEST_HTTP:-false}
+      SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: ${SUB2API_ALLOW_TEST_HTTP:-false}
+    volumes:
+      - app:/app/data
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  database:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sub2api
+      POSTGRES_DB: sub2api
+      POSTGRES_PASSWORD: ${SUB2API_DB_PASSWORD:?set SUB2API_DB_PASSWORD}
+    volumes:
+      - database:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U sub2api -d sub2api"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: [redis-server, --appendonly, "yes"]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+volumes:
+  app:
+  database:
+  redis:

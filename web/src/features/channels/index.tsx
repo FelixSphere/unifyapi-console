@@ -18,11 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Settings2 } from 'lucide-react'
+import { ExternalLink, Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Tooltip,
   TooltipContent,
@@ -48,6 +49,7 @@ export function Channels() {
     retry: false,
     staleTime: 5 * 60 * 1000,
   })
+  const sub2apiAccountsUrl = channelOpsQuery.data?.data?.sub2api_accounts_url
   const retryTimes = channelOpsQuery.data?.data?.retry_times
   const retryLabel =
     typeof retryTimes === 'number' ? `${t('Max Retries')}: ${retryTimes}` : null
@@ -94,6 +96,22 @@ export function Channels() {
           </span>
         </SectionPageLayout.Title>
         <SectionPageLayout.Actions>
+          {isRoot && sub2apiAccountsUrl && (
+            <Button
+              variant='outline'
+              nativeButton={false}
+              render={
+                <a
+                  href={sub2apiAccountsUrl}
+                  target='_blank'
+                  rel='noopener noreferrer'
+                />
+              }
+            >
+              {t('Sub2API Accounts')}
+              <ExternalLink data-icon='inline-end' />
+            </Button>
+          )}
           <ChannelsPrimaryButtons />
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>

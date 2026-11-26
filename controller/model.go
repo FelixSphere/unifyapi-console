@@ -309,7 +309,10 @@ func ListModels(c *gin.Context, modelType int) {
 func ChannelListModels(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"success": true,
-		"data":    openAIModels,
+		// UNIFYAPI-BRAND: the editor's suggestions follow what this deployment
+		// prices and already serves, not only the list compiled into the
+		// binary. See unifyapi_channel_model_candidates.go.
+		"data": channelModelCandidates(),
 	})
 }
 

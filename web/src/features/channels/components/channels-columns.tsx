@@ -68,6 +68,7 @@ import {
   isMultiKeyChannel,
   parseModelsList,
   parseGroupsList,
+  parseExcludedGroups,
   splitChannelGroups,
   parseChannelSettings,
   handleUpdateChannelField,
@@ -1024,7 +1025,11 @@ export function useChannelsColumns(
           const group = row.getValue('group') as string
           // Own groups first, then every other pricing group -- all of them
           // have access; see lib/channel-groups.ts.
-          const { own, inherited } = splitChannelGroups(group, pricingGroups)
+          const { own, inherited } = splitChannelGroups(
+            group,
+            pricingGroups,
+            parseExcludedGroups(row.original.settings)
+          )
           return (
             <BadgeListCell
               items={[

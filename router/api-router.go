@@ -344,6 +344,11 @@ func SetApiRouter(router *gin.Engine) {
 			pricingAdminRoute.PUT("/discount", controller.UpdatePricingDiscount)
 			pricingAdminRoute.GET("/group_model", controller.GetGroupModelPricing)
 			pricingAdminRoute.PUT("/group_model", controller.UpdateGroupModelPricing)
+			// UNIFYAPI-FORK: a rename moves every reference to the group.
+			pricingAdminRoute.POST("/group/rename", controller.RenamePricingGroup)
+			// UNIFYAPI-FORK: a group whose logins keep their own wallets.
+			pricingAdminRoute.GET("/group/access-tier", controller.GetAccessTierGroups)
+			pricingAdminRoute.POST("/group/access-tier", controller.SetAccessTierGroup)
 			// UNIFYAPI-FORK: admin-added prices for models the catalog does not carry.
 			pricingAdminRoute.GET("/extra_models", controller.GetExtraModels)
 			pricingAdminRoute.PUT("/extra_models", controller.UpdateExtraModels)
@@ -401,6 +406,9 @@ func SetApiRouter(router *gin.Engine) {
 			modelLaunchRoute.POST("/preview", controller.PreviewModelLaunch)
 			modelLaunchRoute.POST("/send", controller.SendModelLaunch)
 		}
+
+		// UNIFYAPI-FORK: email to customers from the Users page; AdminAuth.
+		registerAdminEmailRoutes(apiRouter)
 
 		// UNIFYAPI-BRAND: operator-facing tenant reporting. AdminAuth is applied
 		// on the group, before any handler, because these responses expose every

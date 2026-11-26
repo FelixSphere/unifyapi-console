@@ -28,6 +28,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/stretchr/testify/require"
 )
 
@@ -226,4 +227,142 @@ func TestAFailedAnnouncementCanBeSentAgain(t *testing.T) {
 
 	_, err = StartModelLaunchEmail([]string{"deepseek-v4-flash"}, "", 1)
 	require.ErrorContains(t, err, "already announced", "once delivered, it is announced")
+}
+
+// The catalogue automation queues a launch by inserting the row; the worker
+// sends it once the cancel window has passed (operator decision 2026-11-19).
+func queueLaunch(t *testing.T, models string, age time.Duration) model.ModelLaunchEmail {
+	t.Helper()
+	l := model.ModelLaunchEmail{Models: models, Queued: true, CreatedAt: time.Now().Add(-age).Unix()}
+	require.NoError(t, model.DB.Create(&l).Error)
+	return l
+}
+
+func TestAQueuedLaunchIsSentAfterTheCancelWindow(t *testing.T) {
+	smtp := setupModelLaunchTest(t)
+	enableModel(t, "deepseek-v4-flash")
+	addRetentionUser(t, "cust", "cust@example.com", common.RoleCommonUser, common.UserStatusEnabled, 0, 0)
+
+	fresh := queueLaunch(t, "deepseek-v4-flash", time.Minute) // younger than the window
+	RunQueuedModelLaunches()
+	require.Empty(t, smtp.sent(), "inside the cancel window nothing is sent")
+	var row model.ModelLaunchEmail
+	require.NoError(t, model.DB.First(&row, fresh.Id).Error)
+	require.True(t, row.Queued)
+
+	require.NoError(t, model.DB.Model(&row).Update("created_at", time.Now().Add(-ModelLaunchQueueDelay-time.Second).Unix()).Error)
+	RunQueuedModelLaunches()
+	require.Equal(t, []string{"cust@example.com"}, keys(smtp.sent()))
+	require.NoError(t, model.DB.First(&row, fresh.Id).Error)
+	require.False(t, row.Queued)
+	require.Equal(t, 1, row.Sent)
+	require.NotZero(t, row.FinishedAt)
+
+	smtp.mu.Lock()
+	smtp.mail = map[string]string{}
+	smtp.mu.Unlock()
+	RunQueuedModelLaunches() // a later tick
+	require.Empty(t, smtp.sent(), "a sent launch is not sent again")
+}
+
+func TestADeletedQueuedLaunchIsNeverSent(t *testing.T) {
+	smtp := setupModelLaunchTest(t)
+	enableModel(t, "deepseek-v4-flash")
+	addRetentionUser(t, "cust", "cust@example.com", common.RoleCommonUser, common.UserStatusEnabled, 0, 0)
+
+	l := queueLaunch(t, "deepseek-v4-flash", time.Minute)
+	require.NoError(t, model.DB.Delete(&model.ModelLaunchEmail{}, l.Id).Error) // the cancel
+	RunQueuedModelLaunches()
+	require.Empty(t, smtp.sent())
+}
+
+func TestAQueuedLaunchIsValidatedLikeAnOperatorSend(t *testing.T) {
+	smtp := setupModelLaunchTest(t)
+	enableModel(t, "unpriced-model")
+	require.NoError(t, model.DB.Create(&model.Ability{Group: "default", Model: "deepseek-v3", ChannelId: 1, Enabled: false}).Error)
+	addRetentionUser(t, "cust", "cust@example.com", common.RoleCommonUser, common.UserStatusEnabled, 0, 0)
+
+	unpriced := queueLaunch(t, "unpriced-model", time.Hour)
+	delisted := queueLaunch(t, "deepseek-v3", time.Hour)
+	RunQueuedModelLaunches()
+
+	require.Empty(t, smtp.sent(), "neither may be advertised")
+	var row model.ModelLaunchEmail
+	require.NoError(t, model.DB.First(&row, unpriced.Id).Error)
+	require.Contains(t, row.Error, "no price")
+	require.False(t, row.Queued)
+	require.NotZero(t, row.FinishedAt)
+	var second model.ModelLaunchEmail
+	require.NoError(t, model.DB.First(&second, delisted.Id).Error)
+	require.Contains(t, second.Error, "not enabled")
+}
+
+func TestQueuedLaunchesWaitWhileTheSwitchIsOff(t *testing.T) {
+	smtp := setupModelLaunchTest(t)
+	t.Setenv(retentionEmailEnv, "") // staging
+	enableModel(t, "deepseek-v4-flash")
+	addRetentionUser(t, "cust", "cust@example.com", common.RoleCommonUser, common.UserStatusEnabled, 0, 0)
+
+	l := queueLaunch(t, "deepseek-v4-flash", time.Hour)
+	RunQueuedModelLaunches()
+	require.Empty(t, smtp.sent())
+	var row model.ModelLaunchEmail
+	require.NoError(t, model.DB.First(&row, l.Id).Error)
+	require.True(t, row.Queued, "left untouched, not refused")
+}
+
+// The announcement shows each customer what THEY pay. Operator 2026-11-21:
+// CVP editions sell at 1.10x and Mythos at 1.15x of list in every group, so a
+// card quoting list price alone would announce a price nobody is charged.
+func TestTheCardQuotesTheRecipientsOwnPrice(t *testing.T) {
+	setupModelLaunchTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Model{}))
+	prevGR, prevGMD := ratio_setting.GroupRatio2JSONString(), ratio_setting.GroupModelDiscount2JSONString()
+	t.Cleanup(func() {
+		_ = ratio_setting.UpdateGroupRatioByJSONString(prevGR)
+		_ = ratio_setting.UpdateGroupModelDiscountByJSONString(prevGMD)
+	})
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":0.85,"Kingdee":1}`))
+	require.NoError(t, ratio_setting.UpdateGroupModelDiscountByJSONString(`{"Kingdee":{"deepseek-v4-flash":1.1}}`))
+	p, ok := LookupModelLaunchPrice("deepseek-v4-flash") // $0.30 / $1.20 / $0.006
+	require.True(t, ok)
+
+	marked := BuildModelLaunchEmail([]ModelLaunchPrice{p}, "", 7, "Kingdee")
+	require.Len(t, marked.Cards, 1)
+	require.Contains(t, marked.Cards[0].Rows, common.EmailDetail{Label: "Your price / 1M tokens", Value: "$0.33 input · $1.32 output"}, "list x the group's per-model 1.1")
+	require.Contains(t, marked.Cards[0].Rows, common.EmailDetail{Label: "List price / 1M", Value: "$0.30 input · $1.20 output"})
+
+	discounted := BuildModelLaunchEmail([]ModelLaunchPrice{p}, "", 7, "default")
+	require.Contains(t, discounted.Cards[0].Rows, common.EmailDetail{Label: "Your price / 1M tokens", Value: "$0.255 input · $1.02 output"}, "list x the group ratio when there is no per-model ratio")
+}
+
+func TestCardsCarryTheTagsModelSquareShows(t *testing.T) {
+	setupModelLaunchTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Model{}))
+	require.NoError(t, model.DB.Create(&model.Model{ModelName: "-cvp", Tags: "CVP", NameRule: model.NameRuleSuffix, Status: 1}).Error)
+	require.NoError(t, model.DB.Create(&model.Model{ModelName: "claude-mythos-", Tags: "CVP,Mythos", NameRule: model.NameRulePrefix, Status: 1}).Error)
+	tags := launchModelTags()
+	require.Equal(t, "CVP", tags("claude-opus-5-5-cvp"))
+	require.Equal(t, "CVP · Mythos", tags("claude-mythos-5-2"))
+	require.Equal(t, "", tags("deepseek-v4-flash"))
+	require.Equal(t, "Claude Mythos and CVP editions of Claude, for verified defensive security work.",
+		launchHeroLine([]ModelLaunchPrice{{Model: "claude-mythos-5-2"}, {Model: "claude-opus-5-5-cvp"}}))
+}
+
+func TestTheAnnouncementRisesInAndAccountMailDoesNot(t *testing.T) {
+	setupModelLaunchTest(t)
+	p, ok := LookupModelLaunchPrice("deepseek-v4-flash")
+	require.True(t, ok)
+	html, text, err := common.RenderEmail(UnifyAPIEmailBrand(), BuildModelLaunchEmail([]ModelLaunchPrice{p, p}, "", 0, "default"))
+	require.NoError(t, err)
+	require.Contains(t, html, "@keyframes u-rise")
+	require.Contains(t, html, "prefers-reduced-motion")
+	require.Contains(t, html, "animation-delay:0.18s")
+	require.Contains(t, html, "animation-delay:0.29s", "cards are staggered")
+	require.Contains(t, text, "NEW ON UNIFY API")
+
+	account, _, err := common.RenderEmail(UnifyAPIEmailBrand(), common.EmailMessage{Subject: "Reset", Headline: "Reset your password", Code: "123456"})
+	require.NoError(t, err)
+	require.NotContains(t, account, `class="u-rise"`, "account mail renders exactly as before")
+	require.Contains(t, account, "Reset your password")
 }

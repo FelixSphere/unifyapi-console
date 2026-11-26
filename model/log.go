@@ -481,6 +481,8 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	// once the upstream has answered -- so a channel can overshoot by at most
 	// one request, which is inherent to token limiting, not a gap.
 	RecordChannelTokens(c, params.ChannelId, params.PromptTokens+params.CompletionTokens)
+	// UNIFYAPI-FORK: and against this user's own allowance on that channel.
+	RecordChannelUserTokens(c, userId, params.ChannelId, params.PromptTokens+params.CompletionTokens)
 
 	// UNIFYAPI-BRAND: and against the caller's own token window, for the TPM
 	// limiter in middleware/model_token_rate_limit.go.

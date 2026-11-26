@@ -33,6 +33,7 @@ import {
   stringifyAdvancedCustomConfig,
   validateAdvancedCustomConfig,
 } from './advanced-custom'
+import { parseExcludedGroups } from './channel-groups'
 
 // ============================================================================
 // Form Validation Schema
@@ -202,6 +203,7 @@ export const channelFormSchema = z
     openai_organization: z.string().optional(),
     models: z.string().min(1, ERROR_MESSAGES.REQUIRED_MODELS),
     group: z.array(z.string()).min(1, ERROR_MESSAGES.REQUIRED_GROUP),
+    excluded_groups: z.array(z.string()).optional(), // stored in settings JSON
     model_mapping: z
       .string()
       .optional()
@@ -214,6 +216,19 @@ export const channelFormSchema = z
     // UNIFYAPI-BRAND: 0 clears the limit, so min is 0 rather than 1.
     rate_limit_rpm: z.number().min(0).optional(),
     rate_limit_tpm: z.number().min(0).optional(),
+    // UNIFYAPI-FORK: stored in settings JSON as hard_rate_limit.
+    hard_rate_limit: z.boolean().optional(),
+    // UNIFYAPI-FORK: stored in settings JSON as user_rate_limit and
+    // user_limit_bucket. 0 means unlimited.
+    user_limit_rpm: z.number().int().min(0).optional(),
+    user_limit_tpm: z.number().int().min(0).optional(),
+    user_limit_daily_requests: z.number().int().min(0).optional(),
+    user_limit_daily_tokens: z.number().int().min(0).optional(),
+    user_limit_bucket: z
+      .string()
+      .max(64)
+      .regex(/^[A-Za-z0-9._-]*$/)
+      .optional(),
     test_model: z.string().optional(),
     auto_ban: z.number().optional(),
     status: z.number(),
@@ -410,11 +425,18 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   openai_organization: '',
   models: '',
   group: ['default'],
+  excluded_groups: [],
   model_mapping: '',
   priority: 0,
   weight: 0,
   rate_limit_rpm: 0,
   rate_limit_tpm: 0,
+  hard_rate_limit: false,
+  user_limit_rpm: 0,
+  user_limit_tpm: 0,
+  user_limit_daily_requests: 0,
+  user_limit_daily_tokens: 0,
+  user_limit_bucket: '',
   test_model: '',
   auto_ban: 1,
   status: CHANNEL_STATUS.ENABLED,
@@ -566,11 +588,14 @@ export function transformChannelToFormDefaults(
     openai_organization: channel.openai_organization || '',
     models: channel.models || '',
     group: parseGroups(channel.group || 'default'),
+    excluded_groups: parseExcludedGroups(channel.settings),
     model_mapping: channel.model_mapping || '',
     priority: channel.priority || 0,
     weight: channel.weight || 0,
     rate_limit_rpm: channel.rate_limit_rpm || 0,
     rate_limit_tpm: channel.rate_limit_tpm || 0,
+    hard_rate_limit: parseHardRateLimit(channel.settings),
+    ...parseUserRateLimit(channel.settings),
     test_model: channel.test_model || '',
     auto_ban: channel.auto_ban ?? 1,
     status: channel.status,
@@ -638,6 +663,51 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
   return JSON.stringify(settingObj)
 }
 
+// UNIFYAPI-FORK: whether the channel's RPM/TPM is a cap rather than a
+// routing preference. Anything but a literal true is off.
+export function parseHardRateLimit(
+  settings: string | null | undefined
+): boolean {
+  if (!settings) return false
+  try {
+    return JSON.parse(settings)?.hard_rate_limit === true
+  } catch {
+    return false
+  }
+}
+
+// UNIFYAPI-FORK: what one user may send through the channel, as form fields.
+export function parseUserRateLimit(settings: string | null | undefined) {
+  const out = {
+    user_limit_rpm: 0,
+    user_limit_tpm: 0,
+    user_limit_daily_requests: 0,
+    user_limit_daily_tokens: 0,
+    user_limit_bucket: '',
+  }
+  if (!settings) return out
+  try {
+    const parsed = JSON.parse(settings)
+    const limit = parsed?.user_rate_limit
+    const count = (value: unknown) =>
+      typeof value === 'number' && Number.isInteger(value) && value > 0
+        ? value
+        : 0
+    if (limit && typeof limit === 'object') {
+      out.user_limit_rpm = count(limit.rpm)
+      out.user_limit_tpm = count(limit.tpm)
+      out.user_limit_daily_requests = count(limit.daily_requests)
+      out.user_limit_daily_tokens = count(limit.daily_tokens)
+    }
+    if (typeof parsed?.user_limit_bucket === 'string') {
+      out.user_limit_bucket = parsed.user_limit_bucket
+    }
+  } catch {
+    return out
+  }
+  return out
+}
+
 /**
  * Build the settings JSON string (for type-specific config like vertex_key_type)
  */
@@ -652,6 +722,47 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
       // eslint-disable-next-line no-console
       console.error('Failed to parse existing settings:', error)
     }
+  }
+
+  const excludedGroups = formData.excluded_groups ?? []
+  if (excludedGroups.length > 0) {
+    settingsObj.excluded_groups = excludedGroups
+  } else if ('excluded_groups' in settingsObj) {
+    delete settingsObj.excluded_groups
+  }
+
+  // UNIFYAPI-FORK: written only when on, so a channel that never used it
+  // keeps the settings it had.
+  if (formData.hard_rate_limit) {
+    settingsObj.hard_rate_limit = true
+  } else if ('hard_rate_limit' in settingsObj) {
+    delete settingsObj.hard_rate_limit
+  }
+
+  // UNIFYAPI-FORK: only the dimensions that are set are written, and the
+  // object is dropped when none is, so "off" is the absence of the key.
+  const userLimit: Record<string, number> = {}
+  const userLimitFields = {
+    rpm: formData.user_limit_rpm,
+    tpm: formData.user_limit_tpm,
+    daily_requests: formData.user_limit_daily_requests,
+    daily_tokens: formData.user_limit_daily_tokens,
+  }
+  for (const [dimension, value] of Object.entries(userLimitFields)) {
+    if (value) {
+      userLimit[dimension] = value
+    }
+  }
+  if (Object.keys(userLimit).length > 0) {
+    settingsObj.user_rate_limit = userLimit
+  } else if ('user_rate_limit' in settingsObj) {
+    delete settingsObj.user_rate_limit
+  }
+  const userLimitBucket = (formData.user_limit_bucket ?? '').trim()
+  if (userLimitBucket) {
+    settingsObj.user_limit_bucket = userLimitBucket
+  } else if ('user_limit_bucket' in settingsObj) {
+    delete settingsObj.user_limit_bucket
   }
 
   // Add vertex_key_type for Vertex AI channels (type 41)

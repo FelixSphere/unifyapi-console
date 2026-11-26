@@ -159,6 +159,8 @@ export function ModelsTable() {
     data: models,
     columns,
     totalCount,
+    // UNIFYAPI-BRAND: the View column choice is remembered, as on Channels.
+    columnVisibilityStorageKey: 'models:column-visibility',
     initialColumnVisibility: {
       description: false,
       bound_channels: false,

@@ -28,9 +28,18 @@ package service
 //
 // Best effort by design. The console is the system of record for the
 // conversation; a lost event costs the CRM a line, never the customer a reply.
-// So it is fire-and-forget on its own goroutine with a short timeout, it never
+// So delivery happens in the background with a short timeout, it never
 // blocks or fails the request that triggered it, and a failure is one WARN
 // line that names neither the token nor the message body.
+//
+// Events about one ticket are delivered one at a time, in the order they were
+// raised. The agent applies them in arrival order ("at" only feeds its
+// duplicate key), so a "closed" that overtook a "reopened" -- or that was
+// retried after it -- would leave the CRM Case closed on an open conversation.
+// Each ticket with events pending has one background goroutine draining its
+// queue; different tickets do not wait for each other. The queue is per agent
+// URL too, because order only matters at one receiver: events captured for an
+// URL that has since changed must not hold up the new one.
 //
 // Contract (POST <SUPPORT_AGENT_URL>/api/support-agent/events):
 //
@@ -63,6 +72,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -108,7 +118,8 @@ func NotifySupportAgentEvent(ticket *model.SupportTicket, eventType, body string
 }
 
 // NotifySupportAgentEvents posts several events about one moment (e.g.
-// "reopened" then "staff_reply") in order, on one background goroutine.
+// "reopened" then "staff_reply") in order, after any events about the same
+// ticket that are still being delivered.
 func NotifySupportAgentEvents(ticket *model.SupportTicket, eventTypes []string, body string) {
 	if ticket == nil || len(eventTypes) == 0 || !SupportAgentEnabled() {
 		return
@@ -126,17 +137,65 @@ func NotifySupportAgentEvents(ticket *model.SupportTicket, eventTypes []string, 
 	// Read the configuration now, on the caller's goroutine, so a delivery
 	// cannot pick up a URL or secret changed after the event happened.
 	url := supportAgentURL() + "/api/support-agent/events"
-	go func() {
-		for _, ev := range evs {
-			attempts, err := deliverSupportAgentEventWithRetry(url, customerId, ev)
-			if err != nil {
-				logger.LogWarn(context.Background(), fmt.Sprintf("support event %s for #%d not delivered after %d attempt(s): %s", ev.Type, ev.TicketId, attempts, err.Error()))
-			}
-			if hook := supportEventSent; hook != nil {
-				hook(ev, err)
-			}
+	jobs := make([]supportEventJob, 0, len(evs))
+	for _, ev := range evs {
+		jobs = append(jobs, supportEventJob{url: url, customerId: customerId, ev: ev})
+	}
+	enqueueSupportAgentEvents(supportEventQueueKey{url: url, ticketId: ticket.Id}, jobs)
+}
+
+type supportEventJob struct {
+	url        string
+	customerId int
+	ev         SupportAgentEvent
+}
+
+type supportEventQueueKey struct {
+	url      string
+	ticketId int
+}
+
+// supportEventQueues holds each ticket's undelivered events. A key has an
+// entry exactly while a goroutine is draining it, so the entry's presence is
+// what says whether a new one must be started.
+var supportEventQueues = struct {
+	sync.Mutex
+	pending map[supportEventQueueKey][]supportEventJob
+}{pending: map[supportEventQueueKey][]supportEventJob{}}
+
+func enqueueSupportAgentEvents(key supportEventQueueKey, jobs []supportEventJob) {
+	q := &supportEventQueues
+	q.Lock()
+	_, draining := q.pending[key]
+	q.pending[key] = append(q.pending[key], jobs...)
+	q.Unlock()
+	if !draining {
+		go drainSupportAgentEvents(key)
+	}
+}
+
+func drainSupportAgentEvents(key supportEventQueueKey) {
+	q := &supportEventQueues
+	for {
+		q.Lock()
+		jobs := q.pending[key]
+		if len(jobs) == 0 {
+			delete(q.pending, key)
+			q.Unlock()
+			return
 		}
-	}()
+		job := jobs[0]
+		q.pending[key] = jobs[1:]
+		q.Unlock()
+
+		attempts, err := deliverSupportAgentEventWithRetry(job.url, job.customerId, job.ev)
+		if err != nil {
+			logger.LogWarn(context.Background(), fmt.Sprintf("support event %s for #%d not delivered after %d attempt(s): %s", job.ev.Type, job.ev.TicketId, attempts, err.Error()))
+		}
+		if hook := supportEventSent; hook != nil {
+			hook(job.ev, err)
+		}
+	}
 }
 
 // deliverSupportAgentEventWithRetry sends one event, retrying what the agent

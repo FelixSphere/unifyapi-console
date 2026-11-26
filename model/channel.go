@@ -996,6 +996,14 @@ func (channel *Channel) ValidateSettings() error {
 			return err
 		}
 	}
+	// UNIFYAPI-FORK: a per-user limit that does not parse is refused here,
+	// before the row is written, rather than read as "no limit" at routing.
+	if err := channelOtherSettings.UserRateLimit.Validate(); err != nil {
+		return err
+	}
+	if err := dto.ValidateUserLimitBucket(channelOtherSettings.UserLimitBucket); err != nil {
+		return err
+	}
 	if channel.Type == constant.ChannelTypeAdvancedCustom {
 		if channelOtherSettings.AdvancedCustom == nil {
 			return fmt.Errorf("advanced_custom is required")

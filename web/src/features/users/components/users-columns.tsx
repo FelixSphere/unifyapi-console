@@ -33,6 +33,8 @@ import {
 } from '@/components/ui/tooltip'
 import { formatQuota, formatTimestamp } from '@/lib/format'
 
+// UNIFYAPI-FORK: clickable username (admin-email).
+import { UsernameEmailButton } from '../admin-email/username-button'
 import { getUnreachableEmails } from '../api'
 import {
   USER_STATUS,
@@ -107,9 +109,8 @@ export function useUsersColumns(): ColumnDef<User>[] {
         return (
           <div className='flex min-w-[160px] flex-col gap-1'>
             <div className='flex items-center gap-2'>
-              <LongText className='max-w-[140px] font-medium'>
-                {username}
-              </LongText>
+              {/* UNIFYAPI-FORK: the username opens "Send email" (admin-email). */}
+              <UsernameEmailButton user={row.original} />
               {remark && (
                 <Tooltip>
                   <TooltipTrigger

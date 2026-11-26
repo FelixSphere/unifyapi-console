@@ -29,6 +29,11 @@ var auditContentTemplates = map[string]string{
 	"user.passkey_delete":   "Deleted a passkey",
 	"user.reset_passkey":    "Reset the user passkey",
 	"option.update":         "Updated system setting ${key}",
+	// UNIFYAPI-FORK: one group renamed everywhere it is referenced.
+	"pricing.group_rename": "Renamed pricing group ${from} to ${to}",
+	// UNIFYAPI-FORK: a group marked, or no longer marked, as an access tier.
+	"pricing.group_access_tier_mark":   "Marked pricing group ${group} as an access tier",
+	"pricing.group_access_tier_unmark": "Removed the access tier mark from pricing group ${group}",
 
 	"channel.create":             "Created channel ${name} (type ${type}, count ${count})",
 	"channel.update":             "Updated channel ${name} (ID: ${id})",

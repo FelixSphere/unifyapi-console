@@ -388,6 +388,13 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'user.oauth_unbind': 'Removed an OAuth binding for the user',
   // System settings
   'option.update': 'Updated system setting {{key}}',
+  // UNIFYAPI-FORK: one group renamed everywhere it is referenced.
+  'pricing.group_rename': 'Renamed pricing group {{from}} to {{to}}',
+  // UNIFYAPI-FORK: a group marked, or no longer marked, as an access tier.
+  'pricing.group_access_tier_mark':
+    'Marked pricing group {{group}} as an access tier',
+  'pricing.group_access_tier_unmark':
+    'Removed the access tier mark from pricing group {{group}}',
   'option.payment_compliance': 'Confirmed payment compliance',
   'option.reset_ratio': 'Reset model ratios',
   'option.clear_affinity_cache': 'Cleared channel affinity cache',
