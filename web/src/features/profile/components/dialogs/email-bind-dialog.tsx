@@ -17,14 +17,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Loader2 } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
+import { Turnstile } from '@/components/turnstile'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useTurnstile } from '@/features/auth/hooks/use-turnstile'
 import { useCountdown } from '@/hooks/use-countdown'
 
 import { sendEmailVerification, bindEmail } from '../../api'
@@ -52,6 +54,20 @@ export function EmailBindDialog({
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const {
+    isTurnstileEnabled,
+    turnstileSiteKey,
+    turnstileToken,
+    setTurnstileToken,
+    validateTurnstile,
+  } = useTurnstile()
+  const [turnstileWidgetKey, setTurnstileWidgetKey] = useState(0)
+  const turnstileReady = !isTurnstileEnabled || Boolean(turnstileToken)
+  // Stable identity: Turnstile re-renders its widget when a callback changes.
+  const clearTurnstileToken = useCallback(
+    () => setTurnstileToken(''),
+    [setTurnstileToken]
+  )
+  const {
     secondsLeft,
     isActive,
     start: startCountdown,
@@ -65,10 +81,11 @@ export function EmailBindDialog({
       toast.error(t('Please enter a valid email address'))
       return
     }
+    if (!validateTurnstile()) return
 
     try {
       setSendingCode(true)
-      const response = await sendEmailVerification(email)
+      const response = await sendEmailVerification(email, turnstileToken)
 
       if (response.success) {
         toast.success(t('Verification code sent! Please check your email.'))
@@ -80,6 +97,11 @@ export function EmailBindDialog({
       toast.error(t('Failed to send verification code'))
     } finally {
       setSendingCode(false)
+      // Cloudflare accepts a token once, so a resend needs a fresh challenge.
+      if (isTurnstileEnabled) {
+        setTurnstileToken('')
+        setTurnstileWidgetKey((key) => key + 1)
+      }
     }
   }
 
@@ -119,6 +141,8 @@ export function EmailBindDialog({
         setEmail('')
         setCode('')
         resetCountdown()
+        // The widget unmounts with the dialog; its token must not outlive it.
+        setTurnstileToken('')
       }
     }
   }
@@ -172,6 +196,18 @@ export function EmailBindDialog({
           />
         </div>
 
+        {/* /api/verification refuses a request without a Turnstile token, and
+            Send stays disabled until the challenge passes, so it renders
+            above the button it unlocks. */}
+        {isTurnstileEnabled && (
+          <Turnstile
+            key={turnstileWidgetKey}
+            siteKey={turnstileSiteKey}
+            onVerify={setTurnstileToken}
+            onExpire={clearTurnstileToken}
+          />
+        )}
+
         <div className='space-y-2'>
           <Label htmlFor='code'>{t('Verification Code')}</Label>
           <div className='flex gap-2'>
@@ -187,7 +223,7 @@ export function EmailBindDialog({
               type='button'
               variant='outline'
               onClick={handleSendCode}
-              disabled={sendingCode || isActive || !email}
+              disabled={sendingCode || isActive || !email || !turnstileReady}
             >
               {isActive
                 ? `${secondsLeft}s`
