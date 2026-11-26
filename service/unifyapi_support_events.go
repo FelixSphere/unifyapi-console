@@ -47,7 +47,13 @@ package service
 //	               aud "unifyselfai:support-agent", sub = customer id,
 //	               cid = ticket id, single-use jti, exp - iat = 60 s>
 //	{"type":"staff_reply"|"closed"|"reopened"|"handoff",
-//	 "ticket_id":N, "body":"..." (staff_reply only), "at":unix seconds}
+//	 "ticket_id":N, "body":"..." (staff_reply only), "at":unix seconds,
+//	 "id":"<32 hex chars>"}
+//
+// "id" is the same on every retry of one event and differs for every other
+// event. "at" is whole seconds, so without it the agent could not tell a
+// retried "closed" from a second "closed" a moment after a reopen, and would
+// drop the second as a duplicate. Agents older than the id ignore it.
 //
 // The token is minted exactly like the one on the agent call, so the agent
 // verifies both with the same code.
@@ -69,6 +75,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 )
@@ -94,6 +101,7 @@ type SupportAgentEvent struct {
 	TicketId int    `json:"ticket_id"`
 	Body     string `json:"body,omitempty"`
 	At       int64  `json:"at"`
+	Id       string `json:"id"`
 }
 
 // supportEventClient is a variable so a test can point it at a slow server.
@@ -119,7 +127,7 @@ func NotifySupportAgentEvents(ticket *model.SupportTicket, eventTypes []string, 
 	now := time.Now().Unix()
 	evs := make([]SupportAgentEvent, 0, len(eventTypes))
 	for _, t := range eventTypes {
-		ev := SupportAgentEvent{Type: t, TicketId: ticket.Id, At: now}
+		ev := SupportAgentEvent{Type: t, TicketId: ticket.Id, At: now, Id: common.GetUUID()}
 		if t == SupportEventStaffReply {
 			ev.Body = body
 		}
