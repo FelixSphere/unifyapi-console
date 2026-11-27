@@ -144,28 +144,17 @@ func NormalizeChannelGroupFilter(group string) string {
 	return group
 }
 
-func channelGroupFilterCondition() string {
-	if common.UsingMainDatabase(common.DatabaseTypeMySQL) {
-		return `CONCAT(',', ` + commonGroupCol + `, ',') LIKE ? ESCAPE '!'`
-	}
-	return `(',' || ` + commonGroupCol + ` || ',') LIKE ? ESCAPE '!'`
-}
-
-func channelGroupFilterPattern(group string) string {
-	group = strings.NewReplacer(
-		"!", "!!",
-		"%", "!%",
-		"_", "!_",
-	).Replace(group)
-	return "%," + group + ",%"
-}
-
 func ApplyChannelGroupFilter(query *gorm.DB, group string) *gorm.DB {
 	group = NormalizeChannelGroupFilter(group)
 	if group == "" {
 		return query
 	}
-	return query.Where(channelGroupFilterCondition(), channelGroupFilterPattern(group))
+	// The stored group list no longer says who a channel serves: every pricing
+	// group is granted every channel through abilities rows, and excluded_groups
+	// takes a group away even when the list still names it. Filter by the
+	// routing table, so a customer's filter shows the channels it can take.
+	routed := DB.Model(&Ability{}).Select("channel_id").Where(commonGroupCol+" = ?", group)
+	return query.Where("id IN (?)", routed)
 }
 
 // Value implements driver.Valuer interface
