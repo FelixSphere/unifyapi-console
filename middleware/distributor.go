@@ -43,6 +43,10 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
+		// UNIFYAPI-FORK: named on the usage-log row if this request is refused.
+		if modelRequest != nil {
+			noteRequestedModel(c, modelRequest.Model)
+		}
 		if ok {
 			id, err := strconv.Atoi(channelId.(string))
 			if err != nil {
@@ -278,6 +282,8 @@ func Distribute() func(c *gin.Context) {
 		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
+		// UNIFYAPI-FORK: past this point controller/relay.go logs its own errors.
+		markReachedRelay(c)
 		c.Next()
 		// UNIFYAPI-FORK: upstream refreshed the affinity entry here after any
 		// response below 400. A stream that failed after its 200 refreshed it

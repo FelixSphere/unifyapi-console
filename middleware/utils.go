@@ -23,6 +23,8 @@ func abortWithOpenAiMessage(c *gin.Context, statusCode int, message string, code
 		},
 	})
 	c.Abort()
+	// UNIFYAPI-FORK: what the caller was told, for its owner's usage log.
+	noteRequestRefusal(c, message, codeStr)
 	logger.LogError(c.Request.Context(), fmt.Sprintf("user %d | %s", userId, message))
 }
 

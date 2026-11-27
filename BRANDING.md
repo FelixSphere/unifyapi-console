@@ -503,3 +503,23 @@ user's own log view no longer shows `is_model_mapped` / `upstream_model_name`
 `middleware/distributor.go` (the requested model is remembered once),
 `controller/relay.go` (the error writer), `model/log.go` and
 `relaykit/dto/channel_settings.go`.
+
+### Refused requests in the usage log (unreleased)
+
+A request refused before the relay -- the key's IP allow list, a disabled
+login, a group the key may not use, the model rate limits, the channel and
+per-user limits, model_not_found -- used to leave no `logs` row, so its owner
+saw nothing on their usage log page. Once `TokenAuth` has validated the key,
+it now writes one `logs.type = 5` row for that key's owner when a middleware
+aborts the request before `Distribute` hands it to the relay
+(`middleware/unifyapi_rejected_request_log.go`,
+`model/unifyapi_rejected_request_log.go`). The row is not billed (quota 0,
+channel 0), carries the message the caller got (the IP allow-list refusal adds
+the client IP), and `other` holds `rejected: true`, `status_code`,
+`error_code` and `request_path`. Nothing is written for a key we do not
+recognise, for session auth, or for refusals before `TokenAuth` (concurrency
+and system load checks). It follows `ERROR_LOG_ENABLED` like the relay's error
+rows, is written off the request path, and is capped at 60 rows per token per
+minute per process. Touch points, all marked `UNIFYAPI-FORK`:
+`middleware/auth.go`, `middleware/distributor.go`, `middleware/utils.go` and
+`middleware/unifyapi_channel_hard_rate_limit.go`.
