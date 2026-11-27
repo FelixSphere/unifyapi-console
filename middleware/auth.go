@@ -424,6 +424,9 @@ func TokenAuth() func(c *gin.Context) {
 			}
 			return
 		}
+		// UNIFYAPI-FORK: from here on the key is valid, so a refusal has an
+		// owner who can be shown it. See unifyapi_rejected_request_log.go.
+		defer recordRejectedRequest(c, token)
 
 		allowIps := token.GetIpLimits()
 		if len(allowIps) > 0 {
@@ -442,6 +445,9 @@ func TokenAuth() func(c *gin.Context) {
 				// and more useful than eight characters of a valid secret.
 				logAuthRejectionForToken(c, "client ip outside the token's allow list", token)
 				abortWithOpenAiMessage(c, http.StatusForbidden, "您的 IP 不在令牌允许访问的列表中", types.ErrorCodeAccessDenied)
+				// UNIFYAPI-FORK: the address is what the key's owner needs to
+				// tell their own traffic from someone else holding the key.
+				noteRequestRefusal(c, fmt.Sprintf("您的 IP 不在令牌允许访问的列表中 (client IP: %s)", clientIp), string(types.ErrorCodeAccessDenied))
 				return
 			}
 			logger.LogDebug(c, "Client IP %s passed the token IP restrictions check", clientIp)

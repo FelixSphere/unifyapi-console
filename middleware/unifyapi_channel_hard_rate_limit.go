@@ -90,6 +90,7 @@ func noteChannelRateLimited(c *gin.Context, modelName string, refusal channelRat
 // abortChannelRateLimited answers a request that has not reached the relay.
 func abortChannelRateLimited(c *gin.Context, modelName string, refusal channelRateLimitRefusal) {
 	noteChannelRateLimited(c, modelName, refusal)
+	noteRequestRefusal(c, refusal.message, string(refusal.code))
 	message := common.MessageWithRequestId(refusal.message, c.GetString(common.RequestIdKey))
 	if isClaudeMessagesPath(c) {
 		c.JSON(http.StatusTooManyRequests, gin.H{
