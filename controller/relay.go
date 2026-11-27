@@ -118,6 +118,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	defer func() {
 		if newAPIError != nil {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
+			// UNIFYAPI-FORK: a channel that hides its upstream does not pass on
+			// the upstream's name in an error either. After the log line above,
+			// which keeps the full text.
+			service.HideUpstreamInError(c, newAPIError)
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:

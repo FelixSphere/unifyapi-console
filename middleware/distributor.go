@@ -602,6 +602,9 @@ func getTaskOriginModelName(c *gin.Context) string {
 
 func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, modelName string) *types.NewAPIError {
 	c.Set("original_model", modelName) // for retry
+	// UNIFYAPI-FORK: the name the client sent, kept apart from the one above,
+	// which a retry overwrites. See service/unifyapi_hide_upstream.go.
+	service.RememberRequestedModel(c, modelName)
 	if channel == nil {
 		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}

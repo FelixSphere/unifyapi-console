@@ -38,6 +38,11 @@ func ShouldCopyUpstreamHeader(c *gin.Context, k string, v []string) bool {
 		}
 		return false
 	}
+	// UNIFYAPI-FORK: a channel that hides its upstream passes on only what
+	// the client needs to read the body. See unifyapi_hide_upstream.go.
+	if HidesUpstream(c) {
+		return keepsUpstreamHeaderWhenHidden(k)
+	}
 	return true
 }
 
@@ -45,6 +50,11 @@ func IOCopyBytesGracefully(c *gin.Context, src *http.Response, data []byte) {
 	if c.Writer == nil {
 		return
 	}
+
+	// UNIFYAPI-FORK: every whole-body answer leaves through here, so this is
+	// where a channel that hides its upstream has its body rewritten. A no-op
+	// for every other channel. See unifyapi_hide_upstream.go.
+	data = HideUpstreamInBody(c, data)
 
 	body := io.NopCloser(bytes.NewBuffer(data))
 
