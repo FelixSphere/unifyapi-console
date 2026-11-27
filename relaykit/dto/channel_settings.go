@@ -107,6 +107,11 @@ type ChannelOtherSettings struct {
 	// the same non-empty bucket are one allowance. Empty means the channel
 	// counts by itself.
 	UserLimitBucket string `json:"user_limit_bucket,omitempty"`
+	// HideUpstream stops this channel's answers from showing who the upstream
+	// is: the client gets the model name it asked for, our own response id,
+	// none of the upstream's extra fields and none of its response headers.
+	// Usage accounting still reads the upstream's answer as it arrived.
+	HideUpstream bool `json:"hide_upstream,omitempty"`
 }
 
 // ChannelUserRateLimit is a per-user allowance on a channel. Zero or absent

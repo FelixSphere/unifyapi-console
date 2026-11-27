@@ -479,3 +479,27 @@ marked `UNIFYAPI-FORK`: `main.go` (migration, boot sweep of interrupted rows),
 and in `web/` `features/users/index.tsx`, `users-columns.tsx`,
 `data-table-bulk-actions.tsx` and `users-primary-buttons.tsx`; the dialogs are
 new files in `features/users/admin-email/`.
+
+### Hide upstream identity (unreleased)
+
+A channel whose upstream is a reseller passes the reseller's answer on as it
+arrived: its model id, its response id, a `provider` key, `usage.cost`, and
+its response headers. `service/unifyapi_hide_upstream.go` adds the channel
+setting `hide_upstream` (in `channels.settings`, off by default; set through
+the channel API, there is no switch in the editor). With it on the client gets
+the model it asked for, an id derived from `X-Oneapi-Request-Id`
+(`chatcmpl-`, `msg_`, `resp_`), no `provider`, `native_finish_reason`,
+`usage.cost`, `usage.cost_details`, `usage.is_byok`, `reasoning_details` or
+the console's own `usage.billing_usage` (which repeats the cost), `reasoning`
+as `reasoning_content`, only `Content-Type`, `Content-Encoding`,
+`Content-Disposition` and `Cache-Control` of the upstream's headers, and an
+error message without the upstream's name, model id, request id or metadata.
+The rewrite happens where a response is written, on a copy, so usage is read
+from the upstream's bytes as before. Separately, and for every channel, a
+user's own log view no longer shows `is_model_mapped` / `upstream_model_name`
+(`model/log.go`); the admin view does. Touch points, all marked
+`UNIFYAPI-FORK`: `service/http.go` (`ShouldCopyUpstreamHeader`,
+`IOCopyBytesGracefully`), `relay/helper/common.go` (the SSE writers),
+`middleware/distributor.go` (the requested model is remembered once),
+`controller/relay.go` (the error writer), `model/log.go` and
+`relaykit/dto/channel_settings.go`.

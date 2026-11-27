@@ -201,6 +201,11 @@ func formatUserLogs(logs []*Log, startIdx int, showIp bool) {
 			delete(otherMap, "admin_info")
 			// Remove operation-audit details (operator/route info), admin-only.
 			delete(otherMap, "audit_info")
+			// UNIFYAPI-FORK: which upstream model a channel maps a request to
+			// says who the upstream is. The log's own model_name is the one
+			// the user asked for.
+			delete(otherMap, "is_model_mapped")
+			delete(otherMap, "upstream_model_name")
 			// delete(otherMap, "reject_reason")
 			// delete(otherMap, "stream_status")
 		}
