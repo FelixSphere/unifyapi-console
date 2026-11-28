@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -107,6 +108,15 @@ type ChannelOtherSettings struct {
 	// the same non-empty bucket are one allowance. Empty means the channel
 	// counts by itself.
 	UserLimitBucket string `json:"user_limit_bucket,omitempty"`
+	// UserRateLimitOverrides replaces UserRateLimit for the users it names,
+	// keyed by user id. It is how one account is throttled on this channel
+	// without changing what anyone else may send. An entry is the user's whole
+	// allowance here, not a patch on the channel's: a zero or absent field in
+	// it is unlimited for that user even where UserRateLimit sets one. It
+	// applies whether or not the channel has a UserRateLimit of its own, and
+	// is read from the channel being admitted, so channels sharing a
+	// UserLimitBucket each need the entry.
+	UserRateLimitOverrides map[string]*ChannelUserRateLimit `json:"user_rate_limit_overrides,omitempty"`
 	// HideUpstream stops this channel's answers from showing who the upstream
 	// is: the client gets the model name it asked for, our own response id,
 	// none of the upstream's extra fields and none of its response headers.
@@ -138,6 +148,33 @@ func (l *ChannelUserRateLimit) Validate() error {
 	for name, value := range map[string]int64{"rpm": l.RPM, "tpm": l.TPM, "daily_requests": l.DailyRequests, "daily_tokens": l.DailyTokens} {
 		if value < 0 {
 			return fmt.Errorf("user_rate_limit.%s must not be negative", name)
+		}
+	}
+	return nil
+}
+
+// MaxUserRateLimitOverrides bounds a list that is parsed on every admission to
+// the channel. Overrides are for the few accounts being held back, not a
+// second user table.
+const MaxUserRateLimitOverrides = 200
+
+// ValidateUserRateLimitOverrides refuses what routing would otherwise ignore
+// in silence: a key that is not a user id as routing spells it ("42", never
+// "042" or " 42"), and an entry that limits nothing, which would lift the
+// channel's own limit for that user rather than tighten it.
+func ValidateUserRateLimitOverrides(overrides map[string]*ChannelUserRateLimit) error {
+	if len(overrides) > MaxUserRateLimitOverrides {
+		return fmt.Errorf("user_rate_limit_overrides may hold at most %d users", MaxUserRateLimitOverrides)
+	}
+	for key, limit := range overrides {
+		if id, err := strconv.Atoi(key); err != nil || id <= 0 || strconv.Itoa(id) != key {
+			return fmt.Errorf("user_rate_limit_overrides key %q must be a user id: a positive integer", key)
+		}
+		if err := limit.Validate(); err != nil {
+			return fmt.Errorf("user_rate_limit_overrides[%s]: %w", key, err)
+		}
+		if !limit.Limited() {
+			return fmt.Errorf("user_rate_limit_overrides[%s] must set at least one of rpm, tpm, daily_requests, daily_tokens", key)
 		}
 	}
 	return nil

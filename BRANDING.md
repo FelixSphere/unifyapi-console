@@ -457,6 +457,49 @@ is refused on save), `model/log.go` (tokens), `service/channel_select.go`,
 `relaykit/dto/channel_settings.go`, and in `web/` `channel-form.ts`,
 `constants.ts` and `channel-mutate-drawer.tsx`.
 
+### Per-user override of a channel's per-user limit (unreleased)
+
+A third key in `channels.settings`, absent by default:
+`user_rate_limit_overrides`, a map from user id (as a decimal string) to an
+allowance of the same shape as `user_rate_limit`, for example
+`{"user_rate_limit":{"rpm":20},"user_rate_limit_overrides":{"1203":{"rpm":5,"daily_requests":200}}}`.
+It exists so one account can be throttled on a channel, and un-throttled by
+deleting its entry, without changing what any other account may send. A user
+with an entry is admitted against the entry instead of `user_rate_limit`;
+everyone else, and every channel without the key, behaves as before. It
+applies on a channel that has no `user_rate_limit` of its own.
+
+- An entry is the user's whole allowance on the channel, not a patch on the
+  channel's. A zero or missing field in it is unlimited for that user, as it
+  is in `user_rate_limit`, even where the channel sets that field.
+- An entry must set at least one field. One that limits nothing is refused on
+  save (and ignored at routing, where the channel's own limit then applies),
+  so a mistyped throttle cannot lift the limit it was meant to tighten. A
+  user cannot be cut off entirely this way; the lowest allowance is 1.
+- Keys are user ids spelled as routing spells them (`"42"`, not `"042"`);
+  values are non-negative; at most 200 entries per channel. Anything else is
+  refused on save.
+- With `user_limit_bucket` the count is shared across the bucket's channels
+  but the override is read from the channel being admitted: set the entry on
+  every channel of the bucket, or the user is held to the override on some
+  and to the channel allowance on the others, against one shared count.
+- The counters are the ones `user_rate_limit` uses. A dimension is only
+  counted for a user while their allowance sets it, so a daily cap that the
+  override introduces starts from the moment it is set.
+- The caller gets the same 429, `Retry-After` and `user_rate_limit_exceeded`
+  as any account over `user_rate_limit`; nothing says it was singled out.
+- It is written through the existing `PUT /api/channel/` with `{id,
+  settings}`; `settings` is the whole JSON string, so read it, change the one
+  key and write it back. That field needs the channel sensitive-write
+  permission. The instance that takes the PUT rebuilds its channel cache
+  before answering; any other instance picks it up at its next channel sync
+  (`SYNC_FREQUENCY`, 60 seconds by default).
+
+No admin UI and no new option. Code: `(*Channel).UserRateLimitFor` in
+`model/unifyapi_channel_user_rate_limit.go`,
+`ValidateUserRateLimitOverrides` in `relaykit/dto/channel_settings.go`, and
+the save-time check in `model/channel.go`, marked `UNIFYAPI-FORK`.
+
 ### Admin email to customers (unreleased)
 
 Admins can email one customer, or many at once, from the Users page: the
