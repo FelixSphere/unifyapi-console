@@ -993,6 +993,9 @@ func (channel *Channel) ValidateSettings() error {
 	if err := dto.ValidateUserLimitBucket(channelOtherSettings.UserLimitBucket); err != nil {
 		return err
 	}
+	if err := dto.ValidateUserRateLimitOverrides(channelOtherSettings.UserRateLimitOverrides); err != nil {
+		return err
+	}
 	if channel.Type == constant.ChannelTypeAdvancedCustom {
 		if channelOtherSettings.AdvancedCustom == nil {
 			return fmt.Errorf("advanced_custom is required")

@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -40,6 +41,9 @@ import (
 // two rows name the same user_limit_bucket and share one count per user. A
 // channel without the setting is not touched, which is every reseller channel:
 // what a reseller's upstream tolerates is the reseller's to manage.
+//
+// One account can be given its own allowance on a channel, in
+// user_rate_limit_overrides: see UserRateLimitFor.
 //
 // A user who is over is not routed to the channel; any other channel that can
 // serve still does. Only when nothing else can is the request refused, with
@@ -80,6 +84,25 @@ var channelUserLimitNow = time.Now
 // UserRateLimit is the channel's per-user limit and the name its counters are
 // kept under. Read without GetOtherSettings for the reason excludedGroups is.
 func (channel *Channel) UserRateLimit() (*dto.ChannelUserRateLimit, string) {
+	return channel.UserRateLimitFor(0)
+}
+
+// UserRateLimitFor is what this user may send through the channel: their
+// entry in user_rate_limit_overrides when there is one, the channel's
+// user_rate_limit otherwise.
+//
+// The override is the user's whole allowance, not a patch: a dimension it
+// leaves at zero is unlimited for them, as a zero is in user_rate_limit. An
+// entry that limits nothing is refused on save and ignored here, so a
+// mistyped throttle falls back to the channel's limit instead of lifting it.
+//
+// The counters are the same ones either way, so a user who is given an
+// override mid-minute is measured against what they have already sent -- but
+// only in the dimensions that were being counted for them before.
+//
+// The override is read from the channel being admitted. Channels that share a
+// bucket share the count, not the override: each needs the entry.
+func (channel *Channel) UserRateLimitFor(userId int) (*dto.ChannelUserRateLimit, string) {
 	if channel == nil || !strings.Contains(channel.OtherSettings, "user_rate_limit") {
 		return nil, ""
 	}
@@ -87,13 +110,19 @@ func (channel *Channel) UserRateLimit() (*dto.ChannelUserRateLimit, string) {
 	if err := common.UnmarshalJsonStr(channel.OtherSettings, &settings); err != nil {
 		return nil, ""
 	}
-	if !settings.UserRateLimit.Limited() || settings.UserRateLimit.Validate() != nil {
+	limit := settings.UserRateLimit
+	if userId > 0 {
+		if override := settings.UserRateLimitOverrides[strconv.Itoa(userId)]; override.Limited() && override.Validate() == nil {
+			limit = override
+		}
+	}
+	if !limit.Limited() || limit.Validate() != nil {
 		return nil, ""
 	}
 	if bucket := strings.TrimSpace(settings.UserLimitBucket); bucket != "" && dto.ValidateUserLimitBucket(bucket) == nil {
-		return settings.UserRateLimit, "b:" + bucket
+		return limit, "b:" + bucket
 	}
-	return settings.UserRateLimit, fmt.Sprintf("c:%d", channel.Id)
+	return limit, fmt.Sprintf("c:%d", channel.Id)
 }
 
 type channelUserLimitKeys struct {
@@ -228,7 +257,7 @@ func channelUserRequestOps(limit *dto.ChannelUserRateLimit, keys channelUserLimi
 // channel's per-user limit and returns nil when it fits. A refusal leaves the
 // counters as they were. A channel without a per-user limit always admits.
 func AdmitChannelUserRequest(ctx context.Context, userId int, channel *Channel) *ChannelUserLimitRefusal {
-	limit, scope := channel.UserRateLimit()
+	limit, scope := channel.UserRateLimitFor(userId)
 	if limit == nil || userId <= 0 {
 		return nil
 	}
@@ -274,7 +303,7 @@ func AdmitChannelUserRequest(ctx context.Context, userId int, channel *Channel) 
 // ReleaseChannelUserRequest takes back a request AdmitChannelUserRequest
 // counted, for a channel that then turned out not to be usable.
 func ReleaseChannelUserRequest(ctx context.Context, userId int, channel *Channel) {
-	limit, scope := channel.UserRateLimit()
+	limit, scope := channel.UserRateLimitFor(userId)
 	if limit == nil || userId <= 0 {
 		return
 	}
@@ -288,7 +317,7 @@ func RecordChannelUserTokens(ctx context.Context, userId int, channelId int, tok
 	if tokens <= 0 || userId <= 0 {
 		return
 	}
-	limit, scope := getChannelForLimit(channelId).UserRateLimit()
+	limit, scope := getChannelForLimit(channelId).UserRateLimitFor(userId)
 	if limit == nil {
 		return
 	}
